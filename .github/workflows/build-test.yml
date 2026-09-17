@@ -27,22 +27,28 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: microsoft
-          java-version: '17'
-          cache: gradle
-
       - name: Eslint check
         run: npm run lint
 
       - name: TypeScript check
         run: npx tsc --noEmit
 
+      # 下面几步是耗时的完整验证。push 到 master 时 android-build.yml 已经完整构建了
+      # release 包（含 JS bundle 与 Gradle 编译），同一次推送再跑一遍纯属重复；
+      # PR 上没有 release 构建，所以在这里做完整检查。
+      - name: Setup Java
+        if: github.event_name == 'pull_request'
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: '17'
+          cache: gradle
+
       - name: Test Build
+        if: github.event_name == 'pull_request'
         run: npm run build-test
 
       - name: Android debug build
+        if: github.event_name == 'pull_request'
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon

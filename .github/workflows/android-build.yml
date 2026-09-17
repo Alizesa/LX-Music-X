@@ -3,6 +3,9 @@ name: Android release
 on:
   workflow_dispatch:
   push:
+    branches:
+      - master
+      - main
     tags:
       - 'v*'
 
@@ -20,6 +23,9 @@ jobs:
       - name: Setup environment
         uses: ./.github/actions/setup
 
+      # assembleRelease 在签名未配置时会直接抛 GradleException（见 android/app/build.gradle），
+      # 所以这里没有"退而求其次出未签名包"的选项。缺 secret 就失败，但要把缺了哪几个列出来，
+      # 而不是让人去看一句 Gradle 报错。
       - name: Configure release signing
         shell: bash
         env:
@@ -28,10 +34,17 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          test -n "$KEYSTORE_BASE64"
-          test -n "$KEYSTORE_ALIAS"
-          test -n "$KEYSTORE_PASSWORD"
-          test -n "$KEY_PASSWORD"
+          missing=''
+          [ -n "$KEYSTORE_BASE64" ] || missing="$missing ANDROID_KEYSTORE_BASE64"
+          [ -n "$KEYSTORE_ALIAS" ] || missing="$missing ANDROID_KEYSTORE_ALIAS"
+          [ -n "$KEYSTORE_PASSWORD" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
+          [ -n "$KEY_PASSWORD" ] || missing="$missing ANDROID_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            echo "Add them under Settings > Secrets and variables > Actions."
+            echo "ANDROID_KEYSTORE_BASE64 is the base64 of the release keystore."
+            exit 1
+          fi
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/lx-music-x-release.keystore
 
       - name: Build release APKs
@@ -50,10 +63,11 @@ jobs:
       - name: Generate checksums
         run: sha256sum android/app/build/outputs/apk/release/*.apk > android/app/build/outputs/apk/release/SHA256SUMS.txt
 
+      # artifact 名称带上 run number，否则每次构建都覆盖同名 artifact，分不清哪个是新的
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: lx-music-x-android
+          name: lx-music-x-android-r${{ github.run_number }}
           path: |
             android/app/build/outputs/apk/release/*.apk
             android/app/build/outputs/apk/release/SHA256SUMS.txt
