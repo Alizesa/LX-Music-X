@@ -1,70 +1,102 @@
 <p align="center"><a href="https://github.com/lyswhut/lx-music-mobile"><img width="200" src="https://github.com/lyswhut/lx-music-mobile/blob/master/doc/images/icon.png" alt="lx-music logo"></a></p>
 
-<h1 align="center">LX Music 移动版</h1>
+<h1 align="center">LX Music X</h1>
 
-<p align="center">
-  <a href="https://github.com/lyswhut/lx-music-mobile/releases"><img src="https://img.shields.io/github/release/lyswhut/lx-music-mobile" alt="Release version"></a>
-  <a href="https://github.com/lyswhut/lx-music-mobile/actions/workflows/release.yml"><img src="https://github.com/lyswhut/lx-music-mobile/workflows/Build/badge.svg" alt="Build status"></a>
-  <a href="https://github.com/lyswhut/lx-music-mobile/actions/workflows/beta-pack.yml"><img src="https://github.com/lyswhut/lx-music-mobile/workflows/Build%20Beta/badge.svg" alt="Build status"></a>
-  <a href="https://github.com/facebook/react-native"><img src="https://img.shields.io/github/package-json/dependency-version/lyswhut/lx-music-mobile/react-native/master" alt="React native version"></a>
-  <!-- <a href="https://github.com/lyswhut/lx-music-mobile/releases"><img src="https://img.shields.io/github/downloads/lyswhut/lx-music-mobile/latest/total" alt="Downloads"></a> -->
-  <a href="https://github.com/lyswhut/lx-music-mobile/tree/dev"><img src="https://img.shields.io/github/package-json/v/lyswhut/lx-music-mobile/dev" alt="Dev branch version"></a>
-  <!-- <a href="https://github.com/lyswhut/lx-music-mobile/blob/master/LICENSE"><img src="https://img.shields.io/github/license/lyswhut/lx-music-mobile" alt="License"></a> -->
-</p>
+<p align="center">LX Music 移动版的个人自用分支，仅构建 Android</p>
 
-<p align="center">一个基于 React Native 开发的音乐软件</p>
+## 这是什么
 
-## 说明
+[LX Music 移动版](https://github.com/lyswhut/lx-music-mobile) 的个人分支，按自己的使用习惯改的，只出 Android 包。
 
-所用技术栈：
+- 应用 ID `io.github.alizesa.lxmusicx`，可与官方 LX Music 共存
+- 版本号跟随上游的 `package.json`（当前 1.9.0 / versionCode 77）
+- 最低 Android 5（minSdk 21）
 
-- React Native
-- Redux
+上游本身的功能、自定义源机制、数据同步等都与官方一致，这里只记录**本分支多出来的东西**。
 
-已支持的平台：
+## 与上游的差异
 
-- Android 5 及以上
+### 下载
 
-***注：目前没有计划支持 iOS 和 HarmonyOS NEXT**。*<br>
-*桌面版项目地址：<https://github.com/lyswhut/lx-music-desktop>*<br>
-*LX Music 项目发展调整与新项目计划：https://github.com/lyswhut/lx-music-desktop/issues/1912*
+上游没有下载功能，这里补了一套。
 
-软件变化请查看[更新日志](https://github.com/lyswhut/lx-music-mobile/blob/master/CHANGELOG.md)。
+- 原生下载器（Android WorkManager），支持暂停 / 恢复 / 重试 / 移除记录
+- **首次使用必须先授权目录**：进「下载管理」用系统文件选择器选一个公共目录，授予持久访问权限，否则无法开始下载
+- **下载音质是独立设置**，在下载管理页顶部，默认 320k，与播放音质互不影响
+  - 这样播放可以按流量情况随时调到 128k，下载仍是留档品质
+  - 请求的音质歌曲没有时会逐级降级（flac24bit → flac → 320k → 128k），而不是失败
+- 下载完成的文件会写入「本地音乐」列表，之后播放同一首歌时**优先用本地文件**，不再联网取址
 
-软件下载请查看 [GitHub Releases](https://github.com/lyswhut/lx-music-mobile/releases)。
+### 播放队列
 
-使用常见问题请参阅[移动版常见问题](https://lyswhut.github.io/lx-music-doc/mobile/faq)。
+播放列表以队列形式呈现（底部播放栏的列表按钮），可排序、可移除。
 
-目前本项目的原始发布地址只有 [**GitHub**](https://github.com/lyswhut/lx-music-mobile/releases)，其他渠道均为第三方转载发布，与本项目无关！
+### QQ 音乐
 
-为了提高使用门槛，本软件内的默认设置、UI 操作不以新手友好为目标，所以使用前建议先根据你的喜好浏览调整一遍软件设置，阅读一遍[音乐播放列表机制](https://lyswhut.github.io/lx-music-doc/mobile/faq/playlist)。
+上游没有 QQ 音乐集成。
 
-### 数据同步服务
+- **登录**：WebView 登录，或手动粘贴 Cookie 兜底。Cookie 存安全存储，不落明文
+- **歌单**：自建 + 收藏，可一键导入为本地歌单；「我喜欢」这类虚拟歌单也支持
+- **每日推荐**：点击即播，播到接近队列尾自动续下一批，不会卡在那 20 首循环
+- **本地缓存**：歌单和每日推荐都持久缓存，进页面直接显示、点击即播，都不需要联网；页面只在点「刷新」时请求。播放过程中的自动续播会另行拉取下一批，这是连续播放本身的成本
+- 登出或换号会清掉缓存，避免串号
 
-从 v1.0.0 起，我们发布了一个独立的[数据同步服务](https://github.com/lyswhut/lx-music-sync-server#readme)。如果你有服务器，可以将其部署到服务器上作为私人多端同步服务使用，详情看该项目说明。
+### 播放逻辑
 
-## 贡献代码
+- 本地文件优先：下载/导入的本地文件命中后直接播放，不经过在线取址
+- 同一首歌有多份本地文件时择优，而不是放弃本地回退到在线
+- 取址失败后延迟重试，避免对音源连发请求
 
-本项目欢迎 PR，但为了 PR 能顺利合并，需要注意以下几点：
+## 构建
 
-- 对于添加新功能的 PR，建议在提交 PR 前先创建 Issue 进行说明，以确认该功能是否确实需要；
-- 对于修复 bug 的 PR，请提供修复前后的说明及重现方式；
-- 对于其他类型的 PR，则适当附上说明。
+### GitHub Actions（推荐）
 
-贡献代码步骤：
+- **推送到 `master`** 会自动构建签名 release APK，产物在 Actions 的 artifacts 里（名称为 `lx-music-x-android-r<构建号>`）
+- **推送 `v*` 标签**会额外创建 GitHub Release，附带各 ABI APK、通用 APK 和 `SHA256SUMS.txt`
+- 也可以在 Actions 页面手动触发
 
-1. 参照[源码使用方法](https://lyswhut.github.io/lx-music-doc/mobile/use-source-code)设置开发环境；
-2. 克隆本仓库代码并切换至 `dev` 分支进行开发；
-3. 提交 PR 至 `dev` 分支。
+需要配置以下 Secrets，缺任何一个都会在构建开始时明确报出缺哪个：
 
-<!--
-## 用户界面
+| Secret | 说明 |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | release keystore 的 base64 |
+| `ANDROID_KEYSTORE_ALIAS` | keystore 别名 |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore 密码 |
+| `ANDROID_KEY_PASSWORD` | 密钥密码 |
 
-<p><img width="100%" src="https://github.com/lyswhut/lx-music-mobile/blob/master/doc/images/app.png" alt="lx-music mobile UI"></p> -->
+> 签名文件只应生成并保存一份。丢失后无法覆盖升级已发布的 APK，只能卸载重装。
+
+构建产物包含 `armeabi-v7a`、`arm64-v8a`、`x86`、`x86_64` 四个 ABI 以及一个通用包。
+
+### 本地构建
+
+需要先按[源码使用方法](https://lyswhut.github.io/lx-music-doc/mobile/use-source-code)配好 React Native 环境，然后在 `android/keystore.properties` 里填好签名信息（`assembleRelease` 在签名未配置时会直接报错）。
+
+```bash
+npm ci
+npm run pack          # 等价于 cd android && gradlew.bat assembleRelease
+```
+
+调试包用 `npm run dev`；其它脚本见 `package.json` 的 `scripts`。
+
+### 发布
+
+1. 改 `package.json` 的 `version` 与 `versionCode`
+2. 更新 `CHANGELOG.md`
+3. 打标签并推送：`git tag v1.9.0 && git push origin v1.9.0`
+
+## 上游资料
+
+- 桌面版：<https://github.com/lyswhut/lx-music-desktop>
+- 常见问题：<https://lyswhut.github.io/lx-music-doc/mobile/faq>
+- 播放列表机制：<https://lyswhut.github.io/lx-music-doc/mobile/faq/playlist>
+- 数据同步服务：<https://github.com/lyswhut/lx-music-sync-server#readme>
+
+上游的原始发布地址只有 [GitHub](https://github.com/lyswhut/lx-music-mobile/releases)，其他渠道均为第三方转载，与上游项目无关。
 
 ## 项目协议
 
-本项目基于 [Apache License 2.0](https://github.com/lyswhut/lx-music-mobile/blob/master/LICENSE) 许可证发行，以下协议是对于 Apache License 2.0 的补充，如有冲突，以以下协议为准。
+本分支是 [LX Music 移动版](https://github.com/lyswhut/lx-music-mobile) 的分支，沿用其 [Apache License 2.0](https://github.com/lyswhut/lx-music-mobile/blob/master/LICENSE) 许可证，以及上游在许可证之上补充的以下协议（如有冲突，以补充协议为准）。以下内容原样来自上游，未作改动。
 
 ---
 
@@ -111,17 +143,3 @@
 ### 九、接受协议
 
 9.1 若你使用了本项目，即代表你接受本协议。
-
----
-
-## LX Music X
-
-本分支仅构建 Android 版本，应用 ID 为 `io.github.alizesa.lxmusicx`，可与官方 LX Music 共存。首次下载前请在“下载管理”中通过系统文件选择器授予一个公共目录的持久访问权限。
-
-### GitHub Actions 发行
-
-推送 `v*` 标签会触发 `.github/workflows/android-build.yml`，生成各 ABI APK、通用 APK 和 `SHA256SUMS.txt`，并创建 GitHub Release。仓库需要配置以下 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_ALIAS`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_PASSWORD`。正式签名文件只应生成并保存一份，丢失后无法覆盖升级已发布的 APK。
-
----
-
-若对此有疑问请 mail to: lyswhut+qq.com (请将 `+` 替换成 `@`)
