@@ -134,6 +134,7 @@
   "qq_import_local": "Add to local lists",
   "qq_import_success": "Added to local lists",
   "qq_import_failed": "Failed to import playlist",
+  "qq_import_empty": "No songs were returned; the playlist may be empty or inaccessible",
   "qq_songs": "songs",
   "qq_playlist": "Playlist",
   "qq_session_expired": "Your QQ Music session has expired, please sign in again",

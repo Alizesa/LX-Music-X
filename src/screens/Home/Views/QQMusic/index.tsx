@@ -83,12 +83,13 @@ export default () => {
   const importPlaylist = async(info: LX.QQMusic.PlaylistInfo) => {
     if (!ensureLogin()) return
     try {
-      let songs = await getQQMusicPlaylistSongs(cookie, info.id)
-      if (!songs.length) throw new Error('empty')
+      const songs = await getQQMusicPlaylistSongs(cookie, info.id)
+      // 具体原因要透出来：早先统一吞成"导入失败"，排查时看不到是接口出错还是歌单为空
+      if (!songs.length) throw new Error(t('qq_import_empty'))
       await createList({ name: `QQ · ${info.name}`, source: 'tx', sourceListId: info.id, list: songs })
       toast(t('qq_import_success'))
-    } catch {
-      toast(t('qq_import_failed'), 'long')
+    } catch (error: unknown) {
+      toast(error instanceof Error ? error.message : t('qq_import_failed'), 'long')
     }
   }
 

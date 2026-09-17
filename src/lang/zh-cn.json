@@ -134,6 +134,7 @@
   "qq_import_local": "加入本地歌单",
   "qq_import_success": "已加入本地歌单",
   "qq_import_failed": "歌单导入失败",
+  "qq_import_empty": "没有读取到歌曲，歌单可能为空或该歌单不可访问",
   "qq_songs": "首歌曲",
   "qq_playlist": "歌单",
   "qq_session_expired": "QQ 音乐登录状态已失效，请重新登录",

@@ -8,7 +8,12 @@ const QQ_MUSICU_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
 const QQ_PROFILE_URL = 'https://c.y.qq.com/rsc/fcgi-bin/fcg_get_profile_homepage.fcg'
 const QQ_CREATED_PLAYLIST_URL = 'https://c.y.qq.com/rsc/fcgi-bin/fcg_user_created_diss'
 const QQ_COLLECTED_PLAYLIST_URL = 'https://c.y.qq.com/fav/fcgi-bin/fcg_get_profile_order_asset.fcg'
-const QQ_PLAYLIST_DETAIL_URL = 'https://c.y.qq.com/qzone/fcgi-bin/fcg_ucc_getcdinfo_byids_cp.fcg'
+// 注意是 fcg-bin 而不是 fcgi-bin：写成 fcgi-bin 会直接 404
+const QQ_PLAYLIST_DETAIL_URL = 'https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg'
+// "我喜欢"在歌单列表里是 dirid=201 的虚拟歌单，旧接口取不到，必须走 CgiGetDiss
+const LIKED_PLAYLIST_DIRID = 201
+const DISS_PAGE_SIZE = 100
+const DISS_MAX_PAGES = 20
 const QQ_REFERER = 'https://y.qq.com/'
 // 个人主页相关接口对 Referer 敏感，必须是个人页而不是首页
 const QQ_PROFILE_REFERER = 'https://y.qq.com/portal/profile.html'
@@ -170,7 +175,11 @@ const mapSongs = (rawList: any[]): LX.Music.MusicInfoOnline[] =>
   rawList.map(rawSongToOldInfo).filter(Boolean).map(item => toNewMusicInfo(item)) as LX.Music.MusicInfoOnline[]
 
 const normalizePlaylist = (raw: any, subscribed: boolean): LX.QQMusic.PlaylistInfo | null => {
-  const id = raw?.dissid ?? raw?.tid ?? raw?.dirid ?? raw?.disstid ?? raw?.diss_id ?? raw?.id
+  // 虚拟歌单没有可用的 disstid，统一归一化成 dirid，详情接口据此切换取数方式
+  const liked = Number(raw?.dirid ?? raw?.dirId ?? 0) === LIKED_PLAYLIST_DIRID
+  const id = liked
+    ? LIKED_PLAYLIST_DIRID
+    : raw?.dissid ?? raw?.tid ?? raw?.dirid ?? raw?.disstid ?? raw?.diss_id ?? raw?.id
   const name = raw?.diss_name ?? raw?.dissname ?? raw?.title ?? raw?.name
   if (id == null || !name) return null
   return {
@@ -322,13 +331,72 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
   return songs
 }
 
+// 现代接口，分页取全量。也是唯一能取到"我喜欢"(dirid=201)的方式
+const fetchPlaylistSongsByDiss = async(cookie: string, playlistId: string) => {
+  const liked = Number(playlistId) === LIKED_PLAYLIST_DIRID
+  const comm = buildAuthComm(parseQQMusicCookie(cookie))
+  const songs: LX.Music.MusicInfoOnline[] = []
+  const seen = new Set<string>()
+  for (let page = 0; page < DISS_MAX_PAGES; page++) {
+    const body = await request(QQ_MUSICU_URL, cookie, {
+      method: 'post',
+      body: {
+        comm,
+        playlist: {
+          module: 'music.srfDissInfo.DissInfo',
+          method: 'CgiGetDiss',
+          param: {
+            disstid: liked ? 0 : Number(playlistId) || 0,
+            dirid: liked ? LIKED_PLAYLIST_DIRID : 0,
+            tag: true,
+            song_begin: page * DISS_PAGE_SIZE,
+            song_num: DISS_PAGE_SIZE,
+            userinfo: true,
+            orderlist: true,
+            onlysonglist: false,
+          },
+        },
+      },
+    })
+    const block = body?.playlist
+    if (Number(block?.code ?? 0) !== 0) {
+      // 首页就失败说明这个歌单取不到，交给上层换接口；后续页失败则保留已取到的部分
+      if (!songs.length) throw new Error(String(block?.message ?? block?.msg ?? 'QQ playlist detail unavailable'))
+      break
+    }
+    const data = block?.data
+    const rawList = pickArray(data, ['songlist'])
+    if (!rawList.length) break
+    for (const raw of rawList) {
+      const info = rawSongToOldInfo(raw)
+      if (!info || seen.has(info.songmid)) continue
+      seen.add(info.songmid)
+      songs.push(toNewMusicInfo(info) as LX.Music.MusicInfoOnline)
+    }
+    const total = Number(data?.total_song_num ?? 0)
+    if (!total || songs.length >= total || rawList.length < DISS_PAGE_SIZE) break
+  }
+  return songs
+}
+
 export const getQQMusicPlaylistSongs = async(cookie: string, playlistId: string) => {
+  // 现代接口优先，旧接口兜底，最后退回公开的 SDK 接口
+  try {
+    const songs = await fetchPlaylistSongsByDiss(cookie, playlistId)
+    if (songs.length) return songs
+  } catch (error) {
+    console.warn('[QQMusic] CgiGetDiss failed:', error instanceof Error ? error.message : error)
+  }
   // 歌单详情本身是公开的，但仍带上账号 Cookie：QQ 对私有歌单需要它
-  const uin = getQQMusicUin(cookie)
-  const url = `${QQ_PLAYLIST_DETAIL_URL}?type=1&json=1&utf8=1&onlysong=0&new_format=1&disstid=${encodeURIComponent(playlistId)}&loginUin=${encodeURIComponent(uin)}&hostUin=${encodeURIComponent(uin)}&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0`
-  const body = await request(url, cookie)
-  const rawSongs: any[] = Array.isArray(body?.cdlist?.[0]?.songlist) ? body.cdlist[0].songlist : []
-  if (rawSongs.length) return mapSongs(rawSongs)
+  try {
+    const uin = getQQMusicUin(cookie)
+    const url = `${QQ_PLAYLIST_DETAIL_URL}?type=1&json=1&utf8=1&onlysong=0&new_format=1&disstid=${encodeURIComponent(playlistId)}&loginUin=${encodeURIComponent(uin)}&hostUin=${encodeURIComponent(uin)}&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0`
+    const body = await request(url, cookie)
+    const rawSongs: any[] = Array.isArray(body?.cdlist?.[0]?.songlist) ? body.cdlist[0].songlist : []
+    if (rawSongs.length) return mapSongs(rawSongs)
+  } catch (error) {
+    console.warn('[QQMusic] playlist detail fallback failed:', error instanceof Error ? error.message : error)
+  }
   return getQQMusicPlaylistSongsFallback(playlistId)
 }
 
