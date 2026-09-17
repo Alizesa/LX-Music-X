@@ -84,20 +84,35 @@ export const findLocalMusicInfo = (musicInfo: LX.Music.MusicInfoOnline) => {
   const localList = getListMusicSync(LIST_IDS.LOCAL).filter((item): item is LX.Music.MusicInfoLocal => item.source == 'local')
   const bySourceId = localList.find(item => item.meta.toggleMusicInfo?.id == musicInfo.id && item.meta.toggleMusicInfo?.source == musicInfo.source)
   if (bySourceId) return bySourceId
+  // 先做便宜的判空，再归一化。反过来的话，缺专辑名/歌手的歌会白跑几次正则归一化
+  if (!musicInfo.name || !musicInfo.singer || !musicInfo.meta.albumName || !musicInfo.interval) return undefined
   const name = normalize(musicInfo.name)
   const singer = normalize(musicInfo.singer)
   const album = normalize(musicInfo.meta.albumName)
   const duration = intervalToSeconds(musicInfo.interval)
   if (!name || !singer || !album || duration == null) return undefined
-  const candidates = localList.filter(item => {
+  const candidates: Array<{ item: LX.Music.MusicInfoLocal, durationGap: number }> = []
+  for (const item of localList) {
     const localDuration = intervalToSeconds(item.interval)
-    return normalize(item.name) == name &&
-      normalize(item.singer) == singer &&
-      normalize(item.meta.albumName) == album &&
-      localDuration != null &&
-      Math.abs(localDuration - duration) <= 3
-  })
-  return candidates.length == 1 ? candidates[0] : undefined
+    if (localDuration == null) continue
+    const durationGap = Math.abs(localDuration - duration)
+    if (durationGap > 3) continue
+    if (normalize(item.name) != name) continue
+    if (normalize(item.singer) != singer) continue
+    if (normalize(item.meta.albumName) != album) continue
+    candidates.push({ item, durationGap })
+  }
+  if (!candidates.length) return undefined
+  if (candidates.length == 1) return candidates[0].item
+  // 同一首歌可能有多条本地记录（同曲不同音质各下一份、或专辑里有重复曲目）。
+  // 早先遇到多个候选就放弃，结果是明明有本地文件却退回在线播放。
+  // 这里改成择优：优先已关联在线来源的那条，其次时长最接近的。
+  return candidates.reduce((best, current) => {
+    const bestLinked = !!best.item.meta.toggleMusicInfo
+    const currentLinked = !!current.item.meta.toggleMusicInfo
+    if (bestLinked != currentLinked) return currentLinked ? current : best
+    return current.durationGap < best.durationGap ? current : best
+  }).item
 }
 
 export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
