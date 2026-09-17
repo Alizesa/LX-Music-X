@@ -58,6 +58,7 @@ const createDelayNextTimeout = (delay: number) => {
     addDelayNextTimeout,
   }
 }
+const delay = async(ms: number) => new Promise<void>(resolve => { setTimeout(resolve, ms) })
 const { addDelayNextTimeout, clearDelayNextTimeout } = createDelayNextTimeout(5000)
 const { addDelayNextTimeout: addLoadTimeout, clearDelayNextTimeout: clearLoadTimeout } = createDelayNextTimeout(100000)
 
@@ -132,7 +133,14 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
 
     if (err.message == requestMsg.tooManyRequests) return delayRetry(musicInfo, isRefresh)
 
-    if (!isRetryed) return getMusicPlayUrl(musicInfo, isRefresh, true)
+    if (!isRetryed) {
+      // 失败后立刻原样重试，等于把同一个请求连发两次。隔一小段时间再试，既给
+      // 瞬时故障留出恢复余地，也避免对音源形成突发请求。被限流的错误已在上面
+      // 走 delayRetry（等待更久）。
+      await delay(1000)
+      if (global.lx.isPlayedStop || diffCurrentMusicInfo(musicInfo)) return null
+      return getMusicPlayUrl(musicInfo, isRefresh, true)
+    }
 
     throw err
   })
