@@ -27,6 +27,24 @@ export const replacePlayQueue = async(sourceListId: string, list: LX.Player.Play
   await commit()
 }
 
+/**
+ * 往播放队列尾部追加歌曲，用于「每日推荐」这类需要持续续播的列表。
+ * 追加而不是替换，所以当前播放位置与已播记录都不受影响。
+ */
+export const appendPlayQueue = async(sourceListId: string, list: LX.Player.PlayMusic[]) => {
+  if (!list.length) return
+  const seed = Date.now().toString(36)
+  const start = queue.length
+  list.forEach((musicInfo, offset) => {
+    queue.push({
+      queueId: `${seed}_${start + offset}_${musicInfo.id}`,
+      sourceListId,
+      musicInfo,
+    })
+  })
+  await commit()
+}
+
 export const removePlayQueueItem = async(index: number) => {
   if (index < 0 || index >= queue.length) return
   queue.splice(index, 1)

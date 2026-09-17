@@ -8,6 +8,7 @@ import QQMusicCookieModal, { type QQMusicCookieModalType } from '@/components/QQ
 import { useTheme } from '@/store/theme/hook'
 import { createStyle, toast } from '@/utils/tools'
 import { clearQQMusicSession, getQQMusicDailyRecommendations, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession } from '@/core/qqMusic'
+import { initQQMusicRecommendAutoRefresh } from '@/core/qqMusicRecommend'
 import { createList, setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { LIST_IDS } from '@/config/constant'
@@ -102,6 +103,8 @@ export default () => {
   const playRecommendations = async(index: number) => {
     if (!recommendations.length) return
     await setTempList('qq_daily_recommend', recommendations)
+    // 播放过程中接近播完时自动续下一批，不再只是循环这 20 首
+    initQQMusicRecommendAutoRefresh()
     void playList(LIST_IDS.TEMP, index)
   }
 
