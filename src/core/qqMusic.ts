@@ -24,7 +24,12 @@ const QQ_COOKIE_URLS = ['https://y.qq.com/', 'https://qq.com/', 'https://c.y.qq.
 export const QQ_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
 const RECOMMEND_TARGET = 20
-const RECOMMEND_MAX_TRIES = 4
+const RECOMMEND_MAX_TRIES = 6
+// "猜你喜欢"电台的 id。不传这个 id，服务端会当成匿名默认电台，
+// 返回一堆通用曲目且 code 仍是 0 —— 表现就是"推荐的不是我的风格"。
+// 传了它之后个人化受票据门控，票据不被接受会明确返回 code 1000。
+const GUESS_RECOMMEND_ID = 99
+const RECOMMEND_PAGE_SIZE = 5
 const PLAYLIST_PAGE_SIZE = 200
 
 export const parseQQMusicCookie = (cookie: string): Record<string, string> => {
@@ -294,7 +299,10 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
   const seen = new Set<string>()
   const songs: LX.Music.MusicInfoOnline[] = []
   let expired = false
-  // 上游单次只回约 5 首，需要多次调用并按 songmid 去重凑够一份推荐列表
+  let staleRounds = 0
+  // 上游单次只回约 5 首，需要多次调用并按 songmid 去重凑够一份推荐列表。
+  // 电台每次调用应给一批新的，若连续两轮没有新歌说明上游改成了固定列表，
+  // 就此打住，免得白跑满次数。
   for (let i = 0; i < RECOMMEND_MAX_TRIES && songs.length < RECOMMEND_TARGET; i++) {
     let body: any
     try {
@@ -305,7 +313,13 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
           radio: {
             module: 'music.radioProxy.MbTrackRadioSvr',
             method: 'get_radio_track',
-            param: {},
+            param: {
+              id: GUESS_RECOMMEND_ID,
+              num: RECOMMEND_PAGE_SIZE,
+              from: 0,
+              scene: 0,
+              song_ids: [],
+            },
           },
         },
       })
@@ -317,14 +331,20 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
       expired = true
       break
     }
-    const rawList = pickArray(body?.radio?.data, ['track', 'songList', 'vec_song', 'tracks'])
+    const rawList = pickArray(body?.radio?.data, ['tracks', 'track', 'songList', 'vec_song'])
     if (!rawList.length) break
+    const before = songs.length
     for (const raw of rawList) {
       const info = rawSongToOldInfo(raw)
       if (!info || seen.has(info.songmid)) continue
       seen.add(info.songmid)
       songs.push(toNewMusicInfo(info) as LX.Music.MusicInfoOnline)
       if (songs.length >= RECOMMEND_TARGET) break
+    }
+    if (songs.length === before) {
+      if (++staleRounds >= 2) break
+    } else {
+      staleRounds = 0
     }
   }
   if (!songs.length) throw new Error(global.i18n.t(expired ? 'qq_session_expired' : 'qq_load_failed'))
