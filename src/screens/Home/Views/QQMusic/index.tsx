@@ -140,7 +140,7 @@ export default () => {
         data={playlists}
         keyExtractor={item => item.id}
         style={styles.playlist}
-        renderItem={({ item }) => <View style={styles.playlistItem}><View style={styles.playlistInfo}><Text numberOfLines={1}>{item.name}</Text><Text size={12} color={theme['c-font-label']}>{item.trackCount ? `${item.trackCount} ${t('qq_songs')}` : t('qq_playlist')}</Text></View><TouchableOpacity onPress={() => { void importPlaylist(item) }} style={styles.importButton}><Icon name="add-music" color={theme['c-primary-font']} size={18} /></TouchableOpacity></View>}
+        renderItem={({ item }) => <View style={styles.playlistItem}><View style={styles.playlistInfo}><Text numberOfLines={1}>{item.name}</Text><Text size={12} color={theme['c-font-label']}>{`${t(item.subscribed ? 'qq_playlist_collected' : 'qq_playlist_created')} · ${item.trackCount ? `${item.trackCount} ${t('qq_songs')}` : t('qq_playlist')}`}</Text></View><TouchableOpacity onPress={() => { void importPlaylist(item) }} style={styles.importButton}><Icon name="add-music" color={theme['c-primary-font']} size={18} /></TouchableOpacity></View>}
         ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{user ? t('qq_load_hint') : t('qq_login_hint')}</Text>}
       />
       <QQMusicLoginModal ref={loginRef} onLoggedIn={nextUser => { setUser(nextUser); void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />

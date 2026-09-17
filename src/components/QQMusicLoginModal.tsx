@@ -7,13 +7,29 @@ import { Icon } from '@/components/common/Icon'
 import Text from '@/components/common/Text'
 import { useTheme } from '@/store/theme/hook'
 import { useStatusbarHeight } from '@/store/common/hook'
-import { isQQMusicCookie, saveQQMusicSession } from '@/core/qqMusic'
+import { isQQMusicCookie, saveQQMusicSession, QQ_USER_AGENT } from '@/core/qqMusic'
 import { toast } from '@/utils/tools'
 
 const LOGIN_URL = 'https://y.qq.com/portal/profile.html'
-const COOKIE_URLS = [LOGIN_URL, 'https://qq.com/', 'https://c.y.qq.com/', 'https://u.y.qq.com/']
+// 顺序即优先级：QQ 音乐自己的域排在前面。.qq.com 上存在同名但语义不同的
+// Cookie(uin/skey 等)，让它覆盖音乐域的值会把登录票据冲掉。
+const COOKIE_URLS = [LOGIN_URL, 'https://c.y.qq.com/', 'https://u.y.qq.com/', 'https://qq.com/']
 const WebViewComponent = WebView as any
 const getErrorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback
+
+// 按域名优先级合并，同名 Cookie 先到先得
+const readWebViewCookie = async() => {
+  const cookieMaps = await Promise.all(COOKIE_URLS.map(async url => CookieManager.get(url, true).catch(() => ({}))))
+  const merged = new Map<string, string>()
+  for (const cookies of cookieMaps) {
+    for (const cookie of Object.values(cookies ?? {})) {
+      const item = cookie as { name?: string, value?: string }
+      if (!item.name || !item.value || merged.has(item.name)) continue
+      merged.set(item.name, item.value)
+    }
+  }
+  return Array.from(merged.entries()).map(([name, value]) => `${name}=${value}`).join('; ')
+}
 
 export interface QQMusicLoginModalType {
   show: () => void
@@ -41,8 +57,7 @@ export default forwardRef<QQMusicLoginModalType, { onLoggedIn?: (user: LX.QQMusi
     try {
       let cookie = ''
       try {
-        const cookieMaps = await Promise.all(COOKIE_URLS.map(cookieUrl => CookieManager.get(cookieUrl, true)))
-        cookie = cookieMaps.flatMap(cookies => Object.values(cookies)).map(item => `${item.name}=${item.value}`).filter((item, index, all) => all.indexOf(item) === index).join('; ')
+        cookie = await readWebViewCookie()
       } catch {}
       if (!cookie) {
         webViewRef.current?.injectJavaScript('window.ReactNativeWebView.postMessage(document.cookie); true;')
@@ -104,7 +119,7 @@ export default forwardRef<QQMusicLoginModalType, { onLoggedIn?: (user: LX.QQMusi
           onMessage={handleMessage}
           onNavigationStateChange={handleNavigationStateChange}
           onShouldStartLoadWithRequest={handleShouldStartLoad}
-          userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          userAgent={QQ_USER_AGENT}
           thirdPartyCookiesEnabled
           sharedCookiesEnabled
         />
