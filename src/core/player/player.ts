@@ -101,7 +101,11 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
   addLoadTimeout()
 
   // const type = getPlayType(settingState.setting['player.isPlayHighQuality'], musicInfo)
-  let toggleMusicInfo = ('progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo).meta.toggleMusicInfo
+  // 本地条目本身就是权威来源：它是下载/导入时落地的那条记录，meta.toggleMusicInfo
+  // 存的是它的在线来源。先试在线来源只会让 findLocalMusicInfo 又按这个字段反查回
+  // 同一条本地记录，白跑一次全表查找，所以直接走本地路径。
+  const isLocalSource = !('progress' in musicInfo) && musicInfo.source == 'local'
+  const toggleMusicInfo = isLocalSource ? undefined : ('progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo).meta.toggleMusicInfo
 
   return (toggleMusicInfo ? getMusicUrl({
     musicInfo: toggleMusicInfo,
