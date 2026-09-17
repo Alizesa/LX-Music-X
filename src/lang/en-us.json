@@ -91,6 +91,7 @@
   "download": "Download",
   "download_directory": "Download directory",
   "download_quality": "Download quality",
+  "download_local_unsupported": "Local songs are already on this device",
   "download_directory_unset": "No public directory selected",
   "download_path_required": "Choose a public directory in Downloads first",
   "download_path_select_failed": "Unable to access the selected directory",

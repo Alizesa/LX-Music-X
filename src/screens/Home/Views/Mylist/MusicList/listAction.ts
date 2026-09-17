@@ -6,6 +6,7 @@ import settingState from '@/store/setting/state'
 import { similar, sortInsert, toOldMusicInfo } from '@/utils'
 import { confirmDialog, openUrl, shareMusic, toast } from '@/utils/tools'
 import { addDislikeInfo, hasDislike } from '@/core/dislikeList'
+import { addTask } from '@/core/download'
 import playerState from '@/store/player/state'
 
 import type { SelectInfo } from './ListMenu'
@@ -26,6 +27,20 @@ export const handlePlayLater = (listId: SelectInfo['listId'], musicInfo: SelectI
   } else {
     addTempPlayList([{ listId, musicInfo }])
   }
+}
+
+export const handleDownload = (musicInfo: SelectInfo['musicInfo'], selectedList: SelectInfo['selectedList'], onCancelSelect: () => void) => {
+  // 本地条目本身已经是一份文件，没有可下载的东西。多选时可能混着本地歌，过滤掉。
+  const targets = (selectedList.length ? selectedList : [musicInfo])
+    .filter((info): info is LX.Music.MusicInfoOnline => info.source != 'local')
+  if (!targets.length) {
+    toast(global.i18n.t('download_local_unsupported'), 'long')
+    return
+  }
+  if (selectedList.length) onCancelSelect()
+  void Promise.all(targets.map(async info => addTask(info))).catch((error: unknown) => {
+    toast(error instanceof Error ? error.message : String(error), 'long')
+  })
 }
 
 export const handleRemove = (listId: SelectInfo['listId'], musicInfo: SelectInfo['musicInfo'], selectedList: SelectInfo['selectedList'], onCancelSelect: () => void) => {

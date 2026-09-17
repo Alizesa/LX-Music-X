@@ -91,6 +91,7 @@
   "download": "下載",
   "download_directory": "下載目錄",
   "download_quality": "下載音質",
+  "download_local_unsupported": "本地歌曲無需下載",
   "download_directory_unset": "尚未選擇公共目錄",
   "download_path_required": "請先在下載管理中選擇公共下載目錄",
   "download_path_select_failed": "無法取得目錄存取權限",
