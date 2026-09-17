@@ -7,7 +7,8 @@ import ListMusicMultiAdd, { type MusicMultiAddModalType as ListAddMultiType } fr
 import ListMusicAdd, { type MusicAddModalType as ListMusicAddType } from '@/components/MusicAddModal'
 import MultipleModeBar, { type MultipleModeBarType, type SelectMode } from './MultipleModeBar'
 import { clearMusicUrl, handleDislikeMusic, handlePlay, handlePlayLater, handleShare, handleShowMusicSourceDetail } from './listAction'
-import { createStyle } from '@/utils/tools'
+import { createStyle, toast } from '@/utils/tools'
+import { addTask } from '@/core/download'
 
 export interface OnlineListProps {
   onRefresh: ListProps['onRefresh']
@@ -107,6 +108,13 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
         ref={listMenuRef}
         onPlay={info => { handlePlay(info.musicInfo) }}
         onPlayLater={info => { hancelExitSelect(); handlePlayLater(info.musicInfo, info.selectedList, hancelExitSelect) }}
+        onDownload={info => {
+          const list = info.selectedList.length ? info.selectedList : [info.musicInfo]
+          void Promise.all(list.map(async musicInfo => addTask(musicInfo))).catch((error: unknown) => {
+            toast(error instanceof Error ? error.message : String(error), 'long')
+          })
+          hancelExitSelect()
+        }}
         onCopyName={info => { handleShare(info.musicInfo) }}
         onAdd={handleAddMusic}
         onMusicSourceDetail={info => { void handleShowMusicSourceDetail(info.musicInfo) }}

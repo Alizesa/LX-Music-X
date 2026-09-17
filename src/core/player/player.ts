@@ -9,6 +9,7 @@ import {
   setPlayMusicInfo,
   setMusicInfo,
   setPlayListId,
+  setPlayIndex,
 } from '@/core/player/playInfo'
 import {
   clearPlayedList,
@@ -28,6 +29,7 @@ import { checkIgnoringBatteryOptimization, checkNotificationPermission, debounce
 import { LIST_IDS } from '@/config/constant'
 import { addListMusics, removeListMusics } from '@/core/list'
 import { addDislikeInfo } from '@/core/dislikeList'
+import { clearPlayQueue, getPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
 
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
@@ -271,14 +273,9 @@ const handlePlay = async() => {
  * @param id 歌曲id
  */
 export const playListById = async(listId: string, id: string) => {
-  const prevListId = playerState.playInfo.playerListId
-  setPlayListId(listId)
-  const musicInfo = getList(listId).find(m => m.id == id)
-  if (!musicInfo) return
-  setPlayMusicInfo(listId, musicInfo)
-  if (settingState.setting['player.isAutoCleanPlayedList'] || prevListId != listId) clearPlayedList()
-  clearTempPlayeList()
-  await handlePlay()
+  const index = getList(listId).findIndex(musicInfo => musicInfo.id == id)
+  if (index < 0) return
+  await playList(listId, index)
 }
 
 /**
@@ -288,11 +285,46 @@ export const playListById = async(listId: string, id: string) => {
  */
 export const playList = async(listId: string, index: number) => {
   const prevListId = playerState.playInfo.playerListId
-  setPlayListId(listId)
-  setPlayMusicInfo(listId, getList(listId)[index])
-  if (settingState.setting['player.isAutoCleanPlayedList'] || prevListId != listId) clearPlayedList()
+  if (listId != LIST_IDS.PLAY_QUEUE) {
+    await replacePlayQueue(listId, getList(listId))
+  }
+  const item = getPlayQueue()[index]
+  if (!item) return
+  setPlayListId(LIST_IDS.PLAY_QUEUE)
+  setPlayMusicInfo(LIST_IDS.PLAY_QUEUE, item.musicInfo)
+  if (settingState.setting['player.isAutoCleanPlayedList'] || prevListId != LIST_IDS.PLAY_QUEUE) clearPlayedList()
   clearTempPlayeList()
   await handlePlay()
+}
+
+export const removeQueueMusic = async(index: number) => {
+  const currentIndex = playerState.playInfo.playerPlayIndex
+  const isCurrent = index == currentIndex && !playerState.playMusicInfo.isTempPlay
+  await removePlayQueueItem(index)
+  const queue = getPlayQueue()
+  if (!queue.length) {
+    await handleToggleStop()
+    return
+  }
+  if (isCurrent) {
+    await playList(LIST_IDS.PLAY_QUEUE, Math.min(index, queue.length - 1))
+    return
+  }
+  if (index < currentIndex) setPlayIndex(currentIndex - 1)
+}
+
+export const moveQueueMusic = async(from: number, to: number) => {
+  const currentIndex = playerState.playInfo.playerPlayIndex
+  await movePlayQueueItem(from, to)
+  if (from == currentIndex) setPlayIndex(to)
+  else if (from < currentIndex && to >= currentIndex) setPlayIndex(currentIndex - 1)
+  else if (from > currentIndex && to <= currentIndex) setPlayIndex(currentIndex + 1)
+}
+
+export const clearQueue = async() => {
+  clearTempPlayeList()
+  await clearPlayQueue()
+  await handleToggleStop()
 }
 
 const handleToggleStop = async() => {

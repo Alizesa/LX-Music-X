@@ -1,7 +1,8 @@
 // import { getPlayInfo } from '@/utils/data'
 // import { log } from '@/utils/log'
 import { init as musicSdkInit } from '@/utils/musicSdk'
-import { getUserLists, setUserList } from '@/core/list'
+import { getListMusics, getUserLists, setUserList } from '@/core/list'
+import { LIST_IDS } from '@/config/constant'
 import { setNavActiveId } from '../common'
 import { getViewPrevState } from '@/utils/data'
 import { bootLog } from '@/utils/bootLog'
@@ -30,6 +31,12 @@ export default async(appSetting: LX.AppSetting) => {
   bootLog('User list init...')
   setUserList(await getUserLists()) // 获取用户列表
   setDislikeInfo(await getDislikeInfo()) // 获取不喜欢列表
+  await getListMusics(LIST_IDS.LOCAL)
+  const { initPlayQueue } = await import('@/core/player/playQueue')
+  await initPlayQueue()
+  const { getTasks } = await import('@/core/download')
+  const { default: downloadState } = await import('@/store/download/state')
+  downloadState.tasks = [...await getTasks()]
   bootLog('User list inited.')
   setNavActiveId((await getViewPrevState()).id)
   void unlink(TEMP_FILE_PATH)

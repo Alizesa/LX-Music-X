@@ -1,4 +1,5 @@
 import { addListMusics, removeListMusics, updateListMusicPosition, updateListMusics } from '@/core/list'
+import { Alert } from 'react-native'
 import { playList, playListById, playNext } from '@/core/player/player'
 import { addTempPlayList } from '@/core/player/tempPlayList'
 import settingState from '@/store/setting/state'
@@ -12,6 +13,8 @@ import { type Metadata } from '@/components/MetadataEditModal'
 import musicSdk from '@/utils/musicSdk'
 import { getListMusicSync } from '@/utils/listManage'
 import { clearMusicUrlByMusic } from '@/utils/data'
+import { LIST_IDS } from '@/config/constant'
+import { unlink } from '@/utils/fs'
 
 export const handlePlay = (listId: SelectInfo['listId'], index: SelectInfo['index']) => {
   void playList(listId, index)
@@ -26,6 +29,40 @@ export const handlePlayLater = (listId: SelectInfo['listId'], musicInfo: SelectI
 }
 
 export const handleRemove = (listId: SelectInfo['listId'], musicInfo: SelectInfo['musicInfo'], selectedList: SelectInfo['selectedList'], onCancelSelect: () => void) => {
+  const localMusicInfos = listId == LIST_IDS.LOCAL
+    ? (selectedList.length ? selectedList : [musicInfo]).filter((info): info is LX.Music.MusicInfoLocal => info.source == 'local')
+    : []
+  if (localMusicInfos.length) {
+    Alert.alert(
+      global.i18n.t('local_music_remove_title'),
+      global.i18n.t('local_music_remove_message', { num: localMusicInfos.length }),
+      [
+        { text: global.i18n.t('cancel'), style: 'cancel' },
+        {
+          text: global.i18n.t('local_music_remove_record'),
+          onPress: () => {
+            void removeListMusics(LIST_IDS.LOCAL, localMusicInfos.map(info => info.id))
+            if (selectedList.length) onCancelSelect()
+          },
+        },
+        {
+          text: global.i18n.t('local_music_remove_file'),
+          style: 'destructive',
+          onPress: () => {
+            void (async() => {
+              const paths = localMusicInfos.map(info => info.meta.filePath)
+              await Promise.all(paths.map(async path => unlink(path).catch(() => {})))
+              await removeListMusics(LIST_IDS.LOCAL, localMusicInfos.map(info => info.id))
+              const { removeTasksByFilePaths } = await import('@/core/download')
+              await removeTasksByFilePaths(paths)
+              if (selectedList.length) onCancelSelect()
+            })()
+          },
+        },
+      ],
+    )
+    return
+  }
   if (selectedList.length) {
     void confirmDialog({
       message: global.i18n.t('list_remove_music_multi_tip', { num: selectedList.length }),

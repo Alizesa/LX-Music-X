@@ -1,10 +1,12 @@
 import { TouchableOpacity } from 'react-native'
+import { useRef } from 'react'
 import { Icon } from '@/components/common/Icon'
 import { useIsPlay } from '@/store/player/hook'
 import { useTheme } from '@/store/theme/hook'
 import { playNext, playPrev, togglePlay } from '@/core/player/player'
 import { createStyle } from '@/utils/tools'
 import { useHorizontalMode } from '@/utils/hooks'
+import PlayerPlaylist, { type PlayerPlaylistType } from '@/components/player/PlayerPlaylist'
 
 const BTN_SIZE = 24
 const handlePlayPrev = () => {
@@ -45,6 +47,19 @@ const TogglePlayBtn = () => {
   )
 }
 
+const PlaylistBtn = () => {
+  const theme = useTheme()
+  const playlistRef = useRef<PlayerPlaylistType>(null)
+  return (
+    <>
+      <TouchableOpacity style={styles.cotrolBtn} activeOpacity={0.5} onPress={() => playlistRef.current?.show()}>
+        <Icon name="list-order" color={theme['c-button-font']} size={BTN_SIZE} />
+      </TouchableOpacity>
+      <PlayerPlaylist ref={playlistRef} />
+    </>
+  )
+}
+
 export default () => {
   const isHorizontalMode = useHorizontalMode()
   return (
@@ -59,6 +74,7 @@ export default () => {
       { isHorizontalMode ? <PlayPrevBtn /> : null }
       <TogglePlayBtn />
       <PlayNextBtn />
+      <PlaylistBtn />
     </>
   )
 }

@@ -23,6 +23,12 @@ declare global {
 
       type PlayMusic = LX.Music.MusicInfo | LX.Download.ListItem
 
+      interface PlayQueueItem {
+        queueId: string
+        sourceListId: string
+        musicInfo: PlayMusic
+      }
+
       type PlayMusicInfo = Readonly<{
         /**
          * 当前播放歌曲的列表 id
@@ -31,7 +37,7 @@ declare global {
         /**
           * 当前播放歌曲的列表 id
           */
-        listId: string
+        listId: string | null
         /**
           * 是否属于 “稍后播放”
           */

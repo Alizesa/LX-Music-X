@@ -1,4 +1,5 @@
 import { addListMusics, getListMusics, removeListMusics, removeUserList, setFetchingListStatus, updateListMusics } from '@/core/list'
+import { LIST_IDS } from '@/config/constant'
 import { confirmDialog, handleReadFile, handleSaveFile, showImportTip, toast } from '@/utils/tools'
 import syncSourceList from '@/core/syncSourceList'
 import { log } from '@/utils/log'
@@ -194,11 +195,19 @@ export const handleImportMediaFile = async(listInfo: LX.List.MyListInfo, path: s
   const files = await scanAudioFiles(path)
   if (files.length) {
     const throttleUpdateMusics = createThrottleAddMusics(async(listId, musicInfos) => {
-      return updateListMusics(musicInfos.map(info => ({ id: listId, musicInfo: info })))
+      await updateListMusics(musicInfos.map(info => ({ id: listId, musicInfo: info })))
+      if (listId != LIST_IDS.LOCAL) {
+        await updateListMusics(musicInfos.map(info => ({ id: LIST_IDS.LOCAL, musicInfo: info })))
+      }
     }, async(listId, errorPath) => {
-      return removeListMusics(listId, errorPath)
+      await removeListMusics(listId, errorPath)
+      if (listId != LIST_IDS.LOCAL) await removeListMusics(LIST_IDS.LOCAL, errorPath)
     }, listInfo.id)
-    await addListMusics(listInfo.id, files.map(buildLocalMusicInfoByFilePath), settingState.setting['list.addMusicLocationType'])
+    const imported = files.map(buildLocalMusicInfoByFilePath)
+    await addListMusics(listInfo.id, imported, settingState.setting['list.addMusicLocationType'])
+    if (listInfo.id != LIST_IDS.LOCAL) {
+      await addListMusics(LIST_IDS.LOCAL, imported, settingState.setting['list.addMusicLocationType'])
+    }
     toast(global.i18n.t('list_select_local_file_temp_add_tip', { total: files.length }), 'long')
     await handleUpdateMusics(files.map(f => f.path), throttleUpdateMusics)
   } else toast(global.i18n.t('list_select_local_file_empty_tip'), 'long')

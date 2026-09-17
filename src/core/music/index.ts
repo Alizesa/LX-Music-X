@@ -16,7 +16,10 @@ import {
   getMusicUrl as getLocalMusicUrl,
   getPicUrl as getLocalPicUrl,
   getLyricInfo as getLocalLyricInfo,
+  findLocalMusicInfo,
 } from './local'
+import { getLocalFilePath } from '@/utils/music'
+import { LIST_IDS } from '@/config/constant'
 
 
 export const getMusicUrl = async({
@@ -37,6 +40,13 @@ export const getMusicUrl = async({
   } else if (musicInfo.source == 'local') {
     return getLocalMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource })
   } else {
+    if (!isRefresh) {
+      const localMusicInfo = findLocalMusicInfo(musicInfo)
+      if (localMusicInfo) {
+        const localPath = await getLocalFilePath(localMusicInfo)
+        if (localPath) return localPath
+      }
+    }
     return getOnlineMusicUrl({ musicInfo, isRefresh, quality, onToggleSource, allowToggleSource })
   }
 }
@@ -57,6 +67,10 @@ export const getPicPath = async({
   } else if (musicInfo.source == 'local') {
     return getLocalPicUrl({ musicInfo, isRefresh, listId, onToggleSource })
   } else {
+    if (!isRefresh) {
+      const localMusicInfo = findLocalMusicInfo(musicInfo)
+      if (localMusicInfo) return getLocalPicUrl({ musicInfo: localMusicInfo, isRefresh: false, listId: LIST_IDS.LOCAL, onToggleSource })
+    }
     return getOnlinePicUrl({ musicInfo, isRefresh, listId, onToggleSource })
   }
 }
@@ -75,6 +89,10 @@ export const getLyricInfo = async({
   } else if (musicInfo.source == 'local') {
     return getLocalLyricInfo({ musicInfo, isRefresh, onToggleSource })
   } else {
+    if (!isRefresh) {
+      const localMusicInfo = findLocalMusicInfo(musicInfo)
+      if (localMusicInfo) return getLocalLyricInfo({ musicInfo: localMusicInfo, isRefresh: false, onToggleSource })
+    }
     return getOnlineLyricInfo({ musicInfo, isRefresh, onToggleSource })
   }
 }

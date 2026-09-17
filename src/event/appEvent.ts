@@ -26,7 +26,7 @@ export class AppEvent extends Event {
   /**
    * 我的列表更新
    */
-  mylistUpdated(lists: Array<LX.List.MyDefaultListInfo | LX.List.MyLoveListInfo | LX.List.UserListInfo>) {
+  mylistUpdated(lists: LX.List.MyListInfo[]) {
     this.emit('mylistUpdated', lists)
   }
 
@@ -151,6 +151,14 @@ export class AppEvent extends Event {
   // 下载列表改变事件
   downloadListUpdate() {
     this.emit('downloadListUpdate')
+  }
+
+  playQueueUpdate(queue: LX.Player.PlayQueueItem[]) {
+    this.emit('playQueueUpdate', queue)
+  }
+
+  qqMusicAccountUpdated(user: LX.QQMusic.UserInfo | null) {
+    this.emit('qqMusicAccountUpdated', user)
   }
 
   // 列表里的音乐信息改变事件

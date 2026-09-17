@@ -1,6 +1,7 @@
 import { getData, saveData, getAllKeys, removeDataMultiple, saveDataMultiple, removeData, getDataMultiple } from '@/plugins/storage'
 import { DEFAULT_SETTING, LIST_IDS, storageDataPrefix, type NAV_ID_Type } from '@/config/constant'
 import { throttle } from './common'
+import { getSecureItem, removeSecureItem, setSecureItem } from './nativeModules/secureStorage'
 // import { gzip, ungzip } from '@/utils/nativeModules/gzip'
 // import { readFile, writeFile, temporaryDirectoryPath, unlink } from '@/utils/fs'
 // import { isNotificationsEnabled, openNotificationPermissionActivity, shareText } from '@/utils/nativeModules/utils'
@@ -29,6 +30,11 @@ const dislikeListPrefix = storageDataPrefix.dislikeList
 const userApiPrefix = storageDataPrefix.userApi
 const openStoragePathPrefix = storageDataPrefix.openStoragePath
 const selectedManagedFolderPrefix = storageDataPrefix.selectedManagedFolder
+const downloadTasksKey = storageDataPrefix.downloadTasks
+const downloadPathKey = storageDataPrefix.downloadPath
+const playQueueKey = storageDataPrefix.playQueue
+const qqMusicCookieKey = storageDataPrefix.qqMusicCookie
+const qqMusicUserKey = storageDataPrefix.qqMusicUser
 
 // const defaultListKey = listPrefix + 'default'
 // const loveListKey = listPrefix + 'love'
@@ -449,6 +455,45 @@ export const getSelectedManagedFolder = async() => {
   if (selectedManagedFolder != uri) selectedManagedFolder = uri
   return selectedManagedFolder
 }
+
+export const getDownloadTasks = async(): Promise<LX.Download.DownloadTask[]> => {
+  return await getData<LX.Download.DownloadTask[]>(downloadTasksKey) ?? []
+}
+
+export const saveDownloadTasks = async(tasks: LX.Download.DownloadTask[]) => {
+  await saveData(downloadTasksKey, tasks)
+}
+
+export const getDownloadPath = async(): Promise<LX.Download.DownloadDirectory | null> => {
+  const value = await getData<LX.Download.DownloadDirectory | string>(downloadPathKey)
+  if (!value) return null
+  return typeof value == 'string' ? { uri: value, name: value } : value
+}
+
+export const saveDownloadPath = async(path: LX.Download.DownloadDirectory) => saveData(downloadPathKey, path)
+
+export const getPlayQueue = async() => await getData<LX.Player.PlayQueueItem[]>(playQueueKey) ?? []
+export const savePlayQueue = async(queue: LX.Player.PlayQueueItem[]) => saveData(playQueueKey, queue)
+
+export const getQQMusicCookie = async() => {
+  const cookie = await getSecureItem(qqMusicCookieKey)
+  if (cookie) return cookie
+  const legacyCookie = await getData<string>(qqMusicCookieKey)
+  if (!legacyCookie) return null
+  await setSecureItem(qqMusicCookieKey, legacyCookie)
+  await removeData(qqMusicCookieKey)
+  return legacyCookie
+}
+export const saveQQMusicCookie = async(cookie: string) => {
+  await setSecureItem(qqMusicCookieKey, cookie)
+  await removeData(qqMusicCookieKey)
+}
+export const removeQQMusicCookie = async() => {
+  await removeSecureItem(qqMusicCookieKey)
+  await removeData(qqMusicCookieKey)
+}
+export const getQQMusicUser = async() => getData<LX.QQMusic.UserInfo>(qqMusicUserKey)
+export const saveQQMusicUser = async(user: LX.QQMusic.UserInfo | null) => user ? saveData(qqMusicUserKey, user) : removeData(qqMusicUserKey)
 
 export const getSyncAuthKey = async(serverId: string) => {
   const keys = await getData<Record<string, LX.Sync.KeyInfo>>(syncAuthKeyPrefix)

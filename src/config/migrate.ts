@@ -20,6 +20,7 @@ interface OldUserListInfo {
   let listDataAll: LX.List.ListDataFull = {
     defaultList: [],
     loveList: [],
+    localList: [],
     userList: [],
     tempList: [],
   }
@@ -119,6 +120,7 @@ export const migrateListData = async() => {
   let listDataAll: LX.List.ListDataFull = {
     defaultList: [],
     loveList: [],
+    localList: [],
     userList: [],
     tempList: [],
   }
@@ -135,7 +137,7 @@ export const migrateListData = async() => {
   }
   listDataOverwrite(listDataAll)
   await saveUserList(userLists)
-  const allListIds = [LIST_IDS.DEFAULT, LIST_IDS.LOVE, ...userLists.map(l => l.id)]
+  const allListIds = [LIST_IDS.DEFAULT, LIST_IDS.LOVE, LIST_IDS.LOCAL, ...userLists.map(l => l.id)]
   await saveListMusics([...allListIds.map(id => ({ id, musics: allMusicList.get(id) as LX.List.ListMusics }))])
   await removeData(storageDataPrefixOld.listSort)
 

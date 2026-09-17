@@ -10,6 +10,8 @@ export const SPLIT_CHAR = {
 export const LIST_IDS = {
   DEFAULT: 'default',
   LOVE: 'love',
+  LOCAL: 'local',
+  PLAY_QUEUE: 'play_queue',
   TEMP: 'temp',
   DOWNLOAD: 'download',
   PLAY_LATER: null,
@@ -57,6 +59,9 @@ export const storageDataPrefix = {
 
   openStoragePath: '@open_storage_path',
   selectedManagedFolder: '@selected_managed_folder',
+  downloadTasks: '@download_tasks',
+  downloadPath: '@download_path',
+  playQueue: '@play_queue',
   notificationTipEnable: '@notification_tip_enable',
   ignoringBatteryOptimizationTipEnable: '@ignoring_battery_optimization_tip_enable',
 
@@ -78,6 +83,8 @@ export const storageDataPrefix = {
   dislikeList: '@dislike_list',
 
   userApi: '@user_api__',
+  qqMusicCookie: '@qq_music_cookie',
+  qqMusicUser: '@qq_music_user',
 } as const
 
 // v0.x.x 版本的 data keys
@@ -95,7 +102,7 @@ export const storageDataPrefixOld = {
   notificationTipEnable: '@notification_tip_enable',
 } as const
 
-export const APP_PROVIDER_NAME = 'cn.toside.music.mobile.provider'
+export const APP_PROVIDER_NAME = 'io.github.alizesa.lxmusicx.provider'
 
 
 export const NAV_MENUS = [
@@ -103,7 +110,8 @@ export const NAV_MENUS = [
   { id: 'nav_songlist', icon: 'album' },
   { id: 'nav_top', icon: 'leaderboard' },
   { id: 'nav_love', icon: 'love' },
-  // { id: 'download', icon: 'download-2' },
+  { id: 'nav_qq', icon: 'album' },
+  { id: 'nav_download', icon: 'download-2' },
   { id: 'nav_setting', icon: 'setting' },
 ] as const
 

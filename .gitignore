@@ -36,6 +36,7 @@ keystore.properties
 # node.js
 #
 node_modules/
+.reference-lxwalnut/
 npm-debug.log
 yarn-error.log
 
@@ -59,6 +60,9 @@ buck-out/
 
 # Bundle artifact
 *.jsbundle
+index.android.bundle
+/res/
+android/app/lx-music-x-release.keystore
 
 # Ruby / CocoaPods
 /ios/Pods/

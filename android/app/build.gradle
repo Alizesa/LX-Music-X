@@ -110,8 +110,8 @@ android {
 
     namespace "cn.toside.music.mobile"
     defaultConfig {
-        applicationId "cn.toside.music.mobile"
-        minSdkVersion rootProject.ext.minSdkVersion
+        applicationId "io.github.alizesa.lxmusicx"
+        minSdkVersion 23
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode verCode
         versionName verName
@@ -134,13 +134,15 @@ android {
                 keyPassword MYAPP_UPLOAD_KEY_PASSWORD
             } else {
                 def keystorePropertiesFile = rootProject.file("keystore.properties")
-                def keystoreProperties = new Properties()
-                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+                if (keystorePropertiesFile.exists()) {
+                    def keystoreProperties = new Properties()
+                    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 
-                storeFile file(keystoreProperties['storeFile'])
-                storePassword keystoreProperties['storePassword']
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
+                    storeFile file(keystoreProperties['storeFile'])
+                    storePassword keystoreProperties['storePassword']
+                    keyAlias keystoreProperties['keyAlias']
+                    keyPassword keystoreProperties['keyPassword']
+                }
             }
         }
         debug {
@@ -187,6 +189,16 @@ android {
     }
 }
 
+gradle.taskGraph.whenReady { graph ->
+    def releaseTaskRequested = graph.allTasks.any { task ->
+        task.project == project && task.name.toLowerCase().contains('release') &&
+                (task.name.startsWith('assemble') || task.name.startsWith('bundle') || task.name.startsWith('package'))
+    }
+    if (releaseTaskRequested && android.signingConfigs.release.storeFile == null) {
+        throw new GradleException('Release signing is not configured. Provide MYAPP_UPLOAD_* properties or android/keystore.properties.')
+    }
+}
+
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
@@ -194,6 +206,8 @@ dependencies {
     // implementation "androidx.javascriptengine:javascriptengine:1.0.0-alpha07"
     // implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     implementation 'wang.harlon.quickjs:wrapper-android:2.4.0'
+    implementation 'androidx.work:work-runtime:2.9.1'
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
   if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

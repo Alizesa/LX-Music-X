@@ -83,7 +83,7 @@ export class ListEvent extends Event {
     // await checkUpdateList(changedIds)
     const removedList = oldIds.filter(id => !allMusicList.has(id))
     if (removedList.length) await removeListMusics(removedList)
-    const allListIds = [LIST_IDS.DEFAULT, LIST_IDS.LOVE, ...userLists.map(l => l.id)]
+    const allListIds = [LIST_IDS.DEFAULT, LIST_IDS.LOVE, LIST_IDS.LOCAL, ...userLists.map(l => l.id)]
     if (changedIds.includes(LIST_IDS.TEMP)) allListIds.push(LIST_IDS.TEMP)
     await saveListMusics([...allListIds.map(id => ({ id, musics: allMusicList.get(id) as LX.List.ListMusics }))])
 

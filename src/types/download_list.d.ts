@@ -6,9 +6,11 @@
 
 declare namespace LX {
   namespace Download {
-    type DownloadTaskStatus = 'run'
+    type DownloadTaskStatus = 'resolving'
+    | 'run'
     | 'waiting'
     | 'pause'
+    | 'finalizing'
     | 'error'
     | 'completed'
 
@@ -61,6 +63,25 @@ declare namespace LX {
     interface saveDownloadMusicInfo {
       list: ListItem[]
       addMusicLocationType: LX.AddMusicLocationType
+    }
+
+    interface DownloadTask {
+      id: string
+      musicInfo: LX.Music.MusicInfoOnline
+      quality: LX.Quality
+      status: DownloadTaskStatus
+      progress: ProgressInfo
+      fileName: string
+      filePath?: string
+      directoryUri: string
+      nativeId?: string
+      error?: string
+      createdAt: number
+    }
+
+    interface DownloadDirectory {
+      uri: string
+      name: string
     }
   }
 }

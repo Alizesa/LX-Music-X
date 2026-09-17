@@ -10,7 +10,7 @@ import { handleFileMusicAction, handleFileJSAction, handleFileLXMCAction } from 
 const handleLinkAction = async(link: string) => {
   // console.log(link)
   const [url, search] = link.split('?')
-  const [type, action, ...paths] = url.replace('lxmusic://', '').split('/')
+  const [type, action, ...paths] = url.replace('lxmusicx://', '').split('/')
   const params: {
     paths: string[]
     data?: string
@@ -70,7 +70,7 @@ const handleFileAction = async(link: string) => {
 
 
 const runLinkAction = async(link: string) => {
-  if (link.startsWith('lxmusic://')) {
+  if (link.startsWith('lxmusicx://')) {
     try {
       await handleLinkAction(link)
     } catch (err: any) {

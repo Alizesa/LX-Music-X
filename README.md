@@ -114,4 +114,14 @@
 
 ---
 
+## LX Music X
+
+本分支仅构建 Android 版本，应用 ID 为 `io.github.alizesa.lxmusicx`，可与官方 LX Music 共存。首次下载前请在“下载管理”中通过系统文件选择器授予一个公共目录的持久访问权限。
+
+### GitHub Actions 发行
+
+推送 `v*` 标签会触发 `.github/workflows/android-build.yml`，生成各 ABI APK、通用 APK 和 `SHA256SUMS.txt`，并创建 GitHub Release。仓库需要配置以下 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_ALIAS`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_PASSWORD`。正式签名文件只应生成并保存一份，丢失后无法覆盖升级已发布的 APK。
+
+---
+
 若对此有疑问请 mail to: lyswhut+qq.com (请将 `+` 替换成 `@`)

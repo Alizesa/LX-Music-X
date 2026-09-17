@@ -32,11 +32,17 @@ declare namespace LX {
       }
     }
 
-    type MyListInfo = MyDefaultListInfo | MyLoveListInfo | UserListInfo
+    interface MyLocalListInfo {
+      id: 'local'
+      name: '本地音乐'
+    }
+
+    type MyListInfo = MyDefaultListInfo | MyLoveListInfo | MyLocalListInfo | UserListInfo
 
     interface MyAllList {
       defaultList: MyDefaultListInfo
       loveList: MyLoveListInfo
+      localList: MyLocalListInfo
       userList: UserListInfo[]
       tempList: MyTempListInfo
     }
@@ -134,6 +140,7 @@ declare namespace LX {
     interface ListDataFull {
       defaultList: LX.Music.MusicInfo[]
       loveList: LX.Music.MusicInfo[]
+      localList?: LX.Music.MusicInfo[]
       userList: UserListInfoFull[]
       tempList: LX.Music.MusicInfo[]
     }

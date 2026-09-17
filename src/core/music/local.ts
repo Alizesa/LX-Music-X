@@ -15,6 +15,8 @@ import {
 import { getLocalFilePath } from '@/utils/music'
 import { readLyric, readPic } from '@/utils/localMediaMetadata'
 import { stat } from '@/utils/fs'
+import { getListMusicSync } from '@/utils/listManage'
+import { LIST_IDS } from '@/config/constant'
 
 const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handler: (infos: LX.Music.MusicInfoOnline[]) => Promise<T>) => {
   let result: LX.Music.MusicInfoOnline[] = []
@@ -64,6 +66,38 @@ const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handl
   }
 
   throw new Error('source not found')
+}
+
+const normalize = (value: string) => value
+  .normalize('NFKC')
+  .toLocaleLowerCase()
+  .replace(/[\s\p{P}\p{S}]+/gu, '')
+
+const intervalToSeconds = (interval: string | null) => {
+  if (!interval) return null
+  const parts = interval.split(':').map(Number)
+  if (parts.some(Number.isNaN)) return null
+  return parts.reduce((total, value) => total * 60 + value, 0)
+}
+
+export const findLocalMusicInfo = (musicInfo: LX.Music.MusicInfoOnline) => {
+  const localList = getListMusicSync(LIST_IDS.LOCAL).filter((item): item is LX.Music.MusicInfoLocal => item.source == 'local')
+  const bySourceId = localList.find(item => item.meta.toggleMusicInfo?.id == musicInfo.id && item.meta.toggleMusicInfo?.source == musicInfo.source)
+  if (bySourceId) return bySourceId
+  const name = normalize(musicInfo.name)
+  const singer = normalize(musicInfo.singer)
+  const album = normalize(musicInfo.meta.albumName)
+  const duration = intervalToSeconds(musicInfo.interval)
+  if (!name || !singer || !album || duration == null) return undefined
+  const candidates = localList.filter(item => {
+    const localDuration = intervalToSeconds(item.interval)
+    return normalize(item.name) == name &&
+      normalize(item.singer) == singer &&
+      normalize(item.meta.albumName) == album &&
+      localDuration != null &&
+      Math.abs(localDuration - duration) <= 3
+  })
+  return candidates.length == 1 ? candidates[0] : undefined
 }
 
 export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {

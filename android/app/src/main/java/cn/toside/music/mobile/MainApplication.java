@@ -11,6 +11,8 @@ import java.util.List;
 
 import cn.toside.music.mobile.cache.CachePackage;
 import cn.toside.music.mobile.crypto.CryptoPackage;
+import cn.toside.music.mobile.download.DownloadPackage;
+import cn.toside.music.mobile.securestorage.SecureStoragePackage;
 import cn.toside.music.mobile.lyric.LyricPackage;
 import cn.toside.music.mobile.userApi.UserApiPackage;
 import cn.toside.music.mobile.utils.UtilsPackage;
@@ -34,6 +36,8 @@ public class MainApplication extends NavigationApplication {
           packages.add(new LyricPackage());
           packages.add(new UtilsPackage());
           packages.add(new CryptoPackage());
+          packages.add(new DownloadPackage());
+          packages.add(new SecureStoragePackage());
           packages.add(new UserApiPackage());
           return packages;
         }

@@ -6,6 +6,7 @@ export const useMyList = () => {
   const [lists, setList] = useState(state.allList)
   lists[0].name = global.i18n.t('list_name_default')
   lists[1].name = global.i18n.t('list_name_love')
+  lists[2].name = global.i18n.t('list_name_local')
 
   useEffect(() => {
     const handleConfigUpdate = (keys: Array<keyof LX.AppSetting>) => {
@@ -13,6 +14,7 @@ export const useMyList = () => {
       setList((lists) => {
         lists[0].name = global.i18n.t('list_name_default')
         lists[1].name = global.i18n.t('list_name_love')
+        lists[2].name = global.i18n.t('list_name_local')
         return [...lists]
       })
     }
