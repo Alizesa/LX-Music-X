@@ -131,6 +131,7 @@
   "qq_load_failed": "QQ 音乐数据加载失败",
   "qq_daily_recommend": "每日推荐",
   "qq_my_playlists": "我的歌单",
+  "qq_refresh": "刷新",
   "qq_import_local": "加入本地歌单",
   "qq_import_success": "已加入本地歌单",
   "qq_import_failed": "歌单导入失败",

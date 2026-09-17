@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, FlatList, TouchableOpacity, View } from 'react-native'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
-import Button from '@/components/common/Button'
 import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMusicLoginModal'
 import QQMusicCookieModal, { type QQMusicCookieModalType } from '@/components/QQMusicCookieModal'
 import { useTheme } from '@/store/theme/hook'
@@ -12,9 +11,10 @@ import { initQQMusicRecommendAutoRefresh } from '@/core/qqMusicRecommend'
 import { createList, setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { LIST_IDS } from '@/config/constant'
+import { getQQMusicDailyRecommendCache, getQQMusicPlaylistsCache, saveQQMusicDailyRecommendCache, saveQQMusicPlaylistsCache } from '@/utils/data'
 import { useI18n } from '@/lang'
 
-type LoadState = 'idle' | 'loading' | 'error'
+const DAILY_RECOMMEND_LIST_ID = 'qq_daily_recommend'
 
 const ActionButton = ({ icon, label, onPress, disabled = false }: { icon: string, label: string, onPress: () => void, disabled?: boolean }) => {
   const theme = useTheme()
@@ -35,13 +35,19 @@ export default () => {
   const [user, setUser] = useState<LX.QQMusic.UserInfo | null>(null)
   const [playlists, setPlaylists] = useState<LX.QQMusic.PlaylistInfo[]>([])
   const [recommendations, setRecommendations] = useState<LX.Music.MusicInfoOnline[]>([])
-  const [playlistState, setPlaylistState] = useState<LoadState>('idle')
-  const [recommendState, setRecommendState] = useState<LoadState>('idle')
+  const [refreshing, setRefreshing] = useState(false)
+  const [playing, setPlaying] = useState(false)
 
   useEffect(() => {
     void getQQMusicSession().then(session => {
       setCookie(session.cookie)
       setUser(session.user)
+      // 歌单与推荐都直接读本地缓存，进页面不发任何网络请求
+      if (!session.cookie) return
+      void Promise.all([getQQMusicPlaylistsCache(), getQQMusicDailyRecommendCache()]).then(([cachedPlaylists, cachedRecommendations]) => {
+        setPlaylists(cachedPlaylists)
+        setRecommendations(cachedRecommendations)
+      })
     })
     const handleAccountUpdate = (nextUser: LX.QQMusic.UserInfo | null) => {
       setUser(nextUser)
@@ -57,29 +63,50 @@ export default () => {
     return false
   }, [cookie, user])
 
-  const loadPlaylists = useCallback(async() => {
+  // 唯一的联网入口，只由用户点「刷新」触发
+  const refresh = useCallback(async() => {
     if (!ensureLogin()) return
-    setPlaylistState('loading')
+    setRefreshing(true)
     try {
-      setPlaylists(await getQQMusicPlaylists(cookie))
-      setPlaylistState('idle')
+      const [nextPlaylists, nextRecommendations] = await Promise.all([
+        getQQMusicPlaylists(cookie),
+        getQQMusicDailyRecommendations(cookie),
+      ])
+      setPlaylists(nextPlaylists)
+      setRecommendations(nextRecommendations)
+      await Promise.all([
+        saveQQMusicPlaylistsCache(nextPlaylists),
+        saveQQMusicDailyRecommendCache(nextRecommendations),
+      ])
     } catch (error: unknown) {
-      setPlaylistState('error')
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+    } finally {
+      setRefreshing(false)
     }
   }, [cookie, ensureLogin, t])
 
-  const loadRecommendations = useCallback(async() => {
+  const playRecommendations = useCallback(async() => {
     if (!ensureLogin()) return
-    setRecommendState('loading')
+    setPlaying(true)
     try {
-      setRecommendations(await getQQMusicDailyRecommendations(cookie))
-      setRecommendState('idle')
+      let songs = recommendations
+      // 有缓存就直接播，零网络请求；只有从未拉取过才联网
+      if (!songs.length) {
+        songs = await getQQMusicDailyRecommendations(cookie)
+        if (!songs.length) throw new Error(t('qq_load_failed'))
+        setRecommendations(songs)
+        await saveQQMusicDailyRecommendCache(songs)
+      }
+      await setTempList(DAILY_RECOMMEND_LIST_ID, songs)
+      // 播放过程中接近播完时自动续下一批，不再只是循环这 20 首
+      initQQMusicRecommendAutoRefresh()
+      void playList(LIST_IDS.TEMP, 0)
     } catch (error: unknown) {
-      setRecommendState('error')
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+    } finally {
+      setPlaying(false)
     }
-  }, [cookie, ensureLogin, t])
+  }, [cookie, ensureLogin, recommendations, t])
 
   const importPlaylist = async(info: LX.QQMusic.PlaylistInfo) => {
     if (!ensureLogin()) return
@@ -92,20 +119,6 @@ export default () => {
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_import_failed'), 'long')
     }
-  }
-
-  const importRecommendations = async() => {
-    if (!recommendations.length) return
-    await createList({ name: `QQ · ${t('qq_daily_recommend')}`, source: 'tx', list: recommendations })
-    toast(t('qq_import_success'))
-  }
-
-  const playRecommendations = async(index: number) => {
-    if (!recommendations.length) return
-    await setTempList('qq_daily_recommend', recommendations)
-    // 播放过程中接近播完时自动续下一批，不再只是循环这 20 首
-    initQQMusicRecommendAutoRefresh()
-    void playList(LIST_IDS.TEMP, index)
   }
 
   const logout = () => {
@@ -126,20 +139,9 @@ export default () => {
         <ActionButton icon={user ? 'exit' : 'play-outline'} label={user ? t('qq_logout') : t('qq_login')} onPress={user ? logout : () => loginRef.current?.show()} />
       </View>
       <View style={styles.toolbar}>
-        <ActionButton icon="available_updates" label={t('qq_daily_recommend')} onPress={() => { void loadRecommendations() }} disabled={!user || recommendState == 'loading'} />
-        <ActionButton icon="album" label={t('qq_my_playlists')} onPress={() => { void loadPlaylists() }} disabled={!user || playlistState == 'loading'} />
+        <ActionButton icon="play-outline" label={t('qq_daily_recommend')} onPress={() => { void playRecommendations() }} disabled={!user || playing} />
+        <ActionButton icon="available_updates" label={t('qq_refresh')} onPress={() => { void refresh() }} disabled={!user || refreshing} />
       </View>
-      {recommendations.length
-        ? <View style={styles.section}>
-            <View style={styles.sectionHeader}><Text size={16}>{t('qq_daily_recommend')}</Text><Button onPress={() => { void importRecommendations() }}><Text color={theme['c-primary-font']}>{t('qq_import_local')}</Text></Button></View>
-            <FlatList
-              data={recommendations}
-              keyExtractor={item => item.id}
-              style={styles.songList}
-              renderItem={({ item, index }) => <TouchableOpacity style={styles.songItem} onPress={() => { void playRecommendations(index) }}><Text style={styles.songIndex} color={theme['c-font-label']}>{index + 1}</Text><View style={styles.songInfo}><Text numberOfLines={1}>{item.name}</Text><Text size={12} color={theme['c-font-label']} numberOfLines={1}>{item.singer}</Text></View></TouchableOpacity>}
-            />
-          </View>
-        : null}
       <FlatList
         data={playlists}
         keyExtractor={item => item.id}
@@ -160,12 +162,6 @@ const styles = createStyle({
   toolbar: { flexDirection: 'row', paddingHorizontal: 14, paddingBottom: 10 },
   actionButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 4, marginRight: 8 },
   actionLabel: { marginLeft: 5 },
-  section: { flex: 1, minHeight: 200 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 8 },
-  songList: { flex: 1 },
-  songItem: { flexDirection: 'row', alignItems: 'center', minHeight: 50, paddingHorizontal: 14 },
-  songIndex: { width: 28, textAlign: 'center' },
-  songInfo: { flex: 1, paddingLeft: 8 },
   playlist: { flex: 1 },
   playlistItem: { flexDirection: 'row', alignItems: 'center', minHeight: 58, paddingHorizontal: 14, borderBottomWidth: 1 },
   playlistInfo: { flex: 1 },

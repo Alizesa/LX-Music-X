@@ -35,6 +35,8 @@ const downloadPathKey = storageDataPrefix.downloadPath
 const playQueueKey = storageDataPrefix.playQueue
 const qqMusicCookieKey = storageDataPrefix.qqMusicCookie
 const qqMusicUserKey = storageDataPrefix.qqMusicUser
+const qqMusicPlaylistsKey = storageDataPrefix.qqMusicPlaylists
+const qqMusicDailyRecommendKey = storageDataPrefix.qqMusicDailyRecommend
 
 // const defaultListKey = listPrefix + 'default'
 // const loveListKey = listPrefix + 'love'
@@ -494,6 +496,15 @@ export const removeQQMusicCookie = async() => {
 }
 export const getQQMusicUser = async() => getData<LX.QQMusic.UserInfo>(qqMusicUserKey)
 export const saveQQMusicUser = async(user: LX.QQMusic.UserInfo | null) => user ? saveData(qqMusicUserKey, user) : removeData(qqMusicUserKey)
+
+// 歌单与每日推荐都缓存到本地：进页面直接显示、点击即播，不产生网络请求，
+// 只有用户手动刷新时才重新拉取。因此缓存里没有时间戳，也就没有过期逻辑。
+export const getQQMusicPlaylistsCache = async() => await getData<LX.QQMusic.PlaylistInfo[]>(qqMusicPlaylistsKey) ?? []
+export const saveQQMusicPlaylistsCache = async(list: LX.QQMusic.PlaylistInfo[]) => saveData(qqMusicPlaylistsKey, list)
+export const removeQQMusicPlaylistsCache = async() => removeData(qqMusicPlaylistsKey)
+export const getQQMusicDailyRecommendCache = async() => await getData<LX.Music.MusicInfoOnline[]>(qqMusicDailyRecommendKey) ?? []
+export const saveQQMusicDailyRecommendCache = async(list: LX.Music.MusicInfoOnline[]) => saveData(qqMusicDailyRecommendKey, list)
+export const removeQQMusicDailyRecommendCache = async() => removeData(qqMusicDailyRecommendKey)
 
 export const getSyncAuthKey = async(serverId: string) => {
   const keys = await getData<Record<string, LX.Sync.KeyInfo>>(syncAuthKeyPrefix)

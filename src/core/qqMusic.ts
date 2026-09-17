@@ -1,5 +1,13 @@
 import { httpFetch } from '@/utils/request'
-import { getQQMusicCookie, getQQMusicUser, saveQQMusicCookie, saveQQMusicUser, removeQQMusicCookie } from '@/utils/data'
+import {
+  getQQMusicCookie,
+  getQQMusicUser,
+  saveQQMusicCookie,
+  saveQQMusicUser,
+  removeQQMusicCookie,
+  removeQQMusicPlaylistsCache,
+  removeQQMusicDailyRecommendCache,
+} from '@/utils/data'
 import { toNewMusicInfo } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
 import CookieManager from '@react-native-cookies/cookies'
@@ -213,12 +221,21 @@ export const saveQQMusicSession = async(cookie: string) => {
   const normalizedCookie = serializeQQMusicCookie(cookies)
   const user = await getQQMusicUserInfo(normalizedCookie)
   if (!user.uin) user.uin = uin
+  // 换了账号就把上一个号的歌单/推荐缓存清掉，否则新号会先看到旧号的数据
+  const prevUser = await getQQMusicUser()
+  if (prevUser?.uin && prevUser.uin !== (user.uin || uin)) await clearQQMusicDataCache()
   await saveQQMusicCookie(normalizedCookie)
   await saveQQMusicUser(user)
   return user
 }
 
+const clearQQMusicDataCache = async() => {
+  await removeQQMusicPlaylistsCache()
+  await removeQQMusicDailyRecommendCache()
+}
+
 export const clearQQMusicSession = async() => {
+  await clearQQMusicDataCache()
   await removeQQMusicCookie()
   await saveQQMusicUser(null)
   try {

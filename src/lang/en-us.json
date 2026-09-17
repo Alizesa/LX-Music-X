@@ -131,6 +131,7 @@
   "qq_load_failed": "Failed to load QQ Music data",
   "qq_daily_recommend": "Daily recommendations",
   "qq_my_playlists": "My playlists",
+  "qq_refresh": "Refresh",
   "qq_import_local": "Add to local lists",
   "qq_import_success": "Added to local lists",
   "qq_import_failed": "Failed to import playlist",

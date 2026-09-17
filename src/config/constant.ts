@@ -85,6 +85,8 @@ export const storageDataPrefix = {
   userApi: '@user_api__',
   qqMusicCookie: '@qq_music_cookie',
   qqMusicUser: '@qq_music_user',
+  qqMusicPlaylists: '@qq_music_playlists',
+  qqMusicDailyRecommend: '@qq_music_daily_recommend',
 } as const
 
 // v0.x.x 版本的 data keys
