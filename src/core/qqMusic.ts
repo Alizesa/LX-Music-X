@@ -6,6 +6,7 @@ import CookieManager from '@react-native-cookies/cookies'
 
 const QQ_API = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
 const QQ_REFERER = 'https://y.qq.com/'
+const QQ_COOKIE_URLS = ['https://y.qq.com/', 'https://qq.com/', 'https://c.y.qq.com/', 'https://u.y.qq.com/']
 
 const getCookieValue = (cookie: string, name: string) => {
   const match = new RegExp(`(?:^|;\\s*)${name}=([^;]*)`).exec(cookie)
@@ -135,12 +136,14 @@ export const clearQQMusicSession = async() => {
   await removeQQMusicCookie()
   await saveQQMusicUser(null)
   try {
-    const cookies = await CookieManager.get(QQ_REFERER, true)
-    await Promise.all(Object.values(cookies).map(async cookie => CookieManager.set(QQ_REFERER, {
-      ...cookie,
-      value: '',
-      expires: '1970-01-01T00:00:00.000Z',
-    }, true)))
+    await Promise.all(QQ_COOKIE_URLS.map(async url => {
+      const cookies = await CookieManager.get(url, true)
+      await Promise.all(Object.values(cookies).map(async cookie => CookieManager.set(url, {
+        ...cookie,
+        value: '',
+        expires: '1970-01-01T00:00:00.000Z',
+      }, true)))
+    }))
     await CookieManager.flush()
   } catch {}
 }

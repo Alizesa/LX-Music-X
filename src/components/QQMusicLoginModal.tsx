@@ -11,6 +11,7 @@ import { isQQMusicCookie, saveQQMusicSession } from '@/core/qqMusic'
 import { toast } from '@/utils/tools'
 
 const LOGIN_URL = 'https://y.qq.com/portal/profile.html'
+const COOKIE_URLS = [LOGIN_URL, 'https://qq.com/', 'https://c.y.qq.com/', 'https://u.y.qq.com/']
 const WebViewComponent = WebView as any
 const getErrorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback
 
@@ -40,8 +41,8 @@ export default forwardRef<QQMusicLoginModalType, { onLoggedIn?: (user: LX.QQMusi
     try {
       let cookie = ''
       try {
-        const cookies = await CookieManager.get(url, true)
-        cookie = Object.values(cookies).map(item => `${item.name}=${item.value}`).join('; ')
+        const cookieMaps = await Promise.all(COOKIE_URLS.map(cookieUrl => CookieManager.get(cookieUrl, true)))
+        cookie = cookieMaps.flatMap(cookies => Object.values(cookies)).map(item => `${item.name}=${item.value}`).filter((item, index, all) => all.indexOf(item) === index).join('; ')
       } catch {}
       if (!cookie) {
         webViewRef.current?.injectJavaScript('window.ReactNativeWebView.postMessage(document.cookie); true;')
@@ -81,6 +82,10 @@ export default forwardRef<QQMusicLoginModalType, { onLoggedIn?: (user: LX.QQMusi
     if (state.url.includes('y.qq.com') && !state.url.includes('/login')) void readCookie(state.url)
   }
 
+  const handleShouldStartLoad = (request: WebViewNavigation) => {
+    return /^https?:$/i.test(request.url.slice(0, request.url.indexOf(':') + 1))
+  }
+
   return (
     <Modal ref={modalRef} statusBarPadding={false} bgHide={false} onHide={() => { checkingRef.current = false }}>
       <View style={{ flex: 1, backgroundColor: theme['c-content-background'] }}>
@@ -98,7 +103,8 @@ export default forwardRef<QQMusicLoginModalType, { onLoggedIn?: (user: LX.QQMusi
           source={{ uri: LOGIN_URL }}
           onMessage={handleMessage}
           onNavigationStateChange={handleNavigationStateChange}
-          userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+          onShouldStartLoadWithRequest={handleShouldStartLoad}
+          userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
           thirdPartyCookiesEnabled
           sharedCookiesEnabled
         />
