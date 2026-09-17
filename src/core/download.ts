@@ -1,5 +1,6 @@
 import { addListMusics, removeListMusics } from '@/core/list'
 import { getLyricInfo, getMusicUrl, getPicPath } from '@/core/music'
+import { getPlayQuality } from '@/core/music/utils'
 import { LIST_IDS } from '@/config/constant'
 import settingState from '@/store/setting/state'
 import { filterFileName } from '@/utils'
@@ -246,13 +247,20 @@ export const addTask = async(musicInfo: LX.Music.MusicInfoOnline, quality: LX.Qu
   await init()
   const directory = await getDownloadPath()
   if (!directory) throw new Error(global.i18n.t('download_path_required'))
-  const fileName = buildFileName(musicInfo, quality)
-  const id = toMD5(`${musicInfo.source}_${musicInfo.id}_${quality}_${directory.uri}`)
+  // 过去这里直接用传入的音质，绕过了播放侧的降级逻辑：请求歌曲没有的音质会失败，
+  // 接着去别的平台找同样音质的版本（core/music/utils.ts 会跳过音质不符的候选），
+  // 都没有就把任务标记为出错 —— 而不是退而求其次。这里按歌曲实际拥有的音质降级，
+  // 与播放行为一致。
+  // 降级必须发生在这一步：文件名后缀与 MIME 都由 quality 推导，
+  // 只在取址时降级会得到「.flac 后缀、内容是 mp3」的文件。
+  const targetQuality = getPlayQuality(quality, musicInfo)
+  const fileName = buildFileName(musicInfo, targetQuality)
+  const id = toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`)
   if (tasks.some(task => task.id == id && task.status != 'error')) return id
   const task: LX.Download.DownloadTask = {
     id,
     musicInfo,
-    quality,
+    quality: targetQuality,
     status: 'waiting',
     progress: { progress: 0, downloaded: 0, total: 0, speed: '' },
     fileName,
