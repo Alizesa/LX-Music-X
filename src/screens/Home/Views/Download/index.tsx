@@ -1,12 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Alert, FlatList, TouchableOpacity, View } from 'react-native'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
+import CheckBox from '@/components/common/CheckBox'
 import { useTheme } from '@/store/theme/hook'
 import { createStyle, toast } from '@/utils/tools'
 import { getDownloadPath } from '@/utils/data'
 import { pauseAllTasks, pauseTask, removeTask, resumeAllTasks, retryTask, setDownloadDirectory } from '@/core/download'
 import { useDownloadTasks } from '@/store/download/hook'
+import { useSettingValue } from '@/store/setting/hook'
+import { updateSetting } from '@/core/common'
+import { TRY_QUALITYS_LIST } from '@/core/music/utils'
 import { selectManagedFolder } from '@/utils/fs'
 
 const formatBytes = (value: number) => {
@@ -30,6 +34,22 @@ const statusText = (task: LX.Download.DownloadTask) => {
       return `${progress}%${size ? ` · ${size}` : ''}${task.progress.speed ? ` · ${task.progress.speed}` : ''}`
     }
   }
+}
+
+// 下载音质独立于播放音质：播放是当下的取舍（流量/WiFi 可随时改），
+// 下载是留档，不该被播放设置连带决定
+const QualityRow = () => {
+  const theme = useTheme()
+  const quality = useSettingValue('download.quality')
+  const qualityList = useMemo(() => [...TRY_QUALITYS_LIST, '128k'].reverse() as LX.Quality[], [])
+  return (
+    <View style={{ ...styles.qualityRow, borderBottomColor: theme['c-border-background'] }}>
+      <Text style={styles.qualityLabel}>{global.i18n.t('download_quality')}</Text>
+      <View style={styles.qualityList}>
+        {qualityList.map(q => <CheckBox key={q} marginRight={8} check={quality == q} label={q} onChange={() => { updateSetting({ 'download.quality': q }) }} need />)}
+      </View>
+    </View>
+  )
 }
 
 const DownloadItem = ({ task, onRemove, onToggle }: {
@@ -102,6 +122,7 @@ export default () => {
         </View>
         <TouchableOpacity style={styles.pathButton} onPress={() => { void chooseDownloadPath() }}><Icon name="sd-card" color={theme['c-button-font']} size={18} /></TouchableOpacity>
       </View>
+      <QualityRow />
       <View style={styles.toolbar}>
         <TouchableOpacity style={styles.toolbarButton} onPress={() => { void pauseAllTasks() }}><Icon name="pause" color={theme['c-button-font']} size={17} /><Text size={13}>{global.i18n.t('download_pause_all')}</Text></TouchableOpacity>
         <TouchableOpacity style={styles.toolbarButton} onPress={() => { void resumeAllTasks() }}><Icon name="play-outline" color={theme['c-button-font']} size={17} /><Text size={13}>{global.i18n.t('download_resume_all')}</Text></TouchableOpacity>
@@ -121,6 +142,9 @@ const styles = createStyle({
   pathRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1 },
   pathText: { flex: 1 },
   pathButton: { width: 42, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 4 },
+  qualityRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1 },
+  qualityLabel: { marginRight: 12 },
+  qualityList: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   toolbar: { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 6 },
   toolbarButton: { height: 36, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center' },
   item: { minHeight: 72, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },

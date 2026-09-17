@@ -69,6 +69,8 @@ const defaultSetting: LX.AppSetting = {
   'list.addMusicLocationType': 'top',
 
   'download.fileName': '歌名 - 歌手',
+  // 独立于 player.playQuality：后者默认 128k，而下载是留档行为
+  'download.quality': '320k',
 
   'sync.enable': false,
 

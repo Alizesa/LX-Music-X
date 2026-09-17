@@ -90,6 +90,7 @@
   "list_name_local": "本地音乐",
   "download": "下载",
   "download_directory": "下载目录",
+  "download_quality": "下载音质",
   "download_directory_unset": "尚未选择公共目录",
   "download_path_required": "请先在下载管理中选择公共下载目录",
   "download_path_select_failed": "无法获取目录访问权限",

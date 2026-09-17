@@ -352,6 +352,12 @@ declare global {
       'download.fileName': '歌名 - 歌手' | '歌手 - 歌名' | '歌名'
 
       /**
+       * 下载音质。与播放音质分开：播放是当下的取舍，下载是留档，
+       * 不该由同一个设置决定。歌曲没有该音质时会按 TRY_QUALITYS_LIST 降级。
+       */
+      'download.quality': LX.Quality
+
+      /**
        * 是否启用同步
        */
       'sync.enable': boolean

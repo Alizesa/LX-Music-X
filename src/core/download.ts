@@ -243,7 +243,7 @@ export const getTasks = async() => {
   return tasks
 }
 
-export const addTask = async(musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality = settingState.setting['player.playQuality']) => {
+export const addTask = async(musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality = settingState.setting['download.quality']) => {
   await init()
   const directory = await getDownloadPath()
   if (!directory) throw new Error(global.i18n.t('download_path_required'))
