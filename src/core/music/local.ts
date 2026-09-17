@@ -80,6 +80,51 @@ const intervalToSeconds = (interval: string | null) => {
   return parts.reduce((total, value) => total * 60 + value, 0)
 }
 
+interface NormalizedLocalEntry {
+  name: string
+  singer: string
+  album: string
+  duration: number | null
+  // 归一化前的原始值，仅用于校验缓存是否还有效
+  rawName: string
+  rawSinger: string
+  rawAlbum: string
+  rawInterval: string | null
+}
+
+// 归一化的 NFKC + Unicode 属性正则是这条路径上最贵的运算，而每次切歌要跑三遍
+// （取址 / 封面 / 歌词），对本地库大的用户是实打实的卡顿来源。归一化是纯函数，
+// 结果按条目缓存；用原始值做一次字符串比对来校验，就地改过字段也能自动重算，
+// 因此不需要失效通知，也就没有"通知漏发导致索引过期"这类问题。
+const normalizedCache = new WeakMap<LX.Music.MusicInfoLocal, NormalizedLocalEntry>()
+
+const getNormalizedEntry = (item: LX.Music.MusicInfoLocal): NormalizedLocalEntry => {
+  const rawName = item.name
+  const rawSinger = item.singer
+  const rawAlbum = item.meta.albumName
+  const rawInterval = item.interval
+  const cached = normalizedCache.get(item)
+  if (
+    cached &&
+    cached.rawName === rawName &&
+    cached.rawSinger === rawSinger &&
+    cached.rawAlbum === rawAlbum &&
+    cached.rawInterval === rawInterval
+  ) return cached
+  const entry: NormalizedLocalEntry = {
+    name: normalize(rawName),
+    singer: normalize(rawSinger),
+    album: normalize(rawAlbum),
+    duration: intervalToSeconds(rawInterval),
+    rawName,
+    rawSinger,
+    rawAlbum,
+    rawInterval,
+  }
+  normalizedCache.set(item, entry)
+  return entry
+}
+
 export const findLocalMusicInfo = (musicInfo: LX.Music.MusicInfoOnline) => {
   const localList = getListMusicSync(LIST_IDS.LOCAL).filter((item): item is LX.Music.MusicInfoLocal => item.source == 'local')
   const bySourceId = localList.find(item => item.meta.toggleMusicInfo?.id == musicInfo.id && item.meta.toggleMusicInfo?.source == musicInfo.source)
@@ -93,13 +138,11 @@ export const findLocalMusicInfo = (musicInfo: LX.Music.MusicInfoOnline) => {
   if (!name || !singer || !album || duration == null) return undefined
   const candidates: Array<{ item: LX.Music.MusicInfoLocal, durationGap: number }> = []
   for (const item of localList) {
-    const localDuration = intervalToSeconds(item.interval)
-    if (localDuration == null) continue
-    const durationGap = Math.abs(localDuration - duration)
+    const entry = getNormalizedEntry(item)
+    if (entry.duration == null) continue
+    const durationGap = Math.abs(entry.duration - duration)
     if (durationGap > 3) continue
-    if (normalize(item.name) != name) continue
-    if (normalize(item.singer) != singer) continue
-    if (normalize(item.meta.albumName) != album) continue
+    if (entry.name != name || entry.singer != singer || entry.album != album) continue
     candidates.push({ item, durationGap })
   }
   if (!candidates.length) return undefined
