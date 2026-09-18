@@ -258,25 +258,29 @@ export const updateOptions = async(options = {
   capabilities: [
     Capability.Play,
     Capability.Pause,
-    Capability.Stop,
     Capability.SeekTo,
     Capability.SkipToNext,
     Capability.SkipToPrevious,
   ],
 
+  // 通知栏只保留 上一首 / 播放暂停 / 下一首，去掉退出（Stop）。
+  // 这些按钮在原生侧由 notificationCapabilities 门控创建
+  // （MetadataManager 里的 createAction(notification, ...)），capabilities
+  // 只是广告给系统的能力集合，不影响应用自身的 setStop()（那是直接调用
+  // MusicModule.stop，不走能力掩码）。
   notificationCapabilities: [
     Capability.Play,
     Capability.Pause,
-    Capability.Stop,
     Capability.SkipToNext,
     Capability.SkipToPrevious,
   ],
 
   // // An array of capabilities that will show up when the notification is in the compact form on Android
+  // 折叠态最多显示 3 个按钮，所以上一首也要列进来，三个键才会同时出现
   compactCapabilities: [
     Capability.Play,
     Capability.Pause,
-    Capability.Stop,
+    Capability.SkipToPrevious,
     Capability.SkipToNext,
   ],
 
