@@ -1,6 +1,7 @@
 import { getMusicUrl } from '@/core/music'
 import { getNextPlayMusicInfo, resetRandomNextMusicInfo } from '@/core/player/player'
 import { checkUrl } from '@/utils/request'
+import { isUrl } from '@/utils/common'
 import playerState from '@/store/player/state'
 import { isCached } from '@/plugins/player/utils'
 
@@ -23,7 +24,12 @@ const preloadNextMusicUrl = async(curTime: number) => {
   if (info) {
     preloadMusicInfo.info = info
     const url = await getMusicUrl({ musicInfo: info.musicInfo }).catch(() => '')
-    if (url) {
+    // 已下载 / 已导入的歌曲返回的是本地 URI（下载走 SAF，是 content://），不是可请求的
+    // 地址。把它交给 fetch，RN 会构造 status 为 0 的 Response 并抛 RangeError；而那个
+    // 异常是在 XHR 的回调里抛出的，不会变成 promise rejection，下面的 catch 接不住，
+    // 会直接冒到全局错误处理 —— 所以必须在这里挡掉，而不是靠 catch。
+    // 本地文件本来就在磁盘上，也无需再做预加载校验。
+    if (url && isUrl(url)) {
       console.log('preload url', url)
       const [cached, available] = await Promise.all([isCached(url), checkUrl(url).then(() => true).catch(() => false)])
       if (!cached && !available) {
