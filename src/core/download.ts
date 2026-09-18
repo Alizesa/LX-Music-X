@@ -4,6 +4,7 @@ import { getPlayQuality } from '@/core/music/utils'
 import { LIST_IDS } from '@/config/constant'
 import settingState from '@/store/setting/state'
 import { filterFileName } from '@/utils'
+import { buildLyrics } from '@/utils/lrcTools'
 import { getDownloadPath, getDownloadTasks, saveDownloadPath, saveDownloadTasks } from '@/utils/data'
 import { downloadFile, extname, temporaryDirectoryPath, unlink } from '@/utils/fs'
 import { writeLyric, writeMetadata, writePic } from '@/utils/localMediaMetadata'
@@ -109,7 +110,13 @@ const writeEmbeddedMetadata = async(task: LX.Download.DownloadTask) => {
 
   try {
     const lyric = await getLyricInfo({ musicInfo: info, isRefresh: false })
-    if (lyric?.lyric) await writeLyric(task.filePath, lyric.lyric)
+    if (lyric?.lyric) {
+      // 翻译与罗马音只要取到就一并写入。文件只写这一次，若去跟随
+      // 「显示翻译/罗马音」开关，日后打开开关也不会补进已下载的文件，只能重下。
+      // buildLyrics 生成 [awlrc:lrc:..,tlrc:..,rlrc:..] 这种内嵌格式，
+      // 本地播放时由 core/music/local.ts 的 parseLyric 解回各个语言版本。
+      await writeLyric(task.filePath, buildLyrics(lyric, true, true, true))
+    }
   } catch {}
 }
 
