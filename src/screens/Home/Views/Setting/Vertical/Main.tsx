@@ -1,18 +1,8 @@
 import { memo } from 'react'
 import { FlatList, type FlatListProps } from 'react-native'
 
-import Basic from '../settings/Basic'
-import Player from '../settings/Player'
-import LyricDesktop from '../settings/LyricDesktop'
-import Search from '../settings/Search'
-import List from '../settings/List'
-import Sync from '../settings/Sync'
-import Backup from '../settings/Backup'
-import Other from '../settings/Other'
-import Version from '../settings/Version'
-import About from '../settings/About'
 import { createStyle } from '@/utils/tools'
-import { SETTING_SCREENS, type SettingScreenIds } from '../Main'
+import { SETTING_COMPONENTS, SETTING_SCREENS, type SettingScreenIds } from '../Main'
 
 type FlatListType = FlatListProps<SettingScreenIds>
 
@@ -27,21 +17,13 @@ const styles = createStyle({
   },
 })
 
+// 组件从 SETTING_COMPONENTS 取，不再本地维护一份 switch：
+// 两份列表曾经不同步，导致新增的分区在竖屏下不显示
 const ListItem = memo(({
   id,
 }: { id: SettingScreenIds }) => {
-  switch (id) {
-    case 'player': return <Player />
-    case 'lyric_desktop': return <LyricDesktop />
-    case 'search': return <Search />
-    case 'list': return <List />
-    case 'sync': return <Sync />
-    case 'backup': return <Backup />
-    case 'other': return <Other />
-    case 'version': return <Version />
-    case 'about': return <About />
-    case 'basic': return <Basic />
-  }
+  const SectionComponent = SETTING_COMPONENTS[id]
+  return <SectionComponent />
 }, () => true)
 
 export default () => {
