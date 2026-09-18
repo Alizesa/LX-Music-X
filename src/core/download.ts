@@ -336,6 +336,30 @@ export const removeTask = async(id: string, deleteFile = false) => {
   notify()
 }
 
+/**
+ * 批量移除任务。与循环调用 removeTask 的区别是只落盘一次、只通知一次，
+ * 批量删除时不会产生 N 次写存储与重渲染。
+ */
+export const removeTasks = async(ids: string[], deleteFile = false) => {
+  await init()
+  const idSet = new Set(ids)
+  const targets = tasks.filter(task => idSet.has(task.id))
+  if (!targets.length) return
+  tasks.splice(0, tasks.length, ...tasks.filter(task => !idSet.has(task.id)))
+  await Promise.all(targets.map(async task =>
+    removeNativeDownload(task.nativeId, task.id, task.status != 'completed').catch(() => {}),
+  ))
+  if (deleteFile) {
+    await Promise.all(targets.map(async task => {
+      if (!task.filePath) return
+      await unlink(task.filePath).catch(() => {})
+      await removeListMusics(LIST_IDS.LOCAL, [task.filePath])
+    }))
+  }
+  await persistNow()
+  notify()
+}
+
 export const removeTasksByFilePaths = async(paths: string[]) => {
   await init()
   const pathSet = new Set(paths)
