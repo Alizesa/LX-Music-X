@@ -6,7 +6,7 @@ import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMu
 import QQMusicCookieModal, { type QQMusicCookieModalType } from '@/components/QQMusicCookieModal'
 import { useTheme } from '@/store/theme/hook'
 import { createStyle, toast } from '@/utils/tools'
-import { clearQQMusicSession, getQQMusicDailyRecommendations, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession } from '@/core/qqMusic'
+import { clearQQMusicSession, getQQMusicDailyRecommendations, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, isLikedPlaylist } from '@/core/qqMusic'
 import { initQQMusicRecommendAutoRefresh } from '@/core/qqMusicRecommend'
 import { createList, setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
@@ -127,7 +127,7 @@ export default () => {
   const openPlaylist = (info: LX.QQMusic.PlaylistInfo) => {
     // 「我喜欢」是 dirid=201 的虚拟歌单，没有可用的 disstid。只有走 CgiGetDiss
     // 的取歌路径（即导入按钮）认它，通用歌单详情接口打不开，会连发几次注定失败的请求。
-    if (info.liked) {
+    if (isLikedPlaylist(info)) {
       toast(t('qq_liked_open_unsupported'), 'long')
       return
     }

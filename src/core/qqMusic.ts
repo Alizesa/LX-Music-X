@@ -230,6 +230,16 @@ const normalizeRecommendedPlaylist = (raw: any): LX.QQMusic.PlaylistInfo | null 
   }
 }
 
+/**
+ * 是否是「我喜欢」这类虚拟歌单。
+ *
+ * 同时看 id 和标记：`liked` 是后加的字段，早先版本缓存下来的歌单没有它，
+ * 只看标记会漏判，用户点下去就会走不通的通用详情接口。而 id 从最初就被
+ * 归一化成 dirid，缓存里也带着，所以以它为准更可靠。
+ */
+export const isLikedPlaylist = (info: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'liked'>) =>
+  !!info.liked || Number(info.id) === LIKED_PLAYLIST_DIRID
+
 export const getQQMusicSession = async() => ({
   cookie: await getQQMusicCookie() ?? '',
   user: await getQQMusicUser() ?? null,
