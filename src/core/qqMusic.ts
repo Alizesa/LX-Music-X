@@ -9,7 +9,7 @@ import {
   removeQQMusicDailyRecommendCache,
   removeQQMusicRecommendPlaylistsCache,
 } from '@/utils/data'
-import { toNewMusicInfo } from '@/utils'
+import { toNewMusicInfo, decodeName } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
 import CookieManager from '@react-native-cookies/cookies'
 
@@ -201,11 +201,12 @@ const normalizePlaylist = (raw: any, subscribed: boolean): LX.QQMusic.PlaylistIn
   if (id == null || !name) return null
   return {
     id: String(id),
-    name: String(name),
+    name: decodeName(String(name)),
     cover: raw?.diss_cover ?? raw?.logo ?? raw?.imgurl ?? raw?.picurl ?? raw?.cover?.medium_url ?? raw?.cover_url_medium,
-    description: raw?.desc ?? raw?.introduction ?? '',
+    description: decodeName(String(raw?.desc ?? raw?.introduction ?? '')).replace(/<br>/g, '\n'),
     trackCount: Number(raw?.song_cnt ?? raw?.song_count ?? raw?.songnum ?? raw?.total_song_num ?? 0) || undefined,
     subscribed,
+    liked,
   }
 }
 
@@ -220,11 +221,12 @@ const normalizeRecommendedPlaylist = (raw: any): LX.QQMusic.PlaylistInfo | null 
   const cover = basic.cover ?? {}
   return {
     id: String(id),
-    name: String(name),
+    name: decodeName(String(name)),
     cover: cover.medium_url ?? cover.small_url ?? cover.default_url ?? cover.big_url,
-    description: basic.desc ?? '',
+    // 上游的实现也是这么处理的：简介里带 <br>，名称和作者可能带 HTML 实体
+    description: decodeName(String(basic.desc ?? '')).replace(/<br>/g, '\n'),
     trackCount: Number(basic.song_cnt ?? 0) || undefined,
-    author: basic.creator?.nick,
+    author: decodeName(String(basic.creator?.nick ?? '')) || undefined,
   }
 }
 
@@ -361,18 +363,27 @@ export const getQQMusicRecommendedPlaylists = async(cookie: string, from = 0): P
       },
     },
   })
+  // 外层也要看：响应被拦或没解析成 JSON 时 block 是 undefined，
+  // 只判 block.code 会把它当成"成功但为空"，界面显示空列表还会把空结果写进缓存。
+  if (Number(body?.code ?? 0) !== 0) {
+    throw new Error(String(body?.message ?? body?.msg ?? global.i18n.t('qq_load_failed')))
+  }
   const block = body?.playlist
   if (Number(block?.code ?? 0) !== 0) {
     throw new Error(String(block?.message ?? block?.msg ?? global.i18n.t('qq_load_failed')))
   }
   const feed = block?.data?.FeedRsp ?? {}
-  const list = (Array.isArray(feed.List) ? feed.List : [])
+  const rawList: any[] = Array.isArray(feed.List) ? feed.List : []
+  const list = rawList
     .map((item: any) => normalizeRecommendedPlaylist(item?.Playlist))
     .filter((item: LX.QQMusic.PlaylistInfo | null): item is LX.QQMusic.PlaylistInfo => !!item)
   return {
     list,
-    hasMore: !!feed.HasMore,
-    nextFrom: from + list.length,
+    // 请求的 From 是服务端原始流的偏移量，所以游标要按原始条数前进，
+    // 不能用映射后的条数：个别条目缺字段被丢掉时会让下一批重复上一批的尾巴
+    // 空批次视为取尽，否则游标原地不动，每次刷新都在请求同一个偏移量
+    hasMore: !!feed.HasMore && rawList.length > 0,
+    nextFrom: from + rawList.length,
   }
 }
 

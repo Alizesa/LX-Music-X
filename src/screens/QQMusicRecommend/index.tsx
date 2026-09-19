@@ -28,8 +28,13 @@ export default ({ componentId }: { componentId: string }) => {
   // 下一批从哪取。刷新是换批而不是重取，所以要跨次记住游标
   const nextFromRef = useRef(0)
   const initedRef = useRef(false)
+  const loadingRef = useRef(false)
 
   const load = useCallback(async() => {
+    // setLoading 要到下次渲染才生效，光靠 disabled 挡不住这个窗口内的第二次触发；
+    // 两次并发会请求同一批（都读同一个游标），白费一个请求
+    if (loadingRef.current) return
+    loadingRef.current = true
     setLoading(true)
     try {
       const { cookie } = await getQQMusicSession()
@@ -41,6 +46,7 @@ export default ({ componentId }: { componentId: string }) => {
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
+      loadingRef.current = false
       setLoading(false)
     }
   }, [t])
@@ -52,16 +58,20 @@ export default ({ componentId }: { componentId: string }) => {
     initedRef.current = true
 
     setComponentId(COMPONENT_IDS.qqMusicRecommend, componentId)
-    void getQQMusicRecommendPlaylistsCache().then(cache => {
-      if (cache) {
-        // 有缓存就先显示，不联网
-        setList(cache.list)
-        nextFromRef.current = cache.nextFrom
-        return
-      }
-      // 从没加载过，取一批；之后打开都直接用缓存
-      void load()
-    })
+    void getQQMusicRecommendPlaylistsCache()
+      .catch(() => null)
+      .then(cache => {
+        // 空列表视同没有缓存：早先的失败会被当成"成功但为空"存进来，
+        // 若当成有效缓存就会一直卡在空界面，只能手动刷新才能恢复
+        if (cache?.list.length) {
+          // 有缓存就先显示，不联网
+          setList(cache.list)
+          nextFromRef.current = cache.nextFrom
+          return
+        }
+        // 没缓存或缓存是空的，取一批；之后打开都直接用缓存
+        void load()
+      })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

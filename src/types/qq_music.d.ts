@@ -16,6 +16,11 @@ declare namespace LX {
       subscribed?: boolean
       /** 歌单创建者昵称，推荐流里会带上 */
       author?: string
+      /**
+       * 「我喜欢」这类虚拟歌单。它们的 id 被归一化成 dirid(201)，
+       * 只有走 CgiGetDiss 的取歌路径能处理，通用的歌单详情接口无法打开。
+       */
+      liked?: boolean
     }
 
     /**

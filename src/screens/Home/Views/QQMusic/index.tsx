@@ -39,6 +39,7 @@ export default () => {
   const [recommendations, setRecommendations] = useState<LX.Music.MusicInfoOnline[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const [playing, setPlaying] = useState(false)
+  const refreshingRef = useRef(false)
 
   const loggedIn = !!cookie && !!user
 
@@ -69,22 +70,32 @@ export default () => {
 
   // 唯一的联网入口，由「刷新」按钮和下拉刷新触发
   const refresh = useCallback(async() => {
+    // setRefreshing 要到下次渲染才生效，光靠 disabled 挡不住这个窗口内的第二次触发
+    if (refreshingRef.current) return
     if (!ensureLogin()) return
+    refreshingRef.current = true
     setRefreshing(true)
     try {
-      const [nextPlaylists, nextRecommendations] = await Promise.all([
+      // 用 allSettled：每日推荐那边重试多次后失败是常事，不该把已经拿到的
+      // 歌单结果一起丢掉，白白浪费一次成功请求
+      const [playlistsResult, recommendResult] = await Promise.allSettled([
         getQQMusicPlaylists(cookie),
         getQQMusicDailyRecommendations(cookie),
       ])
-      setPlaylists(nextPlaylists)
-      setRecommendations(nextRecommendations)
-      await Promise.all([
-        saveQQMusicPlaylistsCache(nextPlaylists),
-        saveQQMusicDailyRecommendCache(nextRecommendations),
-      ])
-    } catch (error: unknown) {
-      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      if (playlistsResult.status == 'fulfilled') {
+        setPlaylists(playlistsResult.value)
+        await saveQQMusicPlaylistsCache(playlistsResult.value)
+      }
+      if (recommendResult.status == 'fulfilled') {
+        setRecommendations(recommendResult.value)
+        await saveQQMusicDailyRecommendCache(recommendResult.value)
+      }
+      const failure = [playlistsResult, recommendResult].find(result => result.status == 'rejected')
+      if (failure?.status == 'rejected') {
+        toast(failure.reason instanceof Error ? failure.reason.message : t('qq_load_failed'), 'long')
+      }
     } finally {
+      refreshingRef.current = false
       setRefreshing(false)
     }
   }, [cookie, ensureLogin, t])
@@ -114,6 +125,12 @@ export default () => {
 
   // 点开歌单只查看，不产生副作用；想收进本地仍走右边的导入按钮
   const openPlaylist = (info: LX.QQMusic.PlaylistInfo) => {
+    // 「我喜欢」是 dirid=201 的虚拟歌单，没有可用的 disstid。只有走 CgiGetDiss
+    // 的取歌路径（即导入按钮）认它，通用歌单详情接口打不开，会连发几次注定失败的请求。
+    if (info.liked) {
+      toast(t('qq_liked_open_unsupported'), 'long')
+      return
+    }
     navigations.pushSonglistDetailScreen(commonState.componentIds.home!, {
       id: info.id,
       name: info.name,
