@@ -112,6 +112,19 @@ export default () => {
     }
   }, [cookie, ensureLogin, recommendations, t])
 
+  // 点开歌单只查看，不产生副作用；想收进本地仍走右边的导入按钮
+  const openPlaylist = (info: LX.QQMusic.PlaylistInfo) => {
+    navigations.pushSonglistDetailScreen(commonState.componentIds.home!, {
+      id: info.id,
+      name: info.name,
+      author: info.author ?? '',
+      img: info.cover,
+      desc: info.description,
+      source: 'tx',
+      total: info.trackCount ? String(info.trackCount) : undefined,
+    })
+  }
+
   const importPlaylist = async(info: LX.QQMusic.PlaylistInfo) => {
     if (!ensureLogin()) return
     try {
@@ -152,7 +165,7 @@ export default () => {
         keyExtractor={item => item.id}
         style={styles.playlist}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh() }} colors={[theme['c-primary']]} />}
-        renderItem={({ item }) => <View style={styles.playlistItem}><View style={styles.playlistInfo}><Text numberOfLines={1}>{item.name}</Text><Text size={12} color={theme['c-font-label']}>{`${t(item.subscribed ? 'qq_playlist_collected' : 'qq_playlist_created')} · ${item.trackCount ? `${item.trackCount} ${t('qq_songs')}` : t('qq_playlist')}`}</Text></View><TouchableOpacity onPress={() => { void importPlaylist(item) }} style={styles.importButton}><Icon name="add-music" color={theme['c-primary-font']} size={18} /></TouchableOpacity></View>}
+        renderItem={({ item }) => <View style={{ ...styles.playlistItem, borderBottomColor: theme['c-border-background'] }}><TouchableOpacity style={styles.playlistInfo} onPress={() => { openPlaylist(item) }}><Text numberOfLines={1}>{item.name}</Text><Text size={12} color={theme['c-font-label']}>{`${t(item.subscribed ? 'qq_playlist_collected' : 'qq_playlist_created')} · ${item.trackCount ? `${item.trackCount} ${t('qq_songs')}` : t('qq_playlist')}`}</Text></TouchableOpacity><TouchableOpacity onPress={() => { void importPlaylist(item) }} style={styles.importButton}><Icon name="add-music" color={theme['c-primary-font']} size={18} /></TouchableOpacity></View>}
         ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{user ? t('qq_load_hint') : t('qq_login_hint')}</Text>}
       />
       <QQMusicLoginModal ref={loginRef} onLoggedIn={nextUser => { setUser(nextUser); void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />
