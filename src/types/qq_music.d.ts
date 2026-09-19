@@ -20,13 +20,13 @@ declare namespace LX {
 
     /**
      * 推荐歌单的本地缓存。推荐流是分页的，所以除了已取到的列表，
-     * 还要记住下一页的游标和是否还有更多，避免每次进页面都从头请求。
+     * 还要记住下一页的游标，避免每次进页面都从头请求。
+     * 游标取尽后会回到 0，所以不需要额外记「是否还有更多」。
      */
     interface RecommendPlaylistCache {
       list: PlaylistInfo[]
-      /** 下一页的 From 游标 */
+      /** 下一次刷新从哪个 From 开始取 */
       nextFrom: number
-      hasMore: boolean
     }
   }
 }

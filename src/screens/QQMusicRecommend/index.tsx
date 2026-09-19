@@ -37,7 +37,7 @@ export default ({ componentId }: { componentId: string }) => {
       setList(result.list)
       // 取尽后回到开头，这样能一直「一批批」换下去而不是停在最后一批
       nextFromRef.current = result.hasMore ? result.nextFrom : 0
-      await saveQQMusicRecommendPlaylistsCache({ list: result.list, hasMore: result.hasMore, nextFrom: nextFromRef.current })
+      await saveQQMusicRecommendPlaylistsCache({ list: result.list, nextFrom: nextFromRef.current })
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
@@ -46,10 +46,13 @@ export default ({ componentId }: { componentId: string }) => {
   }, [t])
 
   useEffect(() => {
+    // 守卫要在这里同步置位。放在下面的异步回调里的话，effect 因依赖变化重跑时
+    // 上一次的缓存读取可能还没返回，两次回调都会通过检查，结果多发一个请求。
+    if (initedRef.current) return
+    initedRef.current = true
+
     setComponentId(COMPONENT_IDS.qqMusicRecommend, componentId)
     void getQQMusicRecommendPlaylistsCache().then(cache => {
-      if (initedRef.current) return
-      initedRef.current = true
       if (cache) {
         // 有缓存就先显示，不联网
         setList(cache.list)
@@ -59,7 +62,8 @@ export default ({ componentId }: { componentId: string }) => {
       // 从没加载过，取一批；之后打开都直接用缓存
       void load()
     })
-  }, [componentId, load])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const back = () => {
     void pop(commonState.componentIds.qqMusicRecommend!)
