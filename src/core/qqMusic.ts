@@ -363,14 +363,16 @@ export const getQQMusicRecommendedPlaylists = async(cookie: string, from = 0): P
       },
     },
   })
-  // 外层也要看：响应被拦或没解析成 JSON 时 block 是 undefined，
-  // 只判 block.code 会把它当成"成功但为空"，界面显示空列表还会把空结果写进缓存。
-  if (Number(body?.code ?? 0) !== 0) {
+  const block = body?.playlist
+  // 先确认业务块拿到了。响应被拦、或没解析成 JSON 时 block 是 undefined，
+  // 此时若只判 block.code 会当成"成功但为空"，界面显示空列表、还把空结果写进缓存。
+  // 这里只拦「块不存在」，不额外校验外层 code —— 外层码在登录态下的取值没有验证过，
+  // 贸然判它会引入原来没有的失败分支。
+  if (!block) {
     throw new Error(String(body?.message ?? body?.msg ?? global.i18n.t('qq_load_failed')))
   }
-  const block = body?.playlist
-  if (Number(block?.code ?? 0) !== 0) {
-    throw new Error(String(block?.message ?? block?.msg ?? global.i18n.t('qq_load_failed')))
+  if (Number(block.code ?? 0) !== 0) {
+    throw new Error(String(block.message ?? block.msg ?? global.i18n.t('qq_load_failed')))
   }
   const feed = block?.data?.FeedRsp ?? {}
   const rawList: any[] = Array.isArray(feed.List) ? feed.List : []
