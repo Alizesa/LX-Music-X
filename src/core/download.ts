@@ -144,6 +144,10 @@ const finalizeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
       toggleMusicInfo: task.musicInfo,
     },
   }
+  // 写元数据要花几秒（下载封面 + 取歌词），这期间任务可能已被删除
+  // （批量删除尤其容易发生：它会把仍在 finalizing 的任务一并删掉并解除文件）。
+  // 不检查的话会给一个刚被删掉的文件补一条本地记录，留下播不了的条目。
+  if (!tasks.some(item => item.id === task.id)) return
   await addListMusics(LIST_IDS.LOCAL, [localInfo], 'bottom')
   await updateTask(task.id, {
     status: 'completed',
@@ -353,7 +357,9 @@ export const removeTasks = async(ids: string[], deleteFile = false) => {
     await Promise.all(targets.map(async task => {
       if (!task.filePath) return
       await unlink(task.filePath).catch(() => {})
-      await removeListMusics(LIST_IDS.LOCAL, [task.filePath])
+      // 也要吞掉：这里若抛出，下面的 persistNow/notify 就不会执行，
+      // 而 tasks 已经 splice 过了，内存与存储会对不上、界面上还留着已删的行
+      await removeListMusics(LIST_IDS.LOCAL, [task.filePath]).catch(() => {})
     }))
   }
   await persistNow()
@@ -364,7 +370,8 @@ export const removeTasksByFilePaths = async(paths: string[]) => {
   await init()
   const pathSet = new Set(paths)
   const ids = tasks.filter(task => task.filePath && pathSet.has(task.filePath)).map(task => task.id)
-  for (const id of ids) await removeTask(id)
+  // 走批量版：循环 removeTask 会逐个落盘 + 逐个通知，正是这个函数要避免的开销
+  await removeTasks(ids)
 }
 
 export const setDownloadDirectory = async(directory: LX.Download.DownloadDirectory) => {

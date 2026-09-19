@@ -103,15 +103,15 @@ export default () => {
     })
   }
 
-  const handleSelectAll = () => {
-    if (tasks.length && selectedCount == tasks.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(tasks.map(task => task.id)))
-  }
-
   // 从 tasks 派生计数，而不是直接用 selectedIds.size：任务可能在别处被移除
   // （例如在本地音乐列表删歌会连带移除下载记录），集合里会残留已不存在的 id，
   // 直接用 size 会把它们也算进去
   const selectedCount = tasks.reduce((count, task) => selectedIds.has(task.id) ? count + 1 : count, 0)
+
+  const handleSelectAll = () => {
+    if (tasks.length && selectedCount == tasks.length) setSelectedIds(new Set())
+    else setSelectedIds(new Set(tasks.map(task => task.id)))
+  }
 
   const handleDelete = () => {
     const selected = tasks.filter(task => selectedIds.has(task.id))
