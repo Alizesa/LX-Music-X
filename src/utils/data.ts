@@ -37,6 +37,7 @@ const qqMusicCookieKey = storageDataPrefix.qqMusicCookie
 const qqMusicUserKey = storageDataPrefix.qqMusicUser
 const qqMusicPlaylistsKey = storageDataPrefix.qqMusicPlaylists
 const qqMusicDailyRecommendKey = storageDataPrefix.qqMusicDailyRecommend
+const qqMusicRecommendPlaylistsKey = storageDataPrefix.qqMusicRecommendPlaylists
 
 // const defaultListKey = listPrefix + 'default'
 // const loveListKey = listPrefix + 'love'
@@ -505,6 +506,9 @@ export const removeQQMusicPlaylistsCache = async() => removeData(qqMusicPlaylist
 export const getQQMusicDailyRecommendCache = async() => await getData<LX.Music.MusicInfoOnline[]>(qqMusicDailyRecommendKey) ?? []
 export const saveQQMusicDailyRecommendCache = async(list: LX.Music.MusicInfoOnline[]) => saveData(qqMusicDailyRecommendKey, list)
 export const removeQQMusicDailyRecommendCache = async() => removeData(qqMusicDailyRecommendKey)
+export const getQQMusicRecommendPlaylistsCache = async() => await getData<LX.QQMusic.RecommendPlaylistCache>(qqMusicRecommendPlaylistsKey) ?? null
+export const saveQQMusicRecommendPlaylistsCache = async(cache: LX.QQMusic.RecommendPlaylistCache) => saveData(qqMusicRecommendPlaylistsKey, cache)
+export const removeQQMusicRecommendPlaylistsCache = async() => removeData(qqMusicRecommendPlaylistsKey)
 
 export const getSyncAuthKey = async(serverId: string) => {
   const keys = await getData<Record<string, LX.Sync.KeyInfo>>(syncAuthKeyPrefix)

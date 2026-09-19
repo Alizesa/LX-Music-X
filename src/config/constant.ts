@@ -87,6 +87,7 @@ export const storageDataPrefix = {
   qqMusicUser: '@qq_music_user',
   qqMusicPlaylists: '@qq_music_playlists',
   qqMusicDailyRecommend: '@qq_music_daily_recommend',
+  qqMusicRecommendPlaylists: '@qq_music_recommend_playlists',
 } as const
 
 // v0.x.x 版本的 data keys

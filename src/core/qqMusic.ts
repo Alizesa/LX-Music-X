@@ -7,6 +7,7 @@ import {
   removeQQMusicCookie,
   removeQQMusicPlaylistsCache,
   removeQQMusicDailyRecommendCache,
+  removeQQMusicRecommendPlaylistsCache,
 } from '@/utils/data'
 import { toNewMusicInfo } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
@@ -39,6 +40,8 @@ const RECOMMEND_MAX_TRIES = 6
 const GUESS_RECOMMEND_ID = 99
 const RECOMMEND_PAGE_SIZE = 5
 const PLAYLIST_PAGE_SIZE = 200
+// 推荐歌单每批取多少。推荐流匿名也能用，登录后带票据请求
+const RECOMMEND_PLAYLIST_PAGE_SIZE = 20
 
 export const parseQQMusicCookie = (cookie: string): Record<string, string> => {
   const result: Record<string, string> = {}
@@ -91,7 +94,8 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
       Referer: QQ_REFERER,
       Origin: 'https://y.qq.com',
       'User-Agent': QQ_USER_AGENT,
-      Cookie: cookie,
+      // 未登录时不要发一个空的 Cookie 头
+      ...(cookie ? { Cookie: cookie } : {}),
       ...(options.headers ?? {}),
     },
   }).promise
@@ -205,6 +209,24 @@ const normalizePlaylist = (raw: any, subscribed: boolean): LX.QQMusic.PlaylistIn
   }
 }
 
+// 推荐流的歌单是嵌套结构（Playlist.basic，封面和作者也是对象），
+// 与「我的歌单」那种扁平字段不同源，需要单独映射
+const normalizeRecommendedPlaylist = (raw: any): LX.QQMusic.PlaylistInfo | null => {
+  const basic = raw?.basic
+  if (!basic) return null
+  const id = basic.tid ?? basic.dirid
+  const name = basic.title
+  if (id == null || !name) return null
+  const cover = basic.cover ?? {}
+  return {
+    id: String(id),
+    name: String(name),
+    cover: cover.medium_url ?? cover.small_url ?? cover.default_url ?? cover.big_url,
+    description: basic.desc ?? '',
+    trackCount: Number(basic.song_cnt ?? 0) || undefined,
+  }
+}
+
 export const getQQMusicSession = async() => ({
   cookie: await getQQMusicCookie() ?? '',
   user: await getQQMusicUser() ?? null,
@@ -232,6 +254,7 @@ export const saveQQMusicSession = async(cookie: string) => {
 const clearQQMusicDataCache = async() => {
   await removeQQMusicPlaylistsCache()
   await removeQQMusicDailyRecommendCache()
+  await removeQQMusicRecommendPlaylistsCache()
 }
 
 export const clearQQMusicSession = async() => {
@@ -308,6 +331,50 @@ export const getQQMusicPlaylists = async(cookie: string): Promise<LX.QQMusic.Pla
   })
 }
 
+/**
+ * 推荐歌单。走 music.playlist.PlaylistSquare/GetRecommendWhole。
+ *
+ * 这个接口匿名就能用；已登录时带上账号票据，服务端若能据此个性化就会返回更贴合的结果，
+ * 不能的话也只是回落成通用推荐，不影响功能可用。
+ *
+ * From 是偏移量而不是页码，HasMore 指示后面是否还有内容。
+ */
+export const getQQMusicRecommendedPlaylists = async(cookie: string, from = 0): Promise<{
+  list: LX.QQMusic.PlaylistInfo[]
+  hasMore: boolean
+  nextFrom: number
+}> => {
+  const cookies = parseQQMusicCookie(cookie)
+  const authed = !!readUin(cookies) && !!readMusicKey(cookies)
+  const body = await request(QQ_MUSICU_URL, authed ? cookie : '', {
+    method: 'post',
+    body: {
+      comm: authed ? buildAuthComm(cookies) : { cv: 1602, ct: 20 },
+      playlist: {
+        module: 'music.playlist.PlaylistSquare',
+        method: 'GetRecommendWhole',
+        param: {
+          IsReqFeed: true,
+          FeedReq: { From: from, Size: RECOMMEND_PLAYLIST_PAGE_SIZE },
+        },
+      },
+    },
+  })
+  const block = body?.playlist
+  if (Number(block?.code ?? 0) !== 0) {
+    throw new Error(String(block?.message ?? block?.msg ?? global.i18n.t('qq_load_failed')))
+  }
+  const feed = block?.data?.FeedRsp ?? {}
+  const list = (Array.isArray(feed.List) ? feed.List : [])
+    .map((item: any) => normalizeRecommendedPlaylist(item?.Playlist))
+    .filter((item: LX.QQMusic.PlaylistInfo | null): item is LX.QQMusic.PlaylistInfo => !!item)
+  return {
+    list,
+    hasMore: !!feed.HasMore,
+    nextFrom: from + list.length,
+  }
+}
+
 export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.Music.MusicInfoOnline[]> => {
   const cookies = parseQQMusicCookie(cookie)
   const uin = readUin(cookies)
@@ -370,8 +437,12 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
 
 // 现代接口，分页取全量。也是唯一能取到"我喜欢"(dirid=201)的方式
 const fetchPlaylistSongsByDiss = async(cookie: string, playlistId: string) => {
+  const cookies = parseQQMusicCookie(cookie)
+  // 未登录时别走这条需要鉴权的通道：它必然失败，白白多一次请求。
+  // 直接返回空，让上层落到公开的旧接口（公开歌单不需要登录也能取）。
+  if (!readUin(cookies) || !readMusicKey(cookies)) return []
   const liked = Number(playlistId) === LIKED_PLAYLIST_DIRID
-  const comm = buildAuthComm(parseQQMusicCookie(cookie))
+  const comm = buildAuthComm(cookies)
   const songs: LX.Music.MusicInfoOnline[] = []
   const seen = new Set<string>()
   for (let page = 0; page < DISS_MAX_PAGES; page++) {

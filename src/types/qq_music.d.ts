@@ -15,5 +15,16 @@ declare namespace LX {
       /** true 表示收藏歌单，false 表示自建歌单 */
       subscribed?: boolean
     }
+
+    /**
+     * 推荐歌单的本地缓存。推荐流是分页的，所以除了已取到的列表，
+     * 还要记住下一页的游标和是否还有更多，避免每次进页面都从头请求。
+     */
+    interface RecommendPlaylistCache {
+      list: PlaylistInfo[]
+      /** 下一页的 From 游标 */
+      nextFrom: number
+      hasMore: boolean
+    }
   }
 }
