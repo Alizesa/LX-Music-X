@@ -14,6 +14,8 @@ declare namespace LX {
       trackCount?: number
       /** true 表示收藏歌单，false 表示自建歌单 */
       subscribed?: boolean
+      /** 歌单创建者昵称，推荐流里会带上 */
+      author?: string
     }
 
     /**

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, FlatList, RefreshControl, TouchableOpacity, View } from 'react-native'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
@@ -6,35 +6,17 @@ import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMu
 import QQMusicCookieModal, { type QQMusicCookieModalType } from '@/components/QQMusicCookieModal'
 import { useTheme } from '@/store/theme/hook'
 import { createStyle, toast } from '@/utils/tools'
-import {
-  clearQQMusicSession,
-  getQQMusicDailyRecommendations,
-  getQQMusicPlaylistSongs,
-  getQQMusicPlaylists,
-  getQQMusicRecommendedPlaylists,
-  getQQMusicSession,
-} from '@/core/qqMusic'
+import { clearQQMusicSession, getQQMusicDailyRecommendations, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession } from '@/core/qqMusic'
 import { initQQMusicRecommendAutoRefresh } from '@/core/qqMusicRecommend'
 import { createList, setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { LIST_IDS } from '@/config/constant'
-import {
-  getQQMusicDailyRecommendCache,
-  getQQMusicPlaylistsCache,
-  getQQMusicRecommendPlaylistsCache,
-  saveQQMusicDailyRecommendCache,
-  saveQQMusicPlaylistsCache,
-  saveQQMusicRecommendPlaylistsCache,
-} from '@/utils/data'
+import { navigations } from '@/navigation'
+import commonState from '@/store/common/state'
+import { getQQMusicDailyRecommendCache, getQQMusicPlaylistsCache, saveQQMusicDailyRecommendCache, saveQQMusicPlaylistsCache } from '@/utils/data'
 import { useI18n } from '@/lang'
 
 const DAILY_RECOMMEND_LIST_ID = 'qq_daily_recommend'
-
-type Row =
-  | { kind: 'header', key: string, title: string }
-  | { kind: 'playlist', key: string, playlist: LX.QQMusic.PlaylistInfo, origin: 'recommend' | 'mine' }
-  | { kind: 'loadMore', key: string }
-  | { kind: 'hint', key: string, text: string }
 
 const ActionButton = ({ icon, label, onPress, disabled = false }: { icon: string, label: string, onPress: () => void, disabled?: boolean }) => {
   const theme = useTheme()
@@ -55,11 +37,7 @@ export default () => {
   const [user, setUser] = useState<LX.QQMusic.UserInfo | null>(null)
   const [playlists, setPlaylists] = useState<LX.QQMusic.PlaylistInfo[]>([])
   const [recommendations, setRecommendations] = useState<LX.Music.MusicInfoOnline[]>([])
-  const [recommended, setRecommended] = useState<LX.QQMusic.PlaylistInfo[]>([])
-  const [recommendHasMore, setRecommendHasMore] = useState(false)
-  const [recommendNextFrom, setRecommendNextFrom] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
   const [playing, setPlaying] = useState(false)
 
   const loggedIn = !!cookie && !!user
@@ -68,20 +46,11 @@ export default () => {
     void getQQMusicSession().then(session => {
       setCookie(session.cookie)
       setUser(session.user)
-      // 全部从本地缓存读，进页面不发任何网络请求。
-      // 推荐歌单匿名也能看，所以不依赖登录状态。
-      void Promise.all([
-        session.cookie ? getQQMusicPlaylistsCache() : Promise.resolve([]),
-        session.cookie ? getQQMusicDailyRecommendCache() : Promise.resolve([]),
-        getQQMusicRecommendPlaylistsCache(),
-      ]).then(([cachedPlaylists, cachedRecommendations, cachedRecommended]) => {
+      // 歌单与推荐都直接读本地缓存，进页面不发任何网络请求
+      if (!session.cookie) return
+      void Promise.all([getQQMusicPlaylistsCache(), getQQMusicDailyRecommendCache()]).then(([cachedPlaylists, cachedRecommendations]) => {
         setPlaylists(cachedPlaylists)
         setRecommendations(cachedRecommendations)
-        if (cachedRecommended) {
-          setRecommended(cachedRecommended.list)
-          setRecommendHasMore(cachedRecommended.hasMore)
-          setRecommendNextFrom(cachedRecommended.nextFrom)
-        }
       })
     })
     const handleAccountUpdate = (nextUser: LX.QQMusic.UserInfo | null) => {
@@ -98,55 +67,27 @@ export default () => {
     return false
   }, [loggedIn])
 
-  // 唯一的联网入口，由「刷新」按钮和下拉刷新触发。
-  // 推荐歌单登录时带票据、未登录走匿名，两条路都能用。
+  // 唯一的联网入口，由「刷新」按钮和下拉刷新触发
   const refresh = useCallback(async() => {
+    if (!ensureLogin()) return
     setRefreshing(true)
     try {
-      const [recommendResult] = await Promise.all([
-        getQQMusicRecommendedPlaylists(cookie, 0),
-        // 未登录时跳过需要账号的两个接口，避免无谓的失败请求
-        loggedIn
-          ? Promise.all([getQQMusicPlaylists(cookie), getQQMusicDailyRecommendations(cookie)]).then(async([nextPlaylists, nextRecommendations]) => {
-            setPlaylists(nextPlaylists)
-            setRecommendations(nextRecommendations)
-            await Promise.all([
-              saveQQMusicPlaylistsCache(nextPlaylists),
-              saveQQMusicDailyRecommendCache(nextRecommendations),
-            ])
-          })
-          : Promise.resolve(),
+      const [nextPlaylists, nextRecommendations] = await Promise.all([
+        getQQMusicPlaylists(cookie),
+        getQQMusicDailyRecommendations(cookie),
       ])
-      // 刷新是替换而不是追加，所以游标从这一批的末尾重新算
-      setRecommended(recommendResult.list)
-      setRecommendHasMore(recommendResult.hasMore)
-      setRecommendNextFrom(recommendResult.nextFrom)
-      await saveQQMusicRecommendPlaylistsCache(recommendResult)
+      setPlaylists(nextPlaylists)
+      setRecommendations(nextRecommendations)
+      await Promise.all([
+        saveQQMusicPlaylistsCache(nextPlaylists),
+        saveQQMusicDailyRecommendCache(nextRecommendations),
+      ])
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
       setRefreshing(false)
     }
-  }, [cookie, loggedIn, t])
-
-  const loadMoreRecommended = useCallback(async() => {
-    if (loadingMore || !recommendHasMore) return
-    setLoadingMore(true)
-    try {
-      const result = await getQQMusicRecommendedPlaylists(cookie, recommendNextFrom)
-      // 追加，并按 id 去重：推荐流在不同游标下可能给出重复项
-      const merged = [...recommended, ...result.list].filter((item, index, all) =>
-        all.findIndex(other => other.id === item.id) === index)
-      setRecommended(merged)
-      setRecommendHasMore(result.hasMore)
-      setRecommendNextFrom(result.nextFrom)
-      await saveQQMusicRecommendPlaylistsCache({ list: merged, hasMore: result.hasMore, nextFrom: result.nextFrom })
-    } catch (error: unknown) {
-      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
-    } finally {
-      setLoadingMore(false)
-    }
-  }, [loadingMore, recommendHasMore, recommendNextFrom, recommended, cookie, t])
+  }, [cookie, ensureLogin, t])
 
   const playRecommendations = useCallback(async() => {
     if (!ensureLogin()) return
@@ -172,6 +113,7 @@ export default () => {
   }, [cookie, ensureLogin, recommendations, t])
 
   const importPlaylist = async(info: LX.QQMusic.PlaylistInfo) => {
+    if (!ensureLogin()) return
     try {
       const songs = await getQQMusicPlaylistSongs(cookie, info.id)
       // 具体原因要透出来：早先统一吞成"导入失败"，排查时看不到是接口出错还是歌单为空
@@ -186,62 +128,8 @@ export default () => {
   const logout = () => {
     Alert.alert(t('qq_logout_title'), t('qq_logout_message'), [
       { text: t('cancel'), style: 'cancel' },
-      { text: t('confirm'), style: 'destructive', onPress: () => { void clearQQMusicSession().then(() => { setCookie(''); setUser(null); setPlaylists([]); setRecommendations([]); setRecommended([]); setRecommendHasMore(false); setRecommendNextFrom(0); global.app_event.qqMusicAccountUpdated(null) }) } },
+      { text: t('confirm'), style: 'destructive', onPress: () => { void clearQQMusicSession().then(() => { setCookie(''); setUser(null); setPlaylists([]); setRecommendations([]); global.app_event.qqMusicAccountUpdated(null) }) } },
     ])
-  }
-
-  const rows = useMemo<Row[]>(() => {
-    const result: Row[] = []
-    result.push({ kind: 'header', key: 'h-recommend', title: t('qq_recommend_playlists') })
-    if (recommended.length) {
-      for (const playlist of recommended) result.push({ kind: 'playlist', key: `r-${playlist.id}`, playlist, origin: 'recommend' })
-      if (recommendHasMore) result.push({ kind: 'loadMore', key: 'load-more' })
-    } else {
-      result.push({ kind: 'hint', key: 'h-recommend-empty', text: t('qq_recommend_empty') })
-    }
-    result.push({ kind: 'header', key: 'h-mine', title: t('qq_my_playlists') })
-    if (!loggedIn) {
-      result.push({ kind: 'hint', key: 'h-mine-login', text: t('qq_login_hint') })
-    } else if (playlists.length) {
-      for (const playlist of playlists) result.push({ kind: 'playlist', key: `m-${playlist.id}`, playlist, origin: 'mine' })
-    } else {
-      result.push({ kind: 'hint', key: 'h-mine-empty', text: t('qq_load_hint') })
-    }
-    return result
-  }, [recommended, recommendHasMore, playlists, loggedIn, t])
-
-  const renderRow = ({ item }: { item: Row }) => {
-    switch (item.kind) {
-      case 'header':
-        return <View style={styles.sectionHeader}><Text size={15}>{item.title}</Text></View>
-      case 'hint':
-        return <Text style={styles.empty} color={theme['c-font-label']}>{item.text}</Text>
-      case 'loadMore':
-        return (
-          <TouchableOpacity style={styles.loadMore} disabled={loadingMore} onPress={() => { void loadMoreRecommended() }}>
-            <Text size={13} color={theme['c-primary-font']}>{loadingMore ? t('qq_loading') : t('qq_load_more')}</Text>
-          </TouchableOpacity>
-        )
-      default: {
-        const { playlist, origin } = item
-        const count = playlist.trackCount ? `${playlist.trackCount} ${t('qq_songs')}` : t('qq_playlist')
-        // 推荐歌单没有「自建/收藏」的概念，只显示歌曲数
-        const meta = origin === 'recommend'
-          ? count
-          : `${t(playlist.subscribed ? 'qq_playlist_collected' : 'qq_playlist_created')} · ${count}`
-        return (
-          <View style={styles.playlistItem}>
-            <View style={styles.playlistInfo}>
-              <Text numberOfLines={1}>{playlist.name}</Text>
-              <Text size={12} color={theme['c-font-label']}>{meta}</Text>
-            </View>
-            <TouchableOpacity onPress={() => { void importPlaylist(playlist) }} style={styles.importButton}>
-              <Icon name="add-music" color={theme['c-primary-font']} size={18} />
-            </TouchableOpacity>
-          </View>
-        )
-      }
-    }
   }
 
   return (
@@ -256,14 +144,16 @@ export default () => {
       </View>
       <View style={styles.toolbar}>
         <ActionButton icon="play-outline" label={t('qq_daily_recommend')} onPress={() => { void playRecommendations() }} disabled={!loggedIn || playing} />
-        <ActionButton icon="available_updates" label={t('qq_refresh')} onPress={() => { void refresh() }} disabled={refreshing} />
+        <ActionButton icon="available_updates" label={t('qq_refresh')} onPress={() => { void refresh() }} disabled={!loggedIn || refreshing} />
+        <ActionButton icon="album" label={t('qq_recommend_playlists')} onPress={() => { navigations.pushQQMusicRecommendScreen(commonState.componentIds.home!) }} />
       </View>
       <FlatList
-        data={rows}
-        keyExtractor={item => item.key}
-        style={styles.list}
-        renderItem={renderRow}
+        data={playlists}
+        keyExtractor={item => item.id}
+        style={styles.playlist}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh() }} colors={[theme['c-primary']]} />}
+        renderItem={({ item }) => <View style={styles.playlistItem}><View style={styles.playlistInfo}><Text numberOfLines={1}>{item.name}</Text><Text size={12} color={theme['c-font-label']}>{`${t(item.subscribed ? 'qq_playlist_collected' : 'qq_playlist_created')} · ${item.trackCount ? `${item.trackCount} ${t('qq_songs')}` : t('qq_playlist')}`}</Text></View><TouchableOpacity onPress={() => { void importPlaylist(item) }} style={styles.importButton}><Icon name="add-music" color={theme['c-primary-font']} size={18} /></TouchableOpacity></View>}
+        ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{user ? t('qq_load_hint') : t('qq_login_hint')}</Text>}
       />
       <QQMusicLoginModal ref={loginRef} onLoggedIn={nextUser => { setUser(nextUser); void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />
       <QQMusicCookieModal ref={cookieLoginRef} onLoggedIn={nextUser => { setUser(nextUser); void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />
@@ -278,11 +168,9 @@ const styles = createStyle({
   toolbar: { flexDirection: 'row', paddingHorizontal: 14, paddingBottom: 10 },
   actionButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 4, marginRight: 8 },
   actionLabel: { marginLeft: 5 },
-  list: { flex: 1 },
-  sectionHeader: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 6 },
+  playlist: { flex: 1 },
   playlistItem: { flexDirection: 'row', alignItems: 'center', minHeight: 58, paddingHorizontal: 14, borderBottomWidth: 1 },
   playlistInfo: { flex: 1 },
   importButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  loadMore: { height: 48, alignItems: 'center', justifyContent: 'center' },
-  empty: { textAlign: 'center', paddingVertical: 20 },
+  empty: { textAlign: 'center', padding: 28 },
 })

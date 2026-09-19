@@ -224,6 +224,7 @@ const normalizeRecommendedPlaylist = (raw: any): LX.QQMusic.PlaylistInfo | null 
     cover: cover.medium_url ?? cover.small_url ?? cover.default_url ?? cover.big_url,
     description: basic.desc ?? '',
     trackCount: Number(basic.song_cnt ?? 0) || undefined,
+    author: basic.creator?.nick,
   }
 }
 

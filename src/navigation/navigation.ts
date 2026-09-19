@@ -6,6 +6,7 @@ import {
   PLAY_DETAIL_SCREEN,
   SONGLIST_DETAIL_SCREEN,
   COMMENT_SCREEN,
+  QQMUSIC_RECOMMEND_SCREEN,
   // SETTING_SCREEN,
 } from './screenNames'
 
@@ -303,6 +304,37 @@ export function pushSonglistDetailScreen(componentId: string, info: ListInfoItem
     })
   })
 }
+export function pushQQMusicRecommendScreen(componentId: string) {
+  const theme = themeState.theme
+
+  requestAnimationFrame(() => {
+    void Navigation.push(componentId, {
+      component: {
+        name: QQMUSIC_RECOMMEND_SCREEN,
+        options: {
+          topBar: {
+            visible: false,
+            height: 0,
+            drawBehind: false,
+          },
+          statusBar: {
+            drawBehind: true,
+            visible: true,
+            style: getStatusBarStyle(theme.isDark),
+            backgroundColor: 'transparent',
+          },
+          navigationBar: {
+            backgroundColor: theme['c-content-background'],
+          },
+          layout: {
+            componentBackgroundColor: theme['c-content-background'],
+          },
+        },
+      },
+    })
+  })
+}
+
 export function pushCommentScreen(componentId: string) {
   /*
     Navigation.setDefaultOptions({

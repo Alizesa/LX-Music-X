@@ -27,6 +27,7 @@ export enum COMPONENT_IDS {
   playDetail = 'playDetail',
   songlistDetail = 'songlistDetail',
   comment = 'comment',
+  qqMusicRecommend = 'qqMusicRecommend',
 }
 
 export enum NAV_SHEAR_NATIVE_IDS {
