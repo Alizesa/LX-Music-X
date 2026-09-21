@@ -92,14 +92,23 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   //   在 _onContentSizeChange 里会判断：提供了 contentOffset 就跳过它自己那次
   //   scrollToIndex。少了它，那次滚动会发生在内容尺寸确定之后（面板已出现），
   //   同样表现为可见的移动。
-  const initialIndex = playInfo.playerPlayIndex > 0 && playInfo.playerPlayIndex < queue.length ? playInfo.playerPlayIndex : 0
+  //
+  // 只在这两种「挂载」语义下有效，所以这个值必须在 show() 里定死、打开期间不再变：
+  // contentOffset 是原生属性，值一变原生就会 scrollTo。之前它直接取
+  // playInfo.playerPlayIndex，于是每换一首歌（尤其是用户自己点的那一首）原生都会
+  // 把列表拽到那一行——用户明明是在列表里找到并点的，列表却「跳一下」。
+  // 面板关闭时整棵子树返回 null，下次打开是重新挂载，所以冻结在 state 里正合适。
+  const [initialIndex, setInitialIndex] = useState(0)
 
   useImperativeHandle(ref, () => ({
     show() {
-      setQueue([...getPlayQueue()])
-      // 列表挂载时就由 contentOffset 停在 initialIndex 处，所以缓存值要按它来设，
+      const list = getPlayQueue()
+      const index = playInfo.playerPlayIndex > 0 && playInfo.playerPlayIndex < list.length ? playInfo.playerPlayIndex : 0
+      setQueue([...list])
+      setInitialIndex(index)
+      // 列表挂载时就由 contentOffset 停在 index 处，所以缓存值要按它来设，
       // 否则「是否已可见」会以为还在顶部，首次跟随时会多滚一次
-      scrollOffsetRef.current = initialIndex * ITEM_HEIGHT
+      scrollOffsetRef.current = index * ITEM_HEIGHT
       listHeightRef.current = 0
       setVisible(true)
       requestAnimationFrame(() => popupRef.current?.setVisible(true))
@@ -122,7 +131,7 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   const scrollToCurrent = useCallback(() => {
     const index = playInfo.playerPlayIndex
     if (index < 0 || index >= getPlayQueue().length) return
-    // 已经完整露出就别再滚。用户点的就是眼前这一行，再滚一次只会「跳一下」。
+    // 已经完整露出就别再滚
     if (isIndexVisible(index)) return
     // 偏移就用 index*行高，让当前曲目停在可视区第一行。两个约束决定了这么算：
     // 1) 不能用 viewPosition 居中——它算的是 index*行高 - 比例*列表高度，
@@ -136,6 +145,8 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   // 打开面板时不滚动：列表靠 initialScrollIndex + contentOffset 挂载时就位。
   // 只在面板打开期间曲目发生变化时跟随。
   const followedIndexRef = useRef<number | null>(null)
+  // 用户点过的那一行。点播说明它就在眼前，跟随逻辑不该再把它滚到第一行。
+  const tappedIndexRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!visible) {
@@ -149,6 +160,10 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
       return
     }
     followedIndexRef.current = index
+    const tapped = tappedIndexRef.current
+    tappedIndexRef.current = null
+    // 这一次变化来自用户点的那一行：什么都不做（别的曲目照常跟随）
+    if (tapped === index) return
     requestAnimationFrame(scrollToCurrent)
   }, [visible, playInfo.playerPlayIndex, scrollToCurrent])
 
@@ -156,7 +171,11 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   // PanResponder 重建，长队列下开销很大
   const handleMove = useCallback((from: number, to: number) => { void moveQueueMusic(from, to) }, [])
   const handleRemove = useCallback((index: number) => { void removeQueueMusic(index) }, [])
-  const handlePlay = useCallback((index: number) => { void playList(LIST_IDS.PLAY_QUEUE, index) }, [])
+  const handlePlay = useCallback((index: number) => {
+    // 记下用户点的行，跟随逻辑据此跳过这一次（见上面的 effect）
+    tappedIndexRef.current = index
+    void playList(LIST_IDS.PLAY_QUEUE, index)
+  }, [])
 
   if (!visible) return null
 
