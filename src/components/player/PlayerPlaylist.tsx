@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Animated, FlatList, PanResponder, TouchableOpacity, View } from 'react-native'
 import Popup, { type PopupType } from '@/components/common/Popup'
 import Text from '@/components/common/Text'
@@ -21,13 +21,16 @@ export interface PlayerPlaylistType {
 // getItemLayout 也用同一个值，滚动定位才和实际渲染对得上。
 const ITEM_HEIGHT = scaleSizeH(LIST_ITEM_HEIGHT)
 
-const QueueRow = ({ item, index, active, onMove, onRemove, onPlay }: {
+// 必须 memo：队列动辄几百首，父组件每次渲染都重渲所有行的话，
+// 滚动定位到靠后的曲目时要一口气渲染大量单元格，看起来就是「一顿一顿地移动过去」。
+// 配合下面把回调都做成稳定引用，PanResponder 也只会建一次而不再每帧重建。
+const QueueRow = memo(({ item, index, active, onMove, onRemove, onPlay }: {
   item: LX.Player.PlayQueueItem
   index: number
   active: boolean
-  onMove: (from: number, to: number) => void
-  onRemove: () => void
-  onPlay: () => void
+  onMove: (index: number, to: number) => void
+  onRemove: (index: number) => void
+  onPlay: (index: number) => void
 }) => {
   const theme = useTheme()
   const musicInfo = 'progress' in item.musicInfo ? item.musicInfo.metadata.musicInfo : item.musicInfo
@@ -46,7 +49,7 @@ const QueueRow = ({ item, index, active, onMove, onRemove, onPlay }: {
 
   return (
     <Animated.View style={{ ...styles.item, borderBottomColor: theme['c-border-background'], backgroundColor: active ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)', transform: [{ translateY }], zIndex: 1 }}>
-      <TouchableOpacity style={styles.playArea} onPress={onPlay}>
+      <TouchableOpacity style={styles.playArea} onPress={() => { onPlay(index) }}>
         {/* 当前播放的行用喇叭图标替掉序号，配合整行底色，比只改文字颜色好认得多 */}
         {active
           ? <View style={styles.index}><Icon name="volume-higt" size={14} color={theme['c-primary-font']} /></View>
@@ -57,10 +60,10 @@ const QueueRow = ({ item, index, active, onMove, onRemove, onPlay }: {
         </View>
       </TouchableOpacity>
       <View style={styles.iconButton} {...responder.panHandlers}><Icon name="menu" size={17} color={theme['c-font-label']} /></View>
-      <TouchableOpacity style={styles.iconButton} onPress={onRemove}><Icon name="remove" size={15} color={theme['c-font-label']} /></TouchableOpacity>
+      <TouchableOpacity style={styles.iconButton} onPress={() => { onRemove(index) }}><Icon name="remove" size={15} color={theme['c-font-label']} /></TouchableOpacity>
     </Animated.View>
   )
-}
+}, (prev, next) => prev.item === next.item && prev.index === next.index && prev.active === next.active)
 
 export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   const popupRef = useRef<PopupType>(null)
@@ -72,12 +75,21 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   const playInfo = usePlayInfo()
   const theme = useTheme()
 
+  // 挂载时的目标位置。两个属性必须同时给，缺一不可：
+  // - initialScrollIndex 让虚拟列表从这一项开始渲染，否则单元格会逐个冒出来，
+  //   看起来就是「一顿一顿地移动过去」（索引越大越明显）
+  // - contentOffset 让原生视图一开始就停在这个位置。RN 的 VirtualizedList
+  //   在 _onContentSizeChange 里会判断：提供了 contentOffset 就跳过它自己那次
+  //   scrollToIndex。少了它，那次滚动会发生在内容尺寸确定之后（面板已出现），
+  //   同样表现为可见的移动。
+  const initialIndex = playInfo.playerPlayIndex > 0 && playInfo.playerPlayIndex < queue.length ? playInfo.playerPlayIndex : 0
+
   useImperativeHandle(ref, () => ({
     show() {
       setQueue([...getPlayQueue()])
-      // 面板每次显示都是重新挂载的 FlatList，滚动位置回到 0；
-      // 缓存的值也要重置，否则会拿上一次的偏移量误判成「已经可见」而跳过定位
-      scrollOffsetRef.current = 0
+      // 列表挂载时就由 contentOffset 停在 initialIndex 处，所以缓存值要按它来设，
+      // 否则「是否已可见」会以为还在顶部，首次跟随时会多滚一次
+      scrollOffsetRef.current = initialIndex * ITEM_HEIGHT
       listHeightRef.current = 0
       setVisible(true)
       requestAnimationFrame(() => popupRef.current?.setVisible(true))
@@ -111,10 +123,30 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
     listRef.current?.scrollToOffset({ offset: index * ITEM_HEIGHT, animated: false })
   }, [playInfo.playerPlayIndex, isIndexVisible])
 
+  // 打开面板时不滚动：列表靠 initialScrollIndex + contentOffset 挂载时就位。
+  // 只在面板打开期间曲目发生变化时跟随。
+  const followedIndexRef = useRef<number | null>(null)
+
   useEffect(() => {
-    if (!visible) return
+    if (!visible) {
+      followedIndexRef.current = null
+      return
+    }
+    const index = playInfo.playerPlayIndex
+    // 刚打开：只记下当前曲目，不动
+    if (followedIndexRef.current === null || followedIndexRef.current === index) {
+      followedIndexRef.current = index
+      return
+    }
+    followedIndexRef.current = index
     requestAnimationFrame(scrollToCurrent)
-  }, [visible, scrollToCurrent])
+  }, [visible, playInfo.playerPlayIndex, scrollToCurrent])
+
+  // 稳定引用，配合 QueueRow 的 memo：否则每渲染一次都会让所有行的
+  // PanResponder 重建，长队列下开销很大
+  const handleMove = useCallback((from: number, to: number) => { void moveQueueMusic(from, to) }, [])
+  const handleRemove = useCallback((index: number) => { void removeQueueMusic(index) }, [])
+  const handlePlay = useCallback((index: number) => { void playList(LIST_IDS.PLAY_QUEUE, index) }, [])
 
   if (!visible) return null
 
@@ -136,6 +168,8 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
         // 也是用 flexShrink:1 + flexGrow:0 这个组合。
         style={styles.list}
         getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
+        initialScrollIndex={initialIndex > 0 ? initialIndex : undefined}
+        contentOffset={{ x: 0, y: initialIndex * ITEM_HEIGHT }}
         onLayout={e => { listHeightRef.current = e.nativeEvent.layout.height }}
         onScroll={e => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y }}
         scrollEventThrottle={16}
@@ -144,9 +178,9 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
             item={item}
             index={index}
             active={index == playInfo.playerPlayIndex}
-            onMove={(from, to) => { void moveQueueMusic(from, to) }}
-            onRemove={() => { void removeQueueMusic(index) }}
-            onPlay={() => { void playList(LIST_IDS.PLAY_QUEUE, index) }}
+            onMove={handleMove}
+            onRemove={handleRemove}
+            onPlay={handlePlay}
           />
         )}
         ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{global.i18n.t('player_playlist_empty')}</Text>}
