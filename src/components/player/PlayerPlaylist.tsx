@@ -19,10 +19,19 @@ export interface PlayerPlaylistType {
 // 这里写死常量的话，字号调大后两行文字会溢出被裁掉。
 // 其它列表统一用 scaleSizeH(LIST_ITEM_HEIGHT)，这里保持一致，
 // getItemLayout 也用同一个值，滚动定位才和实际渲染对得上。
+//
+// 注意：这个值只能写在内联 style 里（和其它列表一样），绝不能放进 createStyle。
+// createStyle 会按属性名再缩放一次（height 走 scaleSizeH），ITEM_HEIGHT 已经是
+// 缩放后的值，再缩一次就比 getItemLayout 声明的行高多/少几个 dp：
+//   1080x2400 @2.75 -> 声明 56、实际 58；1080x1920 @3 -> 声明 51、实际 48；
+//   1440x3200 @3.5 -> 声明 47、实际 41；字号调大还会按倍数放大这个差。
+// 虚拟列表滚动时会把视口外的单元格换成 spacer，spacer 用的是 getItemLayout 的值，
+// 而渲染出来的单元格用的是真实高度，两者每差 1dp，换一批单元格（默认每 50ms 10 个）
+// 内容就会整体平移一批——看起来就是「一顿一顿地移动」，序号越大、要补的单元格越多越明显。
 const ITEM_HEIGHT = scaleSizeH(LIST_ITEM_HEIGHT)
 
-// 必须 memo：队列动辄几百首，父组件每次渲染都重渲所有行的话，
-// 滚动定位到靠后的曲目时要一口气渲染大量单元格，看起来就是「一顿一顿地移动过去」。
+// 必须 memo：队列动辄几百首，虚拟列表一次就会补进来一批单元格，
+// 父组件每次渲染都重渲所有行的话这批渲染就很贵（卡顿）。
 // 配合下面把回调都做成稳定引用，PanResponder 也只会建一次而不再每帧重建。
 const QueueRow = memo(({ item, index, active, onMove, onRemove, onPlay }: {
   item: LX.Player.PlayQueueItem
@@ -48,8 +57,9 @@ const QueueRow = memo(({ item, index, active, onMove, onRemove, onPlay }: {
   }), [index, onMove, translateY])
 
   return (
-    <Animated.View style={{ ...styles.item, borderBottomColor: theme['c-border-background'], backgroundColor: active ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)', transform: [{ translateY }], zIndex: 1 }}>
-      <TouchableOpacity style={styles.playArea} onPress={() => { onPlay(index) }}>
+    // height 都是内联的 ITEM_HEIGHT，别挪进 createStyle（会被二次缩放，见文件顶部说明）
+    <Animated.View style={{ ...styles.item, height: ITEM_HEIGHT, borderBottomColor: theme['c-border-background'], backgroundColor: active ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)', transform: [{ translateY }], zIndex: 1 }}>
+      <TouchableOpacity style={{ ...styles.playArea, height: ITEM_HEIGHT }} onPress={() => { onPlay(index) }}>
         {/* 当前播放的行用喇叭图标替掉序号，配合整行底色，比只改文字颜色好认得多 */}
         {active
           ? <View style={styles.index}><Icon name="volume-higt" size={14} color={theme['c-primary-font']} /></View>
@@ -59,8 +69,8 @@ const QueueRow = memo(({ item, index, active, onMove, onRemove, onPlay }: {
           <Text numberOfLines={1} size={12} color={theme['c-font-label']}>{musicInfo.singer}</Text>
         </View>
       </TouchableOpacity>
-      <View style={styles.iconButton} {...responder.panHandlers}><Icon name="menu" size={17} color={theme['c-font-label']} /></View>
-      <TouchableOpacity style={styles.iconButton} onPress={() => { onRemove(index) }}><Icon name="remove" size={15} color={theme['c-font-label']} /></TouchableOpacity>
+      <View style={{ ...styles.iconButton, height: ITEM_HEIGHT }} {...responder.panHandlers}><Icon name="menu" size={17} color={theme['c-font-label']} /></View>
+      <TouchableOpacity style={{ ...styles.iconButton, height: ITEM_HEIGHT }} onPress={() => { onRemove(index) }}><Icon name="remove" size={15} color={theme['c-font-label']} /></TouchableOpacity>
     </Animated.View>
   )
 }, (prev, next) => prev.item === next.item && prev.index === next.index && prev.active === next.active)
@@ -193,11 +203,13 @@ const styles = createStyle({
   list: { flexShrink: 1, flexGrow: 0 },
   toolbar: { height: 36, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   clearButton: { minWidth: 48, height: 36, alignItems: 'center', justifyContent: 'center' },
-  item: { height: ITEM_HEIGHT, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, paddingLeft: 12 },
-  playArea: { flex: 1, height: ITEM_HEIGHT, flexDirection: 'row', alignItems: 'center' },
+  // 行高不在这里写：createStyle 会把 height 再缩放一次，和 getItemLayout 对不上，
+  // 改由渲染处内联 ITEM_HEIGHT（见文件顶部说明）
+  item: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, paddingLeft: 12 },
+  playArea: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   // textAlign 给序号文字用，alignItems 给当前曲的喇叭图标用（View 里靠它居中）
   index: { width: 32, textAlign: 'center', alignItems: 'center' },
   info: { flex: 1, paddingLeft: 8 },
-  iconButton: { width: 42, height: ITEM_HEIGHT, alignItems: 'center', justifyContent: 'center' },
+  iconButton: { width: 42, alignItems: 'center', justifyContent: 'center' },
   empty: { textAlign: 'center', paddingVertical: 32 },
 })
