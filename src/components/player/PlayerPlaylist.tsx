@@ -149,6 +149,11 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
         ref={listRef}
         data={queue}
         keyExtractor={item => item.queueId}
+        // 必须给列表高度约束。ScrollView 默认 flexShrink:0，高度由内容决定，
+        // 队列一长就会远超面板的 maxHeight，和父容器的收缩约束互相打架，
+        // 布局稳定下来之前面板会跳一下。同 Popup 的另一个调用方（同步历史）
+        // 也是用 flexShrink:1 + flexGrow:0 这个组合。
+        style={styles.list}
         getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
         // 挂载时就定位到当前曲目，而不是挂载后再滚过去。
         // 后者会在面板淡入的过程中挪动内容，看起来就是抖一下。
@@ -174,6 +179,7 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
 })
 
 const styles = createStyle({
+  list: { flexShrink: 1, flexGrow: 0 },
   toolbar: { height: 36, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   clearButton: { minWidth: 48, height: 36, alignItems: 'center', justifyContent: 'center' },
   item: { height: ITEM_HEIGHT, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, paddingLeft: 12 },
