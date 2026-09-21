@@ -7,14 +7,22 @@ import { useTheme } from '@/store/theme/hook'
 import { usePlayInfo } from '@/store/player/hook'
 import { clearQueue, moveQueueMusic, playList, removeQueueMusic } from '@/core/player/player'
 import { getPlayQueue } from '@/core/player/playQueue'
-import { LIST_IDS } from '@/config/constant'
+import { LIST_IDS, LIST_ITEM_HEIGHT } from '@/config/constant'
+import { scaleSizeH } from '@/utils/pixelRatio'
 import { createStyle } from '@/utils/tools'
 
 export interface PlayerPlaylistType {
   show: () => void
 }
 
-const ITEM_HEIGHT = 56
+// 行高必须跟着字号缩放：Text 用的是 setSpText（会乘字号设置），
+// 这里写死常量的话，字号调大后两行文字会溢出被裁掉。
+// 其它列表统一用 scaleSizeH(LIST_ITEM_HEIGHT)，这里保持一致，
+// getItemLayout 也用同一个值，滚动定位才和实际渲染对得上。
+const ITEM_HEIGHT = scaleSizeH(LIST_ITEM_HEIGHT)
+// 滚动定位时把目标行放在视口偏上的位置，而不是 0.35 这种贴边的比例，
+// 上下都留出余量，不会出现"定位到了但贴着边缘"的观感
+const SCROLL_VIEW_POSITION = 0.5
 
 const QueueRow = ({ item, index, active, onMove, onRemove, onPlay }: {
   item: LX.Player.PlayQueueItem
@@ -40,9 +48,12 @@ const QueueRow = ({ item, index, active, onMove, onRemove, onPlay }: {
   }), [index, onMove, translateY])
 
   return (
-    <Animated.View style={{ ...styles.item, borderBottomColor: theme['c-border-background'], transform: [{ translateY }], zIndex: 1 }}>
+    <Animated.View style={{ ...styles.item, borderBottomColor: theme['c-border-background'], backgroundColor: active ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)', transform: [{ translateY }], zIndex: 1 }}>
       <TouchableOpacity style={styles.playArea} onPress={onPlay}>
-        <Text style={styles.index} color={active ? theme['c-primary-font'] : theme['c-font-label']}>{index + 1}</Text>
+        {/* 当前播放的行用喇叭图标替掉序号，配合整行底色，比只改文字颜色好认得多 */}
+        {active
+          ? <View style={styles.index}><Icon name="volume-higt" size={14} color={theme['c-primary-font']} /></View>
+          : <Text style={styles.index} color={theme['c-font-label']}>{index + 1}</Text>}
         <View style={styles.info}>
           <Text numberOfLines={1} color={active ? theme['c-primary-font'] : theme['c-font']}>{musicInfo.name}</Text>
           <Text numberOfLines={1} size={12} color={theme['c-font-label']}>{musicInfo.singer}</Text>
@@ -57,6 +68,8 @@ const QueueRow = ({ item, index, active, onMove, onRemove, onPlay }: {
 export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   const popupRef = useRef<PopupType>(null)
   const listRef = useRef<FlatList<LX.Player.PlayQueueItem>>(null)
+  const scrollOffsetRef = useRef(0)
+  const listHeightRef = useRef(0)
   const [visible, setVisible] = useState(false)
   const [queue, setQueue] = useState<LX.Player.PlayQueueItem[]>([...getPlayQueue()])
   const playInfo = usePlayInfo()
@@ -65,6 +78,10 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   useImperativeHandle(ref, () => ({
     show() {
       setQueue([...getPlayQueue()])
+      // 面板每次显示都是重新挂载的 FlatList，滚动位置回到 0；
+      // 缓存的值也要重置，否则会拿上一次的偏移量误判成「已经可见」而跳过定位
+      scrollOffsetRef.current = 0
+      listHeightRef.current = 0
       setVisible(true)
       requestAnimationFrame(() => popupRef.current?.setVisible(true))
     },
@@ -76,15 +93,24 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
     return () => { global.app_event.off('playQueueUpdate', handleUpdate) }
   }, [])
 
-  const scrollToCurrent = useCallback(() => {
-    if (playInfo.playerPlayIndex < 0 || playInfo.playerPlayIndex >= queue.length) return
-    listRef.current?.scrollToIndex({ index: playInfo.playerPlayIndex, viewPosition: 0.35, animated: false })
-  }, [playInfo.playerPlayIndex, queue.length])
+  const isIndexVisible = useCallback((index: number) => {
+    const top = index * ITEM_HEIGHT
+    const bottom = top + ITEM_HEIGHT
+    const viewTop = scrollOffsetRef.current
+    return top >= viewTop && bottom <= viewTop + listHeightRef.current
+  }, [])
 
   useEffect(() => {
     if (!visible) return
-    requestAnimationFrame(scrollToCurrent)
-  }, [visible, scrollToCurrent])
+    const index = playInfo.playerPlayIndex
+    if (index < 0 || index >= getPlayQueue().length) return
+    // 已经完整露出就别再滚。用户点的就是眼前这一行，再滚一次只会「跳一下」；
+    // 打开面板时当前曲目本来就在可视区内，同样不必动。
+    if (isIndexVisible(index)) return
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToIndex({ index, viewPosition: SCROLL_VIEW_POSITION, animated: false })
+    })
+  }, [visible, playInfo.playerPlayIndex, isIndexVisible])
 
   if (!visible) return null
 
@@ -101,8 +127,11 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
         data={queue}
         keyExtractor={item => item.queueId}
         getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
+        onLayout={e => { listHeightRef.current = e.nativeEvent.layout.height }}
+        onScroll={e => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y }}
+        scrollEventThrottle={16}
         onScrollToIndexFailed={({ index }) => {
-          setTimeout(() => listRef.current?.scrollToIndex({ index, viewPosition: 0.35, animated: false }), 100)
+          setTimeout(() => listRef.current?.scrollToIndex({ index, viewPosition: SCROLL_VIEW_POSITION, animated: false }), 100)
         }}
         renderItem={({ item, index }) => (
           <QueueRow
@@ -125,7 +154,8 @@ const styles = createStyle({
   clearButton: { minWidth: 48, height: 36, alignItems: 'center', justifyContent: 'center' },
   item: { height: ITEM_HEIGHT, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, paddingLeft: 12 },
   playArea: { flex: 1, height: ITEM_HEIGHT, flexDirection: 'row', alignItems: 'center' },
-  index: { width: 32, textAlign: 'center' },
+  // textAlign 给序号文字用，alignItems 给当前曲的喇叭图标用（View 里靠它居中）
+  index: { width: 32, textAlign: 'center', alignItems: 'center' },
   info: { flex: 1, paddingLeft: 8 },
   iconButton: { width: 42, height: ITEM_HEIGHT, alignItems: 'center', justifyContent: 'center' },
   empty: { textAlign: 'center', paddingVertical: 32 },
