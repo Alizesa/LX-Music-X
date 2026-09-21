@@ -20,9 +20,6 @@ export interface PlayerPlaylistType {
 // 其它列表统一用 scaleSizeH(LIST_ITEM_HEIGHT)，这里保持一致，
 // getItemLayout 也用同一个值，滚动定位才和实际渲染对得上。
 const ITEM_HEIGHT = scaleSizeH(LIST_ITEM_HEIGHT)
-// 滚动定位时把目标行放在视口偏上的位置，而不是 0.35 这种贴边的比例，
-// 上下都留出余量，不会出现"定位到了但贴着边缘"的观感
-const SCROLL_VIEW_POSITION = 0.5
 
 const QueueRow = ({ item, index, active, onMove, onRemove, onPlay }: {
   item: LX.Player.PlayQueueItem
@@ -105,35 +102,19 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
     if (index < 0 || index >= getPlayQueue().length) return
     // 已经完整露出就别再滚。用户点的就是眼前这一行，再滚一次只会「跳一下」。
     if (isIndexVisible(index)) return
-    const listHeight = listHeightRef.current
-    // 自己算偏移并夹到 >= 0，不要用 scrollToIndex 的 viewPosition：
-    // 它算的是 index*行高 - viewPosition*列表高度，靠前的歌曲会得到负偏移，
-    // 负值会让列表内容整体错位，表现就是前几首被顶出可视区（越靠前越明显）
-    const offset = listHeight
-      ? Math.max(0, index * ITEM_HEIGHT - SCROLL_VIEW_POSITION * listHeight)
-      : index * ITEM_HEIGHT
-    listRef.current?.scrollToOffset({ offset, animated: false })
+    // 偏移就用 index*行高，让当前曲目停在可视区第一行。两个约束决定了这么算：
+    // 1) 不能用 viewPosition 居中——它算的是 index*行高 - 比例*列表高度，
+    //    靠前的歌曲会得到负偏移，内容整体错位、前几首被顶出可视区；
+    // 2) 不能用列表高度去算居中——高度要等 onLayout 才有，而等到那时面板
+    //    已经出现，滚动就发生在众目睽睽之下（"抖一下"）。这里只依赖行高，
+    //    挂载当帧就能算出来，赶在面板出现之前滚好。
+    listRef.current?.scrollToOffset({ offset: index * ITEM_HEIGHT, animated: false })
   }, [playInfo.playerPlayIndex, isIndexVisible])
 
-  // 只在面板打开期间「曲目发生变化」时跟随滚动。
-  // 打开面板本身不滚动——列表挂载时就靠 initialScrollIndex 定位好了，
-  // 挂载后再滚一次会在面板淡入过程中看到内容跳一下（就是那下抖动）。
-  const followedIndexRef = useRef<number | null>(null)
-
   useEffect(() => {
-    if (!visible) {
-      followedIndexRef.current = null
-      return
-    }
-    const index = playInfo.playerPlayIndex
-    // 刚打开：只记下当前曲目，不动
-    if (followedIndexRef.current === null || followedIndexRef.current === index) {
-      followedIndexRef.current = index
-      return
-    }
-    followedIndexRef.current = index
+    if (!visible) return
     requestAnimationFrame(scrollToCurrent)
-  }, [visible, playInfo.playerPlayIndex, scrollToCurrent])
+  }, [visible, scrollToCurrent])
 
   if (!visible) return null
 
@@ -155,10 +136,6 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
         // 也是用 flexShrink:1 + flexGrow:0 这个组合。
         style={styles.list}
         getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
-        // 挂载时就定位到当前曲目，而不是挂载后再滚过去。
-        // 后者会在面板淡入的过程中挪动内容，看起来就是抖一下。
-        // 需要 getItemLayout，上面已提供。
-        initialScrollIndex={playInfo.playerPlayIndex > 0 && playInfo.playerPlayIndex < queue.length ? playInfo.playerPlayIndex : undefined}
         onLayout={e => { listHeightRef.current = e.nativeEvent.layout.height }}
         onScroll={e => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y }}
         scrollEventThrottle={16}
