@@ -11,7 +11,7 @@ import { useI18n } from '@/lang'
 import { useStatusbarHeight } from '@/store/common/hook'
 import { getQQMusicPlaylists, getQQMusicSession } from '@/core/qqMusic'
 import { markQQMusicViewDataRefreshed, shouldRefreshQQMusicViewData } from '@/core/qqMusicRecommend'
-import { getListMusics } from '@/core/list'
+import { getListMusics, setActiveList } from '@/core/list'
 import { getQQMusicPlaylistsCache } from '@/utils/data'
 import { LIST_IDS } from '@/config/constant'
 import { openQQPlaylist } from './openQQPlaylist'
@@ -89,6 +89,13 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
   const created = useMemo(() => playlists.filter(item => !item.subscribed), [playlists])
   const collected = useMemo(() => playlists.filter(item => item.subscribed), [playlists])
 
+  // 进「我的列表」之前先把它切到对应列表：不切的话三个入口点下去都落在
+  // 上次停留的那个列表上，入口就只是摆设。
+  const openStat = (listId: string | null, target: CommonState['navActiveId']) => {
+    if (listId) setActiveList(listId)
+    onModeChange(target)
+  }
+
   const emptyText = failed
     ? t('qq_load_failed')
     : user ? t('home_empty_playlists') : t('qq_login_hint')
@@ -123,10 +130,7 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
         <Text size={28} style={styles.title}>{t('home_title_mine')}</Text>
         <TouchableOpacity style={styles.menuButton} onPress={onOpenMenu}><Icon name="menu" size={24} /></TouchableOpacity>
       </View>
-      <TouchableOpacity style={{ ...styles.search, backgroundColor: theme['c-primary-light-900-alpha-500'] }} onPress={() => { onModeChange('nav_search') }}>
-        <Icon name="search-2" size={19} color={theme['c-font-label']} />
-        <Text size={16} color={theme['c-font-label']} style={styles.searchText}>{t('home_mine_search_placeholder')}</Text>
-      </TouchableOpacity>
+      {/* 这里原本还有一个搜索框，和首页那个完全一样，全 App 的第三个搜索入口，去掉了 */}
       <View style={{ ...styles.profile, backgroundColor: theme['c-primary-light-900-alpha-500'] }}>
         <Image url={user?.avatar} style={styles.avatar} />
         <View style={styles.profileInfo}>
@@ -138,27 +142,23 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
         </TouchableOpacity>
       </View>
       <View style={styles.stats}>
-        {stats.map(({ icon, label, target }) => (
-          <TouchableOpacity key={label} style={styles.stat} onPress={() => { onModeChange(target) }}>
+        {stats.map(({ icon, label, listId, target }) => (
+          <TouchableOpacity key={label} style={styles.stat} onPress={() => { openStat(listId, target) }}>
             <Icon name={icon} size={26} color={theme['c-primary']} />
             <Text size={14} style={styles.statLabel}>{t(label)}</Text>
             {counts[label] == null ? null : <Text size={12} color={theme['c-font-label']}>{counts[label]}</Text>}
           </TouchableOpacity>
         ))}
       </View>
-      <View style={styles.sectionHeader}>
-        <Text size={20} style={styles.sectionTitle}>{t('home_section_created')}</Text>
-        <TouchableOpacity onPress={() => { onModeChange('nav_qq') }}><Text color={theme['c-primary']}>{t('home_manage')}</Text></TouchableOpacity>
-      </View>
+      <Text size={20} style={styles.sectionTitle}>{t('home_section_created')}</Text>
       {renderPlaylists(created, true)}
-      <View style={styles.sectionHeader}>
-        <Text size={20} style={styles.sectionTitle}>{t('collect_songlist')}</Text>
-        <TouchableOpacity onPress={() => { onModeChange('nav_qq') }}><Text color={theme['c-primary']}>{t('home_manage')}</Text></TouchableOpacity>
-      </View>
+      <Text size={20} style={styles.sectionTitle}>{t('collect_songlist')}</Text>
       {renderPlaylists(collected, false)}
+      {/* 歌单的增删改和导入都在 QQ 音乐页，那里每行右边就是导入按钮，
+          所以这里只留一个入口，不再重复“管理×2 + 导入”三条通往同一页的路径 */}
       <TouchableOpacity style={styles.import} onPress={() => { onModeChange('nav_qq') }}>
-        <Icon name="add-music" size={28} color={theme['c-primary']} />
-        <Text size={16} style={styles.importText}>{t('home_import_playlist')}</Text>
+        <Icon name="album" size={26} color={theme['c-primary']} />
+        <Text size={16} style={styles.importText}>{t('home_manage_playlists')}</Text>
       </TouchableOpacity>
     </ScrollView>
   </View>
@@ -169,8 +169,6 @@ const styles = createStyle({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 14 },
   title: { fontWeight: '700' },
   menuButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  search: { height: 46, borderRadius: 24, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 16 },
-  searchText: { marginLeft: 10 },
   profile: { minHeight: 112, borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center' },
   avatar: { width: 62, height: 62, borderRadius: 31 },
   profileInfo: { flex: 1, marginLeft: 14 },
@@ -179,8 +177,7 @@ const styles = createStyle({
   stats: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 24 },
   stat: { flex: 1, alignItems: 'center' },
   statLabel: { marginTop: 7, marginBottom: 3 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  sectionTitle: { flex: 1, fontWeight: '700' },
+  sectionTitle: { fontWeight: '700', marginBottom: 10 },
   playlist: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   playlistImage: { width: 58, height: 58, borderRadius: 8, marginRight: 12 },
   playlistInfo: { flex: 1 },

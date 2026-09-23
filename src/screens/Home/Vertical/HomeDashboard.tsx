@@ -24,12 +24,13 @@ interface Props {
   onOpenMenu: () => void
 }
 
+// 只留三个各自去向不同的入口。参考图上的“猜你喜欢”和“新歌新碟”没有对应能力：
+// 前者没有接口（qqMusic 只有每日推荐和推荐歌单），后者和“分类歌单”是同一个页面
+// 且无法预选 tag，点了和旁边那颗按钮完全没有区别。
 const shortcuts = [
-  { icon: 'play-outline', label: 'home_shortcut_like', target: 'nav_qq' },
   { icon: 'music_time', label: 'qq_daily_recommend', target: 'nav_qq' },
   { icon: 'leaderboard', label: 'nav_top', target: 'nav_top' },
   { icon: 'album', label: 'nav_songlist', target: 'nav_songlist' },
-  { icon: 'available_updates', label: 'home_shortcut_new', target: 'nav_songlist' },
 ] as const
 
 // 请求闸门的键。切 Tab、从旧功能页返回都会重新挂载这个页面，
@@ -112,6 +113,17 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
     })
   }, [songs])
 
+  // Banner 就是第一个推荐歌单的入口。之前它和下面歌曲区的“播放”按钮是同一个动作，
+  // 背景却用歌单封面，看着像歌单其实是播放键，这里让它名副其实。
+  const firstPlaylist = playlists[0]
+  const openBanner = useCallback(() => {
+    if (!firstPlaylist) {
+      toast(t('qq_recommend_empty'), 'long')
+      return
+    }
+    openQQPlaylist(firstPlaylist)
+  }, [firstPlaylist, t])
+
   const playRecommendations = useCallback(() => {
     if (!songs.length) {
       if (!cookie) {
@@ -145,11 +157,11 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
           <Icon name="search-2" size={19} color={theme['c-font-label']} />
           <Text size={16} color={theme['c-font-label']} style={styles.searchText}>{t('home_search_placeholder')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.banner} onPress={playRecommendations}>
-          <Image url={playlists[0]?.cover} style={styles.bannerImage} />
+        <TouchableOpacity style={styles.banner} onPress={openBanner}>
+          <Image url={firstPlaylist?.cover} style={styles.bannerImage} />
           <View style={styles.bannerOverlay}>
-            <Text size={20} color="#fff" style={styles.bannerTitle}>{cookie ? t('home_banner_logged_in') : t('home_banner_guest')}</Text>
-            <Text size={12} color="#fff">{t('home_banner_action')}</Text>
+            <Text numberOfLines={1} size={20} color="#fff" style={styles.bannerTitle}>{firstPlaylist?.name ?? t('qq_recommend_playlists')}</Text>
+            <Text size={12} color="#fff">{cookie ? t('home_banner_logged_in') : t('home_banner_guest')}</Text>
           </View>
         </TouchableOpacity>
         <View style={styles.shortcuts}>
@@ -217,7 +229,7 @@ const styles = createStyle({
   bannerOverlay: { position: 'absolute', left: 18, bottom: 18 },
   bannerTitle: { fontWeight: '700', marginBottom: 4 },
   shortcuts: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 22 },
-  shortcut: { alignItems: 'center', width: '19%' },
+  shortcut: { alignItems: 'center', width: '30%' },
   shortcutIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   shortcutLabel: { marginTop: 7, textAlign: 'center' },
   sectionTitle: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
