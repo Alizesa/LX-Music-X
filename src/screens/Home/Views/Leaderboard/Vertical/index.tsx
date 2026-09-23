@@ -4,26 +4,18 @@ import { createStyle } from '@/utils/tools'
 
 import MusicList, { type MusicListType } from '../MusicList'
 import { getLeaderboardSetting, saveLeaderboardSetting } from '@/utils/data'
-import DrawerLayoutFixed, { type DrawerLayoutFixedType } from '@/components/common/DrawerLayoutFixed'
+import Popup, { type PopupType } from '@/components/common/Popup'
 import HeaderBar, { type HeaderBarType, type HeaderBarProps } from './HeaderBar'
-import { scaleSizeW } from '@/utils/pixelRatio'
-import { useTheme } from '@/store/theme/hook'
-// import { BorderWidths } from '@/theme'
-// import { useTheme } from '@/store/theme/hook'
+import { useI18n } from '@/lang'
 import BoardsList, { type BoardsListType, type BoardsListProps } from '../BoardsList'
-import type { InitState as CommonState } from '@/store/common/state'
-import settingState from '@/store/setting/state'
 import { getBoardsList } from '@/core/leaderboard'
-import { COMPONENT_IDS } from '@/config/constant'
 import { handleCollect, handlePlay } from '../listAction'
 import boardState from '@/store/leaderboard/state'
 
-
-const MAX_WIDTH = scaleSizeW(200)
-
 export default () => {
-  const drawer = useRef<DrawerLayoutFixedType>(null)
-  const theme = useTheme()
+  // 榜单清单原来挂在左侧抽屉里，现在换成底部面板（和「更多」面板同一套）
+  const popupRef = useRef<PopupType>(null)
+  const t = useI18n()
   const musicListRef = useRef<MusicListType>(null)
   const isUnmountedRef = useRef(false)
   const boardsListRef = useRef<BoardsListType>(null)
@@ -47,9 +39,7 @@ export default () => {
       })
     })
     handleBoundChange(boundInfo.current.source, id)
-    requestAnimationFrame(() => {
-      drawer.current?.closeDrawer()
-    })
+    popupRef.current?.setVisible(false)
   }
   const onPlay: BoardsListProps['onPlay'] = (id) => {
     boundInfo.current.id = id
@@ -60,8 +50,16 @@ export default () => {
     void handleCollect(id, name, boundInfo.current.source)
   }
   const onShowBound = () => {
+    popupRef.current?.setVisible(true)
+    // 面板隐藏时子树是卸载的（RN 的 Modal 在 visible=false 时不渲染 children），
+    // BoardsList 的 ref 那时是空的，榜单数据要在它挂载之后再补一次。
+    // 榜单列表在 store 里有缓存，这次调用不会发请求。
+    const { source, id } = boundInfo.current
+    if (!source || !id) return
     requestAnimationFrame(() => {
-      drawer.current?.openDrawer()
+      requestAnimationFrame(() => {
+        void getBoardsList(source).then(list => { boardsListRef.current?.setList(list, id) })
+      })
     })
   }
   const onSourceChange: HeaderBarProps['onSourceChange'] = (source) => {
@@ -70,7 +68,8 @@ export default () => {
       const id = list[0].id
       const name = list[0].name
       requestAnimationFrame(() => {
-        boardsListRef.current?.setList(list, id)
+        // 榜单清单这一步拿不到（面板关着时它没挂载），它会在下次打开时按
+        // boundInfo 重新取一次，这里只更新标题栏
         headerBarRef.current?.setBound(source, id, name ?? 'Unknown')
         requestAnimationFrame(() => {
           handleBoundChange(source, id)
@@ -94,48 +93,31 @@ export default () => {
 
 
   useEffect(() => {
-    const handleFixDrawer = (id: CommonState['navActiveId']) => {
-      if (id == 'nav_top') drawer.current?.fixWidth()
-    }
-    global.state_event.on('navActiveIdUpdated', handleFixDrawer)
-
-
     isUnmountedRef.current = false
     void getLeaderboardSetting().then(({ source, boardId }) => {
       boundInfo.current.source = source
       boundInfo.current.id = boardId
       void getBoardsList(source).then(list => {
         const bound = list.find(l => l.id == boardId)
-        boardsListRef.current?.setList(list, boardId)
         headerBarRef.current?.setBound(source, boardId, bound?.name ?? 'Unknown')
       })
       musicListRef.current?.loadList(source, boardId)
     })
 
     return () => {
-      global.state_event.off('navActiveIdUpdated', handleFixDrawer)
       isUnmountedRef.current = true
     }
   }, [])
 
 
   return (
-    <DrawerLayoutFixed
-      ref={drawer}
-      visibleNavNames={[COMPONENT_IDS.home]}
-      // drawerWidth={width}
-      widthPercentage={0.82}
-      widthPercentageMax={MAX_WIDTH}
-      drawerPosition={settingState.setting['common.drawerLayoutPosition']}
-      renderNavigationView={navigationView}
-      drawerBackgroundColor={theme['c-content-background']}
-      style={{ elevation: 1 }}
-    >
-      <View style={styles.container}>
-        <HeaderBar ref={headerBarRef} onShowBound={onShowBound} onSourceChange={onSourceChange} />
-        <MusicList ref={musicListRef} />
-      </View>
-    </DrawerLayoutFixed>
+    <View style={styles.container}>
+      <HeaderBar ref={headerBarRef} onShowBound={onShowBound} onSourceChange={onSourceChange} />
+      <MusicList ref={musicListRef} />
+      <Popup ref={popupRef} title={t('nav_top')} position="bottom">
+        {navigationView()}
+      </Popup>
+    </View>
     // <View style={styles.container}>
     //   <LeftBar
     //     ref={leftBarRef}

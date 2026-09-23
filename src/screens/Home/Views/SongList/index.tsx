@@ -1,58 +1,35 @@
 import { useEffect, useRef } from 'react'
-import settingState from '@/store/setting/state'
+import { View } from 'react-native'
 import Content from './Content'
 import TagList from './TagList'
-import { useTheme } from '@/store/theme/hook'
-import DrawerLayoutFixed, { type DrawerLayoutFixedType } from '@/components/common/DrawerLayoutFixed'
-import { COMPONENT_IDS } from '@/config/constant'
-import { scaleSizeW } from '@/utils/pixelRatio'
-import type { InitState as CommonState } from '@/store/common/state'
-
-const MAX_WIDTH = scaleSizeW(560)
+import Popup, { type PopupType } from '@/components/common/Popup'
+import { useI18n } from '@/lang'
 
 export default () => {
-  const drawer = useRef<DrawerLayoutFixedType>(null)
-  const theme = useTheme()
+  const t = useI18n()
+  const popupRef = useRef<PopupType>(null)
 
   useEffect(() => {
-    const handleFixDrawer = (id: CommonState['navActiveId']) => {
-      if (id == 'nav_songlist') drawer.current?.fixWidth()
-    }
-    const handleShow = () => {
-      requestAnimationFrame(() => {
-        drawer.current?.openDrawer()
-      })
-    }
-    const handleHide = () => {
-      drawer.current?.closeDrawer()
-    }
+    // 标签清单原来挂在左侧抽屉里，现在换成底部面板（和「更多」面板同一套）。
+    // 事件接口没变，HeaderBar 上那个标签按钮不用改。
+    const handleShow = () => { popupRef.current?.setVisible(true) }
+    const handleHide = () => { popupRef.current?.setVisible(false) }
 
-    global.state_event.on('navActiveIdUpdated', handleFixDrawer)
     global.app_event.on('showSonglistTagList', handleShow)
     global.app_event.on('hideSonglistTagList', handleHide)
 
     return () => {
-      global.state_event.off('navActiveIdUpdated', handleFixDrawer)
       global.app_event.off('showSonglistTagList', handleShow)
       global.app_event.off('hideSonglistTagList', handleHide)
     }
   }, [])
 
-  const navigationView = () => <TagList />
-  // console.log('render drawer content')
-
   return (
-    <DrawerLayoutFixed
-      ref={drawer}
-      visibleNavNames={[COMPONENT_IDS.home]}
-      widthPercentage={0.8}
-      widthPercentageMax={MAX_WIDTH}
-      drawerPosition={settingState.setting['common.drawerLayoutPosition']}
-      renderNavigationView={navigationView}
-      drawerBackgroundColor={theme['c-content-background']}
-      style={{ elevation: 1 }}
-    >
+    <View style={{ flex: 1 }}>
       <Content />
-    </DrawerLayoutFixed>
+      <Popup ref={popupRef} title={t('home_songlist_tags')} position="bottom">
+        <TagList />
+      </Popup>
+    </View>
   )
 }
