@@ -87,7 +87,7 @@ export const isQQMusicCookie = (cookie: string) => {
   return !!readUin(cookies) && !!readMusicKey(cookies)
 }
 
-const request = async(url: string, cookie: string, options: Record<string, any> = {}) => {
+const request = async(url: string, cookie: string, options: Record<string, any> = {}, autoCleanExpired = true) => {
   const result = await httpFetch(url, {
     ...options,
     headers: {
@@ -100,7 +100,17 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
     },
   }).promise
   if (result.statusCode < 200 || result.statusCode >= 300) throw new Error(`QQ Music HTTP ${result.statusCode}`)
-  return result.body as any
+  const body = result.body as any
+  // 所有带票据的请求都从这里过，过期就在这一处识别并清理，不再逐个接口手写判断。
+  // 只在确实带了完整票据(Cookie)时才判定：未登录的匿名请求同样会碰到过期码，
+  // 那种情况不该被当成"登录失效"。
+  // autoCleanExpired=false 用在登录流程：那里失败只代表这次 Cookie 不对，
+  // 不能顺手把已经登录的会话清掉（否则用户换个号输错一次就被踢下线）
+  if (autoCleanExpired && isQQMusicCookie(cookie) && hasExpiredSession(body)) {
+    handleExpiredSession()
+    throw new QQMusicSessionExpiredError()
+  }
+  return body
 }
 
 /**
@@ -121,7 +131,48 @@ const buildAuthComm = (cookies: Record<string, string>) => {
 }
 
 // 服务端用这两个码明确表示"未登录/票据失效"，区别于网络错误和结构变更
-const isSessionExpired = (body: any) => Number(body?.code) === 1000 || Number(body?.result) === 301
+const isSessionExpiredBody = (body: any) => Number(body?.code) === 1000 || Number(body?.result) === 301
+
+/**
+ * musicu.fcg 会把各模块的返回平铺在 req_0/req_1/radio/playlist 这类键下，
+ * 过期码就写在那一层，所以除顶层之外还要往下看一层。
+ *
+ * 以前只在"用户资料"和"每日推荐"两处手写了这个判断，其余接口拿到过期响应
+ * 只会返回空列表或抛一句通用错误——表现出来就是"登录明明失效了但界面还是
+ * 已登录、数据一直是空的"，得手动退出再重新登录才能恢复。
+ *
+ * 只认这两个码，不判"非 0 即失败"：外层码在登录态下的取值范围没有全部验证过，
+ * 判非 0 会引入原本不存在的失败分支。
+ */
+const hasExpiredSession = (body: any) => {
+  if (isSessionExpiredBody(body)) return true
+  if (!body || typeof body !== 'object') return false
+  return Object.values(body as Record<string, unknown>).some(value => isSessionExpiredBody(value))
+}
+
+/**
+ * 票据失效。调用方按普通错误处理即可（界面会 toast 出这句话），
+ * 会话清理和界面通知已经在 request() 里做掉了。
+ */
+export class QQMusicSessionExpiredError extends Error {
+  constructor() {
+    super(global.i18n.t('qq_session_expired'))
+  }
+}
+
+// 一次过期会有多个请求同时在飞，清理和广播只做一次。
+// 标志位在第一个 await 之前就置位，几个并发请求里只有一个能进来。
+let expiredHandled = false
+
+const handleExpiredSession = () => {
+  if (expiredHandled) return
+  expiredHandled = true
+  // 清理放在后台做：调用方该抛的错照抛，界面会在清理完成后收到退出通知
+  void clearQQMusicSession()
+    // 连同账号维度的缓存一起清掉，否则退出后界面还挂着上一个号的数据
+    .catch(error => { console.warn('[QQMusic] clear expired session failed:', error instanceof Error ? error.message : error) })
+    .finally(() => { global.app_event.qqMusicAccountUpdated(null) })
+}
 
 const getPath = (source: any, path: string) => {
   let value = source
@@ -261,6 +312,8 @@ export const saveQQMusicSession = async(cookie: string) => {
   if (prevUser?.uin && prevUser.uin !== (user.uin || uin)) await clearQQMusicDataCache()
   await saveQQMusicCookie(normalizedCookie)
   await saveQQMusicUser(user)
+  // 新会话生效，允许之后再因为过期而自动清理
+  expiredHandled = false
   return user
 }
 
@@ -296,20 +349,23 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
     nickname: `QQ ${uin}`,
     avatar: `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(uin)}&s=100`,
   }
-  // 资料接口只用来取昵称和头像。只有服务端明确回"未登录"才判定会话失效；
-  // 网络异常等其它情况退化为 Cookie 派生的资料，不阻断登录流程。
+  // 资料接口只用来取昵称和头像。票据失效由 request() 统一判定，这里必须放行，
+  // 否则会被下面的 catch 吞掉、退化成 Cookie 派生的资料，登录时就变成"明明失败了却显示已登录"；
+  // 网络异常等其它情况仍然退化为 Cookie 派生的资料，不阻断登录流程。
   let body: any = null
   try {
     body = await request(
       `${QQ_PROFILE_URL}?cid=205360838&userid=${encodeURIComponent(uin)}&reqfrom=1&g_tk=5381&loginUin=${encodeURIComponent(uin)}&hostUin=0&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0`,
       cookie,
       { headers: { Referer: QQ_PROFILE_REFERER } },
+      // 登录流程：过期只让这次登录失败，不动已有会话
+      false,
     )
   } catch (error) {
+    if (error instanceof QQMusicSessionExpiredError) throw error
     console.warn('[QQMusic] profile request failed:', error instanceof Error ? error.message : error)
   }
   if (!body) return fallback
-  if (isSessionExpired(body)) throw new Error(global.i18n.t('qq_session_expired'))
   const creator = body?.data?.creator ?? body?.data?.user ?? body?.data?.profile ?? {}
   return {
     uin: normalizeUin(creator.uin ?? uin) || uin,
@@ -406,7 +462,6 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
   const comm = buildAuthComm(cookies)
   const seen = new Set<string>()
   const songs: LX.Music.MusicInfoOnline[] = []
-  let expired = false
   let staleRounds = 0
   // 上游单次只回约 5 首，需要多次调用并按 songmid 去重凑够一份推荐列表。
   // 电台每次调用应给一批新的，若连续两轮没有新歌说明上游改成了固定列表，
@@ -432,11 +487,8 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
         },
       })
     } catch (error) {
+      // 票据失效由 request() 抛出并已就地清理会话；已经取到歌就当作本批到此为止
       if (!songs.length) throw error
-      break
-    }
-    if (isSessionExpired(body) || isSessionExpired(body?.radio)) {
-      expired = true
       break
     }
     const rawList = pickArray(body?.radio?.data, ['tracks', 'track', 'songList', 'vec_song'])
@@ -455,7 +507,7 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
       staleRounds = 0
     }
   }
-  if (!songs.length) throw new Error(global.i18n.t(expired ? 'qq_session_expired' : 'qq_load_failed'))
+  if (!songs.length) throw new Error(global.i18n.t('qq_load_failed'))
   return songs
 }
 

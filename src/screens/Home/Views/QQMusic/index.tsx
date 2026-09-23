@@ -56,6 +56,12 @@ export default () => {
     })
     const handleAccountUpdate = (nextUser: LX.QQMusic.UserInfo | null) => {
       setUser(nextUser)
+      // 退出登录（含票据失效被自动清理）时，把上一个账号的歌单和推荐从界面上撤掉，
+      // 否则页面会挂着已经失效的账号数据
+      if (!nextUser) {
+        setPlaylists([])
+        setRecommendations([])
+      }
       void getQQMusicSession().then(session => { setCookie(session.cookie) })
     }
     global.app_event.on('qqMusicAccountUpdated', handleAccountUpdate)
@@ -158,7 +164,8 @@ export default () => {
   const logout = () => {
     Alert.alert(t('qq_logout_title'), t('qq_logout_message'), [
       { text: t('cancel'), style: 'cancel' },
-      { text: t('confirm'), style: 'destructive', onPress: () => { void clearQQMusicSession().then(() => { setCookie(''); setUser(null); setPlaylists([]); setRecommendations([]); global.app_event.qqMusicAccountUpdated(null) }) } },
+      // 界面的清理都交给 qqMusicAccountUpdated 的处理函数，和票据失效时的自动退出走同一条路
+      { text: t('confirm'), style: 'destructive', onPress: () => { void clearQQMusicSession().then(() => { global.app_event.qqMusicAccountUpdated(null) }) } },
     ])
   }
 
