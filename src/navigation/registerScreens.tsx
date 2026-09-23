@@ -8,6 +8,7 @@ import {
   SonglistDetail,
   Comment,
   QQMusicRecommend,
+  QQMusicDailyRec,
   // Setting,
 } from '@/screens'
 import { Provider } from '@/store/Provider'
@@ -18,6 +19,7 @@ import {
   SONGLIST_DETAIL_SCREEN,
   COMMENT_SCREEN,
   QQMUSIC_RECOMMEND_SCREEN,
+  QQMUSIC_DAILY_REC_SCREEN,
   VERSION_MODAL,
   PACT_MODAL,
   SYNC_MODE_MODAL,
@@ -47,6 +49,7 @@ export default () => {
   Navigation.registerComponent(SONGLIST_DETAIL_SCREEN, () => WrappedComponent(SonglistDetail))
   Navigation.registerComponent(COMMENT_SCREEN, () => WrappedComponent(Comment))
   Navigation.registerComponent(QQMUSIC_RECOMMEND_SCREEN, () => WrappedComponent(QQMusicRecommend))
+  Navigation.registerComponent(QQMUSIC_DAILY_REC_SCREEN, () => WrappedComponent(QQMusicDailyRec))
   Navigation.registerComponent(VERSION_MODAL, () => WrappedComponent(VersionModal))
   Navigation.registerComponent(PACT_MODAL, () => WrappedComponent(PactModal))
   Navigation.registerComponent(SYNC_MODE_MODAL, () => WrappedComponent(SyncModeModal))

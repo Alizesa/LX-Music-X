@@ -9,13 +9,15 @@ import { createStyle, toast } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { useStatusbarHeight } from '@/store/common/hook'
-import { getQQMusicDailyRecommendCache, getQQMusicRecommendPlaylistsCache, saveQQMusicDailyRecommendCache, saveQQMusicRecommendPlaylistsCache } from '@/utils/data'
+import { getQQMusicDailyRecommendCache, getQQMusicRecommendPlaylistsCache, saveQQMusicDailyRecommendCache, saveQQMusicRecommendPlaylistsCache, saveLeaderboardSetting } from '@/utils/data'
 import { getQQMusicDailyRecommendations, getQQMusicRecommendedPlaylists, getQQMusicSession } from '@/core/qqMusic'
 import { RECOMMEND_TEMP_LIST_ID, initQQMusicRecommendAutoRefresh, markQQMusicViewDataRefreshed, shouldRefreshQQMusicViewData } from '@/core/qqMusicRecommend'
 import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { LIST_IDS } from '@/config/constant'
 import { openQQPlaylist } from './openQQPlaylist'
+import { navigations } from '@/navigation'
+import commonState from '@/store/common/state'
 import type { InitState as CommonState } from '@/store/common/state'
 
 interface Props {
@@ -24,14 +26,20 @@ interface Props {
   onOpenMenu: () => void
 }
 
-// 只留三个各自去向不同的入口。参考图上的“猜你喜欢”和“新歌新碟”没有对应能力：
-// 前者没有接口（qqMusic 只有每日推荐和推荐歌单），后者和“分类歌单”是同一个页面
-// 且无法预选 tag，点了和旁边那颗按钮完全没有区别。
+// 四个入口各自去向不同。参考图上的“猜你喜欢”没有对应接口（我们那份推荐数据
+// 本身就是猜你喜欢电台），已经去掉；“新歌新碟”接到 tx 新歌榜，不再和
+// “分类歌单”落到同一个页面却点了没区别。
 const shortcuts = [
-  { icon: 'music_time', label: 'qq_daily_recommend', target: 'nav_qq' },
+  { icon: 'music_time', label: 'qq_daily_recommend', target: 'daily_rec' },
+  { icon: 'available_updates', label: 'home_shortcut_new', target: 'new_songs' },
   { icon: 'leaderboard', label: 'nav_top', target: 'nav_top' },
   { icon: 'album', label: 'nav_songlist', target: 'nav_songlist' },
 ] as const
+
+// 新歌榜在 tx 榜单里是固定 id。排行榜页是进页面时从本地设置读榜单的，
+// 所以先写设置再进页面就能落到新歌榜上，不需要新接口。
+// 代价：会把排行榜的音源固定成 QQ。
+const TX_NEW_SONG_BOARD_ID = 'tx__27'
 
 // 请求闸门的键。切 Tab、从旧功能页返回都会重新挂载这个页面，
 // 闸门保证同一次启动内不会因此重复回源。
@@ -139,6 +147,26 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
     playFrom(0)
   }, [cookie, onModeChange, playFrom, songs.length, t])
 
+  // 每日推荐有自己的列表页，不再把人丢进 QQ 音乐页里再点一次
+  const openDailyRec = () => {
+    const componentId = commonState.componentIds.home
+    if (componentId) navigations.pushQQMusicDailyRecScreen(componentId)
+  }
+
+  const handleShortcut = (target: typeof shortcuts[number]['target']) => {
+    switch (target) {
+      case 'daily_rec':
+        openDailyRec()
+        return
+      // 必须等设置写完再进页面：排行榜是挂载时读设置的，早一步就还是旧榜单
+      case 'new_songs':
+        void saveLeaderboardSetting({ source: 'tx', boardId: TX_NEW_SONG_BOARD_ID }).then(() => { onModeChange('nav_top') })
+        return
+      default:
+        onModeChange(target)
+    }
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: theme['c-content-background'] }}>
       <StatusBar />
@@ -166,13 +194,13 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
         </TouchableOpacity>
         <View style={styles.shortcuts}>
           {shortcuts.map(({ icon, label, target }) => (
-            <TouchableOpacity key={label} style={styles.shortcut} onPress={() => { onModeChange(target) }}>
+            <TouchableOpacity key={label} style={styles.shortcut} onPress={() => { handleShortcut(target) }}>
               <View style={{ ...styles.shortcutIcon, backgroundColor: theme['c-primary'] }}><Icon name={icon} size={21} color="#fff" /></View>
               <Text size={12} style={styles.shortcutLabel}>{t(label)}</Text>
             </TouchableOpacity>
           ))}
         </View>
-        <SectionTitle title={t('home_section_hot_songs')} action={songs.length ? t('play') : undefined} onPress={playRecommendations} />
+        <SectionTitle title={t('home_section_hot_songs')} action={songs.length ? t('play') : undefined} onPress={playRecommendations} onMore={openDailyRec} />
         {songs.length
           ? songs.slice(0, 5).map((song, index) => (
               <TouchableOpacity key={`${song.id}-${index}`} style={styles.songRow} onPress={() => { playFrom(index) }}>
@@ -212,9 +240,15 @@ const StatusLine = ({ loading, text }: { loading: boolean, text: string }) => {
   )
 }
 
-const SectionTitle = ({ title, action, onPress }: { title: string, action?: string, onPress?: () => void }) => {
+const SectionTitle = ({ title, action, onPress, onMore }: { title: string, action?: string, onPress?: () => void, onMore?: () => void }) => {
   const theme = useTheme()
-  return <View style={styles.sectionTitle}><Text size={20} style={styles.sectionText}>{title}</Text>{action ? <TouchableOpacity onPress={onPress} style={{ ...styles.playAction, backgroundColor: theme['c-primary-light-900-alpha-500'] }}><Icon name="play-outline" size={14} color={theme['c-primary']} /><Text size={12} color={theme['c-primary']}>{action}</Text></TouchableOpacity> : null}</View>
+  return (
+    <View style={styles.sectionTitle}>
+      <Text size={20} style={styles.sectionText}>{title}</Text>
+      {action ? <TouchableOpacity onPress={onPress} style={{ ...styles.playAction, backgroundColor: theme['c-primary-light-900-alpha-500'] }}><Icon name="play-outline" size={14} color={theme['c-primary']} /><Text size={12} color={theme['c-primary']}>{action}</Text></TouchableOpacity> : null}
+      {onMore ? <TouchableOpacity onPress={onMore} style={styles.moreButton}><Icon name="chevron-right" size={18} color={theme['c-font-label']} /></TouchableOpacity> : null}
+    </View>
+  )
 }
 
 const styles = createStyle({
@@ -229,12 +263,13 @@ const styles = createStyle({
   bannerOverlay: { position: 'absolute', left: 18, bottom: 18 },
   bannerTitle: { fontWeight: '700', marginBottom: 4 },
   shortcuts: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 22 },
-  shortcut: { alignItems: 'center', width: '30%' },
+  shortcut: { alignItems: 'center', width: '23%' },
   shortcutIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   shortcutLabel: { marginTop: 7, textAlign: 'center' },
   sectionTitle: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   sectionText: { fontWeight: '700', flex: 1 },
   playAction: { borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  moreButton: { paddingLeft: 8, paddingVertical: 4 },
   songRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   cover: { width: 54, height: 54, borderRadius: 8 },
   songInfo: { flex: 1, marginLeft: 12 },
