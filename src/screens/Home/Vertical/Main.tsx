@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import Search from '../Views/Search'
 import SongList from '../Views/SongList'
@@ -9,6 +9,8 @@ import Download from '../Views/Download'
 import QQMusic from '../Views/QQMusic'
 import { type InitState as CommonState } from '@/store/common/state'
 import { setNavActiveId } from '@/core/common'
+import { useBackHandler } from '@/utils/hooks/useBackHandler'
+import commonState from '@/store/common/state'
 import Header from './Header'
 import HomeDashboard from './HomeDashboard'
 import MineDashboard from './MineDashboard'
@@ -51,6 +53,17 @@ export default ({ tab, tabPressCount }: Props) => {
 
   useEffect(() => { setMode('dashboard') }, [tabPressCount])
 
+  const backToDashboard = useCallback(() => { setMode('dashboard') }, [])
+
+  // 旧功能页自己没有返回路径，不接管的话硬件返回键会直接退出应用。
+  // componentIds 只有 home 一项时才接管，否则说明上面压着详情页，返回要归它们。
+  useBackHandler(useCallback(() => {
+    if (mode === 'dashboard') return false
+    if (Object.keys(commonState.componentIds).length !== 1) return false
+    backToDashboard()
+    return true
+  }, [backToDashboard, mode]))
+
   // 打开旧功能页要同时更新 navActiveId（标题、列表选中态都读它）
   const openLegacy = (id: CommonState['navActiveId']) => {
     setNavActiveId(id)
@@ -68,7 +81,7 @@ export default ({ tab, tabPressCount }: Props) => {
           )
         : (
             <>
-              <Header onMenuPress={openMoreMenu} />
+              <Header onBack={backToDashboard} onMenuPress={openMoreMenu} />
               <LegacyPage mode={mode} />
             </>
           )}
