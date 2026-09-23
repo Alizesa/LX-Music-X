@@ -26,15 +26,13 @@ const headerComponents: Partial<Record<CommonState['navActiveId'], React.ReactNo
 
 //   return <Text style={styles.leftTitle} size={18}>{t(id)}</Text>
 // }
-const LeftHeader = () => {
+const LeftHeader = ({ onMenuPress }: { onMenuPress: () => void }) => {
   const theme = useTheme()
   const id = useNavActiveId()
   const t = useI18n()
   const statusBarHeight = useStatusbarHeight()
 
-  const openMenu = () => {
-    global.app_event.changeMenuVisible(true)
-  }
+  const openMenu = onMenuPress
 
   return (
     <View style={{
@@ -66,15 +64,13 @@ const LeftHeader = () => {
 
 //   return <Text style={styles.rightTitle} size={18}>{t(id)}</Text>
 // }
-const RightHeader = () => {
+const RightHeader = ({ onMenuPress }: { onMenuPress: () => void }) => {
   const theme = useTheme()
   const t = useI18n()
   const id = useNavActiveId()
   const statusBarHeight = useStatusbarHeight()
 
-  const openMenu = () => {
-    global.app_event.changeMenuVisible(true)
-  }
+  const openMenu = onMenuPress
   return (
     <View style={{
       ...styles.container,
@@ -97,7 +93,7 @@ const RightHeader = () => {
   )
 }
 
-const Header = () => {
+const Header = ({ onMenuPress }: { onMenuPress: () => void }) => {
   const drawerLayoutPosition = useSettingValue('common.drawerLayoutPosition')
 
   return (
@@ -105,8 +101,8 @@ const Header = () => {
       <StatusBar />
       {
         drawerLayoutPosition == 'left'
-          ? <LeftHeader />
-          : <RightHeader />
+          ? <LeftHeader onMenuPress={onMenuPress} />
+          : <RightHeader onMenuPress={onMenuPress} />
       }
 
     </>

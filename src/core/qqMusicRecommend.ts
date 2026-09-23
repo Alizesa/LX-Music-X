@@ -6,8 +6,9 @@ import { LIST_IDS } from '@/config/constant'
 
 type CurrentPlayMusicInfo = typeof playerState['playMusicInfo']
 
-// 只有「每日推荐」写入的这个 meta.id 需要续播，其它临时列表（试听、导入歌单等）不受影响
-const RECOMMEND_TEMP_LIST_ID = 'qq_daily_recommend'
+// 只有「每日推荐」写入的这个 meta.id 需要续播，其它临时列表（试听、导入歌单等）不受影响。
+// 首页和 QQ 音乐页播的是同一批推荐，必须共用这个 id，否则首页点播的歌认不出来，播完不补歌。
+export const RECOMMEND_TEMP_LIST_ID = 'qq_daily_recommend'
 // 剩余未播少于这个数量就提前拉下一批，给网络往返留出时间
 const REFRESH_THRESHOLD = 5
 // 上游若改成固定池，续播会一直拿不到新歌。连续这么多次落空后就不再重试，
@@ -83,4 +84,18 @@ export const initQQMusicRecommendAutoRefresh = () => {
   if (initialized) return
   initialized = true
   global.state_event.on('playMusicInfoChanged', handlePlayMusicInfoChanged)
+}
+
+// 首页/「我的」这类展示页只需要保证进页面时数据不是空的，没必要每次挂载都回源。
+// 切 Tab、从旧功能页返回都会重新挂载页面，用进程内的时间戳做闸门把请求压到最低：
+// 同一次启动内只在第一次进页面（或超过间隔后）取一次，其余时候读缓存。
+// 失败时不记时间，下次进页面还能重试；下拉刷新不受闸门限制。
+const VIEW_REFRESH_INTERVAL = 30 * 60 * 1000
+const viewRefreshedAt: Record<string, number> = {}
+
+export const shouldRefreshQQMusicViewData = (key: string) =>
+  Date.now() - (viewRefreshedAt[key] ?? 0) >= VIEW_REFRESH_INTERVAL
+
+export const markQQMusicViewDataRefreshed = (key: string) => {
+  viewRefreshedAt[key] = Date.now()
 }

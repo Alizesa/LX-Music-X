@@ -7,7 +7,7 @@ import QQMusicCookieModal, { type QQMusicCookieModalType } from '@/components/QQ
 import { useTheme } from '@/store/theme/hook'
 import { createStyle, toast } from '@/utils/tools'
 import { clearQQMusicSession, getQQMusicDailyRecommendations, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, isLikedPlaylist } from '@/core/qqMusic'
-import { initQQMusicRecommendAutoRefresh } from '@/core/qqMusicRecommend'
+import { RECOMMEND_TEMP_LIST_ID, initQQMusicRecommendAutoRefresh } from '@/core/qqMusicRecommend'
 import { createList, setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { LIST_IDS } from '@/config/constant'
@@ -15,8 +15,6 @@ import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
 import { getQQMusicDailyRecommendCache, getQQMusicPlaylistsCache, saveQQMusicDailyRecommendCache, saveQQMusicPlaylistsCache } from '@/utils/data'
 import { useI18n } from '@/lang'
-
-const DAILY_RECOMMEND_LIST_ID = 'qq_daily_recommend'
 
 const ActionButton = ({ icon, label, onPress, disabled = false }: { icon: string, label: string, onPress: () => void, disabled?: boolean }) => {
   const theme = useTheme()
@@ -112,7 +110,7 @@ export default () => {
         setRecommendations(songs)
         await saveQQMusicDailyRecommendCache(songs)
       }
-      await setTempList(DAILY_RECOMMEND_LIST_ID, songs)
+      await setTempList(RECOMMEND_TEMP_LIST_ID, songs)
       // 播放过程中接近播完时自动续下一批，不再只是循环这 20 首
       initQQMusicRecommendAutoRefresh()
       void playList(LIST_IDS.TEMP, 0)
