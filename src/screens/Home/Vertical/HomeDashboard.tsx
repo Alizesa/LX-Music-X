@@ -121,17 +121,6 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
     })
   }, [songs])
 
-  // Banner 就是第一个推荐歌单的入口。之前它和下面歌曲区的“播放”按钮是同一个动作，
-  // 背景却用歌单封面，看着像歌单其实是播放键，这里让它名副其实。
-  const firstPlaylist = playlists[0]
-  const openBanner = useCallback(() => {
-    if (!firstPlaylist) {
-      toast(t('qq_recommend_empty'), 'long')
-      return
-    }
-    openQQPlaylist(firstPlaylist)
-  }, [firstPlaylist, t])
-
   const playRecommendations = useCallback(() => {
     if (!songs.length) {
       if (!cookie) {
@@ -184,13 +173,6 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
         <TouchableOpacity style={{ ...styles.search, backgroundColor: theme['c-primary-light-900-alpha-500'] }} onPress={() => { onModeChange('nav_search') }}>
           <Icon name="search-2" size={19} color={theme['c-font-label']} />
           <Text size={16} color={theme['c-font-label']} style={styles.searchText}>{t('home_search_placeholder')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.banner} onPress={openBanner}>
-          <Image url={firstPlaylist?.cover} style={styles.bannerImage} />
-          <View style={styles.bannerOverlay}>
-            <Text numberOfLines={1} size={20} color="#fff" style={styles.bannerTitle}>{firstPlaylist?.name ?? t('qq_recommend_playlists')}</Text>
-            <Text size={12} color="#fff">{cookie ? t('home_banner_logged_in') : t('home_banner_guest')}</Text>
-          </View>
         </TouchableOpacity>
         <View style={styles.shortcuts}>
           {shortcuts.map(({ icon, label, target }) => (
@@ -258,10 +240,6 @@ const styles = createStyle({
   menuButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   search: { height: 46, borderRadius: 24, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 16 },
   searchText: { marginLeft: 10 },
-  banner: { height: 168, borderRadius: 14, overflow: 'hidden', marginBottom: 18, backgroundColor: '#888' },
-  bannerImage: { width: '100%', height: '100%' },
-  bannerOverlay: { position: 'absolute', left: 18, bottom: 18 },
-  bannerTitle: { fontWeight: '700', marginBottom: 4 },
   shortcuts: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 22 },
   shortcut: { alignItems: 'center', width: '23%' },
   shortcutIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
