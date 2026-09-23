@@ -42,6 +42,8 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
   const [user, setUser] = useState<LX.QQMusic.UserInfo | null>(null)
   const [playlists, setPlaylists] = useState<LX.QQMusic.PlaylistInfo[]>([])
   const [counts, setCounts] = useState<Partial<Record<string, number>>>({})
+  // QQ 头像加载失败时退回默认头像，而不是让 Image 兜底成 LX 图标
+  const [avatarFailed, setAvatarFailed] = useState(false)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -52,6 +54,8 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
     try {
       const session = await getQQMusicSession()
       setUser(session.user)
+      // 换账号（或退出登录）后要重新给新头像一次机会
+      setAvatarFailed(false)
       if (!session.cookie) return
       if (!needFetch) {
         // 闸门内只读缓存，不发请求；缓存里没有的等下拉刷新再取
@@ -85,6 +89,9 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
       })
       .catch(() => {})
   }, [])
+
+  // 用不上账号头像就不画头像：Image 拿不到 url 时会兜底成 LX 图标，那个当头像很难看
+  const avatarUrl = avatarFailed ? '' : user?.avatar ?? ''
 
   const created = useMemo(() => playlists.filter(item => !item.subscribed), [playlists])
   const collected = useMemo(() => playlists.filter(item => item.subscribed), [playlists])
@@ -132,7 +139,7 @@ export default ({ onModeChange, onOpenMenu }: Props) => {
       </View>
       {/* 这里原本还有一个搜索框，和首页那个完全一样，全 App 的第三个搜索入口，去掉了 */}
       <View style={{ ...styles.profile, backgroundColor: theme['c-primary-light-900-alpha-500'] }}>
-        <Image url={user?.avatar} style={styles.avatar} />
+        {avatarUrl ? <Image url={avatarUrl} style={styles.avatar} onError={() => { setAvatarFailed(true) }} /> : null}
         <View style={styles.profileInfo}>
           <Text size={19} style={styles.profileName}>{user?.nickname ?? t('qq_not_logged_in')}</Text>
           <Text size={13} color={theme['c-font-label']}>{user ? t('qq_logged_in') : t('qq_login_hint')}</Text>
@@ -169,9 +176,11 @@ const styles = createStyle({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 14 },
   title: { fontWeight: '700' },
   menuButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  profile: { minHeight: 112, borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center' },
-  avatar: { width: 62, height: 62, borderRadius: 31 },
-  profileInfo: { flex: 1, marginLeft: 14 },
+  // 高度交给内容决定：没头像时（未登录、或头像加载失败）卡片自然收窄，
+  // 不留一个空着 112 高度的框
+  profile: { borderRadius: 16, paddingVertical: 18, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center' },
+  avatar: { width: 62, height: 62, borderRadius: 31, marginRight: 14 },
+  profileInfo: { flex: 1 },
   profileName: { fontWeight: '700', marginBottom: 6 },
   loginButton: { borderRadius: 16, paddingHorizontal: 13, paddingVertical: 7 },
   stats: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 24 },
