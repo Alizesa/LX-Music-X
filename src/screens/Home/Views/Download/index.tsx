@@ -147,7 +147,8 @@ export default () => {
   }
 
   return (
-    <View style={{ ...styles.container, backgroundColor: theme['c-content-background'] }}>
+    // 同上：不刷不透明底色，否则会盖住 PageContent 的背景图
+    <View style={styles.container}>
       <View style={{ ...styles.pathRow, borderBottomColor: theme['c-border-background'] }}>
         <View style={styles.pathText}>
           <Text>{global.i18n.t('download_directory')}</Text>

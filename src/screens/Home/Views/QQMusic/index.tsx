@@ -171,7 +171,9 @@ export default () => {
   }
 
   return (
-    <View style={{ ...styles.container, backgroundColor: theme['c-content-background'] }}>
+    // 不刷不透明底色：那一层会盖住 PageContent 的背景图（自定义背景/主题背景都看不见）。
+    // 底色交给 PageContent 统一提供，和别的页面保持一致。
+    <View style={{ ...styles.container }}>
       <View style={styles.header}>
         <View style={styles.accountInfo}>
           <Text size={17}>{user ? user.nickname : t('qq_not_logged_in')}</Text>

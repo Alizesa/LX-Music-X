@@ -21,9 +21,6 @@ export default memo(() => {
   const theme = useTheme()
   const customBgImage = useSettingValue('theme.customBgImage')
   const bgOpacity = useSettingValue('theme.bgOpacity')
-  // 拖动过程中显示滑块的值，松手才写设置（和歌词透明度那行同一个写法）
-  const [sliderValue, setSliderValue] = useState(bgOpacity)
-  const [isSliding, setSliding] = useState(false)
   const [picking, setPicking] = useState(false)
 
   const handlePick = useCallback(() => {
@@ -55,17 +52,11 @@ export default memo(() => {
     if (customBgImage.startsWith(BG_DIR)) void unlink(customBgImage).catch(() => {})
   }, [customBgImage])
 
-  const handleSlidingStart = useCallback<NonNullable<SliderProps['onSlidingStart']>>(() => {
-    setSliding(true)
-  }, [])
+  // 实时写设置：只有松手才生效的话，调的时候看不到背景变化，全靠猜。
+  // 设置本身是内存更新 + 节流落盘，拖动过程中的多次调用不会有性能负担。
   const handleValueChange = useCallback<NonNullable<SliderProps['onValueChange']>>(value => {
-    setSliderValue(value)
-  }, [])
-  const handleSlidingComplete = useCallback<NonNullable<SliderProps['onSlidingComplete']>>(value => {
-    setSliding(false)
-    if (bgOpacity == value) return
     updateSetting({ 'theme.bgOpacity': value })
-  }, [bgOpacity])
+  }, [])
 
   return (
     <>
@@ -82,12 +73,10 @@ export default memo(() => {
       </SubTitle>
       <SubTitle title={t('setting_basic_theme_bg_opacity')}>
         <View style={styles.content}>
-          <Text style={{ color: theme['c-primary-font'] }}>{Math.round((isSliding ? sliderValue : bgOpacity) * 100)}%</Text>
+          <Text style={{ color: theme['c-primary-font'] }}>{Math.round(bgOpacity * 100)}%</Text>
           <Slider
             minimumValue={0.2}
             maximumValue={1}
-            onSlidingStart={handleSlidingStart}
-            onSlidingComplete={handleSlidingComplete}
             onValueChange={handleValueChange}
             step={0.05}
             value={bgOpacity}
