@@ -1,9 +1,9 @@
 import { memo, useCallback, useState } from 'react'
-import { View, StyleSheet } from 'react-native'
+import { View, StyleSheet, TouchableOpacity } from 'react-native'
 
 import Progress, { ProgressPlain } from '@/components/player/Progress'
 import Status from './Status'
-import { useProgress } from '@/store/player/hook'
+import { useProgress, usePlayerMusicInfo } from '@/store/player/hook'
 import { useTheme } from '@/store/theme/hook'
 import { createStyle } from '@/utils/tools'
 import Text from '@/components/common/Text'
@@ -12,6 +12,8 @@ import { usePageVisible } from '@/store/common/hook'
 import { scaleSizeH, scaleSizeW, scaleSizeWR } from '@/utils/pixelRatio'
 import { useBufferProgress } from '@/plugins/player'
 import { useSettingValue } from '@/store/setting/hook'
+import { navigations } from '@/navigation'
+import commonState from '@/store/common/state'
 
 const FONT_SIZE = 13
 const PADDING_TOP_RAW = 1.8
@@ -32,6 +34,7 @@ const PlayTimeMax = memo(({ timeStr }: { timeStr: string }) => {
 
 export default ({ isHome }: { isHome: boolean }) => {
   const theme = useTheme()
+  const musicInfo = usePlayerMusicInfo()
   const [autoUpdate, setAutoUpdate] = useState(true)
   const { maxPlayTimeStr, nowPlayTimeStr, progress, maxPlayTime } = useProgress(autoUpdate)
   const buffered = useBufferProgress()
@@ -41,8 +44,15 @@ export default ({ isHome }: { isHome: boolean }) => {
     if (isHome) setAutoUpdate(visible)
   }, [isHome]))
 
-  return (
-    <View style={stylesRaw.container}>
+  // 关掉「允许通过底栏进度条调整播放进度」时，这一整行都可以点开播放详情。
+  // 否则能点开的只有左边的封面和上面那行歌名，想从进度条这一带点开就会点空。
+  const openPlayDetail = useCallback(() => {
+    if (!musicInfo.id) return
+    navigations.pushPlayDetailScreen(commonState.componentIds.home!)
+  }, [musicInfo.id])
+
+  const content = (
+    <>
       {/* <MusicName /> */}
       <View style={styles.status}>
         <Status autoUpdate={autoUpdate} />
@@ -52,15 +62,20 @@ export default ({ isHome }: { isHome: boolean }) => {
         <Text size={FONT_SIZE} color={theme['c-500']}> / </Text>
         <PlayTimeMax timeStr={maxPlayTimeStr} />
       </View>
-      <View style={[StyleSheet.absoluteFill, stylesRaw.progress]}>
+      {/* 不拖动进度时把这层让出去，点击才会落到整行的 TouchableOpacity 上 */}
+      <View style={[StyleSheet.absoluteFill, stylesRaw.progress]} pointerEvents={allowProgressBarSeek ? 'auto' : 'none'}>
         {
           allowProgressBarSeek
             ? <Progress progress={progress} duration={maxPlayTime} buffered={buffered} paddingTop={PADDING_TOP_PROGRESS} />
             : <ProgressPlain progress={progress} duration={maxPlayTime} buffered={buffered} paddingTop={PADDING_TOP_PROGRESS} />
         }
       </View>
-    </View>
+    </>
   )
+
+  return allowProgressBarSeek
+    ? <View style={stylesRaw.container}>{content}</View>
+    : <TouchableOpacity style={stylesRaw.container} activeOpacity={0.6} onPress={openPlayDetail}>{content}</TouchableOpacity>
 }
 
 

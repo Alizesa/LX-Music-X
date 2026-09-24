@@ -9,7 +9,8 @@ const defaultSetting: LX.AppSetting = {
   'common.autoHidePlayBar': true,
   'common.drawerLayoutPosition': 'left',
   'common.homePageScroll': true,
-  'common.allowProgressBarSeek': true,
+  // 默认关闭：不用底栏拖进度时，那一行整行都可以点开播放详情（见 PlayInfo.tsx）
+  'common.allowProgressBarSeek': false,
   'common.showBackBtn': false,
   'common.showExitBtn': true,
   'common.useSystemFileSelector': true,
