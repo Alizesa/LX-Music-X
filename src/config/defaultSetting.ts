@@ -82,6 +82,10 @@ const defaultSetting: LX.AppSetting = {
   'theme.hideBgDark': false,
   'theme.dynamicBg': false,
   'theme.fontShadow': false,
+  // 自定义背景图（本地路径，空表示没设置）
+  'theme.customBgImage': '',
+  // 背景遮罩不透明度：动态背景和自定义背景共用，默认与原来写死的 0.76 一致
+  'theme.bgOpacity': 0.76,
 }
 
 

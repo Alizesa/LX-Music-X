@@ -107,6 +107,16 @@ declare global {
       'theme.fontShadow': boolean
 
       /**
+       * 自定义背景图的本地路径，空字符串表示没设置
+       */
+      'theme.customBgImage': string
+
+      /**
+       * 背景遮罩不透明度，0.2 ~ 1，动态背景与自定义背景共用
+       */
+      'theme.bgOpacity': number
+
+      /**
        * 启动时自动播放歌曲
        */
       'player.startupAutoPlay': boolean
