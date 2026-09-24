@@ -6,7 +6,7 @@ import settingState from '@/store/setting/state'
 import { similar, sortInsert, toOldMusicInfo } from '@/utils'
 import { confirmDialog, openUrl, shareMusic, toast } from '@/utils/tools'
 import { addDislikeInfo, hasDislike } from '@/core/dislikeList'
-import { addTask } from '@/core/download'
+import { addTasks } from '@/core/download'
 import playerState from '@/store/player/state'
 
 import type { SelectInfo } from './ListMenu'
@@ -38,7 +38,8 @@ export const handleDownload = (musicInfo: SelectInfo['musicInfo'], selectedList:
     return
   }
   if (selectedList.length) onCancelSelect()
-  void Promise.all(targets.map(async info => addTask(info))).catch((error: unknown) => {
+  // 走批量接口：逐首 addTask 每首都会把整份任务列表落盘并刷新一次列表
+  void addTasks(targets).catch((error: unknown) => {
     toast(error instanceof Error ? error.message : String(error), 'long')
   })
 }

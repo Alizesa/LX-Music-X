@@ -254,6 +254,50 @@ export const getTasks = async() => {
   return tasks
 }
 
+/**
+ * 批量添加下载任务。逐首调用 addTask 的代价是每首都要读一次下载目录、
+ * O(n) 扫两遍查重、把整份任务列表落盘一次、再发一次 downloadListUpdate：
+ * 一次全选下载 255 首就是 255 次全量写盘和 255 次列表刷新，界面会卡住一段时间。
+ * 这里和 removeTasks 一样，只落盘一次、只通知一次。
+ */
+export const addTasks = async(musicInfos: LX.Music.MusicInfoOnline[], quality: LX.Quality = settingState.setting['download.quality']) => {
+  await init()
+  const directory = await getDownloadPath()
+  if (!directory) throw new Error(global.i18n.t('download_path_required'))
+  // 查重只在内存里做一次：已存在的（非 error）跳过，error 的先摘掉再按新任务加回去
+  const existing = new Set<string>()
+  for (const task of tasks) {
+    if (task.status == 'error') continue
+    existing.add(task.id)
+  }
+  const added: LX.Download.DownloadTask[] = []
+  for (const musicInfo of musicInfos) {
+    const targetQuality = getPlayQuality(quality, musicInfo)
+    const id = toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`)
+    if (existing.has(id)) continue
+    existing.add(id)
+    added.push({
+      id,
+      musicInfo,
+      quality: targetQuality,
+      status: 'waiting',
+      progress: { progress: 0, downloaded: 0, total: 0, speed: '' },
+      fileName: buildFileName(musicInfo, targetQuality),
+      directoryUri: directory.uri,
+      createdAt: Date.now(),
+    })
+  }
+  if (!added.length) return []
+  const addedIds = new Set(added.map(task => task.id))
+  // 同 id 的旧任务(一定是 error，否则上面就跳过了)先移除，再整批放到最前面，顺序与传入一致
+  const kept = tasks.filter(task => !addedIds.has(task.id))
+  tasks.splice(0, tasks.length, ...added, ...kept)
+  await persistNow()
+  notify()
+  void processQueue()
+  return added.map(task => task.id)
+}
+
 export const addTask = async(musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality = settingState.setting['download.quality']) => {
   await init()
   const directory = await getDownloadPath()
