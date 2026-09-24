@@ -242,6 +242,12 @@ const rawSongToOldInfo = (raw: any) => {
 const mapSongs = (rawList: any[]): LX.Music.MusicInfoOnline[] =>
   rawList.map(rawSongToOldInfo).filter(Boolean).map(item => toNewMusicInfo(item)) as LX.Music.MusicInfoOnline[]
 
+// QQ 客户端自己不显示这些歌单，服务端却仍会放进「我的歌单」：
+// QZone 背景音乐既不是用户建的、点开也没有内容。名字可能带后缀，按前缀丢掉。
+const HIDDEN_PLAYLIST_NAME_PREFIXES = ['QZone背景音乐']
+const isHiddenPlaylistName = (name: string) =>
+  HIDDEN_PLAYLIST_NAME_PREFIXES.some(prefix => name.startsWith(prefix))
+
 const normalizePlaylist = (raw: any, subscribed: boolean): LX.QQMusic.PlaylistInfo | null => {
   // 虚拟歌单没有可用的 disstid，统一归一化成 dirid，详情接口据此切换取数方式
   const liked = Number(raw?.dirid ?? raw?.dirId ?? 0) === LIKED_PLAYLIST_DIRID
@@ -250,9 +256,11 @@ const normalizePlaylist = (raw: any, subscribed: boolean): LX.QQMusic.PlaylistIn
     : raw?.dissid ?? raw?.tid ?? raw?.dirid ?? raw?.disstid ?? raw?.diss_id ?? raw?.id
   const name = raw?.diss_name ?? raw?.dissname ?? raw?.title ?? raw?.name
   if (id == null || !name) return null
+  const decodedName = decodeName(String(name))
+  if (isHiddenPlaylistName(decodedName)) return null
   return {
     id: String(id),
-    name: decodeName(String(name)),
+    name: decodedName,
     cover: raw?.diss_cover ?? raw?.logo ?? raw?.imgurl ?? raw?.picurl ?? raw?.cover?.medium_url ?? raw?.cover_url_medium,
     description: decodeName(String(raw?.desc ?? raw?.introduction ?? '')).replace(/<br>/g, '\n'),
     trackCount: Number(raw?.song_cnt ?? raw?.song_count ?? raw?.songnum ?? raw?.total_song_num ?? 0) || undefined,
