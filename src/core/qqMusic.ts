@@ -313,8 +313,11 @@ const normalizeRecommendedPlaylist = (raw: any): LX.QQMusic.PlaylistInfo | null 
  * 只看标记会漏判，用户点下去就会走不通的通用详情接口。而 id 从最初就被
  * 归一化成 dirid，缓存里也带着，所以以它为准更可靠。
  */
+/** 只按 id 判断：本地列表那边只有 sourceListId，没有 liked 标记 */
+export const isLikedPlaylistId = (id: string | number) => Number(id) === LIKED_PLAYLIST_DIRID
+
 export const isLikedPlaylist = (info: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'liked'>) =>
-  !!info.liked || Number(info.id) === LIKED_PLAYLIST_DIRID
+  !!info.liked || isLikedPlaylistId(info.id)
 
 export const getQQMusicSession = async() => ({
   cookie: await getQQMusicCookie() ?? '',
