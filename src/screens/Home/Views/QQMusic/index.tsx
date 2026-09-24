@@ -6,7 +6,7 @@ import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMu
 import QQMusicCookieModal, { type QQMusicCookieModalType } from '@/components/QQMusicCookieModal'
 import { useTheme } from '@/store/theme/hook'
 import { createStyle, toast } from '@/utils/tools'
-import { clearQQMusicSession, getQQMusicDailyRecommendations, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, isLikedPlaylist } from '@/core/qqMusic'
+import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicDailyRecommendations, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, isLikedPlaylist } from '@/core/qqMusic'
 import { initQQMusicRecommendAutoRefresh } from '@/core/qqMusicRecommend'
 import { createList, setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
@@ -50,7 +50,8 @@ export default () => {
       // 歌单与推荐都直接读本地缓存，进页面不发任何网络请求
       if (!session.cookie) return
       void Promise.all([getQQMusicPlaylistsCache(), getQQMusicDailyRecommendCache()]).then(([cachedPlaylists, cachedRecommendations]) => {
-        setPlaylists(cachedPlaylists)
+        // 旧版本可能把服务端的虚拟歌单(QZone背景音乐、本地上传等)写进了缓存，读出来时再挡一次
+        setPlaylists(filterVisiblePlaylists(cachedPlaylists))
         setRecommendations(cachedRecommendations)
       })
     })

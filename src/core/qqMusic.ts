@@ -242,22 +242,39 @@ const rawSongToOldInfo = (raw: any) => {
 const mapSongs = (rawList: any[]): LX.Music.MusicInfoOnline[] =>
   rawList.map(rawSongToOldInfo).filter(Boolean).map(item => toNewMusicInfo(item)) as LX.Music.MusicInfoOnline[]
 
-// QQ 客户端自己不显示这些歌单，服务端却仍会放进「我的歌单」：
-// QZone 背景音乐既不是用户建的、点开也没有内容。名字可能带后缀，按前缀丢掉。
-const HIDDEN_PLAYLIST_NAME_PREFIXES = ['QZone背景音乐']
+// 服务端会往「我的歌单」里塞一些虚拟歌单：QZone背景音乐、本地上传之类。
+// QQ 客户端自己不显示它们，它们也不是用户建的，点开也没有内容。
+// 判据是 id：真实歌单一定有可用的 disstid，只有 dirid 或 dissid=0 的都是虚拟歌单。
+// 这类里唯一要保留的是「我喜欢」(dirid=201)，它靠 dirid 定位、走另一条取歌通道。
+//
+// 另外仍留一份名字前缀表作为兜底：虚拟歌单若哪天带上了一个像样的 disstid，
+// 上面那条规则就认不出来了，名字至少能挡住已知的几个。
+const HIDDEN_PLAYLIST_NAME_PREFIXES = ['QZone背景音乐', '本地上传']
 const isHiddenPlaylistName = (name: string) =>
   HIDDEN_PLAYLIST_NAME_PREFIXES.some(prefix => name.startsWith(prefix))
 
+const isRealPlaylistId = (id: unknown) => id != null && id !== '' && Number(id) !== 0
+
+/**
+ * 给已经归一化的歌单列表兜一次底：缓存里可能还留着旧版本存下来的虚拟歌单，
+ * 而那一层已经看不出 disstid 了，只能按名字挡。取回来和读缓存的地方都用它。
+ */
+export const filterVisiblePlaylists = (list: LX.QQMusic.PlaylistInfo[]) =>
+  // liked 是可选的，「我喜欢」永远保留；其余按名字挡
+  list.filter(item => item.liked === true || !isHiddenPlaylistName(item.name))
+
 const normalizePlaylist = (raw: any, subscribed: boolean): LX.QQMusic.PlaylistInfo | null => {
   // 虚拟歌单没有可用的 disstid，统一归一化成 dirid，详情接口据此切换取数方式
-  const liked = Number(raw?.dirid ?? raw?.dirId ?? 0) === LIKED_PLAYLIST_DIRID
-  const id = liked
-    ? LIKED_PLAYLIST_DIRID
-    : raw?.dissid ?? raw?.tid ?? raw?.dirid ?? raw?.disstid ?? raw?.diss_id ?? raw?.id
+  const dirid = Number(raw?.dirid ?? raw?.dirId ?? 0)
+  const liked = dirid === LIKED_PLAYLIST_DIRID
+  const realId = raw?.dissid ?? raw?.tid ?? raw?.disstid ?? raw?.diss_id ?? raw?.id
+  // 不是「我喜欢」又没有真实 disstid，就是服务端塞进来的虚拟歌单
+  if (!liked && !isRealPlaylistId(realId)) return null
+  const id = liked ? LIKED_PLAYLIST_DIRID : realId ?? dirid
   const name = raw?.diss_name ?? raw?.dissname ?? raw?.title ?? raw?.name
   if (id == null || !name) return null
   const decodedName = decodeName(String(name))
-  if (isHiddenPlaylistName(decodedName)) return null
+  if (!liked && isHiddenPlaylistName(decodedName)) return null
   return {
     id: String(id),
     name: decodedName,
