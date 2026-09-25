@@ -22,6 +22,8 @@ const tasks: LX.Download.DownloadTask[] = []
 const speedSamples = new Map<string, { bytes: number, time: number }>()
 let initPromise: Promise<void> | null = null
 let processing = false
+// 处理过程中又来了新的 waiting 任务，需要在本轮结束后再扫一遍
+let reprocess = false
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 
 const notify = () => { global.app_event.downloadListUpdate() }
@@ -203,31 +205,41 @@ const reconcileTask = async(task: LX.Download.DownloadTask) => {
 }
 
 const processQueue = async() => {
-  if (processing) return
+  if (processing) {
+    // 本轮还没跑完又有人把任务置为 waiting（逐个恢复、批量添加都会）：
+    // 记一笔，让本轮结束后再从头扫一遍。直接 return 的话，被恢复的任务如果
+    // 排在游标前面就永远不会被处理——从下往上逐个点「继续」时，上面的任务
+    // 会一直停在等待中，就是这个原因。
+    reprocess = true
+    return
+  }
   processing = true
   try {
-    for (const task of tasks) {
-      if (task.status != 'waiting') continue
-      try {
-        await updateTask(task.id, { status: 'resolving', error: undefined }, true)
-        const url = await getMusicUrl({ musicInfo: task.musicInfo, quality: task.quality, isRefresh: true })
-        const currentTask = tasks.find(item => item.id == task.id)
-        if (currentTask?.status != 'resolving') continue
-        const nativeId = await enqueueDownload({
-          taskId: task.id,
-          url,
-          treeUri: task.directoryUri,
-          fileName: task.fileName,
-          mimeType: mimeForExtension(extensionForQuality(task.quality)),
-        })
-        await updateTask(task.id, { nativeId, status: 'waiting' }, true)
-      } catch (error: unknown) {
-        await updateTask(task.id, {
-          status: 'error',
-          error: error instanceof Error ? error.message : String(error),
-        }, true)
+    do {
+      reprocess = false
+      for (const task of tasks) {
+        if (task.status != 'waiting') continue
+        try {
+          await updateTask(task.id, { status: 'resolving', error: undefined }, true)
+          const url = await getMusicUrl({ musicInfo: task.musicInfo, quality: task.quality, isRefresh: true })
+          const currentTask = tasks.find(item => item.id == task.id)
+          if (currentTask?.status != 'resolving') continue
+          const nativeId = await enqueueDownload({
+            taskId: task.id,
+            url,
+            treeUri: task.directoryUri,
+            fileName: task.fileName,
+            mimeType: mimeForExtension(extensionForQuality(task.quality)),
+          })
+          await updateTask(task.id, { nativeId, status: 'waiting' }, true)
+        } catch (error: unknown) {
+          await updateTask(task.id, {
+            status: 'error',
+            error: error instanceof Error ? error.message : String(error),
+          }, true)
+        }
       }
-    }
+    } while (reprocess)
   } finally {
     processing = false
   }
