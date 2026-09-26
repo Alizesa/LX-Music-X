@@ -5,6 +5,8 @@ import {
   HOME_SCREEN,
   PLAY_DETAIL_SCREEN,
   SONGLIST_DETAIL_SCREEN,
+  SINGER_DETAIL_SCREEN,
+  ALBUM_DETAIL_SCREEN,
   COMMENT_SCREEN,
   QQMUSIC_RECOMMEND_SCREEN,
   // SETTING_SCREEN,
@@ -15,6 +17,7 @@ import { NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
 import { getStatusBarStyle } from './utils'
 import { windowSizeTools } from '@/utils/windowSizeTools'
 import { type ListInfoItem } from '@/store/songlist/state'
+import { type SingerDetailParams, type AlbumDetailParams } from '@/store/singer/state'
 
 // const store = getStore()
 // const getTheme = () => getter('common', 'theme')(store.getState())
@@ -333,6 +336,72 @@ export function pushQQMusicRecommendScreen(componentId: string) {
       },
     })
   })
+}
+
+/**
+ * 歌手/专辑详情页共用的跳转：隐藏原生 topBar，头像或封面走共享元素动画，
+ * 进出的元素 id 用 info.id 区分，这样同一页里点不同的歌手/专辑都能对上。
+ */
+function pushDetailScreen(componentId: string, screenName: string, info: { id: string }, shareId: string) {
+  const theme = themeState.theme
+
+  requestAnimationFrame(() => {
+    void Navigation.push(componentId, {
+      component: {
+        name: screenName,
+        passProps: {
+          info,
+        },
+        options: {
+          topBar: {
+            visible: false,
+            height: 0,
+            drawBehind: false,
+          },
+          statusBar: {
+            drawBehind: true,
+            visible: true,
+            style: getStatusBarStyle(theme.isDark),
+            backgroundColor: 'transparent',
+          },
+          navigationBar: {
+            backgroundColor: theme['c-content-background'],
+          },
+          layout: {
+            componentBackgroundColor: theme['c-content-background'],
+          },
+          animations: {
+            push: {
+              sharedElementTransitions: [
+                {
+                  fromId: `${shareId}_from_${info.id}`,
+                  toId: `${shareId}_to_${info.id}`,
+                  interpolation: { type: 'spring' },
+                },
+              ],
+            },
+            pop: {
+              sharedElementTransitions: [
+                {
+                  fromId: `${shareId}_to_${info.id}`,
+                  toId: `${shareId}_from_${info.id}`,
+                  interpolation: { type: 'spring' },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+  })
+}
+
+export function pushSingerDetailScreen(componentId: string, info: SingerDetailParams) {
+  pushDetailScreen(componentId, SINGER_DETAIL_SCREEN, info, NAV_SHEAR_NATIVE_IDS.singerDetail_pic)
+}
+
+export function pushAlbumDetailScreen(componentId: string, info: AlbumDetailParams) {
+  pushDetailScreen(componentId, ALBUM_DETAIL_SCREEN, info, NAV_SHEAR_NATIVE_IDS.albumDetail_pic)
 }
 
 export function pushCommentScreen(componentId: string) {

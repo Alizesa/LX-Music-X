@@ -6,6 +6,8 @@ import {
   Home,
   PlayDetail,
   SonglistDetail,
+  SingerDetail,
+  AlbumDetail,
   Comment,
   QQMusicRecommend,
   // Setting,
@@ -16,6 +18,8 @@ import {
   HOME_SCREEN,
   PLAY_DETAIL_SCREEN,
   SONGLIST_DETAIL_SCREEN,
+  SINGER_DETAIL_SCREEN,
+  ALBUM_DETAIL_SCREEN,
   COMMENT_SCREEN,
   QQMUSIC_RECOMMEND_SCREEN,
   VERSION_MODAL,
@@ -45,6 +49,8 @@ export default () => {
   Navigation.registerComponent(HOME_SCREEN, () => WrappedComponent(Home))
   Navigation.registerComponent(PLAY_DETAIL_SCREEN, () => WrappedComponent(PlayDetail))
   Navigation.registerComponent(SONGLIST_DETAIL_SCREEN, () => WrappedComponent(SonglistDetail))
+  Navigation.registerComponent(SINGER_DETAIL_SCREEN, () => WrappedComponent(SingerDetail))
+  Navigation.registerComponent(ALBUM_DETAIL_SCREEN, () => WrappedComponent(AlbumDetail))
   Navigation.registerComponent(COMMENT_SCREEN, () => WrappedComponent(Comment))
   Navigation.registerComponent(QQMUSIC_RECOMMEND_SCREEN, () => WrappedComponent(QQMusicRecommend))
   Navigation.registerComponent(VERSION_MODAL, () => WrappedComponent(VersionModal))

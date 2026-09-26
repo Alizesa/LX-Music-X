@@ -26,6 +26,8 @@ export enum COMPONENT_IDS {
   home = 'home',
   playDetail = 'playDetail',
   songlistDetail = 'songlistDetail',
+  singerDetail = 'singerDetail',
+  albumDetail = 'albumDetail',
   comment = 'comment',
   qqMusicRecommend = 'qqMusicRecommend',
 }
@@ -37,6 +39,8 @@ export enum NAV_SHEAR_NATIVE_IDS {
   playDetail_player = 'playDetail_player',
   songlistDetail_pic = 'songlistDetail_pic',
   songlistDetail_title = 'songlistDetail_title',
+  singerDetail_pic = 'singerDetail_pic',
+  albumDetail_pic = 'albumDetail_pic',
 }
 
 

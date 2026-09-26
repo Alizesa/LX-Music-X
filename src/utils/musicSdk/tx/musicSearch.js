@@ -1,6 +1,13 @@
 import { formatPlayTime, sizeFormate } from '../../index'
 import { formatSingerName } from '../utils'
-import { signRequest } from './utils'
+import { comm, signRequest } from './utils'
+
+// 接口出错（多为被限流）时重试的间隔，避免连着打好几次
+const retryDelay = 500
+
+/** 搜索结果里歌曲所在的 tab：0 单曲、1 歌手、2 专辑、3 歌单、4 MV */
+const SEARCH_TYPE_SONG = 0
+const SEARCH_TYPE_SINGER = 1
 
 export default {
   limit: 50,
@@ -8,25 +15,12 @@ export default {
   page: 0,
   allPage: 1,
   successCode: 0,
+  /** 服务端表示“没有搜索结果”（见 searchSingerRequest） */
+  noResultCode: 2001,
   musicSearch(str, page, limit, retryNum = 0) {
     if (retryNum > 5) return Promise.reject(new Error('搜索失败'))
     const searchRequest = signRequest({
-      comm: {
-        _channelid: '0',
-        _os_version: '6.2.9200-2',
-        ct: '19',
-        cv: '2151',
-        guid: '1F70E520B2EAA7D25E11760783C53CA9',
-        patch: '118',
-        psrf_access_token_expiresAt: 0,
-        psrf_qqaccess_token: '',
-        psrf_qqopenid: '',
-        psrf_qqunionid: '',
-        tmeAppID: 'qqmusic',
-        tmeLoginType: 0,
-        uin: '0',
-        wid: '7223299733393904640',
-      },
+      comm,
       'music.search.SearchCgiService': {
         module: 'music.search.SearchCgiService',
         method: 'DoSearchForQQMusicDesktop',
@@ -36,7 +30,7 @@ export default {
           page_num: page,
           query: str,
           remoteplace: 'txt.newclient.top',
-          search_type: 0,
+          search_type: SEARCH_TYPE_SONG,
           searchid: this.getSearchId(),
         },
       },
@@ -51,24 +45,9 @@ export default {
     })
   },
   searchSingerRequest(str, page, limit, retryNum = 0) {
-    if (retryNum > 5) return Promise.reject(new Error('搜索失败'))
+    if (retryNum > 3) return Promise.reject(new Error('搜索失败'))
     const searchRequest = signRequest({
-      comm: {
-        _channelid: '0',
-        _os_version: '6.2.9200-2',
-        ct: '19',
-        cv: '2151',
-        guid: '1F70E520B2EAA7D25E11760783C53CA9',
-        patch: '118',
-        psrf_access_token_expiresAt: 0,
-        psrf_qqaccess_token: '',
-        psrf_qqopenid: '',
-        psrf_qqunionid: '',
-        tmeAppID: 'qqmusic',
-        tmeLoginType: 0,
-        uin: '0',
-        wid: '7223299733393904640',
-      },
+      comm,
       'music.search.SearchCgiService': {
         module: 'music.search.SearchCgiService',
         method: 'DoSearchForQQMusicDesktop',
@@ -78,35 +57,47 @@ export default {
           page_num: page,
           query: str,
           remoteplace: 'txt.newclient.top',
-          search_type: 2,
+          search_type: SEARCH_TYPE_SINGER,
           searchid: this.getSearchId(),
         },
       },
     })
     return searchRequest.then(({ body }) => {
       const req = body?.['music.search.SearchCgiService'] ?? body?.req
+      // 2001 是“这个关键词没有结果”，不是出错：重试也还是同样的结果，
+      // 当成空列表返回就好，否则搜不到东西会显示成“加载失败”
+      if (req?.code == this.noResultCode) return { body: { singer: { list: [] } }, meta: { sum: 0 } }
       if (!req || body.code != this.successCode || req.code != this.successCode) {
-        return this.searchSingerRequest(str, page, limit, ++retryNum)
+        // 失败多半是被限流，等一下再试，别连着打
+        return new Promise(resolve => { setTimeout(resolve, retryDelay) })
+          .then(() => this.searchSingerRequest(str, page, limit, ++retryNum))
       }
       return req.data
     })
   },
-  searchSinger(str, page = 1, limit = 50) {
-    return this.searchSingerRequest(str, page, limit).then(data => {
-      const singerData = data?.singer ?? data?.singerlist ?? data
-      const rawList = singerData?.list ?? singerData?.singerlist ?? singerData?.singer_list ?? []
+  /**
+   * 搜索歌手。注意歌手页每页最多只能要 20 条左右，
+   * 请求 50 条时服务端会返回 code 0 但列表为空（不是限流）。
+   */
+  searchSinger(str, page = 1, limit = 20) {
+    // 和 musicSearch 一样，这里拿到的是 { body, meta }，歌手在 body.singer.list 里，
+    // 总数在 meta.sum 上（body.singer 自己没有 total 字段）
+    return this.searchSingerRequest(str, page, limit).then(({ body, meta }) => {
+      const rawList = body?.singer?.list ?? []
       const list = rawList.map(item => {
-        const mid = item.mid ?? item.singer_mid ?? item.singermid ?? ''
+        const mid = item.singerMID ?? ''
         return {
-          id: item.id ?? item.singer_id ?? mid,
+          id: item.singerID ?? mid,
           mid,
-          name: item.name ?? item.singer_name ?? item.singername ?? '',
-          picUrl: item.pic ?? item.picurl ?? item.singer_pic ?? (mid ? `https://y.gtimg.cn/music/photo_new/T001R500x500M000${mid}.jpg` : ''),
-          albumSize: item.album_size ?? item.albumcount ?? item.album_count ?? 0,
+          name: item.singerName ?? '',
+          // 接口给的是 http 带缩略图后缀的地址，统一换成 https 的原图
+          picUrl: mid ? `https://y.gtimg.cn/music/photo_new/T001R500x500M000${mid}.jpg` : '',
+          albumSize: item.albumNum ?? 0,
+          songSize: item.songNum ?? 0,
           source: 'tx',
         }
       }).filter(item => item.name)
-      const total = singerData?.total ?? singerData?.totalnum ?? singerData?.sum ?? list.length
+      const total = meta?.sum ?? list.length
       return { list, total, allPage: Math.ceil(total / limit), limit, source: 'tx' }
     })
   },

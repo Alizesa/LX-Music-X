@@ -1,43 +1,194 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
-import { FlatList, Image, TouchableOpacity, View } from 'react-native'
-import Text from '@/components/common/Text'
-import { useTheme } from '@/store/theme/hook'
-import { createStyle } from '@/utils/tools'
-import musicSdk from '@/utils/musicSdk'
-import type { Source } from '@/store/search/music/state'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { FlatList, RefreshControl, TouchableOpacity, View, type FlatListProps } from 'react-native'
 
-interface Singer { id: string | number, name: string, picUrl?: string | null, albumSize?: number }
-export default forwardRef<{ loadList: (text: string, source: Source) => void }, {}>((props, ref) => {
+import Text from '@/components/common/Text'
+import Image from '@/components/common/Image'
+import { useTheme } from '@/store/theme/hook'
+import { useI18n } from '@/lang'
+import { createStyle } from '@/utils/tools'
+import { scaleSizeW } from '@/utils/pixelRatio'
+import { formatPlayCount } from '@/utils'
+import { navigations } from '@/navigation'
+import { NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
+import commonState from '@/store/common/state'
+import searchSingerState, { type SingerItem } from '@/store/search/singer/state'
+import { search } from '@/core/search/singer'
+import { type Source } from '@/store/search/music/state'
+
+export type Status = 'loading' | 'refreshing' | 'end' | 'error' | 'idle'
+
+export interface SingerListType {
+  loadList: (text: string, source: Source) => void
+}
+
+const AVATAR_SIZE = scaleSizeW(48)
+
+export default forwardRef<SingerListType, {}>((props, ref) => {
   const theme = useTheme()
-  const [list, setList] = useState<Singer[]>([])
+  const t = useI18n()
+  const [list, setList] = useState<SingerItem[]>([])
+  const [status, setStatus] = useState<Status>('idle')
   const textRef = useRef('')
-  const pageRef = useRef(1)
-  const loadingRef = useRef(false)
-  const hasMoreRef = useRef(true)
+  const isUnmountedRef = useRef(false)
+
+  const load = useCallback(async(page: number, isRefresh = false) => {
+    try {
+      const result = await search(textRef.current, page, isRefresh)
+      // null：这次结果已经作废（关键词换了），列表归新的那次请求管
+      if (result == null || isUnmountedRef.current) return
+      setList([...result])
+      setStatus(searchSingerState.listInfo.maxPage <= page ? 'end' : 'idle')
+    } catch (err) {
+      console.log(err)
+      if (isUnmountedRef.current) return
+      setStatus('error')
+    }
+  }, [])
+
   useImperativeHandle(ref, () => ({
     loadList(text) {
+      // 歌手搜索只有 tx 源，source 参数用不上
       textRef.current = text
-      pageRef.current = 1
-      hasMoreRef.current = true
-      void load(true)
+      setList([])
+      if (!text) {
+        setStatus('idle')
+        return
+      }
+      setStatus('loading')
+      void load(1)
     },
-  }))
-  const load = async(refresh = false) => {
-    if (loadingRef.current || (!refresh && !hasMoreRef.current)) return
-    loadingRef.current = true
-    try {
-      const result = await musicSdk.tx.musicSearch.searchSinger(textRef.current, pageRef.current) as { list: Singer[], allPage: number }
-      if (!result) return
-      setList(current => refresh ? result.list : [...current, ...result.list])
-      hasMoreRef.current = pageRef.current < result.allPage
-      pageRef.current++
-    } finally { loadingRef.current = false }
+  }), [load])
+
+  useEffect(() => {
+    isUnmountedRef.current = false
+    return () => {
+      isUnmountedRef.current = true
+    }
+  }, [])
+
+  const handleRefresh = () => {
+    setStatus('refreshing')
+    void load(1, true)
   }
-  return <FlatList data={list} keyExtractor={item => String(item.id)} onEndReached={() => { void load() }} onEndReachedThreshold={0.5} renderItem={({ item }) => (
-    <TouchableOpacity style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}>
-      {item.picUrl ? <Image source={{ uri: item.picUrl }} style={styles.pic} /> : <View style={{ ...styles.pic, backgroundColor: theme['c-primary-background'] }} />}
-      <View style={styles.info}><Text>{item.name}</Text><Text size={12} color={theme['c-font-label']}>{item.albumSize ? `${item.albumSize} albums` : ''}</Text></View>
+  const handleLoadMore = () => {
+    if (status != 'idle') return
+    setStatus('loading')
+    void load(searchSingerState.listInfo.page + 1)
+  }
+  const handleOpenDetail = (item: SingerItem) => {
+    navigations.pushSingerDetailScreen(commonState.componentIds.home!, {
+      id: item.mid,
+      mid: item.mid,
+      name: item.name,
+      picUrl: item.picUrl,
+    })
+  }
+
+  const renderItem: FlatListProps<SingerItem>['renderItem'] = ({ item }) => (
+    <TouchableOpacity
+      activeOpacity={0.5}
+      style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}
+      onPress={() => { handleOpenDetail(item) }}
+    >
+      <Image
+        url={item.picUrl}
+        nativeID={`${NAV_SHEAR_NATIVE_IDS.singerDetail_pic}_from_${item.mid}`}
+        style={{ ...styles.avatar, width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }}
+      />
+      <View style={styles.info}>
+        <Text size={15} numberOfLines={1}>{item.name}</Text>
+        <Text size={12} color={theme['c-font-label']} numberOfLines={1}>
+          {[
+            t('singer_song_count', { num: formatPlayCount(item.songSize) }),
+            t('singer_album_count', { num: formatPlayCount(item.albumSize) }),
+          ].join('  ·  ')}
+        </Text>
+      </View>
     </TouchableOpacity>
-  )} />
+  )
+
+  const refreshControl = useMemo(() => (
+    <RefreshControl
+      colors={[theme['c-primary']]}
+      refreshing={status == 'refreshing'}
+      onRefresh={handleRefresh} />
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [status, theme])
+
+  return (
+    <FlatList
+      data={list}
+      style={styles.list}
+      keyExtractor={item => item.mid}
+      renderItem={renderItem}
+      onEndReachedThreshold={0.6}
+      onEndReached={handleLoadMore}
+      refreshControl={refreshControl}
+      ListEmptyComponent={
+        status == 'end' || status == 'idle'
+          ? <Text style={styles.empty} color={theme['c-font-label']}>{t('no_item')}</Text>
+          : null
+      }
+      ListFooterComponent={<Footer status={status} onLoadMore={handleLoadMore} />}
+    />
+  )
 })
-const styles = createStyle({ item: { flexDirection: 'row', alignItems: 'center', padding: 10, borderBottomWidth: 1 }, pic: { width: 48, height: 48, borderRadius: 24, marginRight: 10 }, info: { flex: 1 } })
+
+const Footer = ({ status, onLoadMore }: { status: Status, onLoadMore: () => void }) => {
+  const theme = useTheme()
+  const t = useI18n()
+  let label: 'list_loading' | 'list_end' | 'list_error' | null
+  switch (status) {
+    case 'refreshing': return null
+    case 'loading':
+      label = 'list_loading'
+      break
+    case 'end':
+      label = 'list_end'
+      break
+    case 'error':
+      label = 'list_error'
+      break
+    case 'idle':
+      label = null
+      break
+  }
+  if (!label) return null
+  return (
+    <Text
+      onPress={() => { if (label == 'list_error') onLoadMore() }}
+      style={styles.footer}
+      color={theme['c-font-label']}
+    >{t(label)}</Text>
+  )
+}
+
+const styles = createStyle({
+  list: {
+    flex: 1,
+  },
+  item: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderBottomWidth: 1,
+  },
+  avatar: {
+    flexGrow: 0,
+    flexShrink: 0,
+    overflow: 'hidden',
+  },
+  info: {
+    flexGrow: 1,
+    flexShrink: 1,
+    paddingLeft: 10,
+  },
+  empty: {
+    textAlign: 'center',
+    paddingTop: 40,
+  },
+  footer: {
+    textAlign: 'center',
+    padding: 10,
+  },
+})
