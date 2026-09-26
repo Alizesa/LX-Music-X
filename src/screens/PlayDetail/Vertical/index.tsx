@@ -76,9 +76,6 @@ export default memo(({ componentId }: { componentId: string }) => {
       <View style={styles.container}>
         <PagerView
           onPageSelected={onPageSelected}
-          // 尽力关掉滑到头时的原生回弹；这个 prop 在部分机型上不生效，
-          // 需要完全硬边界的话参考 components/SwipePager
-          overScrollMode="never"
           // onPageScrollStateChanged={onPageScrollStateChanged}
           style={styles.pagerView}
         >
