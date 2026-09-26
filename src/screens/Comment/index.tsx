@@ -143,6 +143,8 @@ export default memo(({ componentId }: {
         <PagerView
           ref={pagerViewRef}
           onPageSelected={onPageSelected}
+          // 只有两页，滑到头时 Android 默认的拉伸回弹看着像“跳一下”，关掉
+          overScrollMode="never"
           // onPageScrollStateChanged={onPageScrollStateChanged}
           style={styles.pagerView}
         >

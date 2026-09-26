@@ -29,6 +29,8 @@ const dedupeAlbums = dedupeBy<AlbumItem, string>(item => item.mid)
 const toMusicList = (list: LX.Music.MusicInfoOnline[]) => {
   return deduplicationList(list.map(music => toNewMusicInfo(music) as LX.Music.MusicInfoOnline))
 }
+/** 歌曲结果要先转成新结构，去重才有 id 可用 */
+const mapSongs = (result: SongsResult): SongsResult => ({ ...result, list: toMusicList(result.list) })
 
 /**
  * @param result 本页的原始数据
@@ -53,19 +55,22 @@ export default {
   getRecord(mid: string, name = '') {
     return getRecord(mid, name)
   },
-  /** 歌手信息与热门歌曲来自同一个接口，一起写入 */
-  setInfo(mid: string, info: SingerInfo, songs: LX.Music.MusicInfoOnline[]) {
+  /** 歌手信息与第一页歌曲来自同一个接口，一起写入 */
+  setInfo(mid: string, info: SingerInfo, songs: SongsResult) {
     const record = getRecord(mid, info.name)
     record.info = { ...info }
     record.infoLoaded = true
-    record.songs.list = toMusicList(songs)
-    // 热门歌曲接口不支持翻页，一次就是全部
-    record.songs.total = record.songs.list.length
-    record.songs.page = 1
-    record.songs.maxPage = 1
+    setPageInfo<LX.Music.MusicInfoOnline, SongsResult>(record.songs, mapSongs(songs), 1, deduplicationList)
     record.songsLoaded = true
 
     return record
+  },
+  setSongs(mid: string, result: SongsResult, page: number) {
+    const record = getRecord(mid)
+    setPageInfo<LX.Music.MusicInfoOnline, SongsResult>(record.songs, mapSongs(result), page, deduplicationList)
+    record.songsLoaded = true
+
+    return record.songs
   },
   setAlbums(mid: string, result: AlbumsResult, page: number) {
     const record = getRecord(mid)
@@ -82,8 +87,7 @@ export default {
       maxPage: 1,
       limit: result.limit,
     })
-    // 歌曲结果要先转成新结构才能去重（id 是转换后才有的）
-    setPageInfo(info, { ...result, list: toMusicList(result.list) }, page, deduplicationList)
+    setPageInfo(info, mapSongs(result), page, deduplicationList)
 
     return info
   },

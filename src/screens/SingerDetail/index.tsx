@@ -18,8 +18,7 @@ import Header from './Header'
 import SingerSongs from './SingerSongs'
 import SingerAlbums from './SingerAlbums'
 
-// 接口只给歌手的热门歌曲（没有“全部歌曲”接口），所以第一个标签照客户端叫“热门”
-const TABS = ['hot', 'album'] as const
+const TABS = ['song', 'album'] as const
 type TabId = typeof TABS[number]
 
 const BAR_HEIGHT = scaleSizeH(38)
@@ -28,10 +27,10 @@ export default ({ componentId, info }: { componentId: string, info: SingerDetail
   const t = useI18n()
   const theme = useTheme()
   const pagerViewRef = useRef<PagerView>(null)
-  const [activeId, setActiveId] = useState<TabId>('hot')
+  const [activeId, setActiveId] = useState<TabId>('song')
   const [singerInfo, setSingerInfo] = useState<SingerInfo | null>(null)
   // 没打开过的 tab 不挂载，进页面就只发歌手信息那一条请求
-  const initedRef = useRef<Record<TabId, boolean>>({ hot: true, album: false })
+  const initedRef = useRef<Record<TabId, boolean>>({ song: true, album: false })
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.singerDetail, componentId)
@@ -64,7 +63,13 @@ export default ({ componentId, info }: { componentId: string, info: SingerDetail
           ))
         }
       </View>
-      <PagerView ref={pagerViewRef} onPageSelected={onPageSelected} style={styles.pagerView}>
+      <PagerView
+        ref={pagerViewRef}
+        onPageSelected={onPageSelected}
+        // 只有两页，滑到头时 Android 默认的拉伸回弹看着像“跳一下”，关掉
+        overScrollMode="never"
+        style={styles.pagerView}
+      >
         <View collapsable={false} style={styles.pageStyle}>
           <SingerSongs mid={info.mid} onInfoLoaded={setSingerInfo} />
         </View>

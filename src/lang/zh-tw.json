@@ -590,5 +590,5 @@
   "version_title_unknown": "❓ 獲取最新版本資訊失敗 ❓",
   "version_title_update": "🚀 軟體更新 🚀"
   ,"setting_history":"播放歷史","setting_play_history_enable":"保存播放歷史","setting_play_history_limit":"最多保存記錄數","setting_play_history_limit_saved":"播放歷史數量已更新","setting_play_history_clear":"清空歷史","setting_play_history_clear_title":"清空播放歷史","setting_play_history_clear_tip":"確定要清空全部播放歷史嗎？","setting_play_history_empty":"暫無播放歷史"
-  ,"nav_history":"播放歷史","search_type_singer":"歌手","setting_group_basic":"基本","setting_group_player":"播放","setting_group_search":"搜尋與清單","setting_group_download":"下載","setting_group_data":"資料","setting_group_other":"其他","singer_tab_hot":"熱門","singer_tab_album":"專輯","singer_no_brief":"暫無歌手簡介","singer_fans_count":"{num} 粉絲","singer_song_count":"{num} 首歌","singer_album_count":"{num} 張專輯","album_publish_date":"{date} 發行"
+  ,"nav_history":"播放歷史","search_type_singer":"歌手","setting_group_basic":"基本","setting_group_player":"播放","setting_group_search":"搜尋與清單","setting_group_download":"下載","setting_group_data":"資料","setting_group_other":"其他","singer_tab_song":"歌曲","singer_tab_album":"專輯","singer_no_brief":"暫無歌手簡介","singer_fans_count":"{num} 粉絲","singer_song_count":"{num} 首歌","singer_album_count":"{num} 張專輯","album_publish_date":"{date} 發行"
 }
