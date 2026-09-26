@@ -8,13 +8,17 @@ import { sizeFormate } from '@/utils'
 
 import { useI18n } from '@/lang'
 import { useVersionDownloadProgressUpdated, useVersionInfo } from '@/store/version/hook'
+import { useSettingValue } from '@/store/setting/hook'
 import Text from '@/components/common/Text'
+import CheckBoxItem from '../components/CheckBoxItem'
+import { updateSetting } from '@/core/common'
 import { showModal } from '@/core/version'
 
 const currentVer = process.versions.app
 export default memo(() => {
   const t = useI18n()
   const versionInfo = useVersionInfo()
+  const autoCheckUpdate = useSettingValue('version.autoCheckUpdate')
   // const versionStatus = useVrsionUpdateStatus()
   const [title, setTitle] = useState('')
   const [tip, setTip] = useState('')
@@ -77,6 +81,14 @@ export default memo(() => {
           <Button onPress={handleOpenVersionModal}>{t('setting_version_show_ver_modal')}</Button>
         </View>
       </SubTitle>
+      <View style={styles.autoCheck}>
+        <CheckBoxItem
+          check={autoCheckUpdate}
+          label={t('setting_version_auto_check')}
+          onChange={(value) => { updateSetting({ 'version.autoCheckUpdate': value }) }}
+        />
+        <Text size={13} style={styles.autoCheckTip}>{t('setting_version_auto_check_tip')}</Text>
+      </View>
     </Section>
   )
 })
@@ -87,5 +99,12 @@ const styles = StyleSheet.create({
   },
   btn: {
     flexDirection: 'row',
+  },
+  autoCheck: {
+    marginTop: 4,
+  },
+  autoCheckTip: {
+    marginTop: 4,
+    paddingLeft: 25,
   },
 })

@@ -455,6 +455,8 @@
   "setting_sync_status_enabled": "已连接",
   "setting_theme": "主题设置",
   "setting_version": "软件更新",
+  "setting_version_auto_check": "启动时自动检查更新",
+  "setting_version_auto_check_tip": "检查的是上游官方发布，与本分支构建无关，下载到的版本也无法覆盖安装。",
   "setting_version_show_ver_modal": "打开更新窗口 🚀",
   "share_card_title_music": "将「{name}」分享到...",
   "share_title_music": "歌曲分享",

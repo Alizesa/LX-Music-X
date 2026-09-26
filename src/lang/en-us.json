@@ -455,6 +455,8 @@
   "setting_sync_status_enabled": "connected",
   "setting_theme": "Theme",
   "setting_version": "Update",
+  "setting_version_auto_check": "Check for updates on startup",
+  "setting_version_auto_check_tip": "The check reads upstream's official releases, which are unrelated to this build and cannot be installed over it.",
   "setting_version_show_ver_modal": "Open Update Window 🚀",
   "share_card_title_music": "Share \"{name}\" to...",
   "share_title_music": "Song Sharing",

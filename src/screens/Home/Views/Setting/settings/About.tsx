@@ -8,10 +8,8 @@ import { createStyle, openUrl } from '@/utils/tools'
 // import { showPactModal } from '@/navigation'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
-import { useSettingValue } from '@/store/setting/hook'
 import Text from '@/components/common/Text'
-import CheckBoxItem from '../components/CheckBoxItem'
-import { showPactModal, updateSetting } from '@/core/common'
+import { showPactModal } from '@/core/common'
 
 // const qqGroupUrl = 'mqqopensdkapi://bizAgent/qm/qr?url=http%3A%2F%2Fqm.qq.com%2Fcgi-bin%2Fqm%2Fqr%3Ffrom%3Dapp%26p%3Dandroid%26jump_from%3Dwebapi%26k%3Du1zyxek8roQAwic44nOkBXtG9CfbAxFw'
 // const qqGroupUrl2 = 'mqqopensdkapi://bizAgent/qm/qr?url=http%3A%2F%2Fqm.qq.com%2Fcgi-bin%2Fqm%2Fqr%3Ffrom%3Dapp%26p%3Dandroid%26jump_from%3Dwebapi%26k%3D-l4kNZ2bPQAuvfCQFFhl1UoibvF5wcrQ'
@@ -21,7 +19,6 @@ import { showPactModal, updateSetting } from '@/core/common'
 export default memo(() => {
   const theme = useTheme()
   const t = useI18n()
-  const autoCheckUpdate = useSettingValue('version.autoCheckUpdate')
   const openHomePage = () => {
     void openUrl('https://github.com/lyswhut/lx-music-mobile#readme')
   }
@@ -76,14 +73,7 @@ export default memo(() => {
         <Text style={styles.text}>，与上游官方发布的签名不同，两者无法互相覆盖安装。</Text>
       </View>
       <View style={styles.part}>
-        <Text style={styles.text}>因此「自动检查更新」默认关闭：它检查的是上游官方发布，下载到的版本与本分支无关。</Text>
-      </View>
-      <View style={styles.part}>
-        <CheckBoxItem
-          check={autoCheckUpdate}
-          label="启动时自动检查更新"
-          onChange={(value) => { updateSetting({ 'version.autoCheckUpdate': value }) }}
-        />
+        <Text style={styles.text}>因此「软件更新」里的自动检查更新默认关闭：它检查的是上游官方发布，下载到的版本与本分支无关。</Text>
       </View>
       <View style={styles.part}>
         <Text style={styles.text} >本软件完全免费，代码已开源。开源地址：</Text>

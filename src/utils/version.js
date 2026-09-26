@@ -24,15 +24,20 @@ const address = [
 ]
 
 
-const request = async(url, retryNum = 0) => {
+// 整个检查的总时限：镜像列表里有几个在部分网络下是连不通的，
+// 挨个等超时会让「检查更新中」挂上好几分钟，超过这个时间就当作检查失败。
+const CHECK_DEADLINE = 20000
+// 单个镜像等多久。同一个地址重试没有意义（连不通就是连不通），
+// 失败就换下一个镜像，所以这里只请求一次。
+const REQUEST_TIMEOUT = 8000
+
+const request = async(url) => {
   return new Promise((resolve, reject) => {
     httpGet(url, {
-      timeout: 10000,
+      timeout: REQUEST_TIMEOUT,
     }, (err, resp, body) => {
       if (err || resp.statusCode != 200) {
-        ++retryNum >= 3
-          ? reject(err || new Error(resp.statusMessage || resp.statusCode))
-          : request(url, retryNum).then(resolve).catch(reject)
+        reject(err || new Error(resp.statusMessage || resp.statusCode))
       } else resolve(body)
     })
   })
@@ -54,7 +59,8 @@ const getNpmPkgInfo = async(url) => {
   })
 }
 
-export const getVersionInfo = async(index = 0) => {
+export const getVersionInfo = async(index = 0, deadline = Date.now() + CHECK_DEADLINE) => {
+  if (Date.now() > deadline) throw new Error('timeout')
   const [url, source] = address[index]
   let promise
   switch (source) {
@@ -69,7 +75,7 @@ export const getVersionInfo = async(index = 0) => {
   return promise.catch(async(err) => {
     index++
     if (index >= address.length) throw err
-    return getVersionInfo(index)
+    return getVersionInfo(index, deadline)
   })
 }
 
