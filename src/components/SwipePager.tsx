@@ -1,5 +1,5 @@
 import { Children, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
-import { Animated, PanResponder, View } from 'react-native'
+import { Animated, Easing, PanResponder, View } from 'react-native'
 import { useLayout } from '@/utils/hooks'
 import { createStyle } from '@/utils/tools'
 
@@ -7,7 +7,16 @@ import { createStyle } from '@/utils/tools'
 const SLOP = 8
 // 松手时超过页面宽度的这个比例才翻页
 const SWITCH_RATIO = 0.2
-const DURATION = 200
+// 翻页动画时长
+const DURATION = 250
+// 到头了往回弹的时长。系统 PagerView 是原生动画，回弹几乎是一瞬间，
+// 看着像“跳了一下”，这里故意放慢并且用缓出，弹回来是顺的
+const REBOUND_DURATION = 380
+// 滑到头之后手指还能带动页面的比例（0 = 完全不动）
+const EDGE_RESISTANCE = 0.3
+// 到头之后最多能被带动多少页宽
+const EDGE_MAX_RATIO = 0.25
+const EASING = Easing.out(Easing.cubic)
 
 export interface SwipePagerType {
   /** 切到第 index 页 */
@@ -25,10 +34,9 @@ export interface SwipePagerProps {
 }
 
 /**
- * 左右滑动容器。和系统 PagerView（Android 的 ViewPager2）的区别在边界：
- * 这里滑到第一页/最后一页就是硬边界，手指再往外推页面也不动，
- * 而 ViewPager2 到头会有一段原生的回弹（Android 12 起是整页拉伸再弹回），
- * 那个是原生行为，overScrollMode 之类的 prop 在不少机型上关不掉。
+ * 左右滑动容器，替代系统 PagerView（Android 是 ViewPager2）。
+ * 主要是为了能控制两头的回弹：滑到第一页/最后一页时手指还能带一点点，
+ * 松手后用 380ms 缓出弹回去；ViewPager2 那个原生回弹极快，像跳了一下。
  */
 export default forwardRef<SwipePagerType, SwipePagerProps>(({ pageCount, onPageChange, onReveal, children }, ref) => {
   const { onLayout, width } = useLayout()
@@ -48,24 +56,34 @@ export default forwardRef<SwipePagerType, SwipePagerProps>(({ pageCount, onPageC
     translateX.setValue(-width * indexRef.current)
   }, [width, translateX])
 
-  /** 把偏移卡在 [第一页, 最后一页] 之间，这就是“到底就滑不动”的地方 */
-  const clamp = useCallback((value: number) => {
-    const max = -widthRef.current * (pageCount - 1)
-    if (value > 0) return 0
-    if (value < max) return max
-    return value
+  /**
+   * 手指位移换算成页面偏移。超出第一页/最后一页的部分按比例衰减，
+   * 再用 EDGE_MAX_RATIO 限幅，这样两头是“能拉动一点但拉不走”，
+   * 既不会误翻页，也不是硬邦邦完全不动。
+   */
+  const toOffset = useCallback((dx: number) => {
+    const width = widthRef.current
+    const base = -width * indexRef.current
+    const raw = base + dx
+    const max = -width * (pageCount - 1)
+    const maxEdge = width * EDGE_MAX_RATIO
+    if (raw > 0) return Math.min(raw * EDGE_RESISTANCE, maxEdge)
+    if (raw < max) return Math.max(max - (max - raw) * EDGE_RESISTANCE, max - maxEdge)
+    return raw
   }, [pageCount])
 
-  const animateTo = useCallback((index: number, animated = true) => {
+  const animateTo = useCallback((index: number, animated = true, duration = DURATION) => {
     indexRef.current = index
     onPageChange?.(index)
+    const toValue = -widthRef.current * index
     if (!animated || widthRef.current == 0) {
-      translateX.setValue(-widthRef.current * index)
+      translateX.setValue(toValue)
       return
     }
     Animated.timing(translateX, {
-      toValue: -widthRef.current * index,
-      duration: DURATION,
+      toValue,
+      duration,
+      easing: EASING,
       useNativeDriver: false,
     }).start()
   }, [onPageChange, translateX])
@@ -79,7 +97,7 @@ export default forwardRef<SwipePagerType, SwipePagerProps>(({ pageCount, onPageC
       return Math.abs(gesture.dx) > SLOP && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5
     },
     onPanResponderMove: (_, gesture) => {
-      const offset = clamp(-widthRef.current * indexRef.current + gesture.dx)
+      const offset = toOffset(gesture.dx)
       translateX.setValue(offset)
       // 现在露得最多的是哪一页
       const revealed = Math.min(pageCount - 1, Math.max(0, Math.round(-offset / widthRef.current)))
@@ -91,12 +109,14 @@ export default forwardRef<SwipePagerType, SwipePagerProps>(({ pageCount, onPageC
     onPanResponderRelease: (_, gesture) => {
       const current = indexRef.current
       const threshold = widthRef.current * SWITCH_RATIO
-      if (gesture.dx < -threshold) animateTo(Math.min(current + 1, pageCount - 1))
-      else if (gesture.dx > threshold) animateTo(Math.max(current - 1, 0))
-      else animateTo(current)
+      let target = current
+      if (gesture.dx < -threshold) target = Math.min(current + 1, pageCount - 1)
+      else if (gesture.dx > threshold) target = Math.max(current - 1, 0)
+      // 页没变（没到翻页的距离，或者在两头被衰减掉了）就慢慢弹回去
+      animateTo(target, true, target == current ? REBOUND_DURATION : DURATION)
     },
-    onPanResponderTerminate: () => { animateTo(indexRef.current) },
-  }), [animateTo, clamp, onReveal, pageCount, translateX])
+    onPanResponderTerminate: () => { animateTo(indexRef.current, true, REBOUND_DURATION) },
+  }), [animateTo, onReveal, pageCount, toOffset, translateX])
 
   return (
     <View style={styles.container} onLayout={onLayout} {...responder.panHandlers}>
