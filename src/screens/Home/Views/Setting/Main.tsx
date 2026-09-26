@@ -11,6 +11,7 @@ import Backup from './settings/Backup'
 import Other from './settings/Other'
 import Version from './settings/Version'
 import About from './settings/About'
+import PlayHistoryPage from './settings/PlayHistoryPage'
 
 /**
  * 分区的唯一注册点。
@@ -34,6 +35,7 @@ export const SETTING_COMPONENTS = {
   other: Other,
   version: Version,
   about: About,
+  history: PlayHistoryPage,
 } as const
 
 export type SettingScreenIds = keyof typeof SETTING_COMPONENTS

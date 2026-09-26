@@ -29,6 +29,11 @@ declare global {
         musicInfo: PlayMusic
       }
 
+      interface PlayHistoryItem {
+        musicInfo: PlayMusic
+        playedAt: number
+      }
+
       type PlayMusicInfo = Readonly<{
         /**
          * 当前播放歌曲的列表 id

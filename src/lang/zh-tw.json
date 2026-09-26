@@ -589,4 +589,5 @@
   "version_title_new": "🌟 發現新版本 🌟",
   "version_title_unknown": "❓ 獲取最新版本資訊失敗 ❓",
   "version_title_update": "🚀 軟體更新 🚀"
+  ,"setting_history":"播放歷史","setting_play_history_enable":"保存播放歷史","setting_play_history_limit":"最多保存記錄數","setting_play_history_limit_saved":"播放歷史數量已更新","setting_play_history_clear":"清空歷史","setting_play_history_clear_title":"清空播放歷史","setting_play_history_clear_tip":"確定要清空全部播放歷史嗎？","setting_play_history_empty":"暫無播放歷史"
 }

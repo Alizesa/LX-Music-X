@@ -14,6 +14,7 @@ import IsShowLyricRoma from './IsShowLyricRoma'
 import IsS2T from './IsS2T'
 import MaxCache from './MaxCache'
 import { useI18n } from '@/lang'
+import PlayHistory from './PlayHistory'
 
 
 export default memo(() => {
@@ -22,6 +23,7 @@ export default memo(() => {
   return (
     <Section title={t('setting_player')}>
       <IsSavePlayTime />
+      <PlayHistory />
       <IsAutoCleanPlayedList />
       <IsHandleAudioFocus />
       <IsEnableAudioOffload />

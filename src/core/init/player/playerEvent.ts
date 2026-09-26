@@ -5,6 +5,8 @@ import { isActive } from '@/utils/tools'
 import BackgroundTimer from 'react-native-background-timer'
 import playerState from '@/store/player/state'
 import { setNowPlayTime } from '@/core/player/progress'
+import settingState from '@/store/setting/state'
+import { addPlayHistory } from '@/core/player/playHistory'
 
 
 export default () => {
@@ -75,6 +77,9 @@ export default () => {
   const handlePlaying = () => {
     setStatusText('')
     clearLoadingTimeout()
+    if (settingState.setting['player.isSavePlayHistory'] && playerState.playMusicInfo.musicInfo) {
+      void addPlayHistory(playerState.playMusicInfo.musicInfo)
+    }
   }
 
   const handleEmpied = () => {

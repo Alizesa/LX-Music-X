@@ -63,6 +63,7 @@ export const storageDataPrefix = {
   downloadTasks: '@download_tasks',
   downloadPath: '@download_path',
   playQueue: '@play_queue',
+  playHistory: '@play_history',
   notificationTipEnable: '@notification_tip_enable',
   ignoringBatteryOptimizationTipEnable: '@ignoring_battery_optimization_tip_enable',
 

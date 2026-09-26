@@ -148,6 +148,12 @@ declare global {
        */
       'player.isSavePlayTime': boolean
 
+      /** 是否保存播放历史 */
+      'player.isSavePlayHistory': boolean
+
+      /** 播放历史最大记录数 */
+      'player.playHistoryMaxCount': number
+
       /**
        * 音量大小
        */

@@ -33,6 +33,7 @@ const selectedManagedFolderPrefix = storageDataPrefix.selectedManagedFolder
 const downloadTasksKey = storageDataPrefix.downloadTasks
 const downloadPathKey = storageDataPrefix.downloadPath
 const playQueueKey = storageDataPrefix.playQueue
+const playHistoryKey = storageDataPrefix.playHistory
 const qqMusicCookieKey = storageDataPrefix.qqMusicCookie
 const qqMusicUserKey = storageDataPrefix.qqMusicUser
 const qqMusicPlaylistsKey = storageDataPrefix.qqMusicPlaylists
@@ -477,6 +478,10 @@ export const saveDownloadPath = async(path: LX.Download.DownloadDirectory) => sa
 
 export const getPlayQueue = async() => await getData<LX.Player.PlayQueueItem[]>(playQueueKey) ?? []
 export const savePlayQueue = async(queue: LX.Player.PlayQueueItem[]) => saveData(playQueueKey, queue)
+
+export const getPlayHistory = async() => await getData<LX.Player.PlayHistoryItem[]>(playHistoryKey) ?? []
+export const savePlayHistory = async(history: LX.Player.PlayHistoryItem[]) => saveData(playHistoryKey, history)
+export const clearPlayHistory = async() => removeData(playHistoryKey)
 
 export const getQQMusicCookie = async() => {
   const cookie = await getSecureItem(qqMusicCookieKey)

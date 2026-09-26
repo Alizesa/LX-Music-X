@@ -23,6 +23,8 @@ const defaultSetting: LX.AppSetting = {
   'player.togglePlayMethod': 'listLoop',
   'player.playQuality': '128k',
   'player.isSavePlayTime': false,
+  'player.isSavePlayHistory': true,
+  'player.playHistoryMaxCount': 300,
   'player.volume': 1,
   'player.playbackRate': 1,
   'player.cacheSize': '1024',
