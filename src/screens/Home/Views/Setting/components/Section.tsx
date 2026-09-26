@@ -8,14 +8,18 @@ import Text from '@/components/common/Text'
 interface Props {
   title: string
   children: React.ReactNode | React.ReactNode[]
+  right?: React.ReactNode
 }
 
-export default ({ title, children }: Props) => {
+export default ({ title, children, right }: Props) => {
   const theme = useTheme()
 
   return (
     <View style={styles.container}>
-      <Text style={{ ...styles.title, borderLeftColor: theme['c-primary'] }} size={16} >{title}</Text>
+      <View style={styles.header}>
+        <Text style={{ ...styles.title, borderLeftColor: theme['c-primary'] }} size={16} >{title}</Text>
+        {right}
+      </View>
       <View>
         {children}
       </View>
@@ -34,5 +38,10 @@ const styles = createStyle({
     paddingLeft: 12,
     marginBottom: 10,
     // lineHeight: 16,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 })

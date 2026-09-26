@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useState } from 'react'
 import { Alert, FlatList, Image, TouchableOpacity, View } from 'react-native'
 import Section from '../components/Section'
 import Text from '@/components/common/Text'
-import Button from '../components/Button'
 import { useI18n } from '@/lang'
 import { useTheme } from '@/store/theme/hook'
 import { createStyle } from '@/utils/tools'
@@ -23,22 +22,31 @@ export default memo(() => {
   const load = useCallback(() => {
     void getPlayHistory().then(setList)
   }, [])
-  useEffect(load, [load])
+  useEffect(() => {
+    load()
+    const handleUpdate = (history: LX.Player.PlayHistoryItem[]) => { setList(history) }
+    global.app_event.on('playHistoryUpdate', handleUpdate)
+    return () => { global.app_event.off('playHistoryUpdate', handleUpdate) }
+  }, [load])
 
   const remove = (index: number) => {
     const next = list.filter((_, itemIndex) => itemIndex !== index)
     setList(next)
     void savePlayHistory(next)
+    global.app_event.playHistoryUpdate(next)
   }
   const clear = () => {
     Alert.alert(t('setting_play_history_clear_title'), t('setting_play_history_clear_tip'), [
       { text: t('cancel'), style: 'cancel' },
-      { text: t('confirm'), style: 'destructive', onPress: () => { setList([]); void clearPlayHistory() } },
+      { text: t('confirm'), style: 'destructive', onPress: () => { setList([]); void clearPlayHistory(); global.app_event.playHistoryUpdate([]) } },
     ])
   }
 
-  return <Section title={t('setting_history')}>
-    <View style={styles.actions}><Button onPress={clear} disabled={!list.length}>{t('setting_play_history_clear')}</Button></View>
+  return <Section title={t('setting_history')} right={
+    <TouchableOpacity style={styles.clear} onPress={clear} disabled={!list.length}>
+      <Text color={theme['c-primary']} size={13}>{t('setting_play_history_clear')}</Text>
+    </TouchableOpacity>
+  }>
     <FlatList
       style={styles.list}
       data={list}
@@ -63,7 +71,7 @@ export default memo(() => {
 })
 
 const styles = createStyle({
-  actions: { flexDirection: 'row', marginBottom: 10 },
+  clear: { paddingHorizontal: 8, paddingVertical: 4, marginBottom: 10 },
   list: { maxHeight: 600 },
   item: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1 },
   main: { flex: 1, flexDirection: 'row', alignItems: 'center' },

@@ -157,6 +157,10 @@ export class AppEvent extends Event {
     this.emit('playQueueUpdate', queue)
   }
 
+  playHistoryUpdate(history: LX.Player.PlayHistoryItem[]) {
+    this.emit('playHistoryUpdate', history)
+  }
+
   qqMusicAccountUpdated(user: LX.QQMusic.UserInfo | null) {
     this.emit('qqMusicAccountUpdated', user)
   }
