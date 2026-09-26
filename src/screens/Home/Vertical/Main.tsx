@@ -265,7 +265,10 @@ const Main = () => {
     const previousIndex = activeIndexRef.current
     const isCommonPair = (index: number) => index == viewMap.nav_love || index == viewMap.nav_qq
     if (isCommonPair(previousIndex) && !isCommonPair(nextIndex)) {
-      pagerViewRef.current?.setPageWithoutAnimation(previousIndex)
+      // 只有「我的列表 ↔ QQ音乐」这一对之间允许左右滑，滑向别的页面要退回上一页。
+      // 原来用的是 setPageWithoutAnimation（原生 setCurrentItem 的 scrollSmooth=false），
+      // 瞬间跳回去，看着就是“滑到头跳了一下”；换成带动画的 setPage 才是一次正常的回弹。
+      pagerViewRef.current?.setPage(previousIndex)
       return
     }
     activeIndexRef.current = nextIndex
