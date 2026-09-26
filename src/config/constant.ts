@@ -132,12 +132,13 @@ export const MUSIC_TOGGLE_MODE = {
   none: 'none', // 禁用
 } as const
 
+// 播放详情页的模式按钮只在这三种之间循环。
+// 顺序播放(list)与禁用(none)引擎仍然支持，只是不再出现在这个循环里 ——
+// 早先设置过这两种的话，点一下按钮就会回到列表循环。
 export const MUSIC_TOGGLE_MODE_LIST = [
   MUSIC_TOGGLE_MODE.listLoop,
-  MUSIC_TOGGLE_MODE.random,
-  MUSIC_TOGGLE_MODE.list,
   MUSIC_TOGGLE_MODE.singleLoop,
-  MUSIC_TOGGLE_MODE.none,
+  MUSIC_TOGGLE_MODE.random,
 ] as const
 
 export const DEFAULT_SETTING = {

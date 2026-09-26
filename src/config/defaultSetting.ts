@@ -1,5 +1,7 @@
 const defaultSetting: LX.AppSetting = {
   version: '2.0',
+  // 默认关闭：检查的是上游官方发布，与本分支构建无关（详见「关于」里的说明）
+  'version.autoCheckUpdate': false,
   'common.isAutoTheme': false,
   'common.langId': null,
   'common.apiSource': '',

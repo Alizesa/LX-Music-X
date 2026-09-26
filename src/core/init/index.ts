@@ -21,7 +21,8 @@ const handlePushedHomeScreen = async() => {
   if (settingState.setting['common.isAgreePact']) {
     if (isFirstPush) {
       isFirstPush = false
-      void checkUpdate()
+      // 默认不查：这条检查走的是上游官方发布，与本分支的构建无关（设置里可开）
+      if (settingState.setting['version.autoCheckUpdate']) void checkUpdate()
       void initDeeplink()
     }
   } else {

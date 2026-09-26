@@ -6,6 +6,13 @@ declare global {
 
     interface AppSetting {
       version: string
+
+      /**
+       * 启动时自动检查更新。
+       * 默认关闭：它检查的是上游官方发布，与本分支的构建无关，
+       * 检测到的版本也装不上（签名不同）。
+       */
+      'version.autoCheckUpdate': boolean
       /**
        * 是否跟随系统切换亮暗主题
        */
