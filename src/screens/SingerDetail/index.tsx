@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { TouchableOpacity, View } from 'react-native'
-import PagerView, { type PagerViewOnPageSelectedEvent } from 'react-native-pager-view'
 
 import PageContent from '@/components/PageContent'
 import StatusBar from '@/components/common/StatusBar'
 import PlayerBar from '@/components/player/PlayerBar'
+import SwipePager, { type SwipePagerType } from '@/components/SwipePager'
 import Text from '@/components/common/Text'
 import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS } from '@/config/constant'
@@ -26,26 +26,34 @@ const BAR_HEIGHT = scaleSizeH(38)
 export default ({ componentId, info }: { componentId: string, info: SingerDetailParams }) => {
   const t = useI18n()
   const theme = useTheme()
-  const pagerViewRef = useRef<PagerView>(null)
+  const pagerRef = useRef<SwipePagerType>(null)
   const [activeId, setActiveId] = useState<TabId>('song')
   const [singerInfo, setSingerInfo] = useState<SingerInfo | null>(null)
-  // 没打开过的 tab 不挂载，进页面就只发歌手信息那一条请求
-  const initedRef = useRef<Record<TabId, boolean>>({ song: true, album: false })
+  // 没露过面的 tab 不挂载，进页面就只发歌手信息那一条请求
+  const [mounted, setMounted] = useState<Record<TabId, boolean>>({ song: true, album: false })
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.singerDetail, componentId)
   }, [componentId])
 
+  const markMounted = useCallback((id: TabId) => {
+    setMounted(current => current[id] ? current : { ...current, [id]: true })
+  }, [])
+
   const toggleTab = useCallback((id: TabId) => {
+    markMounted(id)
     setActiveId(id)
-    pagerViewRef.current?.setPage(TABS.findIndex(tab => tab == id))
+    pagerRef.current?.setPage(TABS.indexOf(id))
+  }, [markMounted])
+  const handlePageChange = useCallback((index: number) => {
+    const id = TABS[index]
+    if (id) setActiveId(id)
   }, [])
-  const onPageSelected = useCallback(({ nativeEvent }: PagerViewOnPageSelectedEvent) => {
-    const id = TABS[nativeEvent.position]
-    if (!id) return
-    initedRef.current[id] = true
-    setActiveId(id)
-  }, [])
+  // 手指刚往旁边滑就把那一页挂出来，滑到位时内容已经在了，不会先白一下
+  const handleReveal = useCallback((index: number) => {
+    const id = TABS[index]
+    if (id) markMounted(id)
+  }, [markMounted])
 
   return (
     <PageContent>
@@ -63,20 +71,19 @@ export default ({ componentId, info }: { componentId: string, info: SingerDetail
           ))
         }
       </View>
-      <PagerView
-        ref={pagerViewRef}
-        onPageSelected={onPageSelected}
-        // 只有两页，滑到头时 Android 默认的拉伸回弹看着像“跳一下”，关掉
-        overScrollMode="never"
-        style={styles.pagerView}
+      <SwipePager
+        ref={pagerRef}
+        pageCount={TABS.length}
+        onPageChange={handlePageChange}
+        onReveal={handleReveal}
       >
-        <View collapsable={false} style={styles.pageStyle}>
+        <View style={styles.page}>
           <SingerSongs mid={info.mid} onInfoLoaded={setSingerInfo} />
         </View>
-        <View collapsable={false} style={styles.pageStyle}>
-          { initedRef.current.album ? <SingerAlbums mid={info.mid} /> : null }
+        <View style={styles.page}>
+          { mounted.album ? <SingerAlbums mid={info.mid} /> : null }
         </View>
-      </PagerView>
+      </SwipePager>
       <PlayerBar />
     </PageContent>
   )
@@ -103,10 +110,8 @@ const styles = createStyle({
     textAlign: 'center',
     borderBottomWidth: BorderWidths.normal3,
   },
-  pagerView: {
+  page: {
     flex: 1,
-  },
-  pageStyle: {
     overflow: 'hidden',
   },
 })
