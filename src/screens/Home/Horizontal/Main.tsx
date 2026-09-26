@@ -6,6 +6,7 @@ import Leaderboard from '../Views/Leaderboard'
 import Setting from '../Views/Setting'
 import Download from '../Views/Download'
 import QQMusic from '../Views/QQMusic'
+import PlayHistory from '../Views/Setting/settings/PlayHistoryPage'
 import commonState, { type InitState as CommonState } from '@/store/common/state'
 
 
@@ -32,6 +33,7 @@ const Main = () => {
       case 'nav_qq': return <QQMusic />
       case 'nav_download': return <Download />
       case 'nav_setting': return <Setting />
+      case 'nav_history': return <PlayHistory />
       case 'nav_search':
       default: return <Search />
     }

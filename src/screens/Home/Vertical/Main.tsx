@@ -7,6 +7,7 @@ import Leaderboard from '../Views/Leaderboard'
 import Setting from '../Views/Setting'
 import Download from '../Views/Download'
 import QQMusic from '../Views/QQMusic'
+import PlayHistory from '../Views/Setting/settings/PlayHistoryPage'
 import commonState, { type InitState as CommonState } from '@/store/common/state'
 import { createStyle } from '@/utils/tools'
 import PagerView, { type PageScrollStateChangedNativeEvent, type PagerViewOnPageSelectedEvent } from 'react-native-pager-view'
@@ -203,6 +204,18 @@ const QQMusicPage = () => {
   }, [])
   return visible ? component : null
 }
+const PlayHistoryPage = () => {
+  const [visible, setVisible] = useState(commonState.navActiveId == 'nav_history')
+  const component = useMemo(() => <PlayHistory />, [])
+  useEffect(() => {
+    const handleNavIdUpdate = (id: CommonState['navActiveId']) => {
+      if (id == 'nav_history') requestAnimationFrame(() => { setVisible(true) })
+    }
+    global.state_event.on('navActiveIdUpdated', handleNavIdUpdate)
+    return () => { global.state_event.off('navActiveIdUpdated', handleNavIdUpdate) }
+  }, [])
+  return visible ? component : null
+}
 
 const viewMap = {
   nav_search: 0,
@@ -212,6 +225,7 @@ const viewMap = {
   nav_qq: 4,
   nav_download: 5,
   nav_setting: 6,
+  nav_history: 7,
 }
 const indexMap = [
   'nav_search',
@@ -221,6 +235,7 @@ const indexMap = [
   'nav_qq',
   'nav_download',
   'nav_setting',
+  'nav_history',
 ] as const
 
 const Main = () => {
@@ -324,6 +339,9 @@ const Main = () => {
       </View>
       <View collapsable={false} key="nav_setting" style={styles.pageStyle}>
         <SettingPage />
+      </View>
+      <View collapsable={false} key="nav_history" style={styles.pageStyle}>
+        <PlayHistoryPage />
       </View>
       {/* <View collapsable={false} key="nav_search" style={styles.pageStyle}>
         <Search />
