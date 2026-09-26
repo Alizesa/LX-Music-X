@@ -12,7 +12,7 @@ import { useSettingValue } from '@/store/setting/hook'
 import Text from '@/components/common/Text'
 import CheckBoxItem from '../components/CheckBoxItem'
 import { updateSetting } from '@/core/common'
-import { showModal } from '@/core/version'
+import { checkUpdate, showModal } from '@/core/version'
 
 const currentVer = process.versions.app
 export default memo(() => {
@@ -24,8 +24,8 @@ export default memo(() => {
   const [tip, setTip] = useState('')
   const progress = useVersionDownloadProgressUpdated()
   const handleOpenVersionModal = () => {
-    // setVersionInfo({ showModal: true })
     showModal()
+    if (versionInfo.newVersion == null || versionInfo.status == 'checking') void checkUpdate()
   }
 
   useEffect(() => {
