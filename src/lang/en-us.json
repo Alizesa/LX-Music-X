@@ -590,5 +590,5 @@
   "version_title_unknown": "❓ Failed to get the latest version information ❓",
   "version_title_update": "🚀 App update 🚀"
   ,"setting_history":"Play history","setting_play_history_enable":"Save play history","setting_play_history_limit":"Maximum records","setting_play_history_limit_saved":"Play history limit updated","setting_play_history_clear":"Clear history","setting_play_history_clear_title":"Clear play history","setting_play_history_clear_tip":"Clear all play history?","setting_play_history_empty":"No play history"
-  ,"nav_history":"Play history"
+  ,"nav_history":"Play history","search_type_singer":"Singer","setting_group_basic":"Basic","setting_group_player":"Playback","setting_group_search":"Search & Lists","setting_group_download":"Downloads","setting_group_data":"Data","setting_group_other":"Other"
 }

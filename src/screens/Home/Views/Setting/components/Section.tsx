@@ -9,18 +9,19 @@ interface Props {
   title: string
   children: React.ReactNode | React.ReactNode[]
   right?: React.ReactNode
+  fill?: boolean
 }
 
-export default ({ title, children, right }: Props) => {
+export default ({ title, children, right, fill }: Props) => {
   const theme = useTheme()
 
   return (
-    <View style={styles.container}>
+    <View style={fill ? { ...styles.container, flex: 1 } : styles.container}>
       <View style={styles.header}>
         <Text style={{ ...styles.title, borderLeftColor: theme['c-primary'] }} size={16} >{title}</Text>
         {right}
       </View>
-      <View>
+      <View style={fill ? styles.content : undefined}>
         {children}
       </View>
     </View>
@@ -44,4 +45,5 @@ const styles = createStyle({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  content: { flex: 1 },
 })

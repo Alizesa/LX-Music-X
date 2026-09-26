@@ -42,7 +42,7 @@ export default memo(() => {
     ])
   }
 
-  return <Section title={t('setting_history')} right={
+  return <Section fill title={t('setting_history')} right={
     <TouchableOpacity style={styles.clear} onPress={clear} disabled={!list.length}>
       <Text color={theme['c-primary']} size={13}>{t('setting_play_history_clear')}</Text>
     </TouchableOpacity>
@@ -72,7 +72,7 @@ export default memo(() => {
 
 const styles = createStyle({
   clear: { paddingHorizontal: 8, paddingVertical: 4, marginBottom: 10 },
-  list: { maxHeight: 600 },
+  list: { flex: 1 },
   item: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1 },
   main: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   pic: { width: 48, height: 48, borderRadius: 3, marginRight: 10 },

@@ -261,7 +261,14 @@ const Main = () => {
 
   const onPageSelected = useCallback(({ nativeEvent }: PagerViewOnPageSelectedEvent) => {
     // console.log(nativeEvent)
-    activeIndexRef.current = nativeEvent.position
+    const nextIndex = nativeEvent.position
+    const previousIndex = activeIndexRef.current
+    const isCommonPair = (index: number) => index == viewMap.nav_love || index == viewMap.nav_qq
+    if (isCommonPair(previousIndex) && !isCommonPair(nextIndex)) {
+      pagerViewRef.current?.setPageWithoutAnimation(previousIndex)
+      return
+    }
+    activeIndexRef.current = nextIndex
     if (activeIndexRef.current != viewMap[commonState.navActiveId]) {
       setNavActiveId(indexMap[activeIndexRef.current])
     }
@@ -294,10 +301,12 @@ const Main = () => {
       if (activeIndexRef.current == index) return
       activeIndexRef.current = index
       pagerViewRef.current?.setPageWithoutAnimation(index)
+      pagerViewRef.current?.setScrollEnabled(settingState.setting['common.homePageScroll'] && (id == 'nav_love' || id == 'nav_qq'))
     }
     const handleConfigUpdate = (keys: Array<keyof LX.AppSetting>, setting: Partial<LX.AppSetting>) => {
       if (!keys.includes('common.homePageScroll')) return
-      pagerViewRef.current?.setScrollEnabled(setting['common.homePageScroll']!)
+      const enabled = setting['common.homePageScroll']! && (commonState.navActiveId == 'nav_love' || commonState.navActiveId == 'nav_qq')
+      pagerViewRef.current?.setScrollEnabled(enabled)
     }
     // window.requestAnimationFrame(() => pagerViewRef.current && pagerViewRef.current.setPage(activeIndexRef.current))
     global.state_event.on('navActiveIdUpdated', handleUpdate)
@@ -316,7 +325,7 @@ const Main = () => {
       offscreenPageLimit={1}
       onPageSelected={onPageSelected}
       onPageScrollStateChanged={onPageScrollStateChanged}
-      scrollEnabled={settingState.setting['common.homePageScroll']}
+      scrollEnabled={settingState.setting['common.homePageScroll'] && (commonState.navActiveId == 'nav_love' || commonState.navActiveId == 'nav_qq')}
       style={styles.pagerView}
     >
       <View collapsable={false} key="nav_search" style={styles.pageStyle}>

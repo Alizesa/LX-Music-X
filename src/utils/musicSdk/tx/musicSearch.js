@@ -50,6 +50,66 @@ export default {
       return req.data
     })
   },
+  searchSingerRequest(str, page, limit, retryNum = 0) {
+    if (retryNum > 5) return Promise.reject(new Error('搜索失败'))
+    const searchRequest = signRequest({
+      comm: {
+        _channelid: '0',
+        _os_version: '6.2.9200-2',
+        ct: '19',
+        cv: '2151',
+        guid: '1F70E520B2EAA7D25E11760783C53CA9',
+        patch: '118',
+        psrf_access_token_expiresAt: 0,
+        psrf_qqaccess_token: '',
+        psrf_qqopenid: '',
+        psrf_qqunionid: '',
+        tmeAppID: 'qqmusic',
+        tmeLoginType: 0,
+        uin: '0',
+        wid: '7223299733393904640',
+      },
+      'music.search.SearchCgiService': {
+        module: 'music.search.SearchCgiService',
+        method: 'DoSearchForQQMusicDesktop',
+        param: {
+          grp: 1,
+          num_per_page: limit,
+          page_num: page,
+          query: str,
+          remoteplace: 'txt.newclient.top',
+          search_type: 2,
+          searchid: this.getSearchId(),
+        },
+      },
+    })
+    return searchRequest.then(({ body }) => {
+      const req = body?.['music.search.SearchCgiService'] ?? body?.req
+      if (!req || body.code != this.successCode || req.code != this.successCode) {
+        return this.searchSingerRequest(str, page, limit, ++retryNum)
+      }
+      return req.data
+    })
+  },
+  searchSinger(str, page = 1, limit = 50) {
+    return this.searchSingerRequest(str, page, limit).then(data => {
+      const singerData = data?.singer ?? data?.singerlist ?? data
+      const rawList = singerData?.list ?? singerData?.singerlist ?? singerData?.singer_list ?? []
+      const list = rawList.map(item => {
+        const mid = item.mid ?? item.singer_mid ?? item.singermid ?? ''
+        return {
+          id: item.id ?? item.singer_id ?? mid,
+          mid,
+          name: item.name ?? item.singer_name ?? item.singername ?? '',
+          picUrl: item.pic ?? item.picurl ?? item.singer_pic ?? (mid ? `https://y.gtimg.cn/music/photo_new/T001R500x500M000${mid}.jpg` : ''),
+          albumSize: item.album_size ?? item.albumcount ?? item.album_count ?? 0,
+          source: 'tx',
+        }
+      }).filter(item => item.name)
+      const total = singerData?.total ?? singerData?.totalnum ?? singerData?.sum ?? list.length
+      return { list, total, allPage: Math.ceil(total / limit), limit, source: 'tx' }
+    })
+  },
   /**
    * PC 客户端版 searchid：32 位大写十六进制 GUID + 5 位补零随机数 = 37 字符。
    * 对应 QQ 音乐 PC 端 searchid 形状（服务端只需要唯一的会话 ID，形状一致即可）。

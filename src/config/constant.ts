@@ -118,7 +118,7 @@ export const NAV_MENUS = [
   { id: 'nav_qq', icon: 'album' },
   { id: 'nav_download', icon: 'download-2' },
   { id: 'nav_setting', icon: 'setting' },
-  { id: 'nav_history', icon: 'leaderboard' },
+  { id: 'nav_history', icon: 'music_time' },
 ] as const
 
 export type NAV_ID_Type = typeof NAV_MENUS[number]['id']
@@ -159,7 +159,7 @@ export const DEFAULT_SETTING = {
   search: {
     temp_source: 'kw' as LX.OnlineSource,
     source: 'all' as LX.OnlineSource | 'all',
-    type: 'music' as 'music' | 'songlist',
+    type: 'music' as 'music' | 'songlist' | 'singer',
   },
 
   viewPrevState: {

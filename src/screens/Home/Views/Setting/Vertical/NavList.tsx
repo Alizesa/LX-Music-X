@@ -1,10 +1,10 @@
 import { memo, useCallback, useState } from 'react'
-import { View, TouchableOpacity, ScrollView } from 'react-native'
+import { View, TouchableOpacity } from 'react-native'
 
 import { useTheme } from '@/store/theme/hook'
 import { createStyle } from '@/utils/tools'
 import Text from '@/components/common/Text'
-import { SETTING_SCREENS, type SettingScreenIds } from '../Main'
+import { SETTING_GROUPS, type SettingGroupIds, type SettingScreenIds } from '../Main'
 import { useI18n } from '@/lang'
 import { BorderRadius, BorderWidths } from '@/theme'
 
@@ -41,8 +41,17 @@ const ListItem = memo(({ id, activeId, onPress }: {
 export default ({ onChangeId }: {
   onChangeId: (id: SettingScreenIds) => void
 }) => {
-  const [activeId, setActiveId] = useState(global.lx.settingActiveId)
+  const t = useI18n()
+  const initialGroup = (Object.keys(SETTING_GROUPS) as SettingGroupIds[]).find(group => (SETTING_GROUPS[group] as readonly SettingScreenIds[]).includes(global.lx.settingActiveId)) ?? 'basic'
+  const [activeId, setActiveId] = useState<SettingScreenIds>(global.lx.settingActiveId)
+  const [activeGroup, setActiveGroup] = useState<SettingGroupIds>(initialGroup)
   const theme = useTheme()
+
+  const handleGroupChange = (group: SettingGroupIds) => {
+    setActiveGroup(group)
+    const nextId = (SETTING_GROUPS[group] as readonly SettingScreenIds[]).includes(activeId) ? activeId : SETTING_GROUPS[group][0]
+    handleChangeId(nextId)
+  }
 
   const handleChangeId = useCallback((id: SettingScreenIds) => {
     onChangeId(id)
@@ -52,11 +61,14 @@ export default ({ onChangeId }: {
   }, [])
 
   return (
-    <ScrollView horizontal style={{ ...styles.container, borderBottomColor: theme['c-border-background'] }} contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps={'always'}>
-      {
-        SETTING_SCREENS.map(id => <ListItem key={id} id={id} activeId={activeId} onPress={handleChangeId} />)
-      }
-    </ScrollView>
+    <View style={styles.groupNav}>
+      {(Object.keys(SETTING_GROUPS) as SettingGroupIds[]).map(group => <TouchableOpacity key={group} onPress={() => { handleGroupChange(group) }} style={{ ...styles.groupItem, backgroundColor: group == activeGroup ? theme['c-primary-background-active'] : 'transparent' }}>
+        <Text numberOfLines={1} color={group == activeGroup ? theme['c-primary-font'] : theme['c-font']}>{t(`setting_group_${group}`)}</Text>
+      </TouchableOpacity>)}
+      <View style={{ ...styles.subNav, borderTopColor: theme['c-border-background'] }}>
+        {(SETTING_GROUPS[activeGroup] as readonly SettingScreenIds[]).map(id => <ListItem key={id} id={id} activeId={activeId} onPress={handleChangeId} />)}
+      </View>
+    </View>
   )
 }
 
@@ -69,6 +81,9 @@ const styles = createStyle({
     borderBottomWidth: BorderWidths.normal,
     opacity: 0.7,
   },
+  groupNav: { paddingTop: 5 },
+  groupItem: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, marginHorizontal: 5, borderRadius: BorderRadius.normal },
+  subNav: { borderTopWidth: BorderWidths.normal, marginTop: 8, paddingTop: 8 },
   contentContainer: {
     flexDirection: 'row',
     flexWrap: 'nowrap',

@@ -40,6 +40,16 @@ export type SettingScreenIds = keyof typeof SETTING_COMPONENTS
 
 export const SETTING_SCREENS = Object.keys(SETTING_COMPONENTS) as SettingScreenIds[]
 
+export const SETTING_GROUPS = {
+  basic: ['basic'],
+  player: ['player', 'lyric_desktop'],
+  search: ['search', 'list'],
+  download: ['download'],
+  data: ['sync', 'backup'],
+  other: ['other', 'version', 'about'],
+} as const satisfies Record<string, SettingScreenIds[]>
+export type SettingGroupIds = keyof typeof SETTING_GROUPS
+
 export interface MainType {
   setActiveId: (id: SettingScreenIds) => void
 }

@@ -19,7 +19,7 @@ import { addHistoryWord } from '@/core/search/search'
 interface SearchInfo {
   temp_source: LX.OnlineSource
   source: LX.OnlineSource | 'all'
-  searchType: 'music' | 'songlist'
+  searchType: 'music' | 'songlist' | 'singer'
 }
 
 export default () => {
@@ -43,6 +43,10 @@ export default () => {
         case 'songlist':
           headerBarRef.current?.setSourceList(searchSonglistState.sources, info.source)
           break
+        case 'singer':
+          searchInfo.current.source = 'tx'
+          headerBarRef.current?.setSourceList([searchMusicState.sources.find(source => source == 'tx')!], 'tx')
+          break
       }
       headerBarRef.current?.setText(searchState.searchText)
       listRef.current?.loadList(searchState.searchText, searchInfo.current.source, searchInfo.current.searchType)
@@ -50,7 +54,17 @@ export default () => {
 
     const handleTypeChange = (type: SearchType) => {
       searchInfo.current.searchType = type
-      void saveSearchSetting({ type })
+      if (type == 'singer') {
+        searchInfo.current.source = 'tx'
+        headerBarRef.current?.setSourceList([searchMusicState.sources.find(source => source == 'tx')!], 'tx')
+        void saveSearchSetting({ type, source: 'tx' })
+      } else {
+        void saveSearchSetting({ type })
+        switch (type) {
+          case 'music': headerBarRef.current?.setSourceList(searchMusicState.sources, searchInfo.current.source as LX.OnlineSource); break
+          case 'songlist': headerBarRef.current?.setSourceList(searchSonglistState.sources, searchInfo.current.source as LX.OnlineSource); break
+        }
+      }
       listRef.current?.loadList(searchState.searchText, searchInfo.current.source, type)
     }
     global.app_event.on('searchTypeChanged', handleTypeChange)
@@ -66,6 +80,7 @@ export default () => {
   }
 
   const handleSourceChange: HeaderBarProps['onSourceChange'] = (source) => {
+    if (searchInfo.current.searchType == 'singer') source = 'tx'
     searchInfo.current.source = source
     void saveSearchSetting({ source })
     listRef.current?.loadList(searchState.searchText, source, searchInfo.current.searchType)
