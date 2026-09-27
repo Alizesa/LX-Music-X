@@ -159,15 +159,18 @@ const writeEmbeddedMetadata = async(task: LX.Download.DownloadTask) => {
 
 const finalizeTask = async(task: LX.Download.DownloadTask, state: NativeDownloadState) => {
   if (!state.filePath || task.status == 'completed' || task.status == 'finalizing') return
-  // 入本地列表之前先核对大小，坏的直接判失败，不留一条播不了的记录
+  // 入本地列表之前先核对大小，坏的直接判失败，不留一条播不了的记录。
+  // state.downloaded 正常就是落盘字节数（原生完成事件与 WorkManager 的 output data
+  // 带的都是真实长度），没带上时退回下载过程中记录的字节数
   const expectedSize = parseQualitySize(task.musicInfo.meta._qualitys?.[task.quality]?.size)
-  if (isSizeAbnormal(state.downloaded, expectedSize)) {
+  const actualSize = state.downloaded > 0 ? state.downloaded : task.progress.downloaded
+  if (isSizeAbnormal(actualSize, expectedSize)) {
     // 中转文件已经不可信，清掉，用户点重试时是干干净净重下一次
     await clearPartialFile(task.id)
     await updateTask(task.id, {
       status: 'error',
       error: global.i18n.t('download_bad_size', {
-        size: sizeFormate(state.downloaded),
+        size: sizeFormate(actualSize),
         expect: expectedSize > 0 ? sizeFormate(expectedSize) : '-',
       }),
       progress: { progress: 0, downloaded: 0, total: 0, speed: '' },
@@ -418,6 +421,10 @@ export const retryTask = async(id: string) => {
   const directory = await getDownloadPath()
   if (!directory) throw new Error(global.i18n.t('download_path_required'))
   task.directoryUri = directory.uri
+  // 先把旧的原生任务撤掉再重下：入队用的是同名唯一任务（REPLACE 会取消旧的），
+  // 但旧 worker 可能正卡在写中转文件 / 复制那一步，等它停了再开始，
+  // 免得两个任务同时读写同一个 .part。deletePartial=false，保留断点续传的进度。
+  if (task.nativeId) await removeNativeDownload(task.nativeId, task.id, false).catch(() => {})
   task.nativeId = undefined
   task.status = 'waiting'
   task.error = undefined

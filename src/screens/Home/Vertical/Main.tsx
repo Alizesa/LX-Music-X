@@ -241,6 +241,8 @@ const indexMap = [
 const Main = () => {
   const pagerViewRef = useRef<ComponentRef<typeof PagerView>>(null)
   let activeIndexRef = useRef(viewMap[commonState.navActiveId])
+  // 回弹的目标页，-1 表示没有正在进行的回弹
+  const revertTargetRef = useRef(-1)
   // const isScrollingRef = useRef(false)
   // const scrollPositionRef = useRef(-1)
 
@@ -259,15 +261,29 @@ const Main = () => {
   //   // }
   // }, [setNavActiveIndex])
 
+  // 竖屏这块 PagerView 被卸载时（例如切到横屏布局）可能还没收到 idle 事件，
+  // 全局残留的 false 会让「我的列表」里点歌被当成滑动中而忽略掉
+  useEffect(() => () => {
+    global.lx.homePagerIdle = true
+  }, [])
+
   const onPageSelected = useCallback(({ nativeEvent }: PagerViewOnPageSelectedEvent) => {
     // console.log(nativeEvent)
     const nextIndex = nativeEvent.position
     const previousIndex = activeIndexRef.current
     const isCommonPair = (index: number) => index == viewMap.nav_love || index == viewMap.nav_qq
+    // 回弹动画落地的那次 onPageSelected 不是用户切页，要忽略掉。
+    // 尤其是回弹还没结束、用户已经点了底部导航时：照单全收会把导航又切回滑动前的页面。
+    if (revertTargetRef.current >= 0) {
+      const target = revertTargetRef.current
+      revertTargetRef.current = -1
+      if (nextIndex == target) return
+    }
     if (isCommonPair(previousIndex) && !isCommonPair(nextIndex)) {
       // 只有「我的列表 ↔ QQ音乐」这一对之间允许左右滑，滑向别的页面要退回上一页。
       // 原来用的是 setPageWithoutAnimation（原生 setCurrentItem 的 scrollSmooth=false），
       // 瞬间跳回去，看着就是“滑到头跳了一下”；换成带动画的 setPage 才是一次正常的回弹。
+      revertTargetRef.current = previousIndex
       pagerViewRef.current?.setPage(previousIndex)
       return
     }
