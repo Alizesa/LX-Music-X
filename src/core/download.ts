@@ -6,7 +6,7 @@ import settingState from '@/store/setting/state'
 import { filterFileName } from '@/utils'
 import { buildLyrics } from '@/utils/lrcTools'
 import { getDownloadPath, getDownloadTasks, saveDownloadPath, saveDownloadTasks } from '@/utils/data'
-import { downloadFile, extname, temporaryDirectoryPath, unlink } from '@/utils/fs'
+import { downloadFile, extname, privateStorageDirectoryPath, temporaryDirectoryPath, unlink } from '@/utils/fs'
 import { writeLyric, writeMetadata, writePic } from '@/utils/localMediaMetadata'
 import {
   enqueueDownload,
@@ -17,6 +17,7 @@ import {
   type NativeDownloadState,
 } from '@/utils/nativeModules/download'
 import { toMD5 } from '@/utils/tools'
+import { sizeFormate } from '@/utils/common'
 
 const tasks: LX.Download.DownloadTask[] = []
 const speedSamples = new Map<string, { bytes: number, time: number }>()
@@ -65,6 +66,40 @@ const buildFileName = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality)
     .replace('歌名', musicInfo.name)
     .replace('歌手', musicInfo.singer || '未知歌手')
   return `${filterFileName(name).trim() || musicInfo.id}.${extensionForQuality(quality)}`
+}
+
+/**
+ * 接口对每档音质都给了一个带单位的大小字符串（sizeFormate 出来的是 "10.33 MiB"，
+ * 酷我那边直接是 "10.33M"），换算成字节，用来核对下载结果。
+ */
+const parseQualitySize = (size?: string | null): number => {
+  if (!size) return 0
+  const matched = /^([\d.]+)\s*([KMGT]?)/i.exec(size.trim())
+  if (!matched) return 0
+  const value = Number(matched[1])
+  if (!Number.isFinite(value) || value <= 0) return 0
+  const unit = matched[2].toUpperCase()
+  const power = unit == 'K' ? 1 : unit == 'M' ? 2 : unit == 'G' ? 3 : unit == 'T' ? 4 : 0
+  return Math.round(value * 1024 ** power)
+}
+
+/**
+ * 落盘大小和接口给的对不上，说明拿到的不是这首歌 / 这个音质。
+ * 实际踩过：上次没下完的中转文件被接着续传，最后复制出去一个 30M 的文件
+ * （正常的 320k 只有 10M 左右），而原来整条链路没有任何校验，坏文件照样进本地列表。
+ */
+const isSizeAbnormal = (actual: number, expected: number) => {
+  if (actual <= 0) return true
+  // 接口没给大小时没法判断，放过去
+  if (expected <= 0) return false
+  return actual > expected * 1.5 || actual < expected * 0.5
+}
+
+/** 清掉下载中转文件：重下时不会接着上次的错误数据续传 */
+const clearPartialFile = async(taskId: string) => {
+  try {
+    await unlink(`${privateStorageDirectoryPath}/downloads/${taskId}.part`)
+  } catch {}
 }
 
 const updateTask = async(id: string, update: Partial<LX.Download.DownloadTask>, immediate = false) => {
@@ -124,6 +159,21 @@ const writeEmbeddedMetadata = async(task: LX.Download.DownloadTask) => {
 
 const finalizeTask = async(task: LX.Download.DownloadTask, state: NativeDownloadState) => {
   if (!state.filePath || task.status == 'completed' || task.status == 'finalizing') return
+  // 入本地列表之前先核对大小，坏的直接判失败，不留一条播不了的记录
+  const expectedSize = parseQualitySize(task.musicInfo.meta._qualitys?.[task.quality]?.size)
+  if (isSizeAbnormal(state.downloaded, expectedSize)) {
+    // 中转文件已经不可信，清掉，用户点重试时是干干净净重下一次
+    await clearPartialFile(task.id)
+    await updateTask(task.id, {
+      status: 'error',
+      error: global.i18n.t('download_bad_size', {
+        size: sizeFormate(state.downloaded),
+        expect: expectedSize > 0 ? sizeFormate(expectedSize) : '-',
+      }),
+      progress: { progress: 0, downloaded: 0, total: 0, speed: '' },
+    }, true)
+    return
+  }
   await updateTask(task.id, {
     status: 'finalizing',
     filePath: state.filePath,
@@ -300,6 +350,9 @@ export const addTasks = async(musicInfos: LX.Music.MusicInfoOnline[], quality: L
     })
   }
   if (!added.length) return []
+  // 这批都是新建的任务（同 id 的老任务要么不存在、要么已失败），
+  // 先清掉残留的中转文件，免得接着上次的旧数据续传出一个大小不对的文件
+  await Promise.all(added.map(async task => clearPartialFile(task.id)))
   const addedIds = new Set(added.map(task => task.id))
   // 同 id 的旧任务(一定是 error，否则上面就跳过了)先移除，再整批放到最前面，顺序与传入一致
   const kept = tasks.filter(task => !addedIds.has(task.id))
@@ -324,6 +377,9 @@ export const addTask = async(musicInfo: LX.Music.MusicInfoOnline, quality: LX.Qu
   const fileName = buildFileName(musicInfo, targetQuality)
   const id = toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`)
   if (tasks.some(task => task.id == id && task.status != 'error')) return id
+  // 走到这里说明是老任务失败了在重下（或第一次下），清掉残留的中转文件，
+  // 免得接着上次的旧数据续传出一个大小不对的文件
+  await clearPartialFile(id)
   const task: LX.Download.DownloadTask = {
     id,
     musicInfo,
