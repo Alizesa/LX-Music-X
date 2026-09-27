@@ -3,7 +3,7 @@ import listAction from '@/store/list/action'
 import listState from '@/store/list/state'
 import settingState from '@/store/setting/state'
 import { fixNewMusicInfoQuality } from '@/utils'
-import { saveListPrevSelectId } from '@/utils/data'
+import { saveListPrevSelectId, saveTempListMeta } from '@/utils/data'
 
 /**
  * 覆盖全部列表数据
@@ -169,6 +169,13 @@ export const setUserList = (lists: LX.List.UserListInfo[]) => {
 export const setTempList = async(id: string, list: LX.Music.MusicInfoOnline[]) => {
   await overwriteListMusics(LIST_IDS.TEMP, list)
   listAction.setTempListMeta({ id })
+  // 落盘：重启后要靠它认出「这条队列来自每日推荐」，自动续播才能接着工作
+  await saveTempListMeta({ id })
+}
+
+/** 启动时把上次的临时列表来源标记读回来 */
+export const setTempListMeta: typeof listAction['setTempListMeta'] = (meta) => {
+  listAction.setTempListMeta(meta)
 }
 
 

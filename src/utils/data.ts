@@ -33,6 +33,7 @@ const selectedManagedFolderPrefix = storageDataPrefix.selectedManagedFolder
 const downloadTasksKey = storageDataPrefix.downloadTasks
 const downloadPathKey = storageDataPrefix.downloadPath
 const playQueueKey = storageDataPrefix.playQueue
+const tempListMetaKey = storageDataPrefix.tempListMeta
 const playHistoryKey = storageDataPrefix.playHistory
 const qqMusicCookieKey = storageDataPrefix.qqMusicCookie
 const qqMusicUserKey = storageDataPrefix.qqMusicUser
@@ -282,6 +283,17 @@ export const getViewPrevState = async() => {
 }
 export const saveViewPrevState = (state: { id: NAV_ID_Type }) => {
   saveViewPrevStateThrottle(state)
+}
+
+/**
+ * 临时播放列表的来源标记。以前只在内存里，重启后就是空的，
+ * 导致「每日推荐」的自动续播在重启后判断不出这是推荐队列、再也不续歌。
+ */
+export const getTempListMeta = async(): Promise<{ id: string }> => {
+  return (await getData<{ id: string }>(tempListMetaKey)) ?? { id: '' }
+}
+export const saveTempListMeta = async(state: { id: string }) => {
+  await saveData(tempListMetaKey, state)
 }
 
 
