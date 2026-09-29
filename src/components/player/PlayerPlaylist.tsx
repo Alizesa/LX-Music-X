@@ -4,8 +4,10 @@ import Popup, { type PopupType } from '@/components/common/Popup'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
 import { useTheme } from '@/store/theme/hook'
-import { usePlayInfo } from '@/store/player/hook'
-import { clearQueue, moveQueueMusic, playList, removeQueueMusic } from '@/core/player/player'
+import { usePlayInfo, usePlayMusicInfo } from '@/store/player/hook'
+import playerState from '@/store/player/state'
+import { clearQueue, moveQueueMusic, playList, playTempPlayMusic, removeQueueMusic } from '@/core/player/player'
+import { removeTempPlayList } from '@/core/player/tempPlayList'
 import { getPlayQueue } from '@/core/player/playQueue'
 import { LIST_IDS, LIST_ITEM_HEIGHT } from '@/config/constant'
 import { scaleSizeH } from '@/utils/pixelRatio'
@@ -14,6 +16,15 @@ import { createStyle } from '@/utils/tools'
 export interface PlayerPlaylistType {
   show: () => void
 }
+
+// 面板把「稍后播放」和播放队列合成一份列表，行顺序就是接下来的播放顺序：
+// playNext 先取临时列表、取空后才回到播放队列，所以临时歌曲插在当前曲目后面，
+// 正好是它们实际播放的位置（也是打开面板时一眼能看到的位置——面板默认停在当前曲目）。
+// index 是该行在自己那份列表里的位置：队列行是队列下标，临时行是临时列表下标。
+// 播到的歌曲会被移出临时列表，于是它自然从面板上消失。
+type PlaylistRow =
+  | { kind: 'temp', key: string, index: number, item: LX.Player.PlayMusicInfo }
+  | { kind: 'queue', key: string, index: number, item: LX.Player.PlayQueueItem }
 
 // 行高必须跟着字号缩放：Text 用的是 setSpText（会乘字号设置），
 // 这里写死常量的话，字号调大后两行文字会溢出被裁掉。
@@ -75,15 +86,50 @@ const QueueRow = memo(({ item, index, active, onMove, onRemove, onPlay }: {
   )
 }, (prev, next) => prev.item === next.item && prev.index === next.index && prev.active === next.active)
 
+// 「稍后播放」的行：序号位置换成醒目的标记，并且不能拖动——临时列表在 core 里
+// 只支持追加/移除，没有顺序调整，给个拖动手柄会误导。
+const TempRow = memo(({ item, index, onPlay, onRemove }: {
+  item: LX.Player.PlayMusicInfo
+  index: number
+  onPlay: (index: number) => void
+  onRemove: (index: number) => void
+}) => {
+  const theme = useTheme()
+  const musicInfo = 'progress' in item.musicInfo ? item.musicInfo.metadata.musicInfo : item.musicInfo
+  return (
+    <View style={{ ...styles.item, height: ITEM_HEIGHT, borderBottomColor: theme['c-border-background'] }}>
+      <TouchableOpacity style={{ ...styles.playArea, height: ITEM_HEIGHT }} onPress={() => { onPlay(index) }}>
+        <Text style={styles.tempTag} size={11} numberOfLines={1} color={theme['c-primary-font']}>{global.i18n.t('player_playlist_temp')}</Text>
+        <View style={styles.info}>
+          <Text numberOfLines={1} color={theme['c-primary-font']}>{musicInfo.name}</Text>
+          <Text numberOfLines={1} size={12} color={theme['c-font-label']}>{musicInfo.singer}</Text>
+        </View>
+      </TouchableOpacity>
+      <TouchableOpacity style={{ ...styles.iconButton, height: ITEM_HEIGHT }} onPress={() => { onRemove(index) }}><Icon name="remove" size={15} color={theme['c-font-label']} /></TouchableOpacity>
+    </View>
+  )
+})
+
 export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   const popupRef = useRef<PopupType>(null)
-  const listRef = useRef<FlatList<LX.Player.PlayQueueItem>>(null)
+  const listRef = useRef<FlatList<PlaylistRow>>(null)
   const scrollOffsetRef = useRef(0)
   const listHeightRef = useRef(0)
   const [visible, setVisible] = useState(false)
   const [queue, setQueue] = useState<LX.Player.PlayQueueItem[]>([...getPlayQueue()])
+  const [tempList, setTempList] = useState<LX.Player.PlayMusicInfo[]>([...playerState.tempPlayList])
   const playInfo = usePlayInfo()
+  const playMusicInfo = usePlayMusicInfo()
   const theme = useTheme()
+
+  // 临时歌曲插在当前曲目之后（没有在播的歌曲、或当前曲目已不在队列里时插到最前面）。
+  // 这样当前曲目的行号仍然等于它在队列里的下标，面板定位那套计算不受影响。
+  const insertAt = playInfo.playerPlayIndex >= 0 && playInfo.playerPlayIndex < queue.length ? playInfo.playerPlayIndex + 1 : 0
+  const rows = useMemo<PlaylistRow[]>(() => [
+    ...queue.slice(0, insertAt).map((item, index): PlaylistRow => ({ kind: 'queue', key: item.queueId, index, item })),
+    ...tempList.map((item, index): PlaylistRow => ({ kind: 'temp', key: `temp_${index}_${item.musicInfo.id}`, index, item })),
+    ...queue.slice(insertAt).map((item, index): PlaylistRow => ({ kind: 'queue', key: item.queueId, index: insertAt + index, item })),
+  ], [tempList, queue, insertAt])
 
   // 挂载时的目标位置。两个属性必须同时给，缺一不可：
   // - initialScrollIndex 让虚拟列表从这一项开始渲染，否则单元格会逐个冒出来，
@@ -105,6 +151,7 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
       const list = getPlayQueue()
       const index = playInfo.playerPlayIndex > 0 && playInfo.playerPlayIndex < list.length ? playInfo.playerPlayIndex : 0
       setQueue([...list])
+      setTempList([...playerState.tempPlayList])
       setInitialIndex(index)
       // 列表挂载时就由 contentOffset 停在 index 处，所以缓存值要按它来设，
       // 否则「是否已可见」会以为还在顶部，首次跟随时会多滚一次
@@ -121,6 +168,16 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
     return () => { global.app_event.off('playQueueUpdate', handleUpdate) }
   }, [])
 
+  useEffect(() => {
+    // 面板打开期间临时列表也会变：一首稍后播放的歌曲播完（或用户点了它）就会被移出列表。
+    // 事件参数是 {...array} 这样的普通对象，拿不到数组本身，所以直接从 state 里取快照。
+    const handleUpdate = () => { setTempList([...playerState.tempPlayList]) }
+    global.state_event.on('playTempPlayListChanged', handleUpdate)
+    return () => { global.state_event.off('playTempPlayListChanged', handleUpdate) }
+  }, [])
+
+  // 传的是队列下标：临时歌曲插在当前曲目之后，所以当前曲目的行号仍等于它，
+  // 下面这套定位计算不用为临时歌曲做任何偏移
   const isIndexVisible = useCallback((index: number) => {
     const top = index * ITEM_HEIGHT
     const bottom = top + ITEM_HEIGHT
@@ -170,27 +227,30 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   // 稳定引用，配合 QueueRow 的 memo：否则每渲染一次都会让所有行的
   // PanResponder 重建，长队列下开销很大
   const handleMove = useCallback((from: number, to: number) => { void moveQueueMusic(from, to) }, [])
-  const handleRemove = useCallback((index: number) => { void removeQueueMusic(index) }, [])
-  const handlePlay = useCallback((index: number) => {
+  const handleRemoveQueue = useCallback((index: number) => { void removeQueueMusic(index) }, [])
+  const handlePlayQueue = useCallback((index: number) => {
     // 记下用户点的行，跟随逻辑据此跳过这一次（见上面的 effect）
     tappedIndexRef.current = index
     void playList(LIST_IDS.PLAY_QUEUE, index)
   }, [])
+  // 临时列表的行只按自己的位置处理，与队列无关
+  const handleRemoveTemp = useCallback((index: number) => { removeTempPlayList(index) }, [])
+  const handlePlayTemp = useCallback((index: number) => { void playTempPlayMusic(index) }, [])
 
   if (!visible) return null
 
   return (
     <Popup ref={popupRef} title={global.i18n.t('player_playlist')} onHide={() => { setVisible(false) }} position="bottom">
       <View style={styles.toolbar}>
-        <Text size={12} color={theme['c-font-label']}>{queue.length}</Text>
+        <Text size={12} color={theme['c-font-label']}>{rows.length}</Text>
         <TouchableOpacity style={styles.clearButton} onPress={() => { void clearQueue() }}>
           <Text size={12} color={theme['c-primary-font']}>{global.i18n.t('player_playlist_clear')}</Text>
         </TouchableOpacity>
       </View>
       <FlatList
         ref={listRef}
-        data={queue}
-        keyExtractor={item => item.queueId}
+        data={rows}
+        keyExtractor={row => row.key}
         // 必须给列表高度约束。ScrollView 默认 flexShrink:0，高度由内容决定，
         // 队列一长就会远超面板的 maxHeight，和父容器的收缩约束互相打架，
         // 布局稳定下来之前面板会跳一下。同 Popup 的另一个调用方（同步历史）
@@ -202,15 +262,19 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
         onLayout={e => { listHeightRef.current = e.nativeEvent.layout.height }}
         onScroll={e => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y }}
         scrollEventThrottle={16}
-        renderItem={({ item, index }) => (
-          <QueueRow
-            item={item}
-            index={index}
-            active={index == playInfo.playerPlayIndex}
-            onMove={handleMove}
-            onRemove={handleRemove}
-            onPlay={handlePlay}
-          />
+        renderItem={({ item: row }) => (
+          row.kind === 'temp'
+            ? <TempRow item={row.item} index={row.index} onPlay={handlePlayTemp} onRemove={handleRemoveTemp} />
+            : <QueueRow
+              item={row.item}
+              index={row.index}
+              // 正在播“稍后播放”的歌曲时，playerPlayIndex 仍指向上一次播到的队列位置，
+              // 那一行并没有在播（临时播放不改动它），所以这时不给任何队列行标高亮
+              active={!playMusicInfo.isTempPlay && row.index == playInfo.playerPlayIndex}
+              onMove={handleMove}
+              onRemove={handleRemoveQueue}
+              onPlay={handlePlayQueue}
+            />
         )}
         ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{global.i18n.t('player_playlist_empty')}</Text>}
       />
@@ -228,6 +292,8 @@ const styles = createStyle({
   playArea: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   // textAlign 给序号文字用，alignItems 给当前曲的喇叭图标用（View 里靠它居中）
   index: { width: 32, textAlign: 'center', alignItems: 'center' },
+  // 与序号同宽，两种行左边缘才对得齐
+  tempTag: { width: 32, textAlign: 'center' },
   info: { flex: 1, paddingLeft: 8 },
   iconButton: { width: 42, alignItems: 'center', justifyContent: 'center' },
   empty: { textAlign: 'center', paddingVertical: 32 },

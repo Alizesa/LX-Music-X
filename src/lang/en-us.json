@@ -111,6 +111,7 @@
   "player_playlist": "Now playing",
   "player_playlist_empty": "The playlist is empty",
   "player_playlist_clear": "Clear",
+  "player_playlist_temp": "Later",
   "local_music_remove_title": "Remove local music",
   "local_music_remove_message": "Choose how to handle {num} local record(s) and file(s)",
   "local_music_remove_record": "Remove record only",

@@ -111,6 +111,7 @@
   "player_playlist": "目前播放清單",
   "player_playlist_empty": "目前播放清單為空",
   "player_playlist_clear": "清空",
+  "player_playlist_temp": "稍後",
   "local_music_remove_title": "移除本地音樂",
   "local_music_remove_message": "選擇如何處理 {num} 筆本地音樂記錄和檔案",
   "local_music_remove_record": "僅移除記錄",

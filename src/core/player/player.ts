@@ -448,6 +448,18 @@ const handlePlayNext = async(playMusicInfo: LX.Player.PlayMusicInfo) => {
   await handlePlay()
 }
 /**
+ * 播放“稍后播放”列表内指定歌曲。
+ * 与 playNext 里的临时播放处理一致：先从列表移除，再按 isTempPlay 播放，
+ * 这样播完仍会回到原播放列表的位置继续。
+ * @param index 歌曲在“稍后播放”列表中的位置
+ */
+export const playTempPlayMusic = async(index: number): Promise<void> => {
+  const playMusicInfo = playerState.tempPlayList[index]
+  if (!playMusicInfo) return
+  removeTempPlayList(index)
+  await handlePlayNext(playMusicInfo)
+}
+/**
  * 下一曲
  * @param isAutoToggle 是否自动切换
  * @returns
