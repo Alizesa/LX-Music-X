@@ -33,5 +33,19 @@ declare namespace LX {
       /** 下一次刷新从哪个 From 开始取 */
       nextFrom: number
     }
+
+    /**
+     * 每日推荐的播放存档：切到别的歌单时，播放队列会被整条替换掉
+     * （play_queue 只有一个槽），所以切走前把推荐队列和播放位置存下来，
+     * 下次点「每日推荐」能接着播，而不是从缓存那 20 首的第一首重来。
+     */
+    interface RecommendSession {
+      /** 推荐队列，含播放过程中自动续上的那几批 */
+      songs: LX.Player.PlayMusic[]
+      /** 切走时正在播的那首在队列里的位置 */
+      index: number
+      /** 存档时间，用来判断是否跨天（跨天就不再续，推荐内容本来就该换新） */
+      savedAt: number
+    }
   }
 }

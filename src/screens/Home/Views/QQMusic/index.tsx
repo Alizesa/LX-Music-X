@@ -7,16 +7,14 @@ import QQMusicCookieModal, { type QQMusicCookieModalType } from '@/components/QQ
 import { useTheme } from '@/store/theme/hook'
 import { createStyle, toast } from '@/utils/tools'
 import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicDailyRecommendations, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, isLikedPlaylist } from '@/core/qqMusic'
-import { initQQMusicRecommendAutoRefresh } from '@/core/qqMusicRecommend'
+import { continueRecommendQueue, initQQMusicRecommendAutoRefresh, startRecommendQueue } from '@/core/qqMusicRecommend'
+import { dropRecommendSession } from '@/core/qqMusicRecommendSession'
 import { createList, setTempList } from '@/core/list'
-import { playList } from '@/core/player/player'
-import { LIST_IDS } from '@/config/constant'
+import { QQ_DAILY_RECOMMEND_ID } from '@/config/constant'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
 import { getQQMusicDailyRecommendCache, getQQMusicPlaylistsCache, saveQQMusicDailyRecommendCache, saveQQMusicPlaylistsCache } from '@/utils/data'
 import { useI18n } from '@/lang'
-
-const DAILY_RECOMMEND_LIST_ID = 'qq_daily_recommend'
 
 const ActionButton = ({ icon, label, onPress, disabled = false }: { icon: string, label: string, onPress: () => void, disabled?: boolean }) => {
   const theme = useTheme()
@@ -96,6 +94,9 @@ export default () => {
       if (recommendResult.status == 'fulfilled') {
         setRecommendations(recommendResult.value)
         await saveQQMusicDailyRecommendCache(recommendResult.value)
+        // 刷新就是要换一批：上次那批的续播存档作废，下次点「每日推荐」从新的这批开头放。
+        // 失败时不能丢——用户没拿到新列表，不该连续播也一起没了。
+        await dropRecommendSession()
       }
       const failure = [playlistsResult, recommendResult].find(result => result.status == 'rejected')
       if (failure?.status == 'rejected') {
@@ -111,6 +112,9 @@ export default () => {
     if (!ensureLogin()) return
     setPlaying(true)
     try {
+      // 正播着这批推荐、或上次切走存下来的那批还在：接着播，不重建队列
+      // （重建会把自动续上的批次丢回缓存那 20 首）
+      if (await continueRecommendQueue(recommendations)) return
       let songs = recommendations
       // 有缓存就直接播，零网络请求；只有从未拉取过才联网
       if (!songs.length) {
@@ -119,10 +123,10 @@ export default () => {
         setRecommendations(songs)
         await saveQQMusicDailyRecommendCache(songs)
       }
-      await setTempList(DAILY_RECOMMEND_LIST_ID, songs)
+      await setTempList(QQ_DAILY_RECOMMEND_ID, songs)
       // 播放过程中接近播完时自动续下一批，不再只是循环这 20 首
       initQQMusicRecommendAutoRefresh()
-      void playList(LIST_IDS.TEMP, 0)
+      await startRecommendQueue(songs, 0)
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {

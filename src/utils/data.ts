@@ -40,6 +40,7 @@ const qqMusicUserKey = storageDataPrefix.qqMusicUser
 const qqMusicPlaylistsKey = storageDataPrefix.qqMusicPlaylists
 const qqMusicDailyRecommendKey = storageDataPrefix.qqMusicDailyRecommend
 const qqMusicRecommendPlaylistsKey = storageDataPrefix.qqMusicRecommendPlaylists
+const qqMusicRecommendSessionKey = storageDataPrefix.qqMusicRecommendSession
 
 // const defaultListKey = listPrefix + 'default'
 // const loveListKey = listPrefix + 'love'
@@ -526,6 +527,12 @@ export const removeQQMusicDailyRecommendCache = async() => removeData(qqMusicDai
 export const getQQMusicRecommendPlaylistsCache = async() => await getData<LX.QQMusic.RecommendPlaylistCache>(qqMusicRecommendPlaylistsKey) ?? null
 export const saveQQMusicRecommendPlaylistsCache = async(cache: LX.QQMusic.RecommendPlaylistCache) => saveData(qqMusicRecommendPlaylistsKey, cache)
 export const removeQQMusicRecommendPlaylistsCache = async() => removeData(qqMusicRecommendPlaylistsKey)
+
+// 每日推荐的播放存档：切走时存，再点「每日推荐」时续。跨天作废由
+// core/qqMusicRecommendSession 判断，这里只负责读写。
+export const getQQMusicRecommendSession = async() => await getData<LX.QQMusic.RecommendSession>(qqMusicRecommendSessionKey) ?? null
+export const saveQQMusicRecommendSession = async(session: LX.QQMusic.RecommendSession) => saveData(qqMusicRecommendSessionKey, session)
+export const removeQQMusicRecommendSession = async() => removeData(qqMusicRecommendSessionKey)
 
 export const getSyncAuthKey = async(serverId: string) => {
   const keys = await getData<Record<string, LX.Sync.KeyInfo>>(syncAuthKeyPrefix)

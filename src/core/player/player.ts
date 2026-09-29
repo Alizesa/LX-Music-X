@@ -30,6 +30,7 @@ import { LIST_IDS } from '@/config/constant'
 import { addListMusics, removeListMusics } from '@/core/list'
 import { addDislikeInfo } from '@/core/dislikeList'
 import { clearPlayQueue, getPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
+import { parkRecommendQueue } from '@/core/qqMusicRecommendSession'
 
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
@@ -298,6 +299,10 @@ export const playListById = async(listId: string, id: string) => {
 export const playList = async(listId: string, index: number) => {
   const prevListId = playerState.playInfo.playerListId
   if (listId != LIST_IDS.PLAY_QUEUE) {
+    // 队列只有一个槽位，replace 会把当前的「每日推荐」队列（含自动续上的批次）整个丢掉，
+    // 所以换队列前先存档，回「每日推荐」时能接着播。判断只看队列自己的来源标记：
+    // 调用方进来之前已经 setTempList 把临时列表标记改成新列表了。
+    await parkRecommendQueue()
     await replacePlayQueue(listId, getList(listId))
   }
   const item = getPlayQueue()[index]
@@ -334,6 +339,8 @@ export const moveQueueMusic = async(from: number, to: number) => {
 }
 
 export const clearQueue = async() => {
+  // 清空队列不算「不要这次推荐了」：存档留到跨天或手动点「刷新」为止
+  await parkRecommendQueue()
   clearTempPlayeList()
   await clearPlayQueue()
   await handleToggleStop()

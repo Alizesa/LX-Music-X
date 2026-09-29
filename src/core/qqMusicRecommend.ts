@@ -1,13 +1,14 @@
-import { appendPlayQueue, getPlayQueue } from '@/core/player/playQueue'
+import { appendPlayQueue, getPlayQueue, replacePlayQueue, restampPlayQueue } from '@/core/player/playQueue'
 import { getQQMusicDailyRecommendations, getQQMusicSession } from '@/core/qqMusic'
 import listState from '@/store/list/state'
 import playerState from '@/store/player/state'
-import { LIST_IDS } from '@/config/constant'
+import { LIST_IDS, QQ_DAILY_RECOMMEND_ID, QQ_DAILY_RECOMMEND_QUEUE_SOURCE } from '@/config/constant'
+import { getRecommendSession, isRecommendQueue } from '@/core/qqMusicRecommendSession'
+import { play, playList } from '@/core/player/player'
+import { clearPlayedList } from '@/core/player/playedList'
 
 type CurrentPlayMusicInfo = typeof playerState['playMusicInfo']
 
-// 只有「每日推荐」写入的这个 meta.id 需要续播，其它临时列表（试听、导入歌单等）不受影响
-const RECOMMEND_TEMP_LIST_ID = 'qq_daily_recommend'
 // 剩余未播少于这个数量就提前拉下一批，给网络往返留出时间
 const REFRESH_THRESHOLD = 5
 // 连续落空（上游给回来全是队列里已有的歌）或连续失败这么多次后，不再每次切歌都试一次
@@ -31,14 +32,12 @@ const currentIndexInQueue = (musicInfoId: string) => getPlayQueue()
 const shouldRefresh = (playMusicInfo: CurrentPlayMusicInfo) => {
   const musicInfo = playMusicInfo.musicInfo
   if (!musicInfo || playMusicInfo.isTempPlay) return false
-  if (listState.tempListMeta.id !== RECOMMEND_TEMP_LIST_ID) return false
   if (playerState.playInfo.playerListId !== LIST_IDS.PLAY_QUEUE) return false
-  const queue = getPlayQueue()
+  // 认队列自己的来源标记，不认临时列表的 meta：那个标记切到别的列表时就被改掉了
+  if (!isRecommendQueue()) return false
   const index = currentIndexInQueue(musicInfo.id)
   if (index < 0) return false
-  // setTempList 写入的 meta 在切到别的音乐后可能残留，再确认当前队列确实来自临时列表
-  if (queue[index].sourceListId !== LIST_IDS.TEMP) return false
-  return queue.length - 1 - index < REFRESH_THRESHOLD
+  return getPlayQueue().length - 1 - index < REFRESH_THRESHOLD
 }
 
 /** 记一次落空或失败，连续多次就退避一段时间再试 */
@@ -67,7 +66,8 @@ const refresh = async() => {
     }
     failedRounds = 0
     nextTryAt = 0
-    await appendPlayQueue(LIST_IDS.TEMP, toAppend)
+    // 标记要和建队列时一致，否则续播/存档会静默认不出这条队列
+    await appendPlayQueue(QQ_DAILY_RECOMMEND_QUEUE_SOURCE, toAppend)
   } catch (error) {
     // 续播是后台行为，失败就安静退避，别每次切歌都白跑一个请求；
     // 但过一会儿还要再试，否则这批播完就没得续了
@@ -102,4 +102,61 @@ export const initQQMusicRecommendAutoRefresh = () => {
   if (initialized) return
   initialized = true
   global.state_event.on('playMusicInfoChanged', handlePlayMusicInfoChanged)
+}
+
+/**
+ * 用一批推荐重建播放队列，并从 index 开始播。
+ * 队列打的是推荐专属来源标记，续播和存档都靠它认。
+ */
+export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0) => {
+  if (!songs.length) return
+  // 随机模式下 playNext 会先走已播列表，而那份记录不区分列表（队列播放的 listId 都是
+  // play_queue），换一批新队列后可能先蹦出一首上一个列表的歌。重启恢复时它本来就是空的，
+  // 这里也清掉，两条路径保持一致。
+  clearPlayedList()
+  await replacePlayQueue(QQ_DAILY_RECOMMEND_QUEUE_SOURCE, songs)
+  await playList(LIST_IDS.PLAY_QUEUE, Math.max(0, Math.min(index, songs.length - 1)))
+}
+
+/**
+ * 点「每日推荐」时先试着接手，返回是否已经处理完。三种情况：
+ * 1. 队列本来就是推荐队列，且和当前这份推荐是同一批 → 接着播，不重建
+ *    （重建会把自动续上的批次丢回那 20 首，这正是「又从第一首开始」的原因）；
+ * 2. 切走时留下的当天存档还在 → 还原队列和位置；
+ * 3. 都没有 → false，调用方按原来的「读缓存/联网 + 从头播」走。
+ * @param currentSongs 当前这份推荐（页面上缓存的那批），用来判断队列是不是同一批
+ */
+export const continueRecommendQueue = async(currentSongs: LX.Player.PlayMusic[]): Promise<boolean> => {
+  if (isRecommendQueue()) {
+    // 队列首项就是建队列时的第一首，和当前这批对得上才算同一批。
+    // 点过「刷新」之后存档已经丢了，这时应该换新的一批，而不是继续放旧的。
+    const queueFirstId = getPlayQueue()[0]?.musicInfo.id
+    if (!currentSongs.length || queueFirstId == currentSongs[0]?.id) {
+      if (!playerState.isPlay) {
+        // 暂停着就接着放；已经停掉（playMusicInfo 被清了）就按上次的位置重新起播
+        if (playerState.playMusicInfo.musicInfo) play()
+        else await playList(LIST_IDS.PLAY_QUEUE, Math.max(0, playerState.playInfo.playerPlayIndex))
+      }
+      return true
+    }
+    return false
+  }
+  const session = await getRecommendSession()
+  if (!session) return false
+  await startRecommendQueue(session.songs, session.index)
+  return true
+}
+
+/**
+ * 老版本落盘的推荐队列没有专属来源标记（那时记的是临时列表 temp），启动时补一次。
+ * 之后所有判断只看队列自己的标记 —— 临时列表标记会被下一个列表的 setTempList 立刻改写，
+ * 在离开队列的那一刻已经不可靠了。
+ */
+export const migrateRecommendPlayQueue = async() => {
+  if (listState.tempListMeta.id !== QQ_DAILY_RECOMMEND_ID) return
+  const queue = getPlayQueue()
+  if (!queue.length) return
+  // 整条队列都来自临时列表才敢认：混进别的来源就说明这不是推荐队列
+  if (queue.some(item => item.sourceListId !== LIST_IDS.TEMP)) return
+  await restampPlayQueue(QQ_DAILY_RECOMMEND_QUEUE_SOURCE)
 }

@@ -44,8 +44,11 @@ export default async(appSetting: LX.AppSetting) => {
   setTempListMeta(await getTempListMeta())
   // 自动续播的监听以前只在点「每日推荐」时注册，重启后等于没有监听，
   // 这里补上；它是幂等的，点每日推荐那次注册不会重复。
-  const { initQQMusicRecommendAutoRefresh } = await import('@/core/qqMusicRecommend')
+  const { initQQMusicRecommendAutoRefresh, migrateRecommendPlayQueue } = await import('@/core/qqMusicRecommend')
   initQQMusicRecommendAutoRefresh()
+  // 老版本落盘的推荐队列没有专属来源标记，补一次，之后判断只看队列自己的标记。
+  // 要放在上面的 setTempListMeta 之后（判断要用到临时列表标记）和 initPlayQueue 之后。
+  await migrateRecommendPlayQueue()
   void unlink(TEMP_FILE_PATH)
   // await initPrevPlayInfo(appSetting).catch(err => log.error(err)) // 初始化上次的歌曲播放信息
 }

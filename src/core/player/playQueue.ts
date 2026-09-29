@@ -17,6 +17,24 @@ export const initPlayQueue = async() => {
 export const getPlayQueue = () => queue
 export const getPlayQueueMusic = () => queue.map(item => item.musicInfo)
 
+/**
+ * 当前队列是不是由某个列表建出来的。
+ * 只看首项：整条队列来自一次 replace，来源是同一批；
+ * 用 every 反而会被「旧队列 + 新追加」的混合队列判成 false。
+ */
+export const isPlayQueueFromList = (sourceListId: string) => queue[0]?.sourceListId === sourceListId
+
+/** 就地改写整条队列的来源标记。歌曲、顺序、queueId 都不动，只给老数据补标记用 */
+export const restampPlayQueue = async(sourceListId: string) => {
+  let changed = false
+  for (const item of queue) {
+    if (item.sourceListId === sourceListId) continue
+    item.sourceListId = sourceListId
+    changed = true
+  }
+  if (changed) await commit()
+}
+
 export const replacePlayQueue = async(sourceListId: string, list: LX.Player.PlayMusic[]) => {
   const seed = Date.now().toString(36)
   queue.splice(0, queue.length, ...list.map((musicInfo, index) => ({

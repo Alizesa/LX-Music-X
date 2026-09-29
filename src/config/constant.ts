@@ -17,6 +17,15 @@ export const LIST_IDS = {
   PLAY_LATER: null,
 } as const
 
+/** 「每日推荐」写进临时列表时用的来源标记（自动续播靠它认出推荐列表） */
+export const QQ_DAILY_RECOMMEND_ID = 'qq_daily_recommend'
+/**
+ * 每日推荐的播放队列自己的来源标记。
+ * 其它虚拟列表（排行榜/歌单/歌手）都是往临时列表里放、队列打的也是 temp，
+ * 只有推荐队列用这个专属标记，切到别的歌单后回来才认得出「刚才那条是推荐队列」。
+ */
+export const QQ_DAILY_RECOMMEND_QUEUE_SOURCE = 'qq_daily_recommend_queue'
+
 // export const COMPONENT_IDS = {
 //   home: 'home',
 //   playDetail: 'playDetail',
@@ -95,6 +104,7 @@ export const storageDataPrefix = {
   qqMusicPlaylists: '@qq_music_playlists',
   qqMusicDailyRecommend: '@qq_music_daily_recommend',
   qqMusicRecommendPlaylists: '@qq_music_recommend_playlists',
+  qqMusicRecommendSession: '@qq_music_recommend_session',
 } as const
 
 // v0.x.x 版本的 data keys
