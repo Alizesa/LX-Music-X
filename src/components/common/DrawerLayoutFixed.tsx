@@ -3,6 +3,7 @@ import { DrawerLayoutAndroid, type DrawerLayoutAndroidProps, View, type LayoutCh
 // import { getWindowSise } from '@/utils/tools'
 import { usePageVisible } from '@/store/common/hook'
 import { type COMPONENT_IDS } from '@/config/constant'
+import { useSettingValue } from '@/store/setting/hook'
 
 interface Props extends DrawerLayoutAndroidProps {
   visibleNavNames: COMPONENT_IDS[]
@@ -40,6 +41,7 @@ const DrawerLayoutFixed = forwardRef<DrawerLayoutFixedType, Props>(({
   const [w, setW] = useState<number | `${number}%`>('100%')
   const [drawerWidth, setDrawerWidth] = useState(0)
   const changedRef = useRef({ width: 0, changed: false })
+  const customBgImage = useSettingValue('theme.customBgImage')
   // 面板该有的宽度（px）。native 那边可能没收到（见 handleLayout 里的说明），修正时用它重推
   const drawerWidthRef = useRef(0)
   // native 抽屉的状态。open 对的是 native 的「已打开」标记，来自 onDrawerOpen/onDrawerClose
@@ -76,6 +78,10 @@ const DrawerLayoutFixed = forwardRef<DrawerLayoutFixedType, Props>(({
     }
     applyFixDrawerWidth()
   }, [applyFixDrawerWidth])
+
+  useEffect(() => {
+    fixDrawerWidth()
+  }, [customBgImage, fixDrawerWidth])
 
   // 修复 DrawerLayoutAndroid 在导航到其他屏幕再返回后无法打开的问题
   usePageVisible(visibleNavNames, useCallback((visible) => {
