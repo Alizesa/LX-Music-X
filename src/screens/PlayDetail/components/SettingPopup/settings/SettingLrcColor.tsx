@@ -42,9 +42,7 @@ export default memo(({ active = false }: { active?: boolean }) => {
           style={[stylesLocal.item, stylesLocal.themeItem, color == null && { borderColor: theme['c-primary'] }]}
           activeOpacity={0.6}
           onPress={() => { setColor(null) }}
-        >
-          <Text size={12} numberOfLines={1} color={theme['c-font-label']}>{t('play_detail_setting_lrc_color_theme')}</Text>
-        </TouchableOpacity>
+        />
         {
           COLORS.map(c => (
             <TouchableOpacity
@@ -82,10 +80,9 @@ const stylesLocal = createStyle({
     borderColor: 'rgba(128, 128, 128, 0.5)',
     flexShrink: 0,
   },
+  // 「跟随主题」也是个色块，跟别的等宽。字不放了：26px 的方块塞不下「跟随主题」四个字，
+  // 之前被压得只剩一点像素，比不放还难看。一块灰底当标识，点它就是回到主题色
   themeItem: {
-    paddingHorizontal: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
     backgroundColor: 'rgba(128, 128, 128, 0.25)',
   },
 })
