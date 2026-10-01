@@ -30,7 +30,9 @@ export default memo(() => {
 
 const styles = createStyle({
   content: {
-    marginTop: 5,
+    // 上面是「显示方向」那块（SubTitle）自带 18 的下边距，这里不能再加 marginTop：
+    // 加了就比别处多出一截空白（兄弟项 IsSingleLine 的 marginTop 是因为它上面那个
+    // setting 是光秃秃的 CheckBoxItem，没有下边距）
     marginBottom: 15,
   },
 })

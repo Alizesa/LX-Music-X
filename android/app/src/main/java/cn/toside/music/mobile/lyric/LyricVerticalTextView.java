@@ -17,8 +17,10 @@ import java.util.ArrayList;
  * 往下读」还原，再按格绘制：
  *
  * - 汉字这类照旧正着摆，一个占一格；
- * - 一串连续的拉丁字母/数字/半角符号算一个整体，从它占的第一格顶端起旋转 90° 画出来。
+ * - 一串连续的半角字符里只要带字母或数字，就算一个整体，从它占的第一格顶端起旋转 90° 画出来。
  *   于是一个词是一整块横倒的字（歪头看是连续的），而不是 h-e-l-l-o 五个正着的字母。
+ * - 整串都是标点的（单独的 "-"、"- - -"、"." 这类）照旧正着摆：半角短横线横倒只剩一根细竖线，
+ *   看着跟空了一格似的。
  *
  * 网格、列数、字号全都沿用原来那套，只有画法不同；开了横倒时窗口会按「每列至少一个行高」
  * 加宽（见 LyricView.applyBoxSize），横倒的字才不用缩、也不会压到隔壁列上。
@@ -162,9 +164,32 @@ public class LyricVerticalTextView extends TextView {
           run.appendCodePoint(cp);
           row++;
         }
-        addRun(column, firstRow, row - 1, run.toString());
+        String runText = run.toString();
+        if (containsLetterOrDigit(runText)) {
+          addRun(column, firstRow, row - 1, runText);
+        } else {
+          // 整串都是标点（单独的 "-"、"- - -"、"..." 这类）：不横倒，跟汉字一样一个字占一格。
+          // 半角的短横线转 90° 之后只有十几像素长、两像素宽的细竖线，掉在五六十像素的格子里
+          // 看着就像空了一格（踩过）。字母数字带头的串才值得倒，"well-known" 这种不会被拆开
+          for (int i = 0; i < runText.length(); ) {
+            int cp = runText.codePointAt(i);
+            addCell(column, firstRow, firstRow, new String(Character.toChars(cp)), false);
+            firstRow++;
+            i += Character.charCount(cp);
+          }
+        }
       }
     }
+  }
+
+  /** 这一串里有没有字母或数字（有才值得整体横倒，见上面调用处的注释） */
+  private static boolean containsLetterOrDigit(String text) {
+    for (int i = 0; i < text.length(); ) {
+      int codePoint = text.codePointAt(i);
+      if (Character.isLetterOrDigit(codePoint)) return true;
+      i += Character.charCount(codePoint);
+    }
+    return false;
   }
 
   /** 一串横倒的文字。末尾的空白不该跟着转（转出来是一道空条），退回去当普通空格画 */

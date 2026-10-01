@@ -60,8 +60,8 @@ const defaultSetting: LX.AppSetting = {
   'desktopLyric.isSingleLine': false,
   // 竖向显示：每个字上下堆叠成一列，窗口变成窄而高的一条
   'desktopLyric.isVertical': false,
-  // 竖排时英文横倒 90°：默认关，关着就是每个字母正着占一行（英文歌建议打开）
-  'desktopLyric.verticalRotateLatin': false,
+  // 竖排时英文横倒 90°：默认开（关着就是每个字母正着占一行，一个词被拆成一列散字母）
+  'desktopLyric.verticalRotateLatin': true,
   'desktopLyric.showToggleAnima': true,
   // 默认不画背景框（黑底太扎眼），要的话在设置里选「贴合歌词」
   'desktopLyric.background': 'none',
