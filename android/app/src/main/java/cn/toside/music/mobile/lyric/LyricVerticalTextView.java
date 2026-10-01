@@ -64,6 +64,10 @@ public class LyricVerticalTextView extends TextView {
 
   @Override
   protected void onDraw(Canvas canvas) {
+    if (!rotateLatin) {
+      super.onDraw(canvas);
+      return;
+    }
     if (cells.isEmpty() || columnCount <= 0 || rowCount <= 0) return;
     float contentWidth = getWidth() - getPaddingLeft() - getPaddingRight();
     float contentHeight = getHeight() - getPaddingTop() - getPaddingBottom();
