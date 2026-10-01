@@ -73,6 +73,11 @@ public class LyricVerticalTextView extends TextView {
     float contentHeight = getHeight() - getPaddingTop() - getPaddingBottom();
     if (contentWidth <= 0 || contentHeight <= 0) return;
 
+    // 「把当前文字颜色刷进画笔」本来是 TextView 在自己的 onDraw 里做的，这里绕开了
+    // super.onDraw，不补这一下，画笔就一直是构造时的颜色，一个字都画不出来
+    // （横向的 LyricTextView 同样是自绘的，它靠重写 setTextColor 做了同一件事）
+    mPaint.setColor(getCurrentTextColor());
+
     float cellWidth = contentWidth / columnCount;
     float cellHeight = contentHeight / rowCount;
     mPaint.getFontMetrics(fontMetrics);
