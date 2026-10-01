@@ -163,8 +163,9 @@ public class Lyric extends LyricPlayer {
   }
 
   public void showDesktopLyric(Bundle options, Promise promise) {
-    if (isShowLyricView) {
-      // 已经在显示了。这里不 resolve 的话 JS 那边的 await 会一直挂着
+    // 已经在显示了才直接返回。光看标记不行：窗口要是被系统收走了（或者上次 addView 失败后状态没退干净），
+    // 这里直接 resolve 的话 JS 那边会以为显示成功了，界面上却什么都没有，再点多少次都出不来
+    if (isShowLyricView && lyricView != null && lyricView.hasWindow()) {
       promise.resolve(null);
       return;
     }
@@ -178,7 +179,8 @@ public class Lyric extends LyricPlayer {
       // 否则 isShowLyricView 一直是 true，之后就再也 show 不起来了
       isShowLyricView = false;
       promise.reject(e);
-      Log.e("Lyric", e.getMessage());
+      // 记完整堆栈：只记 getMessage() 的话，出了「一点就弹权限」这类问题根本看不出是哪一步炸的
+      Log.e("Lyric", "showDesktopLyric failed: " + e.getClass().getName() + " " + e.getMessage(), e);
       return;
     }
     isRunPlayer = true;
@@ -186,7 +188,8 @@ public class Lyric extends LyricPlayer {
   }
 
   public void hideDesktopLyric() {
-    if (!isShowLyricView) return;
+    // 不再看 isShowLyricView：标记跟窗口实际状态对不上时（上一条注释那种情况），
+    // 关开关就什么都清不掉了，窗口会一直留在屏幕上
     isShowLyricView = false;
     pausePlayer();
     if (lyricView != null) {

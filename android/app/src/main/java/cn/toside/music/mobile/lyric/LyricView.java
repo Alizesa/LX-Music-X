@@ -570,8 +570,10 @@ public class LyricView extends Activity implements View.OnTouchListener {
    *
    * textView 非空也不代表窗口在 —— addView 失败（比如悬浮窗权限被收回）之后它会一直留着，
    * 那种状态下窗口其实起不来，随便改个设置都能把 App 弄崩（removeView 抛 not attached）。
+   *
+   * 包内可见：Lyric.showDesktopLyric 也用它分辨「标记说在显示、窗口其实不在」。
    */
-  private boolean hasWindow() {
+  boolean hasWindow() {
     return textView != null && windowAttached;
   }
 
@@ -594,6 +596,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
     } catch (Exception e) {
       textView = null;
       windowAttached = false;
+      // 挂窗口失败的类名能直接区分「权限被拒」(SecurityException) 和别的毛病，别只记 message
+      Log.e("Lyric", "addView failed: " + e.getClass().getName() + " " + e.getMessage(), e);
       throw e;
     }
   }
