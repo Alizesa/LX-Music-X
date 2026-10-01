@@ -101,13 +101,12 @@ public class LyricView extends Activity implements View.OnTouchListener {
     fixViewPositionHandler = new Handler();
     gestureDetector = new GestureDetector(reactContext, new GestureDetector.SimpleOnGestureListener() {
       @Override
-      public boolean onLongPress(MotionEvent e) {
+      public void onLongPress(MotionEvent e) {
         // 窗口内长按 = 请求锁定。这里只把动作报给 JS，锁不锁由 JS 侧的设置决定
         // （锁定后窗口是 FLAG_NOT_TOUCHABLE，收不到触摸，也就不会再触发）
         if (LyricView.this.lyricEvent != null) {
           LyricView.this.lyricEvent.sendEvent(LyricView.this.lyricEvent.VIEW_LONG_PRESS, null);
         }
-        return true;
       }
     });
   }
