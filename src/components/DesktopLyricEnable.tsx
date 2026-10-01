@@ -15,8 +15,6 @@ export interface DesktopLyricEnableType {
 export default forwardRef<DesktopLyricEnableType, {}>((props, ref) => {
   const t = useI18n()
   const [visible, setVisible] = useState(false)
-  // 临时诊断用，定位完就删（见 handleShowModal）
-  const [errMessage, setErrMessage] = useState('')
   // const setIsShowDesktopLyric = useDispatch('common', 'setIsShowDesktopLyric')
   const confirmAlertRef = useRef<ConfirmAlertType>(null)
 
@@ -26,10 +24,7 @@ export default forwardRef<DesktopLyricEnableType, {}>((props, ref) => {
     },
   }))
 
-  const handleShowModal = (err?: any) => {
-    // 临时诊断：把失败原因一并显示出来。这个弹窗以前不管因为什么都只说「要悬浮窗权限」，
-    // 权限明明是开的时候完全看不出到底哪一步炸了
-    setErrMessage(err == null ? '' : String(err.message ?? err))
+  const handleShowModal = () => {
     if (visible) confirmAlertRef.current?.setVisible(true)
     else {
       setVisible(true)
@@ -45,7 +40,7 @@ export default forwardRef<DesktopLyricEnableType, {}>((props, ref) => {
         await showDesktopLyric()
       } catch (err) {
         console.log(err)
-        handleShowModal(err)
+        handleShowModal()
         // return false
       }
     } else await hideDesktopLyric()
@@ -73,7 +68,7 @@ export default forwardRef<DesktopLyricEnableType, {}>((props, ref) => {
             closeBtn={false}
             cancelText={t('disagree')}
             confirmText={t('agree_go')}
-            text={errMessage ? `${t('setting_lyric_desktop_permission_tip')}\n\n[诊断] ${errMessage}` : t('setting_lyric_desktop_permission_tip')} />
+            text={t('setting_lyric_desktop_permission_tip')} />
         )
       : null
   )
