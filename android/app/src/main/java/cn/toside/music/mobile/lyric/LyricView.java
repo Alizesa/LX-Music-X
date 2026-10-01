@@ -84,6 +84,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private boolean isSingleLine = false;
   // 竖向显示：每个字占一行，窗口变成窄而高的一条
   private boolean isVertical = false;
+  // 竖排时把英文这类拉丁字母整串横倒 90° 显示（默认关，关着就是逐字正着堆叠）
+  private boolean verticalRotateLatin = false;
   private boolean isShowToggleAnima = false;
   private String unplayColor = "rgba(255, 255, 255, 1)";
   private String playedColor = "rgba(7, 197, 86, 1)";
@@ -460,6 +462,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     isLock = options.getBoolean("isLock", isLock);
     isSingleLine = options.getBoolean("isSingleLine", isSingleLine);
     isVertical = options.getBoolean("vertical", isVertical);
+    verticalRotateLatin = options.getBoolean("verticalRotateLatin", verticalRotateLatin);
     isShowToggleAnima = options.getBoolean("isShowToggleAnima", isShowToggleAnima);
     unplayColor = options.getString("unplayColor", unplayColor);
     playedColor = options.getString("playedColor", playedColor);
@@ -505,7 +508,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private void createTextView() {
     // 竖向显示要的是「一个字一行」的普通 TextView；单行模式的 LyricTextView 是自绘横向滚动的，
     // 窗口只剩一个字宽时它会把每个字都当成溢出而疯狂滚动，所以竖排时强制不用它
-    textView = new LyricSwitchView(reactContext, isSingleLine && !isVertical, isShowToggleAnima);
+    textView = new LyricSwitchView(reactContext, isSingleLine && !isVertical, isShowToggleAnima,
+      isVertical && verticalRotateLatin);
 
     textView.setTextColor(parseColor(playedColor));
     textView.setShadowColor(parseColor(shadowColor));
@@ -884,6 +888,26 @@ public class LyricView extends Activity implements View.OnTouchListener {
     isShowToggleAnima = showToggleAnima;
     if (textView == null) return;
     textView.setShowAnima(showToggleAnima);
+  }
+
+  /**
+   * 切换「竖排时英文横倒」。文本网格没变，只是换了个绘制类，所以按当前歌词重排一遍就够
+   * （TextView 的实现类换不了，只能跟 setVertical 一样重建）
+   */
+  public void setVerticalRotateLatin(boolean rotateLatin) {
+    this.verticalRotateLatin = rotateLatin;
+    if (windowManager == null || textView == null) return;
+    // 横向时这项用不上，别白重建一次窗口；值已经存下，切到竖排时会带上
+    if (!isVertical) return;
+    windowManager.removeView(textView);
+    createTextView();
+    applyBoxSize();
+    windowManager.addView(textView, layoutParams);
+
+    if (isLock) lockView();
+    else unlockView();
+
+    setLyric(currentLyric, currentExtendedLyrics);
   }
 
   public void setTextSize(float size) {

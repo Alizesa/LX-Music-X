@@ -301,6 +301,11 @@ declare global {
       'desktopLyric.isVertical': boolean
 
       /**
+       * 竖排时把英文这类拉丁字母整串横倒 90°（关着就是每个字母正着占一行）
+       */
+      'desktopLyric.verticalRotateLatin': boolean
+
+      /**
        * 桌面歌词背景框：text 贴合文字 / window 铺满窗口 / none 不显示
        */
       'desktopLyric.background': 'text' | 'window' | 'none'

@@ -29,7 +29,7 @@ public final class LyricSwitchView extends TextSwitcher {
 
   private boolean isSingleLine;
 
-  public LyricSwitchView(Context context, boolean isSingleLine, boolean isShowAnima) {
+  public LyricSwitchView(Context context, boolean isSingleLine, boolean isShowAnima, boolean rotateLatin) {
     super(context);
     // this.isSingleLine = isSingleLine;
     this.isShowAnima = isShowAnima;
@@ -44,6 +44,13 @@ public final class LyricSwitchView extends TextSwitcher {
 //      for (TextView v : viewArray) {
 //        v.setShadowLayer(0.1f, 0, 0, Color.BLACK);
 //      }
+    } else if (rotateLatin) {
+      // 竖排且开了「英文横倒」：用自绘的 LyricVerticalTextView（画法见那个类）
+      viewArray = new ArrayList<>(2);
+      textView = new LyricVerticalTextView(context);
+      textView2 = new LyricVerticalTextView(context);
+      viewArray.add(textView);
+      viewArray.add(textView2);
     } else {
       viewArray = new ArrayList<>(2);
       textView = new TextView(context);

@@ -177,6 +177,12 @@ public class LyricModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
+  public void setVerticalRotateLatin(boolean rotateLatin, Promise promise) {
+    if (lyric != null) lyric.setVerticalRotateLatin(rotateLatin);
+    promise.resolve(null);
+  }
+
+  @ReactMethod
   public void setShowToggleAnima(boolean showToggleAnima, Promise promise) {
     if (lyric != null) lyric.setShowToggleAnima(showToggleAnima);
     promise.resolve(null);

@@ -6,6 +6,7 @@ import IsLockLyric from './IsLockLyric'
 import IsShowToggleAnima from './IsShowToggleAnima'
 import IsSingleLine from './IsSingleLine'
 import Direction from './Direction'
+import VerticalRotateLatin from './VerticalRotateLatin'
 import TextSize from './TextSize'
 import ViewWidth from './ViewWidth'
 import MaxLineNum from './MaxLineNum'
@@ -29,6 +30,7 @@ export default memo(() => {
       <IsShowToggleAnima />
       <IsSingleLine />
       <Direction />
+      <VerticalRotateLatin />
       <Theme />
       <TextSize />
       <ViewWidth />

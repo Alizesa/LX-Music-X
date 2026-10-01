@@ -255,6 +255,11 @@ public class Lyric extends LyricPlayer {
     lyricView.setVertical(vertical);
   }
 
+  public void setVerticalRotateLatin(boolean rotateLatin) {
+    if (lyricView == null) return;
+    lyricView.setVerticalRotateLatin(rotateLatin);
+  }
+
   public void setShowToggleAnima(boolean showToggleAnima) {
     if (lyricView == null) return;
     lyricView.setShowToggleAnima(showToggleAnima);

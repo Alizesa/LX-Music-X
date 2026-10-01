@@ -412,6 +412,7 @@
   "setting_lyric_desktop_theme": "歌詞主題色",
   "setting_lyric_desktop_toggle_anima": "顯示歌詞切換動畫",
   "setting_lyric_desktop_unlock_tip": "已解鎖桌面歌詞",
+  "setting_lyric_desktop_vertical_rotate_latin": "豎排時英文旋轉 90°",
   "setting_lyric_desktop_view_width": "視窗百分比寬度",
   "setting_other": "其他",
   "setting_other_cache": "快取管理（包括歌曲、歌詞、錯誤日誌等快取，若沒有歌曲播放相關的問題則不建議清理）",

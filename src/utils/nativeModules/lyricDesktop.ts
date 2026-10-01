@@ -48,6 +48,7 @@ export const showDesktopLyricView = async({
   isShowToggleAnima,
   isSingleLine,
   isVertical,
+  isVerticalRotateLatin,
   width,
   maxLineNum,
   isLock,
@@ -67,6 +68,7 @@ export const showDesktopLyricView = async({
   isShowToggleAnima: boolean
   isSingleLine: boolean
   isVertical: boolean
+  isVerticalRotateLatin: boolean
   width: number
   maxLineNum: number
   isLock: boolean
@@ -86,6 +88,7 @@ export const showDesktopLyricView = async({
   return LyricModule.showDesktopLyric({
     isSingleLine,
     vertical: isVertical,
+    verticalRotateLatin: isVerticalRotateLatin,
     isShowToggleAnima,
     isLock,
     unplayColor,
@@ -206,6 +209,13 @@ export const setSingleLine = async(isSingleLine: boolean): Promise<void> => {
  */
 export const setVertical = async(isVertical: boolean): Promise<void> => {
   return LyricModule.setVertical(isVertical)
+}
+
+/**
+ * set vertical rotate latin (竖排时把英文这类拉丁字母整串横倒 90°)
+ */
+export const setVerticalRotateLatin = async(rotateLatin: boolean): Promise<void> => {
+  return LyricModule.setVerticalRotateLatin(rotateLatin)
 }
 
 /**

@@ -412,6 +412,7 @@
   "setting_lyric_desktop_theme": "歌词主题色",
   "setting_lyric_desktop_toggle_anima": "显示歌词切换动画",
   "setting_lyric_desktop_unlock_tip": "已解锁桌面歌词",
+  "setting_lyric_desktop_vertical_rotate_latin": "竖排时英文旋转 90°",
   "setting_lyric_desktop_view_width": "窗口百分比宽度",
   "setting_other": "其他",
   "setting_other_cache": "缓存管理（包括歌曲、歌词、错误日志等缓存，若没有歌曲播放相关的问题则不建议清理）",
