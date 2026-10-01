@@ -252,6 +252,15 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (start < line.length()) columns.add(line.substring(start));
   }
 
+  /**
+   * 按存下来的百分比算窗口左上角。宽度是跟着歌词文字变的，所以每次都从百分比重算，
+   * 不做「在旧位置上叠加位移」——那样一行一行攒下来，退出重进就会明显跑偏。
+   */
+  private void applyPositionFromPercentage(int dx, int dy) {
+    layoutParams.x = (int)(maxWidth * prevViewPercentageX) + dx;
+    layoutParams.y = (int)(maxHeight * prevViewPercentageY) + dy;
+  }
+
   private void clampPosition() {
     int maxX = Math.max(0, maxWidth - layoutParams.width);
     if (layoutParams.x < 0) layoutParams.x = 0;
@@ -351,8 +360,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
     layoutParams.height = height;
     textView.setWidth(width);
     textView.setHeight(height);
-    if (dx != 0) layoutParams.x += dx;
-    if (dy != 0) layoutParams.y += dy;
+    // 尺寸没变时 dx/dy 本来就是 0，不必再动位置；变了就按百分比重算一遍（见 applyPositionFromPercentage）
+    if (oldWidth != width || oldHeight != height) applyPositionFromPercentage(dx, dy);
     clampPosition();
     // 还没挂到 WindowManager 上时不能调 updateViewLayout（首次显示时尺寸要在 addView 之前算好）
     if (windowManager != null && textView.isAttachedToWindow()) windowManager.updateViewLayout(textView, layoutParams);
@@ -402,8 +411,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (isVertical) recompose();
     else applyBoxSize();
 
-    layoutParams.x = (int)(maxWidth * prevViewPercentageX);
-    layoutParams.y = (int)(maxHeight * prevViewPercentageY);
+    // 屏幕宽高变了，右下角的上限也跟着变，位置一律按百分比重算一遍
+    applyPositionFromPercentage(0, 0);
     clampPosition();
 
     windowManager.updateViewLayout(textView, layoutParams);
@@ -585,10 +594,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     // layoutParams.height = WindowManager.LayoutParams.WRAP_CONTENT;
     applyBoxSize();
 
-    //显示位置与指定位置的相对位置差
-    layoutParams.x = (int)(maxWidth * prevViewPercentageX);
-    layoutParams.y = (int)(maxHeight * prevViewPercentageY);
-    clampPosition();
+    // 位置已经由上面的 applyBoxSize 按存的百分比算好并夹回屏内了
 
     //设置透明
     layoutParams.format = PixelFormat.TRANSPARENT;
@@ -712,12 +718,12 @@ public class LyricView extends Activity implements View.OnTouchListener {
         if (!isMoved && event.getEventTime() - downTime >= LONG_PRESS_MS && lyricEvent != null) {
           lyricEvent.sendEvent(lyricEvent.VIEW_LONG_PRESS, null);
         }
-        float percentageX = (float)layoutParams.x / (float) maxWidth * 100f;
-        float percentageY = (float)layoutParams.y / (float) maxHeight * 100f;
-        if (percentageX != prevViewPercentageX || percentageY != prevViewPercentageY) {
-          prevViewPercentageX = percentageX / 100f;
-          prevViewPercentageY = percentageY / 100f;
-          sendPositionEvent(percentageX, percentageY);
+        // 只有真的拖动过才上报。原来是把 0~100 的 percentageX 拿去和 0~1 的 prevViewPercentageX 比，
+        // 条件恒为真，随便点一下抬手就会写一次设置
+        if (isMoved) {
+          prevViewPercentageX = (float)layoutParams.x / (float) maxWidth;
+          prevViewPercentageY = (float)layoutParams.y / (float) maxHeight;
+          sendPositionEvent(prevViewPercentageX * 100f, prevViewPercentageY * 100f);
         }
         break;
     }

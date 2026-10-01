@@ -7,6 +7,8 @@ import SettingLyricProgress from './settings/SettingLyricProgress'
 import SettingVolume from './settings/SettingVolume'
 import SettingPlaybackRate from './settings/SettingPlaybackRate'
 import SettingLrcFontSize from './settings/SettingLrcFontSize'
+import SettingLrcColor from './settings/SettingLrcColor'
+import SettingLrcOpacity from './settings/SettingLrcOpacity'
 import SettingLrcAlign from './settings/SettingLrcAlign'
 
 export interface SettingPopupProps extends Omit<PopupProps, 'children'> {
@@ -46,6 +48,9 @@ export default forwardRef<SettingPopupType, SettingPopupProps>(({ direction, ...
               <SettingVolume />
               <SettingPlaybackRate />
               <SettingLrcFontSize direction={direction} />
+              <SettingLrcColor />
+              <SettingLrcColor active />
+              <SettingLrcOpacity />
               <SettingLrcAlign />
             </View>
           </ScrollView>

@@ -240,6 +240,22 @@ declare global {
       'playDetail.style.align': 'center' | 'left' | 'right'
 
       /**
+       * 播放详情页-未播放歌词的颜色，null 表示跟随主题。
+       * 自定义背景图会把歌词盖住看不清，所以留了改颜色的口子。
+       */
+      'playDetail.style.lyricColor': string | null
+
+      /**
+       * 播放详情页-当前播放那行的歌词颜色，null 表示跟随主题高亮色
+       */
+      'playDetail.style.lyricActiveColor': string | null
+
+      /**
+       * 播放详情页-未播放歌词的不透明度（0-100）
+       */
+      'playDetail.style.lyricOpacity': number
+
+      /**
        * 竖屏歌词字体大小
        */
       'playDetail.vertical.style.lrcFontSize': number

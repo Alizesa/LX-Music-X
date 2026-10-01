@@ -1,4 +1,4 @@
-import { TouchableOpacity } from 'react-native'
+import { TouchableOpacity, type StyleProp, type TextStyle } from 'react-native'
 import { Icon } from '@/components/common/Icon'
 import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
@@ -8,17 +8,18 @@ import { HEADER_HEIGHT } from '@/config/constant'
 export const BTN_WIDTH = scaleSizeW(HEADER_HEIGHT)
 export const BTN_ICON_SIZE = 20
 
-export default ({ icon, size, color, onPress, onLongPress }: {
+export default ({ icon, size, color, iconStyle, onPress, onLongPress }: {
   icon: string
   size?: number
   color?: string
+  iconStyle?: StyleProp<TextStyle>
   onPress: () => void
   onLongPress?: () => void
 }) => {
   const theme = useTheme()
   return (
     <TouchableOpacity style={{ ...styles.cotrolBtn, width: BTN_WIDTH, height: BTN_WIDTH }} activeOpacity={0.5} onPress={onPress} onLongPress={onLongPress}>
-      <Icon name={icon} color={color ?? theme['c-550']} size={size ?? BTN_ICON_SIZE} />
+      <Icon name={icon} color={color ?? theme['c-550']} size={size ?? BTN_ICON_SIZE} style={iconStyle} />
     </TouchableOpacity>
   )
 }

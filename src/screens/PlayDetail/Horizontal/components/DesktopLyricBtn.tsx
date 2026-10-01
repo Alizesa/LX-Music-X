@@ -6,9 +6,12 @@ import { toggleDesktopLyricLock } from '@/core/desktopLyric'
 import { updateSetting } from '@/core/common'
 import { toast } from '@/utils/tools'
 import settingState from '@/store/setting/state'
+import { useTheme } from '@/store/theme/hook'
+import { strongIconShadow } from '@/screens/PlayDetail/components/iconStyle'
 
 
 export default memo(() => {
+  const theme = useTheme()
   const enabledLyric = useSettingValue('desktopLyric.enable')
   const desktopLyricEnableRef = useRef<DesktopLyricEnableType>(null)
   const update = () => {
@@ -25,7 +28,7 @@ export default memo(() => {
 
   return (
     <>
-      <Btn icon={enabledLyric ? 'lyric-on' : 'lyric-off'} onPress={update} onLongPress={updateLock} />
+      <Btn icon={enabledLyric ? 'lyric-on' : 'lyric-off'} color={theme['c-font']} iconStyle={strongIconShadow} onPress={update} onLongPress={updateLock} />
       <DesktopLyricEnable ref={desktopLyricEnableRef} />
     </>
   )

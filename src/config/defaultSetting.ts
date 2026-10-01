@@ -43,6 +43,12 @@ const defaultSetting: LX.AppSetting = {
   // 'playDetail.isZoomActiveLrc': false,
   // 'playDetail.isShowLyricProgressSetting': false,
   'playDetail.style.align': 'left',
+  // 歌词颜色两项：null = 跟随主题（跟改之前一模一样）。自定义背景图把歌词盖住时，
+  // 可以在播放器设置里换成固定颜色
+  'playDetail.style.lyricColor': null,
+  'playDetail.style.lyricActiveColor': null,
+  // 未播放歌词的不透明度，60 就是以前写死的那档
+  'playDetail.style.lyricOpacity': 60,
   'playDetail.vertical.style.lrcFontSize': 210,
   'playDetail.horizontal.style.lrcFontSize': 220,
   'playDetail.isShowLyricProgressSetting': false,

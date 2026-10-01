@@ -66,21 +66,30 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
   const theme = useTheme()
   const lrcFontSize = useSettingValue('playDetail.vertical.style.lrcFontSize')
   const textAlign = useSettingValue('playDetail.style.align')
+  const lrcColor = useSettingValue('playDetail.style.lyricColor')
+  const lrcActiveColor = useSettingValue('playDetail.style.lyricActiveColor')
+  const lrcOpacity = useSettingValue('playDetail.style.lyricOpacity')
   const size = lrcFontSize / 10
   const lineHeight = setSpText(size) * 1.3
 
+  // [原文颜色, 翻译颜色, 原文不透明度, 翻译不透明度]
+  // 颜色设置是 null 时完全走主题色（跟以前一模一样）；自定义了颜色就用同一个色，
+  // 翻译行靠降不透明度保持主次（主题那两档本来也就是同色淡一档）
   const colors = useMemo(() => {
     const active = activeLine == lineNum
+    const opacity = lrcOpacity / 100
     return active ? [
-      theme['c-primary'],
-      theme['c-primary-alpha-200'],
+      lrcActiveColor ?? theme['c-primary'],
+      lrcActiveColor ?? theme['c-primary-alpha-200'],
       1,
+      lrcActiveColor ? opacity * 0.6 : 1,
     ] as const : [
-      theme['c-350'],
-      theme['c-300'],
-      0.6,
+      lrcColor ?? theme['c-350'],
+      lrcColor ?? theme['c-300'],
+      opacity,
+      lrcColor ? opacity * 0.6 : opacity,
     ] as const
-  }, [activeLine, lineNum, theme])
+  }, [activeLine, lineNum, theme, lrcColor, lrcActiveColor, lrcOpacity])
 
   const handleLayout = ({ nativeEvent }: LayoutChangeEvent) => {
     onLayout(lineNum, nativeEvent.layout.height, nativeEvent.layout.width)
@@ -102,7 +111,7 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
             ...styles.lineTranslationText,
             textAlign,
             lineHeight: lineHeight * 0.8,
-          }} textBreakStrategy="simple" key={index} color={colors[1]} opacity={colors[2]} size={size * 0.8}>{lrc}</AnimatedColorText>)
+          }} textBreakStrategy="simple" key={index} color={colors[1]} opacity={colors[3]} size={size * 0.8}>{lrc}</AnimatedColorText>)
         })
       }
     </View>
