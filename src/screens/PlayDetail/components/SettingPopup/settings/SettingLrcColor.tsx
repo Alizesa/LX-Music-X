@@ -76,9 +76,10 @@ const stylesLocal = createStyle({
     marginRight: 8,
     marginBottom: 6,
     borderRadius: 6,
-    // 选中时用主题色描边；透明边框是给未选中留的位置，免得选中时整排跟着挪
+    // 选中时换成主题色描边。未选中也要有描边：白、黑两个色块跟弹窗底色太接近，
+    // 不描一圈就看不见。边框宽度固定 2，选中时只换颜色，整排不会跟着挪
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: 'rgba(128, 128, 128, 0.5)',
     flexShrink: 0,
   },
   themeItem: {

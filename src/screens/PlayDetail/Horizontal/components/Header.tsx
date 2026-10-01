@@ -14,6 +14,7 @@ import CommentBtn from './CommentBtn'
 import Btn from './Btn'
 import SettingPopup, { type SettingPopupType } from '../../components/SettingPopup'
 import DesktopLyricBtn from './DesktopLyricBtn'
+import { strongIconShadow } from '../../components/iconStyle'
 
 export const HEADER_HEIGHT = scaleSizeH(_HEADER_HEIGHT)
 
@@ -31,6 +32,7 @@ const Title = () => {
 }
 
 export default memo(() => {
+  const theme = useTheme()
   const popupRef = useRef<SettingPopupType>(null)
 
   const back = () => {
@@ -49,7 +51,7 @@ export default memo(() => {
         <Title />
         <DesktopLyricBtn />
         <CommentBtn />
-        <Btn icon="slider" onPress={showSetting} />
+        <Btn icon="slider" color={theme['c-font']} iconStyle={strongIconShadow} onPress={showSetting} />
       </View>
       <SettingPopup ref={popupRef} position="left" direction="horizontal" />
     </View>

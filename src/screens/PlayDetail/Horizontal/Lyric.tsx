@@ -11,6 +11,7 @@ import { setSpText } from '@/utils/pixelRatio'
 import playerState from '@/store/player/state'
 import { scrollTo } from '@/utils/scroll'
 import PlayLine, { type PlayLineType } from '../components/PlayLine'
+import { resolveLrcColors } from '../components/lrcColors'
 // import { screenkeepAwake } from '@/utils/nativeModules/utils'
 // import { log } from '@/utils/log'
 // import { toast } from '@/utils/tools'
@@ -33,24 +34,13 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
   const size = lrcFontSize / 10
   const lineHeight = setSpText(size) * 1.3
 
-  // [原文颜色, 翻译颜色, 原文不透明度, 翻译不透明度]
-  // 颜色设置是 null 时完全走主题色（跟以前一模一样）；自定义了颜色就用同一个色，
-  // 翻译行靠降不透明度保持主次（主题那两档本来也就是同色淡一档）
-  const colors = useMemo(() => {
-    const active = activeLine == lineNum
-    const opacity = lrcOpacity / 100
-    return active ? [
-      lrcActiveColor ?? theme['c-primary'],
-      lrcActiveColor ?? theme['c-primary-alpha-200'],
-      1,
-      lrcActiveColor ? opacity * 0.6 : 1,
-    ] as const : [
-      lrcColor ?? theme['c-350'],
-      lrcColor ?? theme['c-300'],
-      opacity,
-      lrcColor ? opacity * 0.6 : opacity,
-    ] as const
-  }, [activeLine, lineNum, theme, lrcColor, lrcActiveColor, lrcOpacity])
+  const colors = useMemo(() => resolveLrcColors({
+    active: activeLine == lineNum,
+    theme,
+    lrcColor,
+    lrcActiveColor,
+    lrcOpacity,
+  }), [activeLine, lineNum, theme, lrcColor, lrcActiveColor, lrcOpacity])
 
   const handleLayout = ({ nativeEvent }: LayoutChangeEvent) => {
     onLayout(lineNum, nativeEvent.layout.height, nativeEvent.layout.width)
@@ -64,14 +54,14 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
         ...styles.lineText,
         textAlign,
         lineHeight,
-      }} textBreakStrategy="simple" color={colors[0]} opacity={colors[2]} size={size}>{line.text}</AnimatedColorText>
+      }} textBreakStrategy="simple" color={colors.color} opacity={colors.opacity} size={size}>{line.text}</AnimatedColorText>
       {
         line.extendedLyrics.map((lrc, index) => {
           return (<AnimatedColorText style={{
             ...styles.lineTranslationText,
             textAlign,
             lineHeight: lineHeight * 0.8,
-          }} textBreakStrategy="simple" key={index} color={colors[1]} opacity={colors[3]} size={size * 0.8}>{lrc}</AnimatedColorText>)
+          }} textBreakStrategy="simple" key={index} color={colors.translationColor} opacity={colors.translationOpacity} size={size * 0.8}>{lrc}</AnimatedColorText>)
         })
       }
     </View>

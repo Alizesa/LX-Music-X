@@ -71,6 +71,11 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private float downY;
   private long downTime;
   private boolean isMoved = false;
+  // 手指正按在窗口上。拖的时候歌词换行不能把窗口拽回存下来的百分比位置，不然会跟手指打架
+  private boolean isDragging = false;
+  // 按下时窗口在哪。抬手时拿它判断窗口到底动没动过（见 onTouch 的 ACTION_UP）
+  private int downLayoutX = 0;
+  private int downLayoutY = 0;
 
   private float preY = 0;
   // private static boolean isVibrated = false;
@@ -253,12 +258,16 @@ public class LyricView extends Activity implements View.OnTouchListener {
   }
 
   /**
-   * 按存下来的百分比算窗口左上角。宽度是跟着歌词文字变的，所以每次都从百分比重算，
+   * 窗口左上角该在哪。存下来的是屏幕百分比，宽度又跟着歌词文字变，所以每次都从百分比重算，
    * 不做「在旧位置上叠加位移」——那样一行一行攒下来，退出重进就会明显跑偏。
+   * 拖动过程中位置归手指管，这里不插手（否则换行时会把窗口从手指底下拽走）。
    */
-  private void applyPositionFromPercentage(int dx, int dy) {
-    layoutParams.x = (int)(maxWidth * prevViewPercentageX) + dx;
-    layoutParams.y = (int)(maxHeight * prevViewPercentageY) + dy;
+  private int targetX() {
+    return isDragging ? layoutParams.x : (int)(maxWidth * prevViewPercentageX);
+  }
+
+  private int targetY() {
+    return isDragging ? layoutParams.y : (int)(maxHeight * prevViewPercentageY);
   }
 
   private void clampPosition() {
@@ -277,8 +286,9 @@ public class LyricView extends Activity implements View.OnTouchListener {
    * 背景是贴在窗口根 View 上的，而窗口原来的尺寸是「屏幕宽 × width%」×「行高 × maxLineNum」，
    * 于是一句歌词也横跨整屏、还占着 maxLineNum 行的高度（默认 5 行）；这块矩形还会吞掉下面
    * App 的点击，宽度 100% 时 maxX 恒为 0（横向拖不动）。这里改成按实际文字算框的大小：
-   * 宽度取最长一行的宽度（上限仍是 width%），高度按换行后的真实行数（上限 maxLineNum），
-   * 尺寸变化时按 textX/textY 让对应的那条边保持不动，最后夹回屏幕内。
+   * 宽度取最长一行的宽度（上限仍是 width%），高度按换行后的真实行数（上限 maxLineNum）。
+   * 位置不动：左上角钉在存下来的百分比上（拖动中由手指决定），框再按「从这个位置到屏幕边缘
+   * 还剩多少」收一次——位置一动，每换一行歌词窗口就跟着滑，看着像在抖。
    * backgroundMode 为 window（铺满窗口）时保持老行为，方便想回到老样子的情况。
    */
   private void applyBoxSize() {
@@ -286,8 +296,18 @@ public class LyricView extends Activity implements View.OnTouchListener {
     TextPaint paint = textView.getPaint();
     if (paint == null) return;
 
+    // 位置先定下来，尺寸要围着它算（见下面的 usableWidth/usableHeight）
+    int posX = targetX();
+    int posY = targetY();
+    int usableWidth = Math.max(0, maxWidth - posX);
+    int usableHeight = Math.max(0, maxHeight - posY);
+
     int maxBoxWidth = (int)(maxWidth * widthPercentage);
     if (maxBoxWidth <= 0 || maxBoxWidth > maxWidth) maxBoxWidth = maxWidth;
+    // 再按「从目标位置到屏幕右边缘还剩多宽」收一次。位置是钉死在百分比上的：要是让框按设置里的
+    // 宽度撑到屏幕外、再被 clampPosition 拽回来，那每换一行歌词窗口就会左右滑一下。
+    // 宁可让文字换行去适应，也别让位置动。竖向不吃宽度百分比（一列字是竖排的底线），就不收它。
+    if (!isVertical && usableWidth < maxBoxWidth) maxBoxWidth = Math.max(usableWidth, dp2px(MIN_BOX_WIDTH_DP));
     int lineHeight = paint.getFontMetricsInt(null);
 
     int width;
@@ -338,30 +358,24 @@ public class LyricView extends Activity implements View.OnTouchListener {
       width = Math.max(width, dp2px(MIN_BOX_WIDTH_DP));
       height = Math.max(height, lineHeight);
     }
-    if (height > maxHeight - 100) height = maxHeight - 100;
-
-    int oldWidth = layoutParams.width;
-    int oldHeight = layoutParams.height;
-    int dx = 0;
-    int dy = 0;
-    if (oldWidth > 0 && oldHeight > 0) {
-      // 尺寸变了：让对齐方式指定的那条边不动，这样「对齐」设置在框会变大的模式下仍然有意义
-      switch (textX) {
-        case "CENTER": dx = (oldWidth - width) / 2; break;
-        case "RIGHT": dx = oldWidth - width; break;
-      }
-      switch (textY) {
-        case "CENTER": dy = (oldHeight - height) / 2; break;
-        case "BOTTOM": dy = oldHeight - height; break;
-      }
+    // 高度：铺满窗口那条老路径和竖排都保持原来的口径（一个按整屏算，一个内容多高就多高），
+    // 只有贴合模式要跟着位置收——它的高度逐行在变（翻译行来去），不收的话窗口会贴着下边缘一跳一跳
+    if (!isVertical && !BACKGROUND_WINDOW.equals(backgroundMode)) {
+      int maxBoxHeight = Math.max(usableHeight, lineHeight);
+      if (height > maxBoxHeight) height = maxBoxHeight;
+    } else if (height > maxHeight - 100) {
+      height = maxHeight - 100;
     }
 
     layoutParams.width = width;
     layoutParams.height = height;
     textView.setWidth(width);
     textView.setHeight(height);
-    // 尺寸没变时 dx/dy 本来就是 0，不必再动位置；变了就按百分比重算一遍（见 applyPositionFromPercentage）
-    if (oldWidth != width || oldHeight != height) applyPositionFromPercentage(dx, dy);
+    // 位置钉在存下来的百分比上（拖动中除外）：尺寸怎么变都不动它，才不会逐行抖。
+    // 以前是「在旧位置上叠加位移」并保证对齐的那条边不动，但那样攒下来退出重进就会跑偏
+    layoutParams.x = posX;
+    layoutParams.y = posY;
+    // 兜底：上面已经按可用空间把框收进去了，正常夹不到，留着防边界情况（旋转、超小屏等）
     clampPosition();
     // 还没挂到 WindowManager 上时不能调 updateViewLayout（首次显示时尺寸要在 addView 之前算好）
     if (windowManager != null && textView.isAttachedToWindow()) windowManager.updateViewLayout(textView, layoutParams);
@@ -407,13 +421,10 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (textView == null || windowManager == null) return;
     if (!updateWH()) return;
 
-    // 屏幕宽高变了，竖排一列能排多少行也跟着变，要重新拆列
+    // 屏幕宽高变了，竖排一列能排多少行也跟着变，要重新拆列。尺寸和位置都在 applyBoxSize
+    // 里按百分比重算过了（右下角的上限也跟着新屏幕走）
     if (isVertical) recompose();
     else applyBoxSize();
-
-    // 屏幕宽高变了，右下角的上限也跟着变，位置一律按百分比重算一遍
-    applyPositionFromPercentage(0, 0);
-    clampPosition();
 
     windowManager.updateViewLayout(textView, layoutParams);
   }
@@ -662,6 +673,11 @@ public class LyricView extends Activity implements View.OnTouchListener {
         downY = lastY;
         downTime = event.getEventTime();
         isMoved = false;
+        isDragging = true;
+        // 记下窗口当前在哪：抬手时用它判断窗口到底动没动过。位移小于 touchSlop 的拖动不会把
+        // isMoved 置真，但窗口是真的挪了，不写回设置的话下次换行就会被弹回原位
+        downLayoutX = layoutParams.x;
+        downLayoutY = layoutParams.y;
         break;
       case MotionEvent.ACTION_MOVE:
         // 获取移动时的X，Y坐标
@@ -718,13 +734,18 @@ public class LyricView extends Activity implements View.OnTouchListener {
         if (!isMoved && event.getEventTime() - downTime >= LONG_PRESS_MS && lyricEvent != null) {
           lyricEvent.sendEvent(lyricEvent.VIEW_LONG_PRESS, null);
         }
-        // 只有真的拖动过才上报。原来是把 0~100 的 percentageX 拿去和 0~1 的 prevViewPercentageX 比，
-        // 条件恒为真，随便点一下抬手就会写一次设置
-        if (isMoved) {
+        isDragging = false;
+        // 窗口真的挪了才上报。原来是拿 0~100 的 percentageX 去和 0~1 的 prevViewPercentageX 比，
+        // 条件恒为真，随便点一下抬手就会写一次设置；改成看 isMoved 又漏了小于 touchSlop 的拖动，
+        // 那种拖动窗口也会动，所以直接比按下和抬起时的窗口坐标
+        if (layoutParams.x != downLayoutX || layoutParams.y != downLayoutY) {
           prevViewPercentageX = (float)layoutParams.x / (float) maxWidth;
           prevViewPercentageY = (float)layoutParams.y / (float) maxHeight;
           sendPositionEvent(prevViewPercentageX * 100f, prevViewPercentageY * 100f);
         }
+        break;
+      case MotionEvent.ACTION_CANCEL:
+        isDragging = false;
         break;
     }
     return true;
