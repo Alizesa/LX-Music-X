@@ -86,6 +86,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private boolean isVertical = false;
   // 竖排时把英文这类拉丁字母整串横倒 90° 显示（默认关，关着就是逐字正着堆叠）
   private boolean verticalRotateLatin = false;
+  // textView 是不是正挂在窗口上（见 hasWindow()）
+  private boolean windowAttached = false;
   private boolean isShowToggleAnima = false;
   private String unplayColor = "rgba(255, 255, 255, 1)";
   private String playedColor = "rgba(7, 197, 86, 1)";
@@ -420,7 +422,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
   }
 
   private void updateViewPosition() {
-    if (textView == null || windowManager == null) return;
+    // 没有窗口就别忙活了（旋转/尺寸变化时也会走到这，窗口不在时 updateViewLayout 会抛 not attached）
+    if (windowManager == null || !hasWindow()) return;
     if (!updateWH()) return;
 
     // 屏幕宽高变了，竖排一列能排多少行也跟着变，要重新拆列。尺寸和位置都在 applyBoxSize
@@ -559,6 +562,42 @@ public class LyricView extends Activity implements View.OnTouchListener {
     applyTextPadding();
     applyBackground();
   }
+  /**
+   * 窗口还在不在（我们自己挂上去过、还没摘）。
+   *
+   * 不直接用 textView.isAttachedToWindow()：addView 之后要等下一次遍历它才变 true，
+   * 紧接着 show 之后的设置会被误判成「没有窗口」而白白丢掉。
+   *
+   * textView 非空也不代表窗口在 —— addView 失败（比如悬浮窗权限被收回）之后它会一直留着，
+   * 那种状态下窗口其实起不来，随便改个设置都能把 App 弄崩（removeView 抛 not attached）。
+   */
+  private boolean hasWindow() {
+    return textView != null && windowAttached;
+  }
+
+  /** 把当前窗口从 WindowManager 上摘掉。窗口不在上面时 removeView 会抛，忽略即可 */
+  private void removeViewFromWindow() {
+    if (textView == null || windowManager == null) return;
+    try {
+      windowManager.removeView(textView);
+    } catch (Exception e) {
+      Log.e("Lyric", "removeView: " + e.getMessage());
+    }
+    windowAttached = false;
+  }
+
+  /** 把窗口挂上去。挂不上（比如悬浮窗权限被收回）就把 textView 丢掉，别留一个没挂上的僵尸 */
+  private void addViewToWindow() {
+    try {
+      windowManager.addView(textView, layoutParams);
+      windowAttached = true;
+    } catch (Exception e) {
+      textView = null;
+      windowAttached = false;
+      throw e;
+    }
+  }
+
   private void handleShowLyric() {
     if (windowManager == null) {
       windowManager = (WindowManager) reactContext.getSystemService(Context.WINDOW_SERVICE);
@@ -572,7 +611,9 @@ public class LyricView extends Activity implements View.OnTouchListener {
 
     // 注意，悬浮窗只有一个，而当打开应用的时候才会产生悬浮窗，所以要判断悬浮窗是否已经存在，
     if (textView != null) {
-      windowManager.removeView(textView);
+      removeViewFromWindow();
+      // 已经不要它了：万一它压根没挂上去（removeView 抛了），也得丢掉，别留着
+      textView = null;
     }
 
     // 使用Application context
@@ -615,7 +656,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     layoutParams.format = PixelFormat.TRANSPARENT;
 
     //添加到window中
-    windowManager.addView(textView, layoutParams);
+    addViewToWindow();
   }
 
   public void setLyric(String text, ArrayList<String> extendedLyrics) {
@@ -762,23 +803,27 @@ public class LyricView extends Activity implements View.OnTouchListener {
    */
   public void lockView() {
     isLock = true;
-    if (windowManager == null || textView == null) return;
+    if (windowManager == null || layoutParams == null) return;
     layoutParams.flags = getLayoutParamsFlags();
 
     if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
       layoutParams.alpha = 0.8f;
     }
+    // layoutParams 已经改好了；窗口没挂上去就别 updateViewLayout（会抛 not attached），
+    // 下次显示时按这份 layoutParams 生效
+    if (!hasWindow()) return;
     windowManager.updateViewLayout(textView, layoutParams);
   }
 
   public void unlockView() {
     isLock = false;
-    if (windowManager == null || textView == null) return;
+    if (windowManager == null || layoutParams == null) return;
     layoutParams.flags = getLayoutParamsFlags();
 
     if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
       layoutParams.alpha = 1.0f;
     }
+    if (!hasWindow()) return;
     windowManager.updateViewLayout(textView, layoutParams);
   }
 
@@ -857,11 +902,12 @@ public class LyricView extends Activity implements View.OnTouchListener {
 
   public void setSingleLine(boolean isSingleLine) {
     this.isSingleLine = isSingleLine;
-    if (textView == null) return;
-    windowManager.removeView(textView);
+    // 窗口没挂在屏幕上就别重建了：值已经存下，下次显示时 createTextView 会带上
+    if (!hasWindow()) return;
+    removeViewFromWindow();
     createTextView();
     applyBoxSize();
-    windowManager.addView(textView, layoutParams);
+    addViewToWindow();
 
     if (isLock) lockView();
     else unlockView();
@@ -872,11 +918,12 @@ public class LyricView extends Activity implements View.OnTouchListener {
   /** 切换竖向显示：文字布局方式变了，重建 TextView 再按当前歌词重算窗口大小与位置 */
   public void setVertical(boolean vertical) {
     this.isVertical = vertical;
-    if (windowManager == null || textView == null) return;
-    windowManager.removeView(textView);
+    // 窗口没挂在屏幕上就别重建了：值已经存下，下次显示时 createTextView 会带上
+    if (!hasWindow()) return;
+    removeViewFromWindow();
     createTextView();
     applyBoxSize();
-    windowManager.addView(textView, layoutParams);
+    addViewToWindow();
 
     if (isLock) lockView();
     else unlockView();
@@ -896,13 +943,14 @@ public class LyricView extends Activity implements View.OnTouchListener {
    */
   public void setVerticalRotateLatin(boolean rotateLatin) {
     this.verticalRotateLatin = rotateLatin;
-    if (windowManager == null || textView == null) return;
     // 横向时这项用不上，别白重建一次窗口；值已经存下，切到竖排时会带上
     if (!isVertical) return;
-    windowManager.removeView(textView);
+    // 窗口没挂在屏幕上就别去碰它：值已经存下，下次显示时 createTextView 会带上
+    if (!hasWindow()) return;
+    removeViewFromWindow();
     createTextView();
     applyBoxSize();
-    windowManager.addView(textView, layoutParams);
+    addViewToWindow();
 
     if (isLock) lockView();
     else unlockView();
@@ -920,8 +968,9 @@ public class LyricView extends Activity implements View.OnTouchListener {
   }
 
   public void destroyView() {
-    if (textView == null || windowManager == null) return;
-    windowManager.removeView(textView);
+    if (textView == null) return;
+    // 摘不下来也照样丢掉引用，不然这个「僵尸」会一直留着，之后所有设置都改不动
+    removeViewFromWindow();
     textView = null;
     removeOrientationEvent();
   }

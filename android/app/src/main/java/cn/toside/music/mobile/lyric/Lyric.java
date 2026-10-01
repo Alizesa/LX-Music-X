@@ -163,13 +163,20 @@ public class Lyric extends LyricPlayer {
   }
 
   public void showDesktopLyric(Bundle options, Promise promise) {
-    if (isShowLyricView) return;
+    if (isShowLyricView) {
+      // 已经在显示了。这里不 resolve 的话 JS 那边的 await 会一直挂着
+      promise.resolve(null);
+      return;
+    }
     if (lyricEvent == null) lyricEvent = new LyricEvent(reactAppContext);
     isShowLyricView = true;
     if (lyricView == null) lyricView = new LyricView(reactAppContext, lyricEvent);
     try {
       lyricView.showLyricView(options);
     } catch (Exception e) {
+      // 没显示出来（比如悬浮窗权限被收回、addView 抛了），状态得退回去，
+      // 否则 isShowLyricView 一直是 true，之后就再也 show 不起来了
+      isShowLyricView = false;
       promise.reject(e);
       Log.e("Lyric", e.getMessage());
       return;
