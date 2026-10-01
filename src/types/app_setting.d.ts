@@ -290,6 +290,11 @@ declare global {
       'desktopLyric.background': 'text' | 'window' | 'none'
 
       /**
+       * 桌面歌词背景框颜色（rgba 字符串），透明度由 backgroundOpacity 决定
+       */
+      'desktopLyric.background.color': string
+
+      /**
        * 桌面歌词背景框不透明度（0-100），0 等同于不显示
        */
       'desktopLyric.backgroundOpacity': number

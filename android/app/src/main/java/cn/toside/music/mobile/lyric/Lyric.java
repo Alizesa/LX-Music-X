@@ -294,4 +294,9 @@ public class Lyric extends LyricPlayer {
     if (lyricView == null) return;
     lyricView.setLyricBackground(mode, opacity);
   }
+
+  public void setLyricBackgroundColor(String color) {
+    if (lyricView == null) return;
+    lyricView.setLyricBackgroundColor(color);
+  }
 }

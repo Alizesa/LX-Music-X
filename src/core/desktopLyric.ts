@@ -19,6 +19,7 @@ import {
   setMaxLineNum,
   setWidth,
   setBackground,
+  setBackgroundColor,
   setLyricTextPosition,
   checkOverlayPermission,
   openOverlayPermissionActivity,
@@ -52,6 +53,7 @@ export const showDesktopLyric = async() => {
     textPositionX: setting['desktopLyric.textPosition.x'],
     textPositionY: setting['desktopLyric.textPosition.y'],
     background: setting['desktopLyric.background'],
+    backgroundColor: setting['desktopLyric.background.color'],
     backgroundOpacity: setting['desktopLyric.backgroundOpacity'],
   })
   let lrc = playerState.musicInfo.lrc ?? ''
@@ -92,6 +94,7 @@ export const setShowDesktopLyricToggleAnima = setShowToggleAnima
 export const setDesktopLyricSingleLine = setSingleLine
 export const setDesktopLyricVertical = setVertical
 export const setDesktopLyricBackground = setBackground
+export const setDesktopLyricBackgroundColor = setBackgroundColor
 export const onDesktopLyricLongPress = onViewLongPress
 export const setDesktopLyricPosition = setPosition
 export const setDesktopLyricMaxLineNum = setMaxLineNum

@@ -5,11 +5,12 @@ import IsShowLyric from './IsShowLyric'
 import IsLockLyric from './IsLockLyric'
 import IsShowToggleAnima from './IsShowToggleAnima'
 import IsSingleLine from './IsSingleLine'
-import Vertical from './Vertical'
+import Direction from './Direction'
 import TextSize from './TextSize'
 import ViewWidth from './ViewWidth'
 import MaxLineNum from './MaxLineNum'
 import Background from './Background'
+import BackgroundColor from './BackgroundColor'
 import BackgroundOpacity from './BackgroundOpacity'
 import TextOpacity from './TextOpacity'
 import TextPositionX from './TextPositionX'
@@ -27,12 +28,13 @@ export default memo(() => {
       <IsLockLyric />
       <IsShowToggleAnima />
       <IsSingleLine />
-      <Vertical />
+      <Direction />
       <Theme />
       <TextSize />
       <ViewWidth />
       <MaxLineNum />
       <Background />
+      <BackgroundColor />
       <BackgroundOpacity />
       <TextOpacity />
       <TextPositionX />

@@ -62,6 +62,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private float prevViewPercentageY = 0;
   private float widthPercentage = 1f;
   private String backgroundMode = BACKGROUND_TEXT;
+  private String backgroundColor = "rgba(0, 0, 0, 1)";
   private float backgroundOpacity = 0.35f;
   private GestureDetector gestureDetector = null;
 
@@ -322,10 +323,12 @@ public class LyricView extends Activity implements View.OnTouchListener {
       return;
     }
     float opacity = Math.max(0F, Math.min(1F, backgroundOpacity));
+    // 颜色只取 RGB，透明度统一由「背景框不透明度」这个设置决定
+    int color = parseColor(backgroundColor == null ? "rgba(0, 0, 0, 1)" : backgroundColor);
     GradientDrawable background = new GradientDrawable();
     background.setShape(GradientDrawable.RECTANGLE);
     background.setCornerRadius(dp2px(BACKGROUND_WINDOW.equals(backgroundMode) ? CORNER_RADIUS_WINDOW_DP : CORNER_RADIUS_TEXT_DP));
-    background.setColor(Color.argb((int)(opacity * 255), 0, 0, 0));
+    background.setColor(Color.argb((int)(opacity * 255), Color.red(color), Color.green(color), Color.blue(color)));
     textView.setBackground(background);
   }
 
@@ -386,6 +389,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     widthPercentage = (float) options.getDouble("width", 100) / 100f;
     maxLineNum = (int) options.getDouble("maxLineNum", maxLineNum);
     backgroundMode = options.getString("background", backgroundMode);
+    backgroundColor = options.getString("backgroundColor", backgroundColor);
     backgroundOpacity = (float) options.getDouble("backgroundOpacity", backgroundOpacity);
     handleShowLyric();
     listenOrientationEvent();
@@ -673,6 +677,14 @@ public class LyricView extends Activity implements View.OnTouchListener {
     applyBackground();
     // 贴合/铺满之间切换会改变窗口尺寸
     applyBoxSize();
+  }
+
+  /** 设置背景框颜色（rgba 字符串），透明度仍由 backgroundOpacity 控制 */
+  public void setLyricBackgroundColor(String color) {
+    if (color == null) return;
+    backgroundColor = color;
+    if (windowManager == null || textView == null) return;
+    applyBackground();
   }
 
   public void setColor(String unplayColor, String playedColor, String shadowColor) {
