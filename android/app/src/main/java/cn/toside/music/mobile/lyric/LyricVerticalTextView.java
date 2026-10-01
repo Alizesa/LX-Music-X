@@ -17,10 +17,11 @@ import java.util.ArrayList;
  * 往下读」还原，再按格绘制：
  *
  * - 汉字这类照旧正着摆，一个占一格；
- * - 一串连续的拉丁字母/数字/半角符号算一个整体，在它占的那几格中间旋转 90° 画出来。
+ * - 一串连续的拉丁字母/数字/半角符号算一个整体，从它占的第一格顶端起旋转 90° 画出来。
  *   于是一个词是一整块横倒的字（歪头看是连续的），而不是 h-e-l-l-o 五个正着的字母。
  *
- * 网格、列数、列宽全都沿用原来那套（窗口大小与位置一点没变），只有画法不同。
+ * 网格、列数、字号全都沿用原来那套，只有画法不同；开了横倒时窗口会按「每列至少一个行高」
+ * 加宽（见 LyricView.applyBoxSize），横倒的字才不用缩、也不会压到隔壁列上。
  */
 @SuppressLint("AppCompatCustomView")
 public class LyricVerticalTextView extends TextView {
@@ -91,17 +92,21 @@ public class LyricVerticalTextView extends TextView {
     float cellHeight = mPaint.getFontMetricsInt(null);
     // 让文字以格心为中线
     float baselineOffset = -(fontMetrics.ascent + fontMetrics.descent) / 2;
+    // 横倒之后，这一串文字占的「厚」是字体的行高。正常情况窗口宽度已经保证每格不比行高窄
+    // （见 LyricView.applyBoxSize），这里算出来就是 1；万一窗口还是被挤窄了，缩一点总比压到
+    // 隔壁列上强
+    float scale = lineHeight > cellWidth ? cellWidth / lineHeight : 1f;
 
     for (Cell cell : cells) {
       float cx = getPaddingLeft() + (cell.column + 0.5f) * cellWidth;
-      float cy = getPaddingTop() + (cell.firstRow + cell.lastRow + 1) / 2f * cellHeight;
       if (!cell.rotate) {
+        float cy = getPaddingTop() + (cell.firstRow + 0.5f) * cellHeight;
         canvas.drawText(cell.text, cx - mPaint.measureText(cell.text) / 2f, cy + baselineOffset, mPaint);
         continue;
       }
-      // 横倒之后，这一串文字占的「宽」是字体的行高，而一格只有汉字那么宽，
-      // 太长会压到隔壁列上去，按需缩一点
-      float scale = lineHeight > cellWidth ? cellWidth / lineHeight : 1f;
+      // 横倒的一串从「第一格的顶端」往下摆，不按这几格的中间居中：一串英文缩过之后比它占的格距
+      // 短，居中会让整串往下沉，旁边逐格排的译文一对比，英文就像掉到译文下面去了
+      float cy = getPaddingTop() + cell.firstRow * cellHeight + mPaint.measureText(cell.text) * scale / 2f;
       canvas.save();
       canvas.rotate(ROTATE_DEGREES, cx, cy);
       if (scale != 1f) canvas.scale(scale, scale, cx, cy);

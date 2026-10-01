@@ -326,10 +326,20 @@ public class LyricView extends Activity implements View.OnTouchListener {
       int padV = dp2px(BOX_PADDING_V_DP);
       String text = textView.getText().toString();
       float maxRowWidth = 0;
+      // 行里最长的那一行的码点数就是列数（网格各列等长，短的用全角空格补齐）
+      int columnCount = 0;
       for (String line : text.split("\n", -1)) {
         maxRowWidth = Math.max(maxRowWidth, paint.measureText(line));
+        columnCount = Math.max(columnCount, line.codePointCount(0, line.length()));
       }
       width = Math.max((int)Math.ceil(maxRowWidth) + padH * 2, dp2px(MIN_BOX_WIDTH_DP));
+      if (verticalRotateLatin && columnCount > 0) {
+        // 横倒的拉丁串是整串旋转 90° 画的：它在横向占的「厚」是字体的行高，而英文是半角、
+        // 一格只有一个汉字的六成宽，按文字量出来的框宽会让它没处放。每列都按行高留宽，
+        // LyricVerticalTextView 那边就不用再缩字（缩放是按格宽/行高算的），横倒的字也就
+        // 不会压到隔壁列上
+        width = Math.max(width, columnCount * (lineHeight + 2) + padH * 2);
+      }
       height = Math.max(new StaticLayout(
         text, paint, Math.max(1, width - padH * 2), Layout.Alignment.ALIGN_NORMAL, 1F, 0F, true
       ).getHeight() + padV * 2, lineHeight);
