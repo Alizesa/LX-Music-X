@@ -29,7 +29,8 @@ public final class LyricSwitchView extends TextSwitcher {
 
   private boolean isSingleLine;
 
-  public LyricSwitchView(Context context, boolean isSingleLine, boolean isShowAnima, boolean rotateLatin) {
+  public LyricSwitchView(Context context, boolean isSingleLine, boolean isShowAnima,
+                         boolean isVertical, boolean rotateLatin) {
     super(context);
     // this.isSingleLine = isSingleLine;
     this.isShowAnima = isShowAnima;
@@ -44,11 +45,11 @@ public final class LyricSwitchView extends TextSwitcher {
 //      for (TextView v : viewArray) {
 //        v.setShadowLayer(0.1f, 0, 0, Color.BLACK);
 //      }
-    } else if (rotateLatin) {
-      // 竖排且开了「英文横倒」：用自绘的 LyricVerticalTextView（画法见那个类）
+    } else if (isVertical) {
+      // 竖排统一使用自绘视图，切换英文旋转时只更新绘制状态，不拆装悬浮窗
       viewArray = new ArrayList<>(2);
-      textView = new LyricVerticalTextView(context);
-      textView2 = new LyricVerticalTextView(context);
+      textView = new LyricVerticalTextView(context, rotateLatin);
+      textView2 = new LyricVerticalTextView(context, rotateLatin);
       viewArray.add(textView);
       viewArray.add(textView2);
     } else {
@@ -209,6 +210,14 @@ public final class LyricSwitchView extends TextSwitcher {
   /** 给两个歌词 TextView 一起设内边距：贴合模式下让背景框比文字大一圈 */
   public void setTextPadding(int left, int top, int right, int bottom) {
     for (TextView v : viewArray) v.setPadding(left, top, right, bottom);
+  }
+
+  public void setVerticalRotateLatin(boolean rotateLatin) {
+    for (TextView v : viewArray) {
+      if (v instanceof LyricVerticalTextView) {
+        ((LyricVerticalTextView) v).setRotateLatin(rotateLatin);
+      }
+    }
   }
 
 }

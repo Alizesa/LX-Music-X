@@ -512,7 +512,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     // 竖向显示要的是「一个字一行」的普通 TextView；单行模式的 LyricTextView 是自绘横向滚动的，
     // 窗口只剩一个字宽时它会把每个字都当成溢出而疯狂滚动，所以竖排时强制不用它
     textView = new LyricSwitchView(reactContext, isSingleLine && !isVertical, isShowToggleAnima,
-      isVertical && verticalRotateLatin);
+      isVertical, verticalRotateLatin);
 
     textView.setTextColor(parseColor(playedColor));
     textView.setShadowColor(parseColor(shadowColor));
@@ -945,16 +945,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
     this.verticalRotateLatin = rotateLatin;
     // 横向时这项用不上，别白重建一次窗口；值已经存下，切到竖排时会带上
     if (!isVertical) return;
-    // 窗口没挂在屏幕上就别去碰它：值已经存下，下次显示时 createTextView 会带上
-    if (!hasWindow()) return;
-    removeViewFromWindow();
-    createTextView();
-    applyBoxSize();
-    addViewToWindow();
-
-    if (isLock) lockView();
-    else unlockView();
-
+    if (textView == null) return;
+    textView.setVerticalRotateLatin(rotateLatin);
     setLyric(currentLyric, currentExtendedLyrics);
   }
 

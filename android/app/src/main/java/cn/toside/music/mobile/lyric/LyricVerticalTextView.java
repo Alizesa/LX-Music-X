@@ -38,12 +38,21 @@ public class LyricVerticalTextView extends TextView {
   private final TextPaint mPaint;
   private final Paint.FontMetrics fontMetrics = new Paint.FontMetrics();
   private final ArrayList<Cell> cells = new ArrayList<>();
+  private boolean rotateLatin;
   private int columnCount = 0;
   private int rowCount = 0;
 
-  public LyricVerticalTextView(Context context) {
+  public LyricVerticalTextView(Context context, boolean rotateLatin) {
     super(context);
     mPaint = getPaint();
+    this.rotateLatin = rotateLatin;
+  }
+
+  public void setRotateLatin(boolean rotateLatin) {
+    if (this.rotateLatin == rotateLatin) return;
+    this.rotateLatin = rotateLatin;
+    buildCells(getText() == null ? "" : getText().toString());
+    invalidate();
   }
 
   @Override
@@ -118,7 +127,7 @@ public class LyricVerticalTextView extends TextView {
           row++;
           continue;
         }
-        if (!isRotatable(codePoint)) {
+        if (!rotateLatin || !isRotatable(codePoint)) {
           addCell(column, row, row, new String(Character.toChars(codePoint)), false);
           row++;
           continue;
