@@ -76,6 +76,17 @@ export const updateSetting = (setting?: Partial<LX.AppSetting> | null, isInit: b
   return result
 }
 
+/**
+ * 桌面歌词「歌词字体透明度」的默认值从 100 调成了 50。
+ * 旧版本在初始化时会把整个设置对象（含默认值）落盘，所以没动过这一项的机器上，
+ * 旧默认值 100 也被当成用户设置存着，直接改 defaultSetting 是盖不掉它的。
+ * 这里只在「仍然是旧默认值」时跟着新默认走，用户自己拖过滑块的不动。
+ */
+const migrateDesktopLyricStyle = (setting: Partial<LX.AppSetting> | null) => {
+  if (setting?.['desktopLyric.style.opacity'] == 100) setting['desktopLyric.style.opacity'] = 50
+  return setting
+}
+
 export const initSetting = async() => {
   let setting: Partial<LX.AppSetting> | null = await getData(storageDataPrefix.setting)
 
@@ -104,7 +115,7 @@ export const initSetting = async() => {
   }
 
   // console.log(setting)
-  const updatedSetting = updateSetting(setting, true)
+  const updatedSetting = updateSetting(migrateDesktopLyricStyle(setting), true)
   void saveData(storageDataPrefix.setting, updatedSetting.setting)
 
   return updatedSetting

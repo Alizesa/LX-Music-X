@@ -55,8 +55,8 @@ const defaultSetting: LX.AppSetting = {
   // 竖向显示：每个字上下堆叠成一列，窗口变成窄而高的一条
   'desktopLyric.isVertical': false,
   'desktopLyric.showToggleAnima': true,
-  // 背景框默认贴着歌词（不再是横跨整屏、固定 5 行高的黑条）
-  'desktopLyric.background': 'text',
+  // 默认不画背景框（黑底太扎眼），要的话在设置里选「贴合歌词」
+  'desktopLyric.background': 'none',
   'desktopLyric.background.color': 'rgba(0, 0, 0, 1)',
   'desktopLyric.backgroundOpacity': 35,
   'desktopLyric.position.x': 0,
@@ -64,7 +64,7 @@ const defaultSetting: LX.AppSetting = {
   'desktopLyric.textPosition.x': 'left',
   'desktopLyric.textPosition.y': 'top',
   'desktopLyric.style.fontSize': 180,
-  'desktopLyric.style.opacity': 100,
+  'desktopLyric.style.opacity': 50,
   'desktopLyric.style.lyricUnplayColor': 'rgba(255, 255, 255, 1)',
   'desktopLyric.style.lyricPlayedColor': 'rgba(7, 197, 86, 1)',
   'desktopLyric.style.lyricShadowColor': 'rgba(0, 0, 0, 0.6)',

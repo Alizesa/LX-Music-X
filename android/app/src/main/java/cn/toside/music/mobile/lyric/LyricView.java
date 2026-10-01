@@ -173,22 +173,56 @@ public class LyricView extends Activity implements View.OnTouchListener {
   }
 
   /**
-   * 竖向显示：在每个字之间插一个换行，让文字从上往下一个一个排（配合「窗口只有一个字宽」，
-   * 就得到竖排的效果）。原文/翻译/罗马音之间原有的换行保留，所以翻译会接在原文下面继续竖排。
+   * 竖向显示：把文字拆成一列列的字（每个字自己占一行，一行里的列并排）。
+   *
+   * - 「单行歌词」打开：所有文字挤在一列里往下接（原文、翻译依次往下），行数最少。
+   * - 没打开：一行原文一列、一行翻译一列（也就是把各行的第 i 个字拼成同一行：
+   *   "原译"、"文文"…）。列序按竖排习惯从右往左，原文在最右。
+   *   某一行已经没字了就用全角空格占位，保证各列始终对齐。
+   *
    * 按码点遍历，避免把 emoji 之类的代理对拆坏。
    */
   private String formatVerticalText(String text) {
     if (!isVertical || text == null || text.isEmpty()) return text;
-    StringBuilder builder = new StringBuilder(text.length() * 2);
     String[] lines = text.split("\n", -1);
-    for (int i = 0; i < lines.length; i++) {
-      if (i > 0) builder.append('\n');
-      String line = lines[i];
-      for (int j = 0; j < line.length(); ) {
-        int codePoint = line.codePointAt(j);
-        if (j > 0) builder.append('\n');
-        builder.appendCodePoint(codePoint);
-        j += Character.charCount(codePoint);
+    StringBuilder builder = new StringBuilder(text.length() * 3);
+    if (isSingleLine) {
+      // 一列到底
+      for (int i = 0; i < lines.length; i++) {
+        if (i > 0) builder.append('\n');
+        String line = lines[i];
+        for (int j = 0; j < line.length(); ) {
+          int codePoint = line.codePointAt(j);
+          if (j > 0) builder.append('\n');
+          builder.appendCodePoint(codePoint);
+          j += Character.charCount(codePoint);
+        }
+      }
+      return builder.toString();
+    }
+
+    // 一行一列：列序从右往左，所以拼接时从最后一行开始（它落在最左边）
+    ArrayList<String> columns = new ArrayList<>();
+    for (String line : lines) {
+      if (!line.isEmpty()) columns.add(line);
+    }
+    if (columns.isEmpty()) return text;
+    int rowCount = 0;
+    for (String column : columns) rowCount = Math.max(rowCount, column.codePointCount(0, column.length()));
+    int[] cursors = new int[columns.size()];
+    for (int row = 0; row < rowCount; row++) {
+      if (row > 0) builder.append('\n');
+      for (int i = columns.size() - 1; i >= 0; i--) {
+        String column = columns.get(i);
+        int cursor = cursors[i];
+        if (cursor < column.length()) {
+          int codePoint = column.codePointAt(cursor);
+          builder.appendCodePoint(codePoint);
+          cursors[i] = cursor + Character.charCount(codePoint);
+        } else {
+          // 该列已经排完，用全角空格（U+3000）占位，宽度与汉字相同
+          builder.append((char) 0x3000);
+        }
       }
     }
     return builder.toString();
@@ -229,23 +263,19 @@ public class LyricView extends Activity implements View.OnTouchListener {
       width = maxBoxWidth;
       height = Math.min(lineHeight * maxLineNum, maxHeight - 100);
     } else if (isVertical) {
-      // 竖向显示：文本已经是一个字一行，所以宽度只留「最宽的那个字」，高度按字数往下堆，
-      // 上限是整个屏幕（竖排一列本来就该能排满屏高）。
-      // 这里刻意不吃「窗口百分比宽度」和「最大行数」两个设置：一个字宽是竖排的底线，
+      // 竖向显示：文本已经拆成「一个字一行」，所以一行的宽度就是这一排所有列加起来的宽度
+      // （单行模式一行一个字；不开单行时一行一个字 × 列数，原文一列翻译一列）。
+      // 高度按行数往下堆，上限是整个屏幕。
+      // 这里刻意不吃「窗口百分比宽度」和「最大行数」两个设置：一列字的宽度是竖排的底线，
       // 而最大行数最多只能设到 8，套到竖排上就是只能显示 8 个字。
       int padH = dp2px(BOX_PADDING_H_DP);
       int padV = dp2px(BOX_PADDING_V_DP);
       String text = textView.getText().toString();
-      float maxCharWidth = 0;
+      float maxRowWidth = 0;
       for (String line : text.split("\n", -1)) {
-        for (int i = 0; i < line.length(); ) {
-          int codePoint = line.codePointAt(i);
-          int charCount = Character.charCount(codePoint);
-          maxCharWidth = Math.max(maxCharWidth, paint.measureText(line, i, i + charCount));
-          i += charCount;
-        }
+        maxRowWidth = Math.max(maxRowWidth, paint.measureText(line));
       }
-      width = Math.max((int)Math.ceil(maxCharWidth) + padH * 2, dp2px(MIN_BOX_WIDTH_DP));
+      width = Math.max((int)Math.ceil(maxRowWidth) + padH * 2, dp2px(MIN_BOX_WIDTH_DP));
       height = Math.max(new StaticLayout(
         text, paint, Math.max(1, width - padH * 2), Layout.Alignment.ALIGN_NORMAL, 1F, 0F, true
       ).getHeight() + padV * 2, lineHeight);
@@ -537,9 +567,18 @@ public class LyricView extends Activity implements View.OnTouchListener {
     currentLyric = text;
     currentExtendedLyrics = extendedLyrics;
     if (textView == null) return;
-    if (extendedLyrics.size() > 0 && (isVertical || (maxLineNum > 1 && !isSingleLine))) {
-      // 竖排一列能放下的字有限，翻译/罗马音只带一行，不然整条会拖得很长
-      int num = isVertical ? 1 : maxLineNum - 1;
+    int maxExtended = 0;
+    if (extendedLyrics.size() > 0) {
+      if (isVertical) {
+        // 竖排：不开单行时每个扩展行各占一列，都带上；开了单行全挤在一列里，
+        // 只带一行，不然一列能拖到屏幕外面去
+        maxExtended = isSingleLine ? 1 : extendedLyrics.size();
+      } else if (maxLineNum > 1 && !isSingleLine) {
+        maxExtended = maxLineNum - 1;
+      }
+    }
+    if (maxExtended > 0) {
+      int num = maxExtended;
       StringBuilder textBuilder = new StringBuilder(text);
       for (String lrc : extendedLyrics) {
         textBuilder.append("\n").append(lrc);
