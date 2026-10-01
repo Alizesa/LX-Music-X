@@ -34,6 +34,9 @@ export default memo(() => {
     })
   }, [background, opacity])
 
+  // 背景框整个不显示时，透明度没有意义（和「背景框颜色」保持一致）
+  if (background == 'none') return null
+
   return (
     <SubTitle title={t('setting_lyric_desktop_background_opacity')}>
       <View style={styles.content}>

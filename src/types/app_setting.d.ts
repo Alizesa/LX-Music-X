@@ -335,6 +335,11 @@ declare global {
       'desktopLyric.style.opacity': number
 
       /**
+       * 「歌词字体透明度」默认值调整的一次性迁移标记，界面上没有这一项
+       */
+      'desktopLyric.style.migrated': boolean
+
+      /**
        * 桌面歌词未播放字体颜色
        */
       'desktopLyric.style.lyricUnplayColor': string

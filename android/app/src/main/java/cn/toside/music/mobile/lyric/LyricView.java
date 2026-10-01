@@ -16,11 +16,11 @@ import android.text.TextPaint;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Display;
-import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.OrientationEventListener;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.WindowManager;
 
 import com.facebook.react.bridge.Arguments;
@@ -64,7 +64,13 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private String backgroundMode = BACKGROUND_TEXT;
   private String backgroundColor = "rgba(0, 0, 0, 1)";
   private float backgroundOpacity = 0.35f;
-  private GestureDetector gestureDetector = null;
+  // 长按 = 锁定：按下后没移动过、且按住超过 LONG_PRESS_MS 才认
+  private static final long LONG_PRESS_MS = 500;
+  private final int touchSlop;
+  private float downX;
+  private float downY;
+  private long downTime;
+  private boolean isMoved = false;
 
   private float preY = 0;
   // private static boolean isVibrated = false;
@@ -100,16 +106,10 @@ public class LyricView extends Activity implements View.OnTouchListener {
     this.reactContext = reactContext;
     this.lyricEvent = lyricEvent;
     fixViewPositionHandler = new Handler();
-    gestureDetector = new GestureDetector(reactContext, new GestureDetector.SimpleOnGestureListener() {
-      @Override
-      public void onLongPress(MotionEvent e) {
-        // 窗口内长按 = 请求锁定。这里只把动作报给 JS，锁不锁由 JS 侧的设置决定
-        // （锁定后窗口是 FLAG_NOT_TOUCHABLE，收不到触摸，也就不会再触发）
-        if (LyricView.this.lyricEvent != null) {
-          LyricView.this.lyricEvent.sendEvent(LyricView.this.lyricEvent.VIEW_LONG_PRESS, null);
-        }
-      }
-    });
+    // 长按判定不用 GestureDetector：它按下 500ms 就回调，手指停一下再拖也会被当成
+    // 长按（然后窗口被锁住、拖动半路断掉）。这里改成「按下后一直没动、抬手时才认」，
+    // 判定放在 onTouch 的 ACTION_UP 里。
+    touchSlop = ViewConfiguration.get(reactContext).getScaledTouchSlop();
   }
 
   private void listenOrientationEvent() {
@@ -185,28 +185,22 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private String formatVerticalText(String text) {
     if (!isVertical || text == null || text.isEmpty()) return text;
     String[] lines = text.split("\n", -1);
-    StringBuilder builder = new StringBuilder(text.length() * 3);
-    if (isSingleLine) {
-      // 一列到底
-      for (int i = 0; i < lines.length; i++) {
-        if (i > 0) builder.append('\n');
-        String line = lines[i];
-        for (int j = 0; j < line.length(); ) {
-          int codePoint = line.codePointAt(j);
-          if (j > 0) builder.append('\n');
-          builder.appendCodePoint(codePoint);
-          j += Character.charCount(codePoint);
-        }
-      }
-      return builder.toString();
-    }
+    int rowsPerColumn = getVerticalRowsPerColumn();
 
-    // 一行一列：列序从右往左，所以拼接时从最后一行开始（它落在最左边）
     ArrayList<String> columns = new ArrayList<>();
-    for (String line : lines) {
-      if (!line.isEmpty()) columns.add(line);
+    if (isSingleLine) {
+      // 单行歌词：所有文字连成一条往下排，一列排满了拐到下一列
+      StringBuilder joined = new StringBuilder();
+      for (String line : lines) joined.append(line);
+      splitIntoColumns(columns, joined.toString(), rowsPerColumn);
+    } else {
+      // 不开单行：原文一列、翻译一列（各自排不下时再往下拐列）
+      for (String line : lines) splitIntoColumns(columns, line, rowsPerColumn);
     }
     if (columns.isEmpty()) return text;
+
+    // 列序按竖排习惯从右往左，所以拼接时从最后一列开始（它落在最左边）
+    StringBuilder builder = new StringBuilder(text.length() * 3);
     int rowCount = 0;
     for (String column : columns) rowCount = Math.max(rowCount, column.codePointCount(0, column.length()));
     int[] cursors = new int[columns.size()];
@@ -226,6 +220,36 @@ public class LyricView extends Activity implements View.OnTouchListener {
       }
     }
     return builder.toString();
+  }
+
+  /**
+   * 一列最多排多少行。竖排不滚动，一列排不下的部分必须拐到下一列，
+   * 否则会被窗口直接裁掉（竖排一列本来就该铺满屏高，所以上限取屏幕高度）。
+   */
+  private int getVerticalRowsPerColumn() {
+    if (!isVertical || maxHeight <= 0 || textView == null) return Integer.MAX_VALUE;
+    TextPaint paint = textView.getPaint();
+    if (paint == null) return Integer.MAX_VALUE;
+    int lineHeight = paint.getFontMetricsInt(null);
+    if (lineHeight <= 0) return Integer.MAX_VALUE;
+    return Math.max(1, (maxHeight - 100 - dp2px(BOX_PADDING_V_DP) * 2) / lineHeight);
+  }
+
+  /** 把一行文字每 rowsPerColumn 个字符切成一段，一段就是一列（按码点切，不拆坏代理对） */
+  private void splitIntoColumns(ArrayList<String> columns, String line, int rowsPerColumn) {
+    if (line == null || line.isEmpty()) return;
+    if (rowsPerColumn < 1) rowsPerColumn = 1;
+    int start = 0;
+    int count = 0;
+    for (int i = 0; i < line.length(); ) {
+      i += Character.charCount(line.codePointAt(i));
+      if (++count == rowsPerColumn) {
+        columns.add(line.substring(start, i));
+        start = i;
+        count = 0;
+      }
+    }
+    if (start < line.length()) columns.add(line.substring(start));
   }
 
   private void clampPosition() {
@@ -259,10 +283,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
 
     int width;
     int height;
-    if (BACKGROUND_WINDOW.equals(backgroundMode)) {
-      width = maxBoxWidth;
-      height = Math.min(lineHeight * maxLineNum, maxHeight - 100);
-    } else if (isVertical) {
+    if (isVertical) {
       // 竖向显示：文本已经拆成「一个字一行」，所以一行的宽度就是这一排所有列加起来的宽度
       // （单行模式一行一个字；不开单行时一行一个字 × 列数，原文一列翻译一列）。
       // 高度按行数往下堆，上限是整个屏幕。
@@ -279,6 +300,10 @@ public class LyricView extends Activity implements View.OnTouchListener {
       height = Math.max(new StaticLayout(
         text, paint, Math.max(1, width - padH * 2), Layout.Alignment.ALIGN_NORMAL, 1F, 0F, true
       ).getHeight() + padV * 2, lineHeight);
+    } else if (BACKGROUND_WINDOW.equals(backgroundMode)) {
+      // 铺满窗口：保持老行为（整屏宽 × maxLineNum 行），想回到老样子就用它
+      width = maxBoxWidth;
+      height = Math.min(lineHeight * maxLineNum, maxHeight - 100);
     } else {
       String text = textView.getText().toString();
       // 单行模式是 LyricTextView 自绘滚动，不吃 padding，靠宽度余量留白
@@ -362,11 +387,20 @@ public class LyricView extends Activity implements View.OnTouchListener {
     textView.setBackground(background);
   }
 
+  /** 按当前文本重新拆列/设字号（竖排的列数取决于字号和屏幕高度，两者变了都要重排） */
+  private void recompose() {
+    setLyric(currentLyric, currentExtendedLyrics);
+    // setLyric 在文本没变且为空时会提前返回，这里兜一下尺寸
+    applyBoxSize();
+  }
+
   private void updateViewPosition() {
     if (textView == null || windowManager == null) return;
     if (!updateWH()) return;
 
-    applyBoxSize();
+    // 屏幕宽高变了，竖排一列能排多少行也跟着变，要重新拆列
+    if (isVertical) recompose();
+    else applyBoxSize();
 
     layoutParams.x = (int)(maxWidth * prevViewPercentageX);
     layoutParams.y = (int)(maxHeight * prevViewPercentageY);
@@ -452,13 +486,14 @@ public class LyricView extends Activity implements View.OnTouchListener {
     // 竖向显示要的是「一个字一行」的普通 TextView；单行模式的 LyricTextView 是自绘横向滚动的，
     // 窗口只剩一个字宽时它会把每个字都当成溢出而疯狂滚动，所以竖排时强制不用它
     textView = new LyricSwitchView(reactContext, isSingleLine && !isVertical, isShowToggleAnima);
-    textView.setText("");
-    textView.setText(formatVerticalText(currentLyric));
 
     textView.setTextColor(parseColor(playedColor));
     textView.setShadowColor(parseColor(shadowColor));
     textView.setAlpha(alpha);
     textView.setTextSize(textSize);
+    // 文本要等字号设好再拆：竖排得先按字号算出「一列能排多少行」，才知道在哪里拐列
+    textView.setText("");
+    textView.setText(formatVerticalText(currentLyric));
     // Log.d("Lyric", "alpha: " + alpha + " text size: " + textSize);
 
     //监听 OnTouch 事件 为了实现"移动歌词"功能
@@ -607,8 +642,6 @@ public class LyricView extends Activity implements View.OnTouchListener {
 
   @Override
   public boolean onTouch(View v, MotionEvent event) {
-    // 长按 = 请求锁定（手指一移动长按判定就取消，不影响拖动）
-    if (gestureDetector != null) gestureDetector.onTouchEvent(event);
     int maxX = Math.max(0, maxWidth - layoutParams.width);
     int maxY = Math.max(0, maxHeight - layoutParams.height);
 
@@ -619,6 +652,10 @@ public class LyricView extends Activity implements View.OnTouchListener {
         lastY = event.getRawY();
 
         preY = lastY;
+        downX = lastX;
+        downY = lastY;
+        downTime = event.getEventTime();
+        isMoved = false;
         break;
       case MotionEvent.ACTION_MOVE:
         // 获取移动时的X，Y坐标
@@ -626,6 +663,10 @@ public class LyricView extends Activity implements View.OnTouchListener {
         nowY = event.getRawY();
         if (preY == 0){
           preY = nowY;
+        }
+        // 动过就不算长按了（不然拖到一半停一下会被判成长按，窗口锁住、拖动也断了）
+        if (!isMoved && (Math.abs(nowX - downX) > touchSlop || Math.abs(nowY - downY) > touchSlop)) {
+          isMoved = true;
         }
         // 计算XY坐标偏移量
         tranX = nowX - lastX;
@@ -666,6 +707,11 @@ public class LyricView extends Activity implements View.OnTouchListener {
         //根据移动的位置来判断
         // dy = 0;
         tranY = 0;
+        // 长按 = 请求锁定：按住没动过、超过 500ms、抬手时才认。这里只把动作报给 JS，
+        // 锁不锁由 JS 侧的设置决定（锁定后窗口是 FLAG_NOT_TOUCHABLE，收不到触摸）
+        if (!isMoved && event.getEventTime() - downTime >= LONG_PRESS_MS && lyricEvent != null) {
+          lyricEvent.sendEvent(lyricEvent.VIEW_LONG_PRESS, null);
+        }
         float percentageX = (float)layoutParams.x / (float) maxWidth * 100f;
         float percentageY = (float)layoutParams.y / (float) maxHeight * 100f;
         if (percentageX != prevViewPercentageX || percentageY != prevViewPercentageY) {
@@ -817,7 +863,9 @@ public class LyricView extends Activity implements View.OnTouchListener {
     this.textSize = size;
     if (windowManager == null || textView == null) return;
     textView.setTextSize(size);
-    applyBoxSize();
+    // 竖排一列能排多少行跟字号有关，字号变了要重新拆列
+    if (isVertical) recompose();
+    else applyBoxSize();
   }
 
   public void destroyView() {

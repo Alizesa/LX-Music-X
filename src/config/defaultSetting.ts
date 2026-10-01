@@ -65,6 +65,8 @@ const defaultSetting: LX.AppSetting = {
   'desktopLyric.textPosition.y': 'top',
   'desktopLyric.style.fontSize': 180,
   'desktopLyric.style.opacity': 50,
+  // 上面这项默认值调整的一次性迁移标记（见 config/setting.ts），界面上没有这一项
+  'desktopLyric.style.migrated': false,
   'desktopLyric.style.lyricUnplayColor': 'rgba(255, 255, 255, 1)',
   'desktopLyric.style.lyricPlayedColor': 'rgba(7, 197, 86, 1)',
   'desktopLyric.style.lyricShadowColor': 'rgba(0, 0, 0, 0.6)',
