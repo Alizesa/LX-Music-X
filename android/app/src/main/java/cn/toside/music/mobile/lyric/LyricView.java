@@ -326,9 +326,12 @@ public class LyricView extends Activity implements View.OnTouchListener {
       int padV = dp2px(BOX_PADDING_V_DP);
       String text = textView.getText().toString();
       float maxRowWidth = 0;
+      int maxColumns = 0;
       for (String line : text.split("\n", -1)) {
         maxRowWidth = Math.max(maxRowWidth, paint.measureText(line));
+        maxColumns = Math.max(maxColumns, line.codePointCount(0, line.length()));
       }
+      if (verticalRotateLatin) maxRowWidth = Math.max(maxRowWidth, (float) lineHeight * maxColumns);
       width = Math.max((int)Math.ceil(maxRowWidth) + padH * 2, dp2px(MIN_BOX_WIDTH_DP));
       height = Math.max(new StaticLayout(
         text, paint, Math.max(1, width - padH * 2), Layout.Alignment.ALIGN_NORMAL, 1F, 0F, true
@@ -382,7 +385,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     // 兜底：上面已经按可用空间把框收进去了，正常夹不到，留着防边界情况（旋转、超小屏等）
     clampPosition();
     // 还没挂到 WindowManager 上时不能调 updateViewLayout（首次显示时尺寸要在 addView 之前算好）
-    if (windowManager != null && textView.isAttachedToWindow()) windowManager.updateViewLayout(textView, layoutParams);
+    if (windowManager != null && hasWindow()) windowManager.updateViewLayout(textView, layoutParams);
   }
 
   /** 贴合模式下给文字留一圈内边距，框看起来才不贴着字 */
