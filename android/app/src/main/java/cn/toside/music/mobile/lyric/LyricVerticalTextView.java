@@ -16,9 +16,10 @@ import java.util.ArrayList;
  * 行里第 p 个码点属于第 p 列（各列等长，短的用全角空格补齐）。这里把网格按「一列一列
  * 往下读」还原，再按格绘制：
  *
- * - 汉字这类照旧正着摆，一个占一格；
- * - 一串连续的半角字符里只要带字母或数字，就算一个整体，从它占的第一格顶端起旋转 90° 画出来。
- *   于是一个词是一整块横倒的字（歪头看是连续的），而不是 h-e-l-l-o 五个正着的字母。
+ * - 汉字这类照旧正着摆，一个占一格（一格 = 字体自己的行高）；
+ * - 一串连续的半角字符里只要带字母或数字，就算一个整体，旋转 90° 画出来，并且「画出来多长就往下
+ *   占多长」——半角字符横向只有汉字六成宽，按格数算长度会让它后面空出一大截。于是一个词是一整块
+ *   横倒的字（歪头看是连续的），而不是 h-e-l-l-o 五个正着的字母；
  * - 整串都是标点的（单独的 "-"、"- - -"、"." 这类）照旧正着摆：半角短横线横倒只剩一根细竖线，
  *   看着跟空了一格似的。
  *
@@ -32,8 +33,6 @@ public class LyricVerticalTextView extends TextView {
     String text;
     boolean rotate;
     int column;
-    int firstRow;
-    int lastRow;
   }
 
   private static final int ROTATE_DEGREES = 90;
@@ -99,16 +98,24 @@ public class LyricVerticalTextView extends TextView {
     // 隔壁列上强
     float scale = lineHeight > cellWidth ? cellWidth / lineHeight : 1f;
 
+    // 每列各自往下排，位置是「前面那些格子依次占掉之后」累加出来的：
+    // 正着的字一个占一格（字体行高），横倒的一串按它自己画出来有多长就占多长。
+    //
+    // 不能一律拿「占了几格 × 行高」当长度：半角字符横向只有汉字六成宽，一串 22 个字符的英文
+    // 横倒之后画出来只有它占的那几格的三分之一长，剩下三分之二会变成下一个字前面的一大段空白
+    // （踩过："Time of the nihility - 凌" 里 "凌" 前面整整空了一大截，看着像被 "-" 顶开的）。
+    // 按实际长度往下走，横倒的串后面紧跟着就是下一个字
+    float[] columnY = new float[columnCount];
     for (Cell cell : cells) {
       float cx = getPaddingLeft() + (cell.column + 0.5f) * cellWidth;
+      float advance = cell.rotate ? mPaint.measureText(cell.text) * scale : cellHeight;
+      float cy = getPaddingTop() + columnY[cell.column] + advance / 2f;
+      columnY[cell.column] += advance;
       if (!cell.rotate) {
-        float cy = getPaddingTop() + (cell.firstRow + 0.5f) * cellHeight;
         canvas.drawText(cell.text, cx - mPaint.measureText(cell.text) / 2f, cy + baselineOffset, mPaint);
         continue;
       }
-      // 横倒的一串从「第一格的顶端」往下摆，不按这几格的中间居中：一串英文缩过之后比它占的格距
-      // 短，居中会让整串往下沉，旁边逐格排的译文一对比，英文就像掉到译文下面去了
-      float cy = getPaddingTop() + cell.firstRow * cellHeight + mPaint.measureText(cell.text) * scale / 2f;
+      // 横倒的串画出来正好是 advance 那么长（绕格心转、再按同一个点心缩放），两头不会有空档
       canvas.save();
       canvas.rotate(ROTATE_DEGREES, cx, cy);
       if (scale != 1f) canvas.scale(scale, scale, cx, cy);
@@ -151,12 +158,11 @@ public class LyricVerticalTextView extends TextView {
           continue;
         }
         if (!rotateLatin || !isRotatable(codePoint)) {
-          addCell(column, row, row, new String(Character.toChars(codePoint)), false);
+          addCell(column, new String(Character.toChars(codePoint)), false);
           row++;
           continue;
         }
         // 连着能转的字算一串，整体横倒
-        int firstRow = row;
         StringBuilder run = new StringBuilder();
         while (row < rowCount) {
           int cp = codePointAt(rowCodePoints.get(row), column);
@@ -166,15 +172,16 @@ public class LyricVerticalTextView extends TextView {
         }
         String runText = run.toString();
         if (containsLetterOrDigit(runText)) {
-          addRun(column, firstRow, row - 1, runText);
+          // 末尾的空格不再单独剥出来：长度按实际画出来算，留着的空格就是词间空白，
+          // 后面那个字接着它排（整串空格的情况不会走到这，见下面 else）
+          addCell(column, runText, true);
         } else {
-          // 整串都是标点（单独的 "-"、"- - -"、"..." 这类）：不横倒，跟汉字一样一个字占一格。
+          // 整串都是标点或空格（单独的 "-"、"- - -"、"..." 这类）：不横倒，跟汉字一样一个字占一格。
           // 半角的短横线转 90° 之后只有十几像素长、两像素宽的细竖线，掉在五六十像素的格子里
           // 看着就像空了一格（踩过）。字母数字带头的串才值得倒，"well-known" 这种不会被拆开
           for (int i = 0; i < runText.length(); ) {
             int cp = runText.codePointAt(i);
-            addCell(column, firstRow, firstRow, new String(Character.toChars(cp)), false);
-            firstRow++;
+            addCell(column, new String(Character.toChars(cp)), false);
             i += Character.charCount(cp);
           }
         }
@@ -192,19 +199,6 @@ public class LyricVerticalTextView extends TextView {
     return false;
   }
 
-  /** 一串横倒的文字。末尾的空白不该跟着转（转出来是一道空条），退回去当普通空格画 */
-  private void addRun(int column, int firstRow, int lastRow, String run) {
-    int end = run.length();
-    while (end > 0 && run.charAt(end - 1) == ' ') end--;
-    if (end == 0) {
-      addCell(column, firstRow, lastRow, " ", false);
-      return;
-    }
-    int runLength = run.codePointCount(0, end);
-    addCell(column, firstRow, firstRow + runLength - 1, run.substring(0, end), true);
-    if (end < run.length()) addCell(column, firstRow + runLength, lastRow, " ", false);
-  }
-
   /**
    * 能不能横倒。半角拉丁字母、数字、半角符号、词间空格算「能」，中文日文、全角标点、
    * emoji 这些照旧正着摆。0x2E80 是中日韩部首补充的起点，之前的码位基本都是西文。
@@ -218,11 +212,9 @@ public class LyricVerticalTextView extends TextView {
     return index < codePoints.length ? codePoints[index] : -1;
   }
 
-  private void addCell(int column, int firstRow, int lastRow, String text, boolean rotate) {
+  private void addCell(int column, String text, boolean rotate) {
     Cell cell = new Cell();
     cell.column = column;
-    cell.firstRow = firstRow;
-    cell.lastRow = lastRow;
     cell.text = text;
     cell.rotate = rotate;
     cells.add(cell);
