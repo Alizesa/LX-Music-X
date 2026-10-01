@@ -280,6 +280,11 @@ declare global {
       'desktopLyric.isSingleLine': boolean
 
       /**
+       * 桌面歌词是否竖向显示（每个字上下堆叠成一列）
+       */
+      'desktopLyric.isVertical': boolean
+
+      /**
        * 桌面歌词背景框：text 贴合文字 / window 铺满窗口 / none 不显示
        */
       'desktopLyric.background': 'text' | 'window' | 'none'

@@ -14,6 +14,7 @@ import {
   setTextSize,
   setShowToggleAnima,
   setSingleLine,
+  setVertical,
   setPosition,
   setMaxLineNum,
   setWidth,
@@ -37,6 +38,7 @@ export const showDesktopLyric = async() => {
   await showDesktopLyricView({
     isShowToggleAnima: setting['desktopLyric.showToggleAnima'],
     isSingleLine: setting['desktopLyric.isSingleLine'],
+    isVertical: setting['desktopLyric.isVertical'],
     isLock: setting['desktopLyric.isLock'],
     unplayColor: setting['desktopLyric.style.lyricUnplayColor'],
     playedColor: setting['desktopLyric.style.lyricPlayedColor'],
@@ -88,6 +90,7 @@ export const setDesktopLyricAlpha = setAlpha
 export const setDesktopLyricTextSize = setTextSize
 export const setShowDesktopLyricToggleAnima = setShowToggleAnima
 export const setDesktopLyricSingleLine = setSingleLine
+export const setDesktopLyricVertical = setVertical
 export const setDesktopLyricBackground = setBackground
 export const onDesktopLyricLongPress = onViewLongPress
 export const setDesktopLyricPosition = setPosition

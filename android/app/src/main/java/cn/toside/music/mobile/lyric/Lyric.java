@@ -250,6 +250,11 @@ public class Lyric extends LyricPlayer {
     lyricView.setSingleLine(singleLine);
   }
 
+  public void setVertical(boolean vertical) {
+    if (lyricView == null) return;
+    lyricView.setVertical(vertical);
+  }
+
   public void setShowToggleAnima(boolean showToggleAnima) {
     if (lyricView == null) return;
     lyricView.setShowToggleAnima(showToggleAnima);

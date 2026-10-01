@@ -47,6 +47,7 @@ export const setSendLyricTextEvent = async(isSend: boolean) => {
 export const showDesktopLyricView = async({
   isShowToggleAnima,
   isSingleLine,
+  isVertical,
   width,
   maxLineNum,
   isLock,
@@ -64,6 +65,7 @@ export const showDesktopLyricView = async({
 }: {
   isShowToggleAnima: boolean
   isSingleLine: boolean
+  isVertical: boolean
   width: number
   maxLineNum: number
   isLock: boolean
@@ -81,6 +83,7 @@ export const showDesktopLyricView = async({
 }): Promise<void> => {
   return LyricModule.showDesktopLyric({
     isSingleLine,
+    vertical: isVertical,
     isShowToggleAnima,
     isLock,
     unplayColor,
@@ -193,6 +196,13 @@ export const setShowToggleAnima = async(isShowToggleAnima: boolean): Promise<voi
 
 export const setSingleLine = async(isSingleLine: boolean): Promise<void> => {
   return LyricModule.setSingleLine(isSingleLine)
+}
+
+/**
+ * set vertical display (每个字上下堆叠成一列)
+ */
+export const setVertical = async(isVertical: boolean): Promise<void> => {
+  return LyricModule.setVertical(isVertical)
 }
 
 /**

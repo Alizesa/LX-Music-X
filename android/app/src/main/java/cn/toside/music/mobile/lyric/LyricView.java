@@ -70,6 +70,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
 
   private boolean isLock = false;
   private boolean isSingleLine = false;
+  // 竖向显示：每个字占一行，窗口变成窄而高的一条
+  private boolean isVertical = false;
   private boolean isShowToggleAnima = false;
   private String unplayColor = "rgba(255, 255, 255, 1)";
   private String playedColor = "rgba(7, 197, 86, 1)";
@@ -170,6 +172,28 @@ public class LyricView extends Activity implements View.OnTouchListener {
     return (int)(reactContext.getResources().getDisplayMetrics().density * dp + 0.5f);
   }
 
+  /**
+   * 竖向显示：在每个字之间插一个换行，让文字从上往下一个一个排（配合「窗口只有一个字宽」，
+   * 就得到竖排的效果）。原文/翻译/罗马音之间原有的换行保留，所以翻译会接在原文下面继续竖排。
+   * 按码点遍历，避免把 emoji 之类的代理对拆坏。
+   */
+  private String formatVerticalText(String text) {
+    if (!isVertical || text == null || text.isEmpty()) return text;
+    StringBuilder builder = new StringBuilder(text.length() * 2);
+    String[] lines = text.split("\n", -1);
+    for (int i = 0; i < lines.length; i++) {
+      if (i > 0) builder.append('\n');
+      String line = lines[i];
+      for (int j = 0; j < line.length(); ) {
+        int codePoint = line.codePointAt(j);
+        if (j > 0) builder.append('\n');
+        builder.appendCodePoint(codePoint);
+        j += Character.charCount(codePoint);
+      }
+    }
+    return builder.toString();
+  }
+
   private void clampPosition() {
     int maxX = Math.max(0, maxWidth - layoutParams.width);
     if (layoutParams.x < 0) layoutParams.x = 0;
@@ -204,6 +228,27 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (BACKGROUND_WINDOW.equals(backgroundMode)) {
       width = maxBoxWidth;
       height = Math.min(lineHeight * maxLineNum, maxHeight - 100);
+    } else if (isVertical) {
+      // 竖向显示：文本已经是一个字一行，所以宽度只留「最宽的那个字」，高度按字数往下堆，
+      // 上限是整个屏幕（竖排一列本来就该能排满屏高）。
+      // 这里刻意不吃「窗口百分比宽度」和「最大行数」两个设置：一个字宽是竖排的底线，
+      // 而最大行数最多只能设到 8，套到竖排上就是只能显示 8 个字。
+      int padH = dp2px(BOX_PADDING_H_DP);
+      int padV = dp2px(BOX_PADDING_V_DP);
+      String text = textView.getText().toString();
+      float maxCharWidth = 0;
+      for (String line : text.split("\n", -1)) {
+        for (int i = 0; i < line.length(); ) {
+          int codePoint = line.codePointAt(i);
+          int charCount = Character.charCount(codePoint);
+          maxCharWidth = Math.max(maxCharWidth, paint.measureText(line, i, i + charCount));
+          i += charCount;
+        }
+      }
+      width = Math.max((int)Math.ceil(maxCharWidth) + padH * 2, dp2px(MIN_BOX_WIDTH_DP));
+      height = Math.max(new StaticLayout(
+        text, paint, Math.max(1, width - padH * 2), Layout.Alignment.ALIGN_NORMAL, 1F, 0F, true
+      ).getHeight() + padV * 2, lineHeight);
     } else {
       String text = textView.getText().toString();
       // 单行模式是 LyricTextView 自绘滚动，不吃 padding，靠宽度余量留白
@@ -261,7 +306,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
   /** 贴合模式下给文字留一圈内边距，框看起来才不贴着字 */
   private void applyTextPadding() {
     if (textView == null) return;
-    if (isSingleLine || BACKGROUND_WINDOW.equals(backgroundMode)) {
+    // 竖向显示用的是普通 TextView（不是自绘滚动的 LyricTextView），内边距照常生效
+    if ((isSingleLine && !isVertical) || BACKGROUND_WINDOW.equals(backgroundMode)) {
       textView.setTextPadding(0, 0, 0, 0);
     } else {
       textView.setTextPadding(dp2px(BOX_PADDING_H_DP), dp2px(BOX_PADDING_V_DP),
@@ -327,6 +373,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
   public void showLyricView(Bundle options) {
     isLock = options.getBoolean("isLock", isLock);
     isSingleLine = options.getBoolean("isSingleLine", isSingleLine);
+    isVertical = options.getBoolean("vertical", isVertical);
     isShowToggleAnima = options.getBoolean("isShowToggleAnima", isShowToggleAnima);
     unplayColor = options.getString("unplayColor", unplayColor);
     playedColor = options.getString("playedColor", playedColor);
@@ -369,9 +416,11 @@ public class LyricView extends Activity implements View.OnTouchListener {
   }
 
   private void createTextView() {
-    textView = new LyricSwitchView(reactContext, isSingleLine, isShowToggleAnima);
+    // 竖向显示要的是「一个字一行」的普通 TextView；单行模式的 LyricTextView 是自绘横向滚动的，
+    // 窗口只剩一个字宽时它会把每个字都当成溢出而疯狂滚动，所以竖排时强制不用它
+    textView = new LyricSwitchView(reactContext, isSingleLine && !isVertical, isShowToggleAnima);
     textView.setText("");
-    textView.setText(currentLyric);
+    textView.setText(formatVerticalText(currentLyric));
 
     textView.setTextColor(parseColor(playedColor));
     textView.setShadowColor(parseColor(shadowColor));
@@ -410,7 +459,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
     }
     textView.setGravity(textPositionX | textPositionY);
 
-    if (!isSingleLine) {
+    // 竖排时不用 maxLines 截断：框高已经由屏幕高度兜住了，再按「行数」截就只能显示几个字
+    if (!isSingleLine && !isVertical) {
       textView.setMaxLines(maxLineNum);
     }
 
@@ -484,8 +534,9 @@ public class LyricView extends Activity implements View.OnTouchListener {
     currentLyric = text;
     currentExtendedLyrics = extendedLyrics;
     if (textView == null) return;
-    if (extendedLyrics.size() > 0 && maxLineNum > 1 && !isSingleLine) {
-      int num = maxLineNum - 1;
+    if (extendedLyrics.size() > 0 && (isVertical || (maxLineNum > 1 && !isSingleLine))) {
+      // 竖排一列能放下的字有限，翻译/罗马音只带一行，不然整条会拖得很长
+      int num = isVertical ? 1 : maxLineNum - 1;
       StringBuilder textBuilder = new StringBuilder(text);
       for (String lrc : extendedLyrics) {
         textBuilder.append("\n").append(lrc);
@@ -494,7 +545,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
       text = textBuilder.toString();
     }
     if (textView == null) return;
-    textView.setText(text);
+    textView.setText(formatVerticalText(text));
     // 歌词换了，框的大小也要跟着重算
     applyBoxSize();
   }
@@ -502,7 +553,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
   public void setMaxLineNum(int maxLineNum) {
     this.maxLineNum = maxLineNum;
     if (textView == null || windowManager == null) return;
-    if (!isSingleLine) textView.setMaxLines(maxLineNum);
+    if (!isSingleLine && !isVertical) textView.setMaxLines(maxLineNum);
     applyBoxSize();
   }
 
@@ -680,6 +731,21 @@ public class LyricView extends Activity implements View.OnTouchListener {
   public void setSingleLine(boolean isSingleLine) {
     this.isSingleLine = isSingleLine;
     if (textView == null) return;
+    windowManager.removeView(textView);
+    createTextView();
+    applyBoxSize();
+    windowManager.addView(textView, layoutParams);
+
+    if (isLock) lockView();
+    else unlockView();
+
+    setLyric(currentLyric, currentExtendedLyrics);
+  }
+
+  /** 切换竖向显示：文字布局方式变了，重建 TextView 再按当前歌词重算窗口大小与位置 */
+  public void setVertical(boolean vertical) {
+    this.isVertical = vertical;
+    if (windowManager == null || textView == null) return;
     windowManager.removeView(textView);
     createTextView();
     applyBoxSize();
