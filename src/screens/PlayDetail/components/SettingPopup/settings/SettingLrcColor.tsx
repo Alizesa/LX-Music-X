@@ -37,13 +37,13 @@ export default memo(({ active = false }: { active?: boolean }) => {
   return (
     <View style={styles.container}>
       <Text>{t(active ? 'play_detail_setting_lrc_active_color' : 'play_detail_setting_lrc_color')}</Text>
-      <View style={styles.list}>
+      <View style={stylesLocal.row}>
         <TouchableOpacity
           style={[stylesLocal.item, stylesLocal.themeItem, color == null && { borderColor: theme['c-primary'] }]}
           activeOpacity={0.6}
           onPress={() => { setColor(null) }}
         >
-          <Text size={12} color={theme['c-font-label']}>{t('play_detail_setting_lrc_color_theme')}</Text>
+          <Text size={12} numberOfLines={1} color={theme['c-font-label']}>{t('play_detail_setting_lrc_color_theme')}</Text>
         </TouchableOpacity>
         {
           COLORS.map(c => (
@@ -61,19 +61,28 @@ export default memo(({ active = false }: { active?: boolean }) => {
 })
 
 const stylesLocal = createStyle({
+  // 单独写一行，不直接用 SettingPopup 的 styles.list：那边开着 flexShrink，
+  // 「跟随主题」会被后面几个色块挤窄，字就折成两行了
+  row: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    paddingTop: 8,
+  },
   item: {
-    width: 28,
-    height: 28,
-    marginRight: 10,
+    width: 26,
+    height: 26,
+    marginRight: 8,
     marginBottom: 6,
     borderRadius: 6,
     // 选中时用主题色描边；透明边框是给未选中留的位置，免得选中时整排跟着挪
     borderWidth: 2,
     borderColor: 'transparent',
+    flexShrink: 0,
   },
   themeItem: {
-    minWidth: 60,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(128, 128, 128, 0.25)',
