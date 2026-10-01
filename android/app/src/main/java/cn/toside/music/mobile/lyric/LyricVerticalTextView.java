@@ -37,7 +37,10 @@ public class LyricVerticalTextView extends TextView {
 
   private final TextPaint mPaint;
   private final Paint.FontMetrics fontMetrics = new Paint.FontMetrics();
-  private final ArrayList<Cell> cells = new ArrayList<>();
+  // 不能写成 `= new ArrayList<>()`：TextView 的构造函数里就会回调 onTextChanged，而字段初始化器
+  // 要等 super() 返回之后才跑，那次回调里 cells 还是 null（踩过：cells.clear() NPE，整个桌面歌词
+  // 一个字都显示不出来）。统一由 buildCells 换一个新的 list
+  private ArrayList<Cell> cells;
   private boolean rotateLatin;
   private int columnCount = 0;
   private int rowCount = 0;
@@ -68,7 +71,7 @@ public class LyricVerticalTextView extends TextView {
       super.onDraw(canvas);
       return;
     }
-    if (cells.isEmpty() || columnCount <= 0 || rowCount <= 0) return;
+    if (cells == null || cells.isEmpty() || columnCount <= 0 || rowCount <= 0) return;
     float contentWidth = getWidth() - getPaddingLeft() - getPaddingRight();
     float contentHeight = getHeight() - getPaddingTop() - getPaddingBottom();
     if (contentWidth <= 0 || contentHeight <= 0) return;
@@ -105,7 +108,7 @@ public class LyricVerticalTextView extends TextView {
 
   /** 把网格拆成一个个格子 */
   private void buildCells(String text) {
-    cells.clear();
+    cells = new ArrayList<>();
     columnCount = 0;
     rowCount = 0;
     if (text.isEmpty()) return;
