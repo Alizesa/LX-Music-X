@@ -189,9 +189,16 @@ public class LyricModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
+  public void setLyricBackground(String mode, double opacity, Promise promise) {
+    if (lyric != null) lyric.setLyricBackground(mode, (float) opacity);
+    promise.resolve(null);
+  }
+
+  @ReactMethod
   public void checkOverlayPermission(Promise promise) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(reactContext)) {
       promise.reject(new Exception("Permission denied"));
+      return;
     }
     promise.resolve(null);
   }

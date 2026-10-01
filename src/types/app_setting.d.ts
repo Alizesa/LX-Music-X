@@ -280,6 +280,16 @@ declare global {
       'desktopLyric.isSingleLine': boolean
 
       /**
+       * 桌面歌词背景框：text 贴合文字 / window 铺满窗口 / none 不显示
+       */
+      'desktopLyric.background': 'text' | 'window' | 'none'
+
+      /**
+       * 桌面歌词背景框不透明度（0-100），0 等同于不显示
+       */
+      'desktopLyric.backgroundOpacity': number
+
+      /**
        * 桌面歌词是否启用歌词切换动画
        */
       'desktopLyric.showToggleAnima': boolean

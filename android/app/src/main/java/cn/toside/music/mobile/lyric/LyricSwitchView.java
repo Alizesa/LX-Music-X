@@ -199,4 +199,9 @@ public final class LyricSwitchView extends TextSwitcher {
     for (TextView v : viewArray) v.setGravity(i);
   }
 
+  /** 给两个歌词 TextView 一起设内边距：贴合模式下让背景框比文字大一圈 */
+  public void setTextPadding(int left, int top, int right, int bottom) {
+    for (TextView v : viewArray) v.setPadding(left, top, right, bottom);
+  }
+
 }

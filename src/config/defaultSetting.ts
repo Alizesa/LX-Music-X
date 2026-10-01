@@ -53,6 +53,9 @@ const defaultSetting: LX.AppSetting = {
   'desktopLyric.maxLineNum': 5,
   'desktopLyric.isSingleLine': false,
   'desktopLyric.showToggleAnima': true,
+  // 背景框默认贴着歌词（不再是横跨整屏、固定 5 行高的黑条）
+  'desktopLyric.background': 'text',
+  'desktopLyric.backgroundOpacity': 35,
   'desktopLyric.position.x': 0,
   'desktopLyric.position.y': 0,
   'desktopLyric.textPosition.x': 'left',

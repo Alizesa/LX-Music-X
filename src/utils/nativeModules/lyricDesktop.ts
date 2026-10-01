@@ -59,6 +59,8 @@ export const showDesktopLyricView = async({
   positionY,
   textPositionX,
   textPositionY,
+  background,
+  backgroundOpacity,
 }: {
   isShowToggleAnima: boolean
   isSingleLine: boolean
@@ -74,6 +76,8 @@ export const showDesktopLyricView = async({
   positionY: number
   textPositionX: LX.AppSetting['desktopLyric.textPosition.x']
   textPositionY: LX.AppSetting['desktopLyric.textPosition.y']
+  background: LX.AppSetting['desktopLyric.background']
+  backgroundOpacity: number
 }): Promise<void> => {
   return LyricModule.showDesktopLyric({
     isSingleLine,
@@ -90,6 +94,8 @@ export const showDesktopLyricView = async({
     textY: textPositionY.toUpperCase(),
     width,
     maxLineNum,
+    background,
+    backgroundOpacity: getAlpha(backgroundOpacity),
   })
 }
 
@@ -189,6 +195,15 @@ export const setSingleLine = async(isSingleLine: boolean): Promise<void> => {
   return LyricModule.setSingleLine(isSingleLine)
 }
 
+/**
+ * set lyric background
+ * @param background text 贴合文字 / window 铺满窗口 / none 不显示
+ * @param opacity background opacity
+ */
+export const setBackground = async(background: LX.AppSetting['desktopLyric.background'], opacity: number): Promise<void> => {
+  return LyricModule.setLyricBackground(background, getAlpha(opacity))
+}
+
 export const setPosition = async(x: number, y: number): Promise<void> => {
   return LyricModule.setPosition(x, y)
 }
@@ -222,6 +237,18 @@ export const onPositionChange = (handler: (position: { x: number, y: number }) =
   const eventEmitter = new NativeEventEmitter(LyricModule)
   const eventListener = eventEmitter.addListener('set-position', event => {
     handler(event as { x: number, y: number })
+  })
+
+  return () => {
+    eventListener.remove()
+  }
+}
+
+export const onViewLongPress = (handler: () => void): () => void => {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  const eventEmitter = new NativeEventEmitter(LyricModule)
+  const eventListener = eventEmitter.addListener('view-long-press', () => {
+    handler()
   })
 
   return () => {

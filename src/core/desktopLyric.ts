@@ -17,10 +17,12 @@ import {
   setPosition,
   setMaxLineNum,
   setWidth,
+  setBackground,
   setLyricTextPosition,
   checkOverlayPermission,
   openOverlayPermissionActivity,
   onPositionChange,
+  onViewLongPress,
 } from '@/utils/nativeModules/lyricDesktop'
 import settingState from '@/store/setting/state'
 import playerState from '@/store/player/state'
@@ -47,6 +49,8 @@ export const showDesktopLyric = async() => {
     positionY: setting['desktopLyric.position.y'],
     textPositionX: setting['desktopLyric.textPosition.x'],
     textPositionY: setting['desktopLyric.textPosition.y'],
+    background: setting['desktopLyric.background'],
+    backgroundOpacity: setting['desktopLyric.backgroundOpacity'],
   })
   let lrc = playerState.musicInfo.lrc ?? ''
   let tlrc = playerState.musicInfo.tlrc ?? ''
@@ -84,6 +88,8 @@ export const setDesktopLyricAlpha = setAlpha
 export const setDesktopLyricTextSize = setTextSize
 export const setShowDesktopLyricToggleAnima = setShowToggleAnima
 export const setDesktopLyricSingleLine = setSingleLine
+export const setDesktopLyricBackground = setBackground
+export const onDesktopLyricLongPress = onViewLongPress
 export const setDesktopLyricPosition = setPosition
 export const setDesktopLyricMaxLineNum = setMaxLineNum
 export const setDesktopLyricWidth = setWidth

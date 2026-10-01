@@ -1,6 +1,15 @@
 import { init as initLyricPlayer, toggleTranslation, toggleRoma, play, pause, stop, setLyric, setPlaybackRate } from '@/core/lyric'
 import { updateSetting } from '@/core/common'
-import { onDesktopLyricPositionChange, showDesktopLyric, onLyricLinePlay, showRemoteLyric } from '@/core/desktopLyric'
+import {
+  onDesktopLyricPositionChange,
+  onDesktopLyricLongPress,
+  showDesktopLyric,
+  onLyricLinePlay,
+  showRemoteLyric,
+  toggleDesktopLyricLock,
+} from '@/core/desktopLyric'
+import { toast } from '@/utils/tools'
+import settingState from '@/store/setting/state'
 import playerState from '@/store/player/state'
 import { updateNowPlayingTitles } from '@/plugins/player/utils'
 import { setLastLyric } from '@/core/player/playInfo'
@@ -44,6 +53,15 @@ export default async(setting: LX.AppSetting) => {
     updateSetting({
       'desktopLyric.position.x': position.x,
       'desktopLyric.position.y': position.y,
+    })
+  })
+  // 桌面歌词窗口内长按 = 锁定位置（锁定后窗口收不到触摸，解锁得回 App 里来：
+  // 设置页的锁定开关，或播放页长按歌词按钮）
+  onDesktopLyricLongPress(() => {
+    if (settingState.setting['desktopLyric.isLock']) return
+    void toggleDesktopLyricLock(true).then(() => {
+      updateSetting({ 'desktopLyric.isLock': true })
+      toast(global.i18n.t('setting_lyric_desktop_lock_tip'), 'long')
     })
   })
   onLyricLinePlay(({ text, extendedLyrics }) => {

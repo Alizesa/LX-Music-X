@@ -8,6 +8,8 @@ import IsSingleLine from './IsSingleLine'
 import TextSize from './TextSize'
 import ViewWidth from './ViewWidth'
 import MaxLineNum from './MaxLineNum'
+import Background from './Background'
+import BackgroundOpacity from './BackgroundOpacity'
 import TextOpacity from './TextOpacity'
 import TextPositionX from './TextPositionX'
 import TextPositionY from './TextPositionY'
@@ -28,6 +30,8 @@ export default memo(() => {
       <TextSize />
       <ViewWidth />
       <MaxLineNum />
+      <Background />
+      <BackgroundOpacity />
       <TextOpacity />
       <TextPositionX />
       <TextPositionY />

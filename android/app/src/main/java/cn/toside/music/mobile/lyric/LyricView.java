@@ -5,13 +5,18 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
+import android.graphics.drawable.GradientDrawable;
 import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.text.Layout;
+import android.text.StaticLayout;
+import android.text.TextPaint;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Display;
+import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.OrientationEventListener;
@@ -26,9 +31,19 @@ import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import cn.toside.music.mobile.R;
-
 public class LyricView extends Activity implements View.OnTouchListener {
+  // 背景框的三种模式：贴合文字 / 铺满窗口 / 不显示
+  private static final String BACKGROUND_TEXT = "text";
+  private static final String BACKGROUND_WINDOW = "window";
+  private static final String BACKGROUND_NONE = "none";
+  // 贴合模式下框比文字多出来的内边距
+  private static final int BOX_PADDING_H_DP = 8;
+  private static final int BOX_PADDING_V_DP = 4;
+  // 没有歌词（纯音乐）时也要留一个能看见、能拖动的框
+  private static final int MIN_BOX_WIDTH_DP = 32;
+  private static final int CORNER_RADIUS_TEXT_DP = 8;
+  private static final int CORNER_RADIUS_WINDOW_DP = 2;
+
   LyricSwitchView textView = null;
   WindowManager windowManager = null;
   WindowManager.LayoutParams layoutParams = null;
@@ -46,6 +61,9 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private float prevViewPercentageX = 0;
   private float prevViewPercentageY = 0;
   private float widthPercentage = 1f;
+  private String backgroundMode = BACKGROUND_TEXT;
+  private float backgroundOpacity = 0.35f;
+  private GestureDetector gestureDetector = null;
 
   private float preY = 0;
   // private static boolean isVibrated = false;
@@ -79,6 +97,17 @@ public class LyricView extends Activity implements View.OnTouchListener {
     this.reactContext = reactContext;
     this.lyricEvent = lyricEvent;
     fixViewPositionHandler = new Handler();
+    gestureDetector = new GestureDetector(reactContext, new GestureDetector.SimpleOnGestureListener() {
+      @Override
+      public boolean onLongPress(MotionEvent e) {
+        // 窗口内长按 = 请求锁定。这里只把动作报给 JS，锁不锁由 JS 侧的设置决定
+        // （锁定后窗口是 FLAG_NOT_TOUCHABLE，收不到触摸，也就不会再触发）
+        if (LyricView.this.lyricEvent != null) {
+          LyricView.this.lyricEvent.sendEvent(LyricView.this.lyricEvent.VIEW_LONG_PRESS, null);
+        }
+        return true;
+      }
+    });
   }
 
   private void listenOrientationEvent() {
@@ -137,43 +166,133 @@ public class LyricView extends Activity implements View.OnTouchListener {
     return true;
   }
 
-  private void setLayoutParamsHeight() {
-    if (textView == null) return;
-    int height = textView.getPaint().getFontMetricsInt(null) * maxLineNum;
-    if (height > maxHeight - 100) height = maxHeight - 100;
-    layoutParams.height = height;
-    textView.setHeight(height);
+  private int dp2px(float dp) {
+    return (int)(reactContext.getResources().getDisplayMetrics().density * dp + 0.5f);
   }
 
-  private void fixViewPosition() {
-    int maxX = maxWidth - layoutParams.width;
-    int x = (int)(maxWidth * prevViewPercentageX);
-    if (x < 0) x = 0;
-    else if (x > maxX) x = maxX;
-    if (layoutParams.x != x) layoutParams.x = x;
+  private void clampPosition() {
+    int maxX = Math.max(0, maxWidth - layoutParams.width);
+    if (layoutParams.x < 0) layoutParams.x = 0;
+    else if (layoutParams.x > maxX) layoutParams.x = maxX;
 
-    setLayoutParamsHeight();
+    int maxY = Math.max(0, maxHeight - layoutParams.height);
+    if (layoutParams.y < 0) layoutParams.y = 0;
+    else if (layoutParams.y > maxY) layoutParams.y = maxY;
+  }
 
-    int maxY = maxHeight - layoutParams.height;
-    int y = (int)(maxHeight * prevViewPercentageY);
-    if (y < 0) y = 0;
-    else if (y > maxY) y = maxY;
-    if (layoutParams.y != y) layoutParams.y = y;
+  /**
+   * 把窗口矩形算成「刚好包住当前歌词」的大小。
+   *
+   * 背景是贴在窗口根 View 上的，而窗口原来的尺寸是「屏幕宽 × width%」×「行高 × maxLineNum」，
+   * 于是一句歌词也横跨整屏、还占着 maxLineNum 行的高度（默认 5 行）；这块矩形还会吞掉下面
+   * App 的点击，宽度 100% 时 maxX 恒为 0（横向拖不动）。这里改成按实际文字算框的大小：
+   * 宽度取最长一行的宽度（上限仍是 width%），高度按换行后的真实行数（上限 maxLineNum），
+   * 尺寸变化时按 textX/textY 让对应的那条边保持不动，最后夹回屏幕内。
+   * backgroundMode 为 window（铺满窗口）时保持老行为，方便想回到老样子的情况。
+   */
+  private void applyBoxSize() {
+    if (textView == null || layoutParams == null || maxWidth <= 0) return;
+    TextPaint paint = textView.getPaint();
+    if (paint == null) return;
+
+    int maxBoxWidth = (int)(maxWidth * widthPercentage);
+    if (maxBoxWidth <= 0 || maxBoxWidth > maxWidth) maxBoxWidth = maxWidth;
+    int lineHeight = paint.getFontMetricsInt(null);
+
+    int width;
+    int height;
+    if (BACKGROUND_WINDOW.equals(backgroundMode)) {
+      width = maxBoxWidth;
+      height = Math.min(lineHeight * maxLineNum, maxHeight - 100);
+    } else {
+      String text = textView.getText().toString();
+      // 单行模式是 LyricTextView 自绘滚动，不吃 padding，靠宽度余量留白
+      int padH = isSingleLine ? 0 : dp2px(BOX_PADDING_H_DP);
+      int padV = isSingleLine ? 0 : dp2px(BOX_PADDING_V_DP);
+      float maxLineWidth = 0;
+      for (String line : text.split("\n", -1)) {
+        maxLineWidth = Math.max(maxLineWidth, paint.measureText(line));
+      }
+      // 单行模式多留 2dp：LyricTextView 靠 textLength < viewWidth 判断要不要滚动，
+      // 框宽正好等于文字宽度时会被判成溢出而一直滚动
+      width = Math.min(maxBoxWidth, (int)Math.ceil(maxLineWidth) + padH * 2 + (isSingleLine ? dp2px(2) : 0));
+      if (isSingleLine) {
+        height = lineHeight;
+      } else {
+        // 超出框宽会换行，用 StaticLayout 量出换行之后的真实高度（带 padding 口径与 TextView 一致）
+        height = new StaticLayout(
+          text, paint, Math.max(1, width - padH * 2), Layout.Alignment.ALIGN_NORMAL, 1F, 0F, true
+        ).getHeight() + padV * 2;
+        if (height > lineHeight * maxLineNum + padV * 2) height = lineHeight * maxLineNum + padV * 2;
+      }
+      // 空歌词（纯音乐）时也要留一个能看见、能拖动的框，别塌成 0 宽
+      width = Math.max(width, dp2px(MIN_BOX_WIDTH_DP));
+      height = Math.max(height, lineHeight);
+    }
+    if (height > maxHeight - 100) height = maxHeight - 100;
+
+    int oldWidth = layoutParams.width;
+    int oldHeight = layoutParams.height;
+    int dx = 0;
+    int dy = 0;
+    if (oldWidth > 0 && oldHeight > 0) {
+      // 尺寸变了：让对齐方式指定的那条边不动，这样「对齐」设置在框会变大的模式下仍然有意义
+      switch (textX) {
+        case "CENTER": dx = (oldWidth - width) / 2; break;
+        case "RIGHT": dx = oldWidth - width; break;
+      }
+      switch (textY) {
+        case "CENTER": dy = (oldHeight - height) / 2; break;
+        case "BOTTOM": dy = oldHeight - height; break;
+      }
+    }
+
+    layoutParams.width = width;
+    layoutParams.height = height;
+    textView.setWidth(width);
+    textView.setHeight(height);
+    if (dx != 0) layoutParams.x += dx;
+    if (dy != 0) layoutParams.y += dy;
+    clampPosition();
+    // 还没挂到 WindowManager 上时不能调 updateViewLayout（首次显示时尺寸要在 addView 之前算好）
+    if (windowManager != null && textView.isAttachedToWindow()) windowManager.updateViewLayout(textView, layoutParams);
+  }
+
+  /** 贴合模式下给文字留一圈内边距，框看起来才不贴着字 */
+  private void applyTextPadding() {
+    if (textView == null) return;
+    if (isSingleLine || BACKGROUND_WINDOW.equals(backgroundMode)) {
+      textView.setTextPadding(0, 0, 0, 0);
+    } else {
+      textView.setTextPadding(dp2px(BOX_PADDING_H_DP), dp2px(BOX_PADDING_V_DP),
+        dp2px(BOX_PADDING_H_DP), dp2px(BOX_PADDING_V_DP));
+    }
+  }
+
+  /** 背景框：贴合/铺满画黑色半透明圆角矩形，不显示则留空 */
+  private void applyBackground() {
+    if (textView == null) return;
+    if (BACKGROUND_NONE.equals(backgroundMode)) {
+      textView.setBackground(null);
+      return;
+    }
+    float opacity = Math.max(0F, Math.min(1F, backgroundOpacity));
+    GradientDrawable background = new GradientDrawable();
+    background.setShape(GradientDrawable.RECTANGLE);
+    background.setCornerRadius(dp2px(BACKGROUND_WINDOW.equals(backgroundMode) ? CORNER_RADIUS_WINDOW_DP : CORNER_RADIUS_TEXT_DP));
+    background.setColor(Color.argb((int)(opacity * 255), 0, 0, 0));
+    textView.setBackground(background);
   }
 
   private void updateViewPosition() {
+    if (textView == null || windowManager == null) return;
     if (!updateWH()) return;
 
-    int width = (int)(maxWidth * widthPercentage);
-    if (layoutParams.width != width) {
-      layoutParams.width = width;
-      if (textView != null) textView.setWidth(width);
-    }
+    applyBoxSize();
 
-    fixViewPosition();
-    // Log.d("Lyric", "widthPercentage: " + widthPercentage + "  prevViewPercentageX: " + prevViewPercentageX);
-    // Log.d("Lyric", "prevViewPercentageY: " + prevViewPercentageY + "  layoutParams.x: " + layoutParams.x);
-    // Log.d("Lyric", "layoutParams.y: " + layoutParams.y + "  layoutParams.width: " + layoutParams.width);
+    layoutParams.x = (int)(maxWidth * prevViewPercentageX);
+    layoutParams.y = (int)(maxHeight * prevViewPercentageY);
+    clampPosition();
 
     windowManager.updateViewLayout(textView, layoutParams);
   }
@@ -220,6 +339,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
     textSize = (float) options.getDouble("textSize", textSize);
     widthPercentage = (float) options.getDouble("width", 100) / 100f;
     maxLineNum = (int) options.getDouble("maxLineNum", maxLineNum);
+    backgroundMode = options.getString("background", backgroundMode);
+    backgroundOpacity = (float) options.getDouble("backgroundOpacity", backgroundOpacity);
     handleShowLyric();
     listenOrientationEvent();
   }
@@ -292,6 +413,9 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (!isSingleLine) {
       textView.setMaxLines(maxLineNum);
     }
+
+    applyTextPadding();
+    applyBackground();
   }
   private void handleShowLyric() {
     if (windowManager == null) {
@@ -324,19 +448,10 @@ public class LyricView extends Activity implements View.OnTouchListener {
     //  ? WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
     //  : WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
     layoutParams.flags = getLayoutParamsFlags();
-    if (isLock) {
-      textView.setBackgroundColor(Color.TRANSPARENT);
-
+    // 背景只由 background 设置决定，锁定时不再把背景抹掉（以前锁定会让黑框消失，看着像没锁上）
+    if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
       // 修复 Android 12 的穿透点击问题
-      if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
-        layoutParams.alpha = 0.8f;
-      }
-    } else {
-      textView.setBackgroundResource(R.drawable.rounded_corner);
-
-      if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
-        layoutParams.alpha = 1.0f;
-      }
+      layoutParams.alpha = isLock ? 0.8f : 1.0f;
     }
 
     // TYPE_SYSTEM_ALERT  系统提示,它总是出现在应用程序窗口之上
@@ -347,20 +462,15 @@ public class LyricView extends Activity implements View.OnTouchListener {
 
     updateWH();
 
-    //悬浮窗的宽高
+    //悬浮窗的宽高：贴合歌词（backgroundMode 为 window 时保持老的「整屏宽 × maxLineNum 行」）
     // layoutParams.width = WindowManager.LayoutParams.WRAP_CONTENT;
     // layoutParams.height = WindowManager.LayoutParams.WRAP_CONTENT;
-    // layoutParams.width= DisplayUtil.dp2px(mContext,55);
-    // layoutParams.height= DisplayUtil.dp2px(mContext,55);
-    layoutParams.width = (int)(maxWidth * widthPercentage);
-    textView.setWidth(layoutParams.width);
-    setLayoutParamsHeight();
+    applyBoxSize();
 
     //显示位置与指定位置的相对位置差
     layoutParams.x = (int)(maxWidth * prevViewPercentageX);
     layoutParams.y = (int)(maxHeight * prevViewPercentageY);
-
-    fixViewPosition();
+    clampPosition();
 
     //设置透明
     layoutParams.format = PixelFormat.TRANSPARENT;
@@ -385,42 +495,29 @@ public class LyricView extends Activity implements View.OnTouchListener {
     }
     if (textView == null) return;
     textView.setText(text);
+    // 歌词换了，框的大小也要跟着重算
+    applyBoxSize();
   }
 
   public void setMaxLineNum(int maxLineNum) {
     this.maxLineNum = maxLineNum;
-    if (textView == null) return;
+    if (textView == null || windowManager == null) return;
     if (!isSingleLine) textView.setMaxLines(maxLineNum);
-    setLayoutParamsHeight();
-
-    int maxY = maxHeight - layoutParams.height;
-    int y = layoutParams.y;
-    if (y < 0) y = 0;
-    else if (y > maxY) y = maxY;
-    if (layoutParams.y != y) layoutParams.y = y;
-
-    windowManager.updateViewLayout(textView, layoutParams);
+    applyBoxSize();
   }
 
   public void setWidth(int width) {
-    if (textView == null) return;
+    if (textView == null || windowManager == null) return;
     widthPercentage = width / 100f;
-    layoutParams.width = (int)(maxWidth * widthPercentage);
-    textView.setWidth(layoutParams.width);
-
-    int maxX = maxWidth - layoutParams.width;
-    int x = layoutParams.x;
-    if (x < 0) x = 0;
-    else if (x > maxX) x = maxX;
-    if (layoutParams.x != x) layoutParams.x = x;
-
-    windowManager.updateViewLayout(textView, layoutParams);
+    applyBoxSize();
   }
 
   @Override
   public boolean onTouch(View v, MotionEvent event) {
-    int maxX = maxWidth - layoutParams.width;
-    int maxY = maxHeight - layoutParams.height;
+    // 长按 = 请求锁定（手指一移动长按判定就取消，不影响拖动）
+    if (gestureDetector != null) gestureDetector.onTouchEvent(event);
+    int maxX = Math.max(0, maxWidth - layoutParams.width);
+    int maxY = Math.max(0, maxHeight - layoutParams.height);
 
     switch (event.getAction()){
       case MotionEvent.ACTION_DOWN:
@@ -488,6 +585,11 @@ public class LyricView extends Activity implements View.OnTouchListener {
     return true;
   }
 
+  /**
+   * 锁定：整个窗口加上 FLAG_NOT_TOUCHABLE，收不到任何触摸（拖不动，也不会挡住下面 App 的点击）。
+   * 背景/外观不跟着变，免得看起来像「一锁定就出问题了」。解锁要从 App 里来
+   * （设置页的锁定开关、或播放页长按歌词按钮）。
+   */
   public void lockView() {
     isLock = true;
     if (windowManager == null || textView == null) return;
@@ -496,7 +598,6 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
       layoutParams.alpha = 0.8f;
     }
-    textView.setBackgroundColor(Color.TRANSPARENT);
     windowManager.updateViewLayout(textView, layoutParams);
   }
 
@@ -508,8 +609,20 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
       layoutParams.alpha = 1.0f;
     }
-    textView.setBackgroundResource(R.drawable.rounded_corner);
     windowManager.updateViewLayout(textView, layoutParams);
+  }
+
+  /**
+   * 设置背景框：text 贴合文字、window 铺满窗口、none 不显示；透明度 0~1。
+   */
+  public void setLyricBackground(String mode, float opacity) {
+    if (mode != null) backgroundMode = mode;
+    backgroundOpacity = opacity;
+    if (windowManager == null || textView == null) return;
+    applyTextPadding();
+    applyBackground();
+    // 贴合/铺满之间切换会改变窗口尺寸
+    applyBoxSize();
   }
 
   public void setColor(String unplayColor, String playedColor, String shadowColor) {
@@ -554,7 +667,8 @@ public class LyricView extends Activity implements View.OnTouchListener {
         break;
     }
     textView.setGravity(textPositionX | textPositionY);
-    windowManager.updateViewLayout(textView, layoutParams);
+    // 对齐方式变了：位置/尺寸按新对齐重算一次（尺寸没变时等于只做一次夹取）
+    applyBoxSize();
   }
 
   public void setAlpha(float alpha) {
@@ -568,8 +682,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (textView == null) return;
     windowManager.removeView(textView);
     createTextView();
-    textView.setWidth(layoutParams.width);
-    textView.setHeight(layoutParams.height);
+    applyBoxSize();
     windowManager.addView(textView, layoutParams);
 
     if (isLock) lockView();
@@ -588,8 +701,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     this.textSize = size;
     if (windowManager == null || textView == null) return;
     textView.setTextSize(size);
-    setLayoutParamsHeight();
-    windowManager.updateViewLayout(textView, layoutParams);
+    applyBoxSize();
   }
 
   public void destroyView() {
