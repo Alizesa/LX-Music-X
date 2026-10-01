@@ -82,9 +82,13 @@ public class LyricVerticalTextView extends TextView {
     mPaint.setColor(getCurrentTextColor());
 
     float cellWidth = contentWidth / columnCount;
-    float cellHeight = contentHeight / rowCount;
     mPaint.getFontMetrics(fontMetrics);
     float lineHeight = fontMetrics.descent - fontMetrics.ascent;
+    // 一行的高度用字体自己的行高，不拿「窗口高 ÷ 行数」去摊：窗口高和「行数 × 行高」一旦对不上
+    // （首屏那次 maxHeight 还是 0、整句排成一长列时就会被截断成对不上），摊出来的格高只有行高的
+    // 六成，字会互相盖住、看着又细又挤。用原生行高就永远是正常大小，顶多超出窗口被裁掉。
+    // 取的是 applyBoxSize 量窗口高度用的同一个值，格距和框高才是一致的
+    float cellHeight = mPaint.getFontMetricsInt(null);
     // 让文字以格心为中线
     float baselineOffset = -(fontMetrics.ascent + fontMetrics.descent) / 2;
 

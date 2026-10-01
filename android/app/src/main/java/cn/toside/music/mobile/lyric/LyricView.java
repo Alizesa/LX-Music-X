@@ -620,6 +620,10 @@ public class LyricView extends Activity implements View.OnTouchListener {
       textView = null;
     }
 
+    // 先量屏幕再建 View：竖排要按屏高算「一列能排多少行」才知道在哪里拐列，而 createTextView 里
+    // 就要拆列了。顺序反了的话第一次显示时 maxHeight 还是 0，整句会排成又长又挤的一列
+    updateWH();
+
     // 使用Application context
     // 创建UI控件，避免Activity销毁导致上下文出现问题,因为现在的悬浮窗是系统级别的，不依赖与Activity存在
     //创建自定义的TextView
@@ -646,8 +650,6 @@ public class LyricView extends Activity implements View.OnTouchListener {
     // FLAG_NOT_FOCUSABLE 悬浮窗口较小时，后面的应用图标由不可长按变为可长按,不设置这个flag的话，home页的划屏会有问题
     // FLAG_NOT_TOUCH_MODAL不阻塞事件传递到后面的窗口
     layoutParams.gravity = Gravity.TOP | Gravity.START;  //显示在屏幕上中部
-
-    updateWH();
 
     //悬浮窗的宽高：贴合歌词（backgroundMode 为 window 时保持老的「整屏宽 × maxLineNum 行」）
     // layoutParams.width = WindowManager.LayoutParams.WRAP_CONTENT;
