@@ -326,12 +326,9 @@ public class LyricView extends Activity implements View.OnTouchListener {
       int padV = dp2px(BOX_PADDING_V_DP);
       String text = textView.getText().toString();
       float maxRowWidth = 0;
-      int maxColumns = 0;
       for (String line : text.split("\n", -1)) {
         maxRowWidth = Math.max(maxRowWidth, paint.measureText(line));
-        maxColumns = Math.max(maxColumns, line.codePointCount(0, line.length()));
       }
-      if (verticalRotateLatin) maxRowWidth = Math.max(maxRowWidth, (float) lineHeight * maxColumns);
       width = Math.max((int)Math.ceil(maxRowWidth) + padH * 2, dp2px(MIN_BOX_WIDTH_DP));
       height = Math.max(new StaticLayout(
         text, paint, Math.max(1, width - padH * 2), Layout.Alignment.ALIGN_NORMAL, 1F, 0F, true
