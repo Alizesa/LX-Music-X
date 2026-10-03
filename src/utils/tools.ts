@@ -40,7 +40,11 @@ export const TEMP_FILE_PATH = temporaryDirectoryPath + '/tempFile'
  * 颜色里原本带的 alpha 会被传进来的这个覆盖掉。
  * 认不出来的颜色原样返回，免得把样式整坏。
  */
-export const setColorAlpha = (color: string, alpha: number): string => {
+export const setColorAlpha = (color: string | undefined, alpha: number): string | undefined => {
+  // 自定义主题理论上都是照着模板生成、键齐全的，但不保证；而调色板里少一个键，
+  // 以前 backgroundColor 传 undefined 只是不画底色，直接 match 却会在渲染里抛，
+  // 连累整个画面。所以认不出、拿不到的颜色原样返回
+  if (typeof color != 'string') return color
   const a = Math.max(0, Math.min(1, alpha))
   const hex = color.match(/^#([\da-f]{3}|[\da-f]{6})$/i)
   if (hex) {
