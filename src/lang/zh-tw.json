@@ -371,6 +371,8 @@
   "setting_basic_theme_font_shadow": "啟用字體陰影",
   "setting_basic_theme_hide_bg_dark": "隱藏黑色主題背景",
   "setting_basic_theme_more_btn_show": "更多主題",
+  "setting_basic_theme_play_bar_opacity": "播放條不透明度",
+  "setting_basic_theme_play_list_opacity": "播放列表不透明度",
   "setting_basic_use_system_file_selector": "使用系統檔案選取器",
   "setting_basic_use_system_file_selector_tip": "啟用該選項後，匯入備份檔案、自訂來源 API 等操作將不需要申請儲存權限，但可能在某些系統上不可用。\n\n若啟用該選項後無法匯入檔案，則可關閉該選項，回退到軟體內建檔案選取器。",
   "setting_dislike_list_input_tip": "標題@演出者\n標題\n@演出者",

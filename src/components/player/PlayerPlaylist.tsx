@@ -11,7 +11,8 @@ import { removeTempPlayList } from '@/core/player/tempPlayList'
 import { getPlayQueue } from '@/core/player/playQueue'
 import { LIST_IDS, LIST_ITEM_HEIGHT } from '@/config/constant'
 import { scaleSizeH } from '@/utils/pixelRatio'
-import { createStyle } from '@/utils/tools'
+import { createStyle, setColorAlpha } from '@/utils/tools'
+import { useSettingValue } from '@/store/setting/hook'
 
 export interface PlayerPlaylistType {
   show: () => void
@@ -121,6 +122,8 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   const playInfo = usePlayInfo()
   const playMusicInfo = usePlayMusicInfo()
   const theme = useTheme()
+  // 面板底色单独调透明度，调小就能透出后面的背景图（行、文字不受影响）
+  const playListOpacity = useSettingValue('theme.playListOpacity')
 
   // 临时歌曲插在当前曲目之后（没有在播的歌曲、或当前曲目已不在队列里时插到最前面）。
   // 这样当前曲目的行号仍然等于它在队列里的下标，面板定位那套计算不受影响。
@@ -240,7 +243,8 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   if (!visible) return null
 
   return (
-    <Popup ref={popupRef} title={global.i18n.t('player_playlist')} onHide={() => { setVisible(false) }} position="bottom">
+    <Popup ref={popupRef} title={global.i18n.t('player_playlist')} onHide={() => { setVisible(false) }} position="bottom"
+      contentBgColor={setColorAlpha(theme['c-content-background'], playListOpacity)}>
       <View style={styles.toolbar}>
         <Text size={12} color={theme['c-font-label']}>{rows.length}</Text>
         <TouchableOpacity style={styles.clearButton} onPress={() => { void clearQueue() }}>

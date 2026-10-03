@@ -371,6 +371,8 @@
   "setting_basic_theme_font_shadow": "Enable font shadow",
   "setting_basic_theme_hide_bg_dark": "Hide the background of the black theme",
   "setting_basic_theme_more_btn_show": "More themes",
+  "setting_basic_theme_play_bar_opacity": "Play bar opacity",
+  "setting_basic_theme_play_list_opacity": "Playlist opacity",
   "setting_basic_use_system_file_selector": "Use the system file selector",
   "setting_basic_use_system_file_selector_tip": "When this option is enabled, operations such as importing backup files, Music APIs, etc. will not need to request storage permissions, but may not be available on some systems.\n\nYou can turn off the option to fallback to the app's built-in file selector if you are unable to import files after enabling the option.",
   "setting_dislike_list_input_tip": "song_name@artist_name\nsong_name\n@artist_name",

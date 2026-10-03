@@ -124,6 +124,16 @@ declare global {
       'theme.bgOpacity': number
 
       /**
+       * 播放条背景不透明度，0.2 ~ 1，调小可透出后面的背景图
+       */
+      'theme.playBarOpacity': number
+
+      /**
+       * 播放列表面板背景不透明度，0.2 ~ 1，调小可透出后面的背景图
+       */
+      'theme.playListOpacity': number
+
+      /**
        * 启动时自动播放歌曲
        */
       'player.startupAutoPlay': boolean

@@ -54,6 +54,11 @@ export interface PopupProps {
   closeBtn?: boolean
   position?: 'top' | 'left' | 'right' | 'bottom'
   title?: string
+  /**
+   * 面板本身的底色，不给就用主题的 c-content-background。
+   * 想透出后面的背景图时传一个带透明度的颜色过来（见 utils/tools 的 setColorAlpha）
+   */
+  contentBgColor?: string
   children: React.ReactNode
 }
 
@@ -68,6 +73,7 @@ export default forwardRef<PopupType, PopupProps>(({
   closeBtn = true,
   position = 'bottom',
   title = '',
+  contentBgColor,
   children,
 }: PopupProps, ref) => {
   const theme = useTheme()
@@ -171,7 +177,7 @@ export default forwardRef<PopupType, PopupProps>(({
   return (
     <Modal onHide={onHide} keyHide={keyHide} bgHide={bgHide} bgColor="rgba(50,50,50,.2)" ref={modalRef}>
       <View style={{ ...styles.centeredView, ...centeredViewStyle, paddingBottom: keyboardShown ? keyboardHeight : 0 }}>
-        <View style={{ ...styles.modalView, ...modalViewStyle, backgroundColor: theme['c-content-background'] }} onStartShouldSetResponder={() => true}>
+        <View style={{ ...styles.modalView, ...modalViewStyle, backgroundColor: contentBgColor ?? theme['c-content-background'] }} onStartShouldSetResponder={() => true}>
           <View style={styles.header}>
             <Text size={13} style={styles.title} numberOfLines={1}>{title}</Text>
             {closeBtnComponent}

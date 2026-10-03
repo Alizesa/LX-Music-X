@@ -32,6 +32,28 @@ export const isActive = () => AppState.currentState == 'active'
 
 export const TEMP_FILE_PATH = temporaryDirectoryPath + '/tempFile'
 
+/**
+ * 换掉颜色的透明度，返回 rgba(...)。
+ *
+ * 主题色是 rgb(...)、rgba(...)、#rgb/#rrggbb 混着来的（见 src/theme/themes），
+ * 要让某个组件自己变半透明（比如播放条背景透出背景图），只能先拆出 RGB 再重新拼一遍；
+ * 颜色里原本带的 alpha 会被传进来的这个覆盖掉。
+ * 认不出来的颜色原样返回，免得把样式整坏。
+ */
+export const setColorAlpha = (color: string, alpha: number): string => {
+  const a = Math.max(0, Math.min(1, alpha))
+  const hex = color.match(/^#([\da-f]{3}|[\da-f]{6})$/i)
+  if (hex) {
+    const value = hex[1].length == 3
+      ? hex[1].split('').map(c => c + c).join('')
+      : hex[1]
+    return `rgba(${parseInt(value.slice(0, 2), 16)}, ${parseInt(value.slice(2, 4), 16)}, ${parseInt(value.slice(4, 6), 16)}, ${a})`
+  }
+  const rgb = color.match(/^rgba?\( *(\d+) *, *(\d+) *, *(\d+)/i)
+  if (rgb) return `rgba(${rgb[1]}, ${rgb[2]}, ${rgb[3]}, ${a})`
+  return color
+}
+
 // fix https://github.com/facebook/react-native/issues/4934
 // export const getWindowSise = (windowDimensions?: ReturnType<(typeof Dimensions)['get']>) => {
 //   return windowSizeTools.getSize()
