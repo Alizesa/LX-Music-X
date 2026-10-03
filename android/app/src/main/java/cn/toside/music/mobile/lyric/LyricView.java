@@ -102,7 +102,11 @@ public class LyricView extends Activity implements View.OnTouchListener {
 
   private int maxLineNum = 5;
   // private float lineHeight = 1;
-  private String currentLyric = "LX Music ^-^";
+  // 初值必须是空的：窗口一建出来就把这个字段画上去（见 createTextView），而 JS 那边要等
+  // showDesktopLyricView 返回之后才送第一句歌词过来，中间这一小段时间看到的只能是初值。
+  // 用 "LX Music ^-^" 当占位的话，每次启动窗口的那一瞬都会把这行字闪出来（竖排下是一整列，
+  // 比横向显眼得多）。没有歌词时框的大小有 MIN_BOX_WIDTH_DP 兜着，不靠这行字撑
+  private String currentLyric = "";
   private ArrayList<String> currentExtendedLyrics = new ArrayList<>();
 
   private int mLastRotation;
