@@ -171,7 +171,7 @@ public class LyricVerticalTextView extends TextView {
           row++;
         }
         String runText = run.toString();
-        if (containsLetterOrDigit(runText) || containsBracket(runText)) {
+        if (containsLetterOrDigit(runText)) {
           // 末尾的空格不再单独剥出来：长度按实际画出来算，留着的空格就是词间空白，
           // 后面那个字接着它排（整串空格的情况不会走到这，见下面 else）
           addCell(column, runText, true);
@@ -179,10 +179,13 @@ public class LyricVerticalTextView extends TextView {
           // 整串都是标点或空格（单独的 "-"、"- - -"、"..." 这类）：不横倒，跟汉字一样一个字占一格。
           // 半角的短横线转 90° 之后只有十几像素长、两像素宽的细竖线，掉在五六十像素的格子里
           // 看着就像空了一格（踩过）。字母数字带头的串才值得倒，"well-known" 这种不会被拆开。
-          // 括号是例外，单独成串也倒（见 isBracket）
+          //
+          // 括号是例外，落单的也倒（见 isBracket）。注意是逐字判、不是整串判：
+          // "(-)"、"——（" 这种括号和短横线混在一起的串整串倒下去，短横线就又变回那根细竖线了，
+          // 正是这条规则要躲开的退化
           for (int i = 0; i < runText.length(); ) {
             int cp = runText.codePointAt(i);
-            addCell(column, new String(Character.toChars(cp)), false);
+            addCell(column, new String(Character.toChars(cp)), isBracket(cp));
             i += Character.charCount(cp);
           }
         }
@@ -195,16 +198,6 @@ public class LyricVerticalTextView extends TextView {
     for (int i = 0; i < text.length(); ) {
       int codePoint = text.codePointAt(i);
       if (Character.isLetterOrDigit(codePoint)) return true;
-      i += Character.charCount(codePoint);
-    }
-    return false;
-  }
-
-  /** 这一串里有没有括号（有就要倒，见 isBracket） */
-  private static boolean containsBracket(String text) {
-    for (int i = 0; i < text.length(); ) {
-      int codePoint = text.codePointAt(i);
-      if (isBracket(codePoint)) return true;
       i += Character.charCount(codePoint);
     }
     return false;
