@@ -8,7 +8,6 @@ import IsDynamicBg from './IsDynamicBg'
 import IsFontShadow from './IsFontShadow'
 import CustomBg from './CustomBg'
 import PlayBarOpacity from './PlayBarOpacity'
-import PlayListOpacity from './PlayListOpacity'
 // import { useI18n } from '@/lang/i18n'
 
 export default memo(() => {
@@ -20,7 +19,6 @@ export default memo(() => {
       <IsDynamicBg />
       <CustomBg />
       <PlayBarOpacity />
-      <PlayListOpacity />
       <IsFontShadow />
     </>
   )

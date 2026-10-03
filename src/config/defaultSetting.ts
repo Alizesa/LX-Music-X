@@ -106,9 +106,8 @@ const defaultSetting: LX.AppSetting = {
   'theme.customBgImage': '',
   // 背景遮罩不透明度：动态背景和自定义背景共用，默认与原来写死的 0.76 一致
   'theme.bgOpacity': 0.76,
-  // 播放条、播放列表面板的背景不透明度：1 是和原来一样的实心，调小才能透出后面的背景图
+  // 播放条的背景不透明度：1 是和原来一样的实心，调小才能透出后面的背景图
   'theme.playBarOpacity': 1,
-  'theme.playListOpacity': 1,
 }
 
 
