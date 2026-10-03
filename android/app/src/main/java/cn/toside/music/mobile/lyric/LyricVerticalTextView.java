@@ -21,7 +21,7 @@ import java.util.ArrayList;
  *   占多长」——半角字符横向只有汉字六成宽，按格数算长度会让它后面空出一大截。于是一个词是一整块
  *   横倒的字（歪头看是连续的），而不是 h-e-l-l-o 五个正着的字母；
  * - 整串都是标点的（单独的 "-"、"- - -"、"." 这类）照旧正着摆：半角短横线横倒只剩一根细竖线，
- *   看着跟空了一格似的。
+ *   看着跟空了一格似的。括号是例外，半角全角都倒（落单的也倒），见 isBracket
  *
  * 网格、列数、字号全都沿用原来那套，只有画法不同；开了横倒时窗口会按「每列至少一个行高」
  * 加宽（见 LyricView.applyBoxSize），横倒的字才不用缩、也不会压到隔壁列上。
@@ -171,14 +171,15 @@ public class LyricVerticalTextView extends TextView {
           row++;
         }
         String runText = run.toString();
-        if (containsLetterOrDigit(runText)) {
+        if (containsLetterOrDigit(runText) || containsBracket(runText)) {
           // 末尾的空格不再单独剥出来：长度按实际画出来算，留着的空格就是词间空白，
           // 后面那个字接着它排（整串空格的情况不会走到这，见下面 else）
           addCell(column, runText, true);
         } else {
           // 整串都是标点或空格（单独的 "-"、"- - -"、"..." 这类）：不横倒，跟汉字一样一个字占一格。
           // 半角的短横线转 90° 之后只有十几像素长、两像素宽的细竖线，掉在五六十像素的格子里
-          // 看着就像空了一格（踩过）。字母数字带头的串才值得倒，"well-known" 这种不会被拆开
+          // 看着就像空了一格（踩过）。字母数字带头的串才值得倒，"well-known" 这种不会被拆开。
+          // 括号是例外，单独成串也倒（见 isBracket）
           for (int i = 0; i < runText.length(); ) {
             int cp = runText.codePointAt(i);
             addCell(column, new String(Character.toChars(cp)), false);
@@ -199,13 +200,49 @@ public class LyricVerticalTextView extends TextView {
     return false;
   }
 
+  /** 这一串里有没有括号（有就要倒，见 isBracket） */
+  private static boolean containsBracket(String text) {
+    for (int i = 0; i < text.length(); ) {
+      int codePoint = text.codePointAt(i);
+      if (isBracket(codePoint)) return true;
+      i += Character.charCount(codePoint);
+    }
+    return false;
+  }
+
   /**
    * 能不能横倒。半角拉丁字母、数字、半角符号、词间空格算「能」，中文日文、全角标点、
    * emoji 这些照旧正着摆。0x2E80 是中日韩部首补充的起点，之前的码位基本都是西文。
+   * 括号不管半角全角都算「能」，理由见 isBracket。
    */
   private static boolean isRotatable(int codePoint) {
-    if (codePoint == ' ') return true;
+    if (codePoint == ' ' || isBracket(codePoint)) return true;
     return codePoint < 0x2E80 && !Character.isWhitespace(codePoint);
+  }
+
+  /**
+   * 括号（半角/全角的圆括号、方括号、花括号）。
+   *
+   * 一般标点不横倒是为了躲开「半角短横线转 90° 只剩一根细竖线」这种退化，但括号没有这个
+   * 问题，而正着摆的括号在竖排里其实很难看：竖排的括号本来就该倒着（弧口朝上下）。
+   *
+   * 更麻烦的是半角在可倒集里、全角不在，于是两种宽度混着写的时候、或者一对括号被拆到
+   * 相邻两列里各自成串的时候，会出现「左括号倒了而右括号没倒」——半个括号倒着的怪样子（踩过）。
+   * 所以两种宽度一起并进可倒集，并且在「整串没字母数字」那条不横倒的规则里也给它开个口子
+   * （见 buildCells），让落单的括号跟着倒。
+   */
+  private static boolean isBracket(int codePoint) {
+    switch (codePoint) {
+      case '(': case ')':
+      case '[': case ']':
+      case '{': case '}':
+      case 0xFF08: case 0xFF09: // （）
+      case 0xFF3B: case 0xFF3D: // ［］
+      case 0xFF5B: case 0xFF5D: // ｛｝
+        return true;
+      default:
+        return false;
+    }
   }
 
   private static int codePointAt(int[] codePoints, int index) {
