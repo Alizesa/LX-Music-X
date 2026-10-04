@@ -18,7 +18,10 @@ import musicSdk from '@/utils/musicSdk'
 type Status = 'loading' | 'end' | 'error' | 'idle'
 interface CacheEntry { list: SingerItem[], total: number, page: number }
 
-const AVATAR_SIZE = scaleSizeW(48)
+// 行的比例照着 WalnutBai 那套歌手列表来的：头像 70、行高 100、左右留 15、名字 16、副标题 12。
+// 比项目里搜索页那份（48 头像 + padding 10）显眼，但这是用户点名要参考的那份样式
+const AVATAR_SIZE = scaleSizeW(70)
+const ROW_HEIGHT = 100
 // tx 的歌手搜索每页最多只能要 20 条左右，要多了服务端会返回空列表（不是限流，见 SDK 里的注释）
 const PAGE_LIMIT = 20
 // 拆歌手名的分隔符。跟 utils/musicSdk/index.js 里 findMusic 那套约定一致，但没有共用：
@@ -189,7 +192,7 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
         style={{ ...styles.avatar, width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }}
       />
       <View style={styles.info}>
-        <Text size={15} numberOfLines={1}>{item.name}</Text>
+        <Text size={16} numberOfLines={1}>{item.name}</Text>
         <Text size={12} color={theme['c-font-label']} numberOfLines={1}>
           {[
             t('singer_song_count', { num: formatPlayCount(item.songSize) }),
@@ -287,8 +290,9 @@ const styles = createStyle({
   searchBar: {
     flexGrow: 0,
     flexShrink: 0,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    // 跟行的左右留白对齐（15），不然搜索框和下面的列表会差一格
+    paddingHorizontal: 15,
+    paddingVertical: 8,
     borderBottomWidth: 1,
   },
   singers: {
@@ -296,7 +300,7 @@ const styles = createStyle({
     flexShrink: 0,
   },
   singersContent: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 15,
     paddingVertical: 8,
     alignItems: 'center',
   },
@@ -315,7 +319,11 @@ const styles = createStyle({
   item: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
+    // 用 minHeight 而不是固定 height：小屏上 scaleSizeW 可能把头像放大到超过 100，
+    // 固定行高会把头像切掉
+    minHeight: ROW_HEIGHT,
+    paddingHorizontal: 15,
+    paddingVertical: 15,
     borderBottomWidth: 1,
   },
   avatar: {
@@ -326,7 +334,7 @@ const styles = createStyle({
   info: {
     flexGrow: 1,
     flexShrink: 1,
-    paddingLeft: 10,
+    marginLeft: 15,
   },
   empty: {
     textAlign: 'center',
