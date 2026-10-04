@@ -8,17 +8,24 @@ import Player from './Player'
 import PagerView, { type PagerViewOnPageSelectedEvent } from 'react-native-pager-view'
 import Pic from './Pic'
 import Lyric from './Lyric'
+import Singer from './Singer'
 import { screenkeepAwake, screenUnkeepAwake } from '@/utils/nativeModules/utils'
 import commonState, { type InitState as CommonState } from '@/store/common/state'
 import { createStyle } from '@/utils/tools'
 // import { useTheme } from '@/store/theme/hook'
+
+// 三页的顺序就是 PagerView 里子节点的顺序：歌手搜索在封面左边（往右划才划得到），
+// 封面仍然是打开播放详情页时停的那一页
+const SINGER_PAGE = 0
+const PIC_PAGE = 1
+const LYRIC_PAGE = 2
 
 const LyricPage = ({ activeIndex }: { activeIndex: number }) => {
   const initedRef = useRef(false)
   const lyric = useMemo(() => <Lyric />, [])
   switch (activeIndex) {
     // case 3:
-    case 1:
+    case LYRIC_PAGE:
       if (!initedRef.current) initedRef.current = true
       return lyric
     default:
@@ -30,12 +37,12 @@ const LyricPage = ({ activeIndex }: { activeIndex: number }) => {
 // global.iskeep = false
 export default memo(({ componentId }: { componentId: string }) => {
   // const theme = useTheme()
-  const [pageIndex, setPageIndex] = useState(0)
+  const [pageIndex, setPageIndex] = useState(PIC_PAGE)
   const showLyricRef = useRef(false)
 
   const onPageSelected = ({ nativeEvent }: PagerViewOnPageSelectedEvent) => {
     setPageIndex(nativeEvent.position)
-    showLyricRef.current = nativeEvent.position == 1
+    showLyricRef.current = nativeEvent.position == LYRIC_PAGE
     if (showLyricRef.current) {
       screenkeepAwake()
     } else {
@@ -77,12 +84,19 @@ export default memo(({ componentId }: { componentId: string }) => {
         <PagerView
           onPageSelected={onPageSelected}
           // onPageScrollStateChanged={onPageScrollStateChanged}
+          // 默认停在封面页：歌手搜索那页在它左边，得往右划才划得到
+          initialPage={PIC_PAGE}
           style={styles.pagerView}
         >
-          <View collapsable={false}>
+          <View key="singer" collapsable={false}>
+            {/* 只有真翻到这一页才去搜（active）：PagerView 三页是一起挂上的，
+                挂载就查等于每次打开播放详情页都白打一次接口 */}
+            <Singer componentId={componentId} active={pageIndex == SINGER_PAGE} />
+          </View>
+          <View key="pic" collapsable={false}>
             <Pic componentId={componentId} />
           </View>
-          <View collapsable={false}>
+          <View key="lyric" collapsable={false}>
             <LyricPage activeIndex={pageIndex} />
           </View>
         </PagerView>
