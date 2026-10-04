@@ -14,7 +14,7 @@ import commonState, { type InitState as CommonState } from '@/store/common/state
 import { createStyle } from '@/utils/tools'
 // import { useTheme } from '@/store/theme/hook'
 
-// 三页的顺序就是 PagerView 里子节点的顺序：歌手搜索在封面左边（往右划才划得到），
+// 三页的顺序就是 PagerView 里子节点的顺序：歌手那页在封面左边（往右划才划得到），
 // 封面仍然是打开播放详情页时停的那一页
 const SINGER_PAGE = 0
 const PIC_PAGE = 1

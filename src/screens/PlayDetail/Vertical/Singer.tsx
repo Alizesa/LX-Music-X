@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FlatList, ScrollView, TouchableOpacity, View, type FlatListProps } from 'react-native'
+import { FlatList, TouchableOpacity, View, type FlatListProps } from 'react-native'
 
 import Text from '@/components/common/Text'
 import Image from '@/components/common/Image'
@@ -15,10 +15,11 @@ import { type SingerItem } from '@/store/search/singer/state'
 import musicSdk from '@/utils/musicSdk'
 
 type Status = 'loading' | 'end' | 'error' | 'idle'
-interface CacheEntry { list: SingerItem[], total: number, page: number }
+// hasMore 一起缓存：从缓存里拿回来的那份也得知道还有没有下一页，光靠 list 和 page 推不出来
+interface CacheEntry { list: SingerItem[], page: number, hasMore: boolean }
 
-// 行的比例照着 WalnutBai 那套歌手列表来的：头像 70、行高 100、左右留 15、名字 16、副标题 12。
-// 比项目里搜索页那份（48 头像 + padding 10）显眼，但这是用户点名要参考的那份样式
+// 行的比例照 WalnutBai 那套歌手列表来的：头像 70、行高 100、左右留 15、名字 16、副标题 12。
+// 比项目里搜索页那份（48 头像 + padding 10）显眼
 const AVATAR_SIZE = scaleSizeW(70)
 const ROW_HEIGHT = 100
 // tx 的歌手搜索每页最多只能要 20 条左右，要多了服务端会返回空列表（不是限流，见 SDK 里的注释）
@@ -27,8 +28,9 @@ const PAGE_LIMIT = 20
 // 那边拆完还要排序、空值处理也不同，为了一个正则去改找歌曲的匹配逻辑不划算
 const SINGER_SPLIT_RXP = /、|&|;|；|\/|,|，|\|/
 
-// 关键词 -> 已经拿到的结果。这一页的用法就是「同一首歌的歌手来回翻」，缓存能省掉绝大部分重复请求
-// （这个分支有意压低对音源的请求量）。上限很小，够装下同一首歌的几位歌手、外加手动改过的几个词
+// 歌手（几位歌手拼起来的键）-> 已经拿到的结果。来回翻歌、翻页都能省掉重复请求，
+// 而这一页每次都是拿整首歌的歌手去搜，同一首歌的键是固定的，命中率很高
+// （这个分支有意压低对音源的请求量）。上限很小，够装下最近听过的几首歌
 const CACHE_MAX = 20
 const cache = new Map<string, CacheEntry>()
 const writeCache = (key: string, entry: CacheEntry) => {
@@ -41,10 +43,16 @@ const writeCache = (key: string, entry: CacheEntry) => {
   }
 }
 
+// musicSdk 那边是 JS，类型得自己补：歌手搜索返回 { list, total }
+const searchSinger = async(name: string, page: number) =>
+  musicSdk.tx.musicSearch.searchSinger(name, page, PAGE_LIMIT) as Promise<{ list: SingerItem[], total: number }>
+
 /**
- * 封面页前面那一页：按当前歌曲的歌手搜人，点一位就进歌手详情。
+ * 封面页前面那一页：把当前歌曲的歌手搜出来，点一位就进歌手详情。
  *
- * 没有搜索框：词就是当前歌曲的歌手（多歌手时用上面那排标签切换），进来直接是结果列表。
+ * 没有搜索框，也没有歌手标签：进来就把这首歌的歌手们各搜一遍合成一张表。绝大多数歌只有
+ * 一位歌手，那就是一次请求、一张表；「周杰伦、费玉清」这种多歌手的，两位都在列表里，
+ * 不用再点标签切。
  *
  * 没有复用搜索页的 SingerList：它读写的 core/search/singer.ts 走的是全局的
  * searchSingerState，和搜索页的歌手 tab 共用一份 listInfo——从这边搜一次，搜索页那边的
@@ -55,17 +63,13 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
   const theme = useTheme()
   const t = useI18n()
   const musicInfo = usePlayerMusicInfo()
-  // 拿去搜的词。没有输入框，来源只有两个：换歌时这首歌的歌手、以及点了标签
-  const [keyword, setKeyword] = useState('')
   const [list, setList] = useState<SingerItem[]>([])
   const [status, setStatus] = useState<Status>('idle')
-  // 已经拿到第几页、一共多少条。请求回来时要用它们算「还有没有下一页」，
-  // 走 state 的话回调里拿到的会是闭包里那份旧的
+  // 已经拿到第几页。请求回来时要用它算下一页，走 state 的话回调里拿到的会是闭包里那份旧的
   const pageRef = useRef(0)
-  const totalRef = useRef(0)
   // 列表的镜像：追加下一页时要按现有内容去重，而回调里同样拿不到最新的 state
   const listRef = useRef<SingerItem[]>([])
-  // 每次请求发一个号，回来时号对不上，说明关键词已经换了，这次结果作废。
+  // 每次请求发一个号，回来时号对不上，说明歌换了，这次结果作废。
   // 接口没有取消能力，只能回来之后把它丢掉，别写在界面上
   const seqRef = useRef(0)
   const mountedRef = useRef(true)
@@ -81,36 +85,40 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
     [musicInfo.singer],
   )
 
-  // 换歌就换回这首歌的歌手：这一页的定位就是「当前这首歌的歌手」，
-  // 留着上一首的词只会搜出不相干的人
-  useEffect(() => {
-    setKeyword(singers[0] ?? '')
-  }, [singers])
-
   // 把一份结果摆到界面上（无论它是刚请求回来的还是缓存里的）
   const showEntry = useCallback((entry: CacheEntry) => {
     listRef.current = entry.list
     pageRef.current = entry.page
-    totalRef.current = entry.total
     setList(entry.list)
-    // 拿到的条数已经够总数了，就没有下一页了
-    setStatus(entry.list.length >= entry.total ? 'end' : 'idle')
+    setStatus(entry.hasMore ? 'idle' : 'end')
   }, [])
 
-  const load = useCallback(async(text: string, page: number) => {
+  // 这首歌的歌手各搜一遍，合成一张表。几位歌手就发几个请求（多数歌只有一位），
+  // 一起发，别串行等
+  const load = useCallback(async(names: string[], page: number) => {
     const seq = ++seqRef.current
     setStatus('loading')
     try {
-      const result = await musicSdk.tx.musicSearch.searchSinger(text, page, PAGE_LIMIT) as { list: SingerItem[], total: number }
+      const results = await Promise.all(names.map(async(name) => searchSinger(name, page)))
       if (!mountedRef.current || seq != seqRef.current) return
-      let next = result.list
-      if (page > 1) {
-        // 翻页时榜单可能在动，前后页会重人；按 mid 去重，FlatList 的 key 才不会撞
-        const prev = listRef.current
-        next = [...prev, ...result.list.filter(item => !prev.some(old => old.mid == item.mid))]
+      const next = page > 1 ? [...listRef.current] : []
+      // 翻页时榜单可能在动，不同歌手、前后页之间都会重人；按 mid 去重，FlatList 的 key 才不会撞
+      const seen = new Set(next.map(item => item.mid))
+      let added = 0
+      let total = 0
+      for (const result of results) {
+        total += result.total
+        for (const item of result.list) {
+          if (seen.has(item.mid)) continue
+          seen.add(item.mid)
+          next.push(item)
+          added++
+        }
       }
-      const entry = { list: next, total: result.total, page }
-      writeCache(text, entry)
+      // 这一页一条新的都没拿到：要么都重了，要么各歌手都翻到底了，就是没有下一页了。
+      // 再拿 added 和 total 比一下，是为了少发一次注定为空的请求
+      const entry = { list: next, page, hasMore: added > 0 && next.length < total }
+      writeCache(names.join('|'), entry)
       showEntry(entry)
     } catch (err) {
       console.log(err)
@@ -120,43 +128,36 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
     }
   }, [showEntry])
 
-  // 只有真翻到这一页才请求。PagerView 会把三页都挂上，挂载就发请求等于每次打开播放详情页
-  // 都白打一次接口（这个分支有意压低对音源的请求量）
+  // 只有真翻到这一页、而且歌确实换了才请求。PagerView 会把三页都挂上，挂载就发请求等于
+  // 每次打开播放详情页都白打一次接口（这个分支有意压低对音源的请求量）
   useEffect(() => {
     if (!active) return
-    const text = keyword.trim()
-    if (!text) {
+    if (!singers.length) {
       listRef.current = []
       pageRef.current = 0
       setList([])
       setStatus('idle')
       return
     }
-    const cached = cache.get(text)
+    const cached = cache.get(singers.join('|'))
     if (cached) {
       showEntry(cached)
       return
     }
-    void load(text, 1)
-  }, [active, keyword, load, showEntry])
-
-  // 点了歌手标签：换词，上面的 effect 会去搜（不在缓存里的话）
-  const handlePickSinger = useCallback((name: string) => {
-    setKeyword(name)
-  }, [])
+    void load(singers, 1)
+  }, [active, singers, load, showEntry])
 
   const handleLoadMore = useCallback(() => {
     // 只有 idle 表示「可能还有下一页」：loading 是在等上一页，end 是到底了，error 得先重试
-    if (status != 'idle') return
-    void load(keyword.trim(), pageRef.current + 1)
-  }, [status, keyword, load])
+    if (status != 'idle' || !singers.length) return
+    void load(singers, pageRef.current + 1)
+  }, [status, singers, load])
 
   const handleRetry = useCallback(() => {
-    const text = keyword.trim()
-    if (!text) return
-    if (pageRef.current > 0) void load(text, pageRef.current + 1)
-    else void load(text, 1)
-  }, [keyword, load])
+    if (!singers.length) return
+    if (pageRef.current > 0) void load(singers, pageRef.current + 1)
+    else void load(singers, 1)
+  }, [singers, load])
 
   const handleOpenDetail = useCallback((item: SingerItem) => {
     // id 用 mid：歌手详情的缓存按 mid 存，共享元素动画的两个 nativeID 也是拿它拼的
@@ -193,29 +194,6 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
 
   return (
     <View style={styles.container}>
-      {/* 一首歌好几位歌手时，给一排标签一点就到；只有一位就不占地方了 */}
-      {singers.length > 1
-        ? (
-            <ScrollView
-              style={{ ...styles.singers, borderBottomColor: theme['c-border-background'] }}
-              contentContainerStyle={styles.singersContent}
-              horizontal
-            >
-              {singers.map(name => (
-                <TouchableOpacity
-                  key={name}
-                  style={{
-                    ...styles.singerTag,
-                    backgroundColor: name == keyword ? theme['c-primary-background-hover'] : theme['c-primary-light-900-alpha-200'],
-                  }}
-                  onPress={() => { handlePickSinger(name) }}
-                >
-                  <Text size={12} numberOfLines={1} color={name == keyword ? theme['c-primary-font'] : theme['c-font']}>{name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )
-        : null}
       <FlatList
         data={list}
         style={styles.list}
@@ -224,7 +202,7 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
         onEndReachedThreshold={0.6}
         onEndReached={handleLoadMore}
         ListEmptyComponent={
-          keyword.trim() && (status == 'end' || status == 'idle')
+          singers.length > 0 && (status == 'end' || status == 'idle')
             ? <Text style={styles.empty} color={theme['c-font-label']}>{t('no_item')}</Text>
             : null
         }
@@ -265,25 +243,6 @@ const Footer = ({ status, onRetry }: { status: Status, onRetry: () => void }) =>
 const styles = createStyle({
   container: {
     flex: 1,
-  },
-  singers: {
-    flexGrow: 0,
-    flexShrink: 0,
-    borderBottomWidth: 1,
-  },
-  singersContent: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  singerTag: {
-    flexGrow: 0,
-    flexShrink: 0,
-    height: 26,
-    justifyContent: 'center',
-    paddingHorizontal: 10,
-    marginRight: 8,
-    borderRadius: 13,
   },
   list: {
     flex: 1,
