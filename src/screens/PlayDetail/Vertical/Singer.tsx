@@ -14,9 +14,8 @@ import { usePlayerMusicInfo } from '@/store/player/hook'
 import { type SingerItem } from '@/store/search/singer/state'
 import musicSdk from '@/utils/musicSdk'
 
-type Status = 'loading' | 'end' | 'error' | 'idle'
-// hasMore 一起缓存：从缓存里拿回来的那份也得知道还有没有下一页，光靠 list 和 page 推不出来
-interface CacheEntry { list: SingerItem[], page: number, hasMore: boolean }
+// 没有分页：这一页只有「这首歌的几位歌手」这么几行，拿完就完
+type Status = 'loading' | 'error' | 'idle'
 
 // 行的比例照 WalnutBai 那套歌手列表来的：头像 70、行高 100、左右留 15、名字 16、副标题 12。
 // 比项目里搜索页那份（48 头像 + padding 10）显眼
@@ -28,15 +27,14 @@ const PAGE_LIMIT = 20
 // 那边拆完还要排序、空值处理也不同，为了一个正则去改找歌曲的匹配逻辑不划算
 const SINGER_SPLIT_RXP = /、|&|;|；|\/|,|，|\|/
 
-// 歌手名 -> 已经拿到的结果。来回翻歌、翻页都能省掉重复请求，
-// 而这一页的用法就是「同一首歌的歌手来回翻」，命中率很高
-// （这个分支有意压低对音源的请求量）。上限很小，够装下最近听过的那几位
+// 歌手名 -> 查到的那个歌手。null 表示 tx 上搜不到这个名字，也算结论，缓存下来免得反复问。
+// 来回翻歌基本都命中（这个分支有意压低对音源的请求量）。上限很小，够装下最近听过的那几位
 const CACHE_MAX = 20
-const cache = new Map<string, CacheEntry>()
-const writeCache = (key: string, entry: CacheEntry) => {
+const cache = new Map<string, SingerItem | null>()
+const writeCache = (key: string, item: SingerItem | null) => {
   // 先删再塞，让最近用过的排到 Map 末尾（Map 保持插入顺序），淘汰时丢的就是最旧的
   cache.delete(key)
-  cache.set(key, entry)
+  cache.set(key, item)
   if (cache.size > CACHE_MAX) {
     const oldest = cache.keys().next().value
     if (oldest != null) cache.delete(oldest)
@@ -47,11 +45,17 @@ const writeCache = (key: string, entry: CacheEntry) => {
 const searchSinger = async(name: string, page: number) =>
   musicSdk.tx.musicSearch.searchSinger(name, page, PAGE_LIMIT) as Promise<{ list: SingerItem[], total: number }>
 
+// 拿名字换歌手：同名的优先（搜「周杰伦」的第一条通常就是他，但不保证），实在没有就取第一条。
+// 一条都没有说明这个人 tx 上搜不到，这一行就不显示了
+const pickSinger = (list: SingerItem[], name: string) =>
+  list.find(item => item.name.trim() == name) ?? list[0] ?? null
+
 /**
- * 封面页前面那一页：按当前歌曲的歌手搜人，点一位就进歌手详情。
+ * 封面页前面那一页：列出这首歌的歌手，点一位就进歌手详情。
  *
- * 没有搜索框，也没有歌手标签：进来就是这一位歌手的搜索结果。多歌手（「周杰伦、费玉清」）
- * 取第一位去搜——整串拿去搜是搜不到人的。
+ * 列表里就是这首歌的歌手本人，不是他的搜索结果：一首歌也就一两位歌手，所以只有一两行。
+ * 歌里只存了歌手名字，要进详情得有 tx 的歌手 mid，所以每一行是拿名字去搜一次、取同名的那
+ * 一位换来的（「周杰伦、费玉清」这种整串拿去搜是搜不到人的，得拆开一位一位搜）。
  *
  * 没有复用搜索页的 SingerList：它读写的 core/search/singer.ts 走的是全局的
  * searchSingerState，和搜索页的歌手 tab 共用一份 listInfo——从这边搜一次，搜索页那边的
@@ -63,11 +67,8 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
   const t = useI18n()
   const musicInfo = usePlayerMusicInfo()
   const [list, setList] = useState<SingerItem[]>([])
-  const [status, setStatus] = useState<Status>('idle')
-  // 已经拿到第几页。请求回来时要用它算下一页，走 state 的话回调里拿到的会是闭包里那份旧的
-  const pageRef = useRef(0)
-  // 列表的镜像：追加下一页时要按现有内容去重，而回调里同样拿不到最新的 state
-  const listRef = useRef<SingerItem[]>([])
+  // 初值就是 loading：这一页一露头就要去查，中间那一下别闪出「没有数据」
+  const [status, setStatus] = useState<Status>('loading')
   // 每次请求发一个号，回来时号对不上，说明歌换了，这次结果作废。
   // 接口没有取消能力，只能回来之后把它丢掉，别写在界面上
   const seqRef = useRef(0)
@@ -84,71 +85,50 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
     [musicInfo.singer],
   )
 
-  // 拿去找人的词：这首歌的第一位歌手
-  const keyword = singers[0] ?? ''
-
-  // 把一份结果摆到界面上（无论它是刚请求回来的还是缓存里的）
-  const showEntry = useCallback((entry: CacheEntry) => {
-    listRef.current = entry.list
-    pageRef.current = entry.page
-    setList(entry.list)
-    setStatus(entry.hasMore ? 'idle' : 'end')
-  }, [])
-
-  const load = useCallback(async(text: string, page: number) => {
+  // 这首歌的歌手，一位一行
+  const load = useCallback(async(names: string[]) => {
     const seq = ++seqRef.current
     setStatus('loading')
     try {
-      const result = await searchSinger(text, page)
+      const items = await Promise.all(names.map(async(name) => {
+        if (cache.has(name)) return cache.get(name) ?? null
+        const result = await searchSinger(name, 1)
+        const item = pickSinger(result.list, name)
+        writeCache(name, item)
+        return item
+      }))
       if (!mountedRef.current || seq != seqRef.current) return
-      let next = result.list
-      if (page > 1) {
-        // 翻页时榜单可能在动，前后页会重人；按 mid 去重，FlatList 的 key 才不会撞
-        const prev = listRef.current
-        next = [...prev, ...result.list.filter(item => !prev.some(old => old.mid == item.mid))]
-      }
-      // 拿到的条数已经够总数了，就没有下一页了
-      const entry = { list: next, page, hasMore: next.length < result.total }
-      writeCache(text, entry)
-      showEntry(entry)
+      setList(items.filter((item): item is SingerItem => item != null))
+      setStatus('idle')
     } catch (err) {
       console.log(err)
       if (!mountedRef.current || seq != seqRef.current) return
       // 出错不写缓存，否则下次翻回来直接命中缓存，重试都救不回来
       setStatus('error')
     }
-  }, [showEntry])
+  }, [])
 
   // 只有真翻到这一页、而且歌确实换了才请求。PagerView 会把三页都挂上，挂载就发请求等于
   // 每次打开播放详情页都白打一次接口（这个分支有意压低对音源的请求量）
   useEffect(() => {
     if (!active) return
-    if (!keyword) {
-      listRef.current = []
-      pageRef.current = 0
+    if (!singers.length) {
       setList([])
       setStatus('idle')
       return
     }
-    const cached = cache.get(keyword)
-    if (cached) {
-      showEntry(cached)
+    // 都查过了就直接摆出来，省掉一次「加载中」的闪烁
+    if (singers.every(name => cache.has(name))) {
+      setList(singers.map(name => cache.get(name)).filter((item): item is SingerItem => item != null))
+      setStatus('idle')
       return
     }
-    void load(keyword, 1)
-  }, [active, keyword, load, showEntry])
-
-  const handleLoadMore = useCallback(() => {
-    // 只有 idle 表示「可能还有下一页」：loading 是在等上一页，end 是到底了，error 得先重试
-    if (status != 'idle' || !keyword) return
-    void load(keyword, pageRef.current + 1)
-  }, [status, keyword, load])
+    void load(singers)
+  }, [active, singers, load])
 
   const handleRetry = useCallback(() => {
-    if (!keyword) return
-    if (pageRef.current > 0) void load(keyword, pageRef.current + 1)
-    else void load(keyword, 1)
-  }, [keyword, load])
+    if (singers.length) void load(singers)
+  }, [singers, load])
 
   const handleOpenDetail = useCallback((item: SingerItem) => {
     // id 用 mid：歌手详情的缓存按 mid 存，共享元素动画的两个 nativeID 也是拿它拼的
@@ -190,46 +170,22 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
         style={styles.list}
         keyExtractor={item => item.mid}
         renderItem={renderItem}
-        onEndReachedThreshold={0.6}
-        onEndReached={handleLoadMore}
         ListEmptyComponent={
-          keyword && (status == 'end' || status == 'idle')
+          singers.length > 0 && status == 'idle'
             ? <Text style={styles.empty} color={theme['c-font-label']}>{t('no_item')}</Text>
             : null
         }
-        ListFooterComponent={<Footer status={status} onRetry={handleRetry} />}
+        ListFooterComponent={
+          status == 'loading'
+            ? <Text style={styles.footer} color={theme['c-font-label']}>{t('list_loading')}</Text>
+            : status == 'error'
+              ? <Text style={styles.footer} onPress={handleRetry} color={theme['c-font-label']}>{t('list_error')}</Text>
+              : null
+        }
       />
     </View>
   )
 })
-
-const Footer = ({ status, onRetry }: { status: Status, onRetry: () => void }) => {
-  const theme = useTheme()
-  const t = useI18n()
-  let label: 'list_loading' | 'list_end' | 'list_error' | null
-  switch (status) {
-    case 'loading':
-      label = 'list_loading'
-      break
-    case 'end':
-      label = 'list_end'
-      break
-    case 'error':
-      label = 'list_error'
-      break
-    case 'idle':
-      label = null
-      break
-  }
-  if (!label) return null
-  return (
-    <Text
-      onPress={() => { if (label == 'list_error') onRetry() }}
-      style={styles.footer}
-      color={theme['c-font-label']}
-    >{t(label)}</Text>
-  )
-}
 
 const styles = createStyle({
   container: {
