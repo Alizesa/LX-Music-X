@@ -28,9 +28,9 @@ const PAGE_LIMIT = 20
 // 那边拆完还要排序、空值处理也不同，为了一个正则去改找歌曲的匹配逻辑不划算
 const SINGER_SPLIT_RXP = /、|&|;|；|\/|,|，|\|/
 
-// 歌手（几位歌手拼起来的键）-> 已经拿到的结果。来回翻歌、翻页都能省掉重复请求，
-// 而这一页每次都是拿整首歌的歌手去搜，同一首歌的键是固定的，命中率很高
-// （这个分支有意压低对音源的请求量）。上限很小，够装下最近听过的几首歌
+// 歌手名 -> 已经拿到的结果。来回翻歌、翻页都能省掉重复请求，
+// 而这一页的用法就是「同一首歌的歌手来回翻」，命中率很高
+// （这个分支有意压低对音源的请求量）。上限很小，够装下最近听过的那几位
 const CACHE_MAX = 20
 const cache = new Map<string, CacheEntry>()
 const writeCache = (key: string, entry: CacheEntry) => {
@@ -48,11 +48,10 @@ const searchSinger = async(name: string, page: number) =>
   musicSdk.tx.musicSearch.searchSinger(name, page, PAGE_LIMIT) as Promise<{ list: SingerItem[], total: number }>
 
 /**
- * 封面页前面那一页：把当前歌曲的歌手搜出来，点一位就进歌手详情。
+ * 封面页前面那一页：按当前歌曲的歌手搜人，点一位就进歌手详情。
  *
- * 没有搜索框，也没有歌手标签：进来就把这首歌的歌手们各搜一遍合成一张表。绝大多数歌只有
- * 一位歌手，那就是一次请求、一张表；「周杰伦、费玉清」这种多歌手的，两位都在列表里，
- * 不用再点标签切。
+ * 没有搜索框，也没有歌手标签：进来就是这一位歌手的搜索结果。多歌手（「周杰伦、费玉清」）
+ * 取第一位去搜——整串拿去搜是搜不到人的。
  *
  * 没有复用搜索页的 SingerList：它读写的 core/search/singer.ts 走的是全局的
  * searchSingerState，和搜索页的歌手 tab 共用一份 listInfo——从这边搜一次，搜索页那边的
@@ -85,6 +84,9 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
     [musicInfo.singer],
   )
 
+  // 拿去找人的词：这首歌的第一位歌手
+  const keyword = singers[0] ?? ''
+
   // 把一份结果摆到界面上（无论它是刚请求回来的还是缓存里的）
   const showEntry = useCallback((entry: CacheEntry) => {
     listRef.current = entry.list
@@ -93,32 +95,21 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
     setStatus(entry.hasMore ? 'idle' : 'end')
   }, [])
 
-  // 这首歌的歌手各搜一遍，合成一张表。几位歌手就发几个请求（多数歌只有一位），
-  // 一起发，别串行等
-  const load = useCallback(async(names: string[], page: number) => {
+  const load = useCallback(async(text: string, page: number) => {
     const seq = ++seqRef.current
     setStatus('loading')
     try {
-      const results = await Promise.all(names.map(async(name) => searchSinger(name, page)))
+      const result = await searchSinger(text, page)
       if (!mountedRef.current || seq != seqRef.current) return
-      const next = page > 1 ? [...listRef.current] : []
-      // 翻页时榜单可能在动，不同歌手、前后页之间都会重人；按 mid 去重，FlatList 的 key 才不会撞
-      const seen = new Set(next.map(item => item.mid))
-      let added = 0
-      let total = 0
-      for (const result of results) {
-        total += result.total
-        for (const item of result.list) {
-          if (seen.has(item.mid)) continue
-          seen.add(item.mid)
-          next.push(item)
-          added++
-        }
+      let next = result.list
+      if (page > 1) {
+        // 翻页时榜单可能在动，前后页会重人；按 mid 去重，FlatList 的 key 才不会撞
+        const prev = listRef.current
+        next = [...prev, ...result.list.filter(item => !prev.some(old => old.mid == item.mid))]
       }
-      // 这一页一条新的都没拿到：要么都重了，要么各歌手都翻到底了，就是没有下一页了。
-      // 再拿 added 和 total 比一下，是为了少发一次注定为空的请求
-      const entry = { list: next, page, hasMore: added > 0 && next.length < total }
-      writeCache(names.join('|'), entry)
+      // 拿到的条数已经够总数了，就没有下一页了
+      const entry = { list: next, page, hasMore: next.length < result.total }
+      writeCache(text, entry)
       showEntry(entry)
     } catch (err) {
       console.log(err)
@@ -132,32 +123,32 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
   // 每次打开播放详情页都白打一次接口（这个分支有意压低对音源的请求量）
   useEffect(() => {
     if (!active) return
-    if (!singers.length) {
+    if (!keyword) {
       listRef.current = []
       pageRef.current = 0
       setList([])
       setStatus('idle')
       return
     }
-    const cached = cache.get(singers.join('|'))
+    const cached = cache.get(keyword)
     if (cached) {
       showEntry(cached)
       return
     }
-    void load(singers, 1)
-  }, [active, singers, load, showEntry])
+    void load(keyword, 1)
+  }, [active, keyword, load, showEntry])
 
   const handleLoadMore = useCallback(() => {
     // 只有 idle 表示「可能还有下一页」：loading 是在等上一页，end 是到底了，error 得先重试
-    if (status != 'idle' || !singers.length) return
-    void load(singers, pageRef.current + 1)
-  }, [status, singers, load])
+    if (status != 'idle' || !keyword) return
+    void load(keyword, pageRef.current + 1)
+  }, [status, keyword, load])
 
   const handleRetry = useCallback(() => {
-    if (!singers.length) return
-    if (pageRef.current > 0) void load(singers, pageRef.current + 1)
-    else void load(singers, 1)
-  }, [singers, load])
+    if (!keyword) return
+    if (pageRef.current > 0) void load(keyword, pageRef.current + 1)
+    else void load(keyword, 1)
+  }, [keyword, load])
 
   const handleOpenDetail = useCallback((item: SingerItem) => {
     // id 用 mid：歌手详情的缓存按 mid 存，共享元素动画的两个 nativeID 也是拿它拼的
@@ -202,7 +193,7 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
         onEndReachedThreshold={0.6}
         onEndReached={handleLoadMore}
         ListEmptyComponent={
-          singers.length > 0 && (status == 'end' || status == 'idle')
+          keyword && (status == 'end' || status == 'idle')
             ? <Text style={styles.empty} color={theme['c-font-label']}>{t('no_item')}</Text>
             : null
         }
