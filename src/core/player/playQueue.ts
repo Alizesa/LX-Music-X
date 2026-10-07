@@ -68,10 +68,13 @@ export const appendPlayQueue = async(sourceListId: string, list: LX.Player.PlayM
  * 往播放队列中间插入歌曲，用于「添加到播放列表」。
  * 插进去的歌曲跟着这条队列的来源标记走：队列的来源只认首项（isPlayQueueFromList），
  * 乱打标记会让「每日推荐」那套续播逻辑认不出自己的队列。
+ * 队列空的时候（清空过队列、或刚装好还没播过）没得继承，标成播放队列自己 —— 不能用
+ * LIST_IDS.TEMP：整条队列都是 temp 是「这原来是每日推荐的老队列」的判据（migrateRecommendPlayQueue），
+ * 拿它兜底会把用户手攒的队列在下次启动时认成推荐队列，接着自动往里灌推荐歌
  */
 export const insertPlayQueue = async(index: number, list: LX.Player.PlayMusic[]) => {
   if (!list.length) return
-  const sourceListId = queue[0]?.sourceListId ?? LIST_IDS.TEMP
+  const sourceListId = queue[0]?.sourceListId ?? LIST_IDS.PLAY_QUEUE
   const start = Math.min(Math.max(index, 0), queue.length)
   const seed = Date.now().toString(36)
   queue.splice(start, 0, ...list.map((musicInfo, offset) => ({
