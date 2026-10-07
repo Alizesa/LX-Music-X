@@ -9,9 +9,6 @@ import Direction from './Direction'
 import TextSize from './TextSize'
 import ViewWidth from './ViewWidth'
 import MaxLineNum from './MaxLineNum'
-import Background from './Background'
-import BackgroundColor from './BackgroundColor'
-import BackgroundOpacity from './BackgroundOpacity'
 import TextOpacity from './TextOpacity'
 import TextPositionX from './TextPositionX'
 import TextPositionY from './TextPositionY'
@@ -33,9 +30,6 @@ export default memo(() => {
       <TextSize />
       <ViewWidth />
       <MaxLineNum />
-      <Background />
-      <BackgroundColor />
-      <BackgroundOpacity />
       <TextOpacity />
       <TextPositionX />
       <TextPositionY />

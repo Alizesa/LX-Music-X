@@ -305,13 +305,4 @@ public class Lyric extends LyricPlayer {
     lyricView.setLyricTextPosition(positionX, positionY);
   }
 
-  public void setLyricBackground(String mode, float opacity) {
-    if (lyricView == null) return;
-    lyricView.setLyricBackground(mode, opacity);
-  }
-
-  public void setLyricBackgroundColor(String color) {
-    if (lyricView == null) return;
-    lyricView.setLyricBackgroundColor(color);
-  }
 }

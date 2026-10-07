@@ -5,7 +5,6 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
-import android.graphics.drawable.GradientDrawable;
 import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -32,17 +31,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class LyricView extends Activity implements View.OnTouchListener {
-  // 背景框的三种模式：贴合文字 / 铺满窗口 / 不显示
-  private static final String BACKGROUND_TEXT = "text";
-  private static final String BACKGROUND_WINDOW = "window";
-  private static final String BACKGROUND_NONE = "none";
-  // 贴合模式下框比文字多出来的内边距
+  // 框比文字多出来的内边距
   private static final int BOX_PADDING_H_DP = 8;
   private static final int BOX_PADDING_V_DP = 4;
   // 没有歌词（纯音乐）时也要留一个能看见、能拖动的框
   private static final int MIN_BOX_WIDTH_DP = 32;
-  private static final int CORNER_RADIUS_TEXT_DP = 8;
-  private static final int CORNER_RADIUS_WINDOW_DP = 2;
 
   LyricSwitchView textView = null;
   WindowManager windowManager = null;
@@ -61,9 +54,6 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private float prevViewPercentageX = 0;
   private float prevViewPercentageY = 0;
   private float widthPercentage = 1f;
-  private String backgroundMode = BACKGROUND_TEXT;
-  private String backgroundColor = "rgba(0, 0, 0, 1)";
-  private float backgroundOpacity = 0.35f;
   // 长按 = 锁定：按下后没移动过、且按住超过 LONG_PRESS_MS 才认
   private static final long LONG_PRESS_MS = 500;
   private final int touchSlop;
@@ -291,13 +281,12 @@ public class LyricView extends Activity implements View.OnTouchListener {
   /**
    * 把窗口矩形算成「刚好包住当前歌词」的大小。
    *
-   * 背景是贴在窗口根 View 上的，而窗口原来的尺寸是「屏幕宽 × width%」×「行高 × maxLineNum」，
-   * 于是一句歌词也横跨整屏、还占着 maxLineNum 行的高度（默认 5 行）；这块矩形还会吞掉下面
-   * App 的点击，宽度 100% 时 maxX 恒为 0（横向拖不动）。这里改成按实际文字算框的大小：
-   * 宽度取最长一行的宽度（上限仍是 width%），高度按换行后的真实行数（上限 maxLineNum）。
-   * 位置不动：左上角钉在存下来的百分比上（拖动中由手指决定），框再按「从这个位置到屏幕边缘
-   * 还剩多少」收一次——位置一动，每换一行歌词窗口就跟着滑，看着像在抖。
-   * backgroundMode 为 window（铺满窗口）时保持老行为，方便想回到老样子的情况。
+   * 窗口原来的尺寸是「屏幕宽 × width%」×「行高 × maxLineNum」，于是一句歌词也横跨整屏、
+   * 还占着 maxLineNum 行的高度（默认 5 行）；这块矩形还会吞掉下面 App 的点击，宽度 100% 时
+   * maxX 恒为 0（横向拖不动）。这里改成按实际文字算框的大小：宽度取最长一行的宽度（上限仍是
+   * width%），高度按换行后的真实行数（上限 maxLineNum）。位置不动：左上角钉在存下来的百分比上
+   * （拖动中由手指决定），框再按「从这个位置到屏幕边缘还剩多少」收一次——位置一动，每换一行
+   * 歌词窗口就跟着滑，看着像在抖。
    */
   private void applyBoxSize() {
     if (textView == null || layoutParams == null || maxWidth <= 0) return;
@@ -347,10 +336,6 @@ public class LyricView extends Activity implements View.OnTouchListener {
       height = Math.max(new StaticLayout(
         text, paint, Math.max(1, width - padH * 2), Layout.Alignment.ALIGN_NORMAL, 1F, 0F, true
       ).getHeight() + padV * 2, lineHeight);
-    } else if (BACKGROUND_WINDOW.equals(backgroundMode)) {
-      // 铺满窗口：保持老行为（整屏宽 × maxLineNum 行），想回到老样子就用它
-      width = maxBoxWidth;
-      height = Math.min(lineHeight * maxLineNum, maxHeight - 100);
     } else {
       String text = textView.getText().toString();
       // 单行模式是 LyricTextView 自绘滚动，不吃 padding，靠宽度余量留白
@@ -376,9 +361,9 @@ public class LyricView extends Activity implements View.OnTouchListener {
       width = Math.max(width, dp2px(MIN_BOX_WIDTH_DP));
       height = Math.max(height, lineHeight);
     }
-    // 高度：铺满窗口那条老路径和竖排都保持原来的口径（一个按整屏算，一个内容多高就多高），
-    // 只有贴合模式要跟着位置收——它的高度逐行在变（翻译行来去），不收的话窗口会贴着下边缘一跳一跳
-    if (!isVertical && !BACKGROUND_WINDOW.equals(backgroundMode)) {
+    // 高度：竖排保持原来的口径（内容多高就多高），横排的框要跟着位置收——它的高度逐行在变
+    // （翻译行来去），不收的话窗口会贴着下边缘一跳一跳
+    if (!isVertical) {
       int maxBoxHeight = Math.max(usableHeight, lineHeight);
       if (height > maxBoxHeight) height = maxBoxHeight;
     } else if (height > maxHeight - 100) {
@@ -399,33 +384,16 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (windowManager != null && hasWindow()) windowManager.updateViewLayout(textView, layoutParams);
   }
 
-  /** 贴合模式下给文字留一圈内边距，框看起来才不贴着字 */
+  /** 给文字留一圈内边距：窗口比文字略大一圈，文字不贴着窗口边缘（拖动时也好按） */
   private void applyTextPadding() {
     if (textView == null) return;
     // 竖向显示用的是普通 TextView（不是自绘滚动的 LyricTextView），内边距照常生效
-    if ((isSingleLine && !isVertical) || BACKGROUND_WINDOW.equals(backgroundMode)) {
+    if (isSingleLine && !isVertical) {
       textView.setTextPadding(0, 0, 0, 0);
     } else {
       textView.setTextPadding(dp2px(BOX_PADDING_H_DP), dp2px(BOX_PADDING_V_DP),
         dp2px(BOX_PADDING_H_DP), dp2px(BOX_PADDING_V_DP));
     }
-  }
-
-  /** 背景框：贴合/铺满画黑色半透明圆角矩形，不显示则留空 */
-  private void applyBackground() {
-    if (textView == null) return;
-    if (BACKGROUND_NONE.equals(backgroundMode)) {
-      textView.setBackground(null);
-      return;
-    }
-    float opacity = Math.max(0F, Math.min(1F, backgroundOpacity));
-    // 颜色只取 RGB，透明度统一由「背景框不透明度」这个设置决定
-    int color = parseColor(backgroundColor == null ? "rgba(0, 0, 0, 1)" : backgroundColor);
-    GradientDrawable background = new GradientDrawable();
-    background.setShape(GradientDrawable.RECTANGLE);
-    background.setCornerRadius(dp2px(BACKGROUND_WINDOW.equals(backgroundMode) ? CORNER_RADIUS_WINDOW_DP : CORNER_RADIUS_TEXT_DP));
-    background.setColor(Color.argb((int)(opacity * 255), Color.red(color), Color.green(color), Color.blue(color)));
-    textView.setBackground(background);
   }
 
   /** 按当前文本重新拆列/设字号（竖排的列数取决于字号和屏幕高度，两者变了都要重排） */
@@ -492,9 +460,6 @@ public class LyricView extends Activity implements View.OnTouchListener {
     textSize = (float) options.getDouble("textSize", textSize);
     widthPercentage = (float) options.getDouble("width", 100) / 100f;
     maxLineNum = (int) options.getDouble("maxLineNum", maxLineNum);
-    backgroundMode = options.getString("background", backgroundMode);
-    backgroundColor = options.getString("backgroundColor", backgroundColor);
-    backgroundOpacity = (float) options.getDouble("backgroundOpacity", backgroundOpacity);
     handleShowLyric();
     listenOrientationEvent();
   }
@@ -574,7 +539,6 @@ public class LyricView extends Activity implements View.OnTouchListener {
     }
 
     applyTextPadding();
-    applyBackground();
   }
   /**
    * 窗口还在不在（我们自己挂上去过、还没摘）。
@@ -653,7 +617,6 @@ public class LyricView extends Activity implements View.OnTouchListener {
     //  ? WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
     //  : WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
     layoutParams.flags = getLayoutParamsFlags();
-    // 背景只由 background 设置决定，锁定时不再把背景抹掉（以前锁定会让黑框消失，看着像没锁上）
     if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
       // 修复 Android 12 的穿透点击问题
       layoutParams.alpha = isLock ? 0.8f : 1.0f;
@@ -665,7 +628,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     // FLAG_NOT_TOUCH_MODAL不阻塞事件传递到后面的窗口
     layoutParams.gravity = Gravity.TOP | Gravity.START;  //显示在屏幕上中部
 
-    //悬浮窗的宽高：贴合歌词（backgroundMode 为 window 时保持老的「整屏宽 × maxLineNum 行」）
+    //悬浮窗的宽高：按实际歌词算，刚好包住当前这句
     // layoutParams.width = WindowManager.LayoutParams.WRAP_CONTENT;
     // layoutParams.height = WindowManager.LayoutParams.WRAP_CONTENT;
     applyBoxSize();
@@ -845,27 +808,6 @@ public class LyricView extends Activity implements View.OnTouchListener {
     }
     if (!hasWindow()) return;
     windowManager.updateViewLayout(textView, layoutParams);
-  }
-
-  /**
-   * 设置背景框：text 贴合文字、window 铺满窗口、none 不显示；透明度 0~1。
-   */
-  public void setLyricBackground(String mode, float opacity) {
-    if (mode != null) backgroundMode = mode;
-    backgroundOpacity = opacity;
-    if (windowManager == null || textView == null) return;
-    applyTextPadding();
-    applyBackground();
-    // 贴合/铺满之间切换会改变窗口尺寸
-    applyBoxSize();
-  }
-
-  /** 设置背景框颜色（rgba 字符串），透明度仍由 backgroundOpacity 控制 */
-  public void setLyricBackgroundColor(String color) {
-    if (color == null) return;
-    backgroundColor = color;
-    if (windowManager == null || textView == null) return;
-    applyBackground();
   }
 
   public void setColor(String unplayColor, String playedColor, String shadowColor) {

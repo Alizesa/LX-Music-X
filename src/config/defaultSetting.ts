@@ -63,10 +63,6 @@ const defaultSetting: LX.AppSetting = {
   // 竖排时英文横倒 90°：默认开（关着就是每个字母正着占一行，一个词被拆成一列散字母）
   'desktopLyric.verticalRotateLatin': true,
   'desktopLyric.showToggleAnima': true,
-  // 默认不画背景框（黑底太扎眼），要的话在设置里选「贴合歌词」
-  'desktopLyric.background': 'none',
-  'desktopLyric.background.color': 'rgba(0, 0, 0, 1)',
-  'desktopLyric.backgroundOpacity': 35,
   'desktopLyric.position.x': 0,
   'desktopLyric.position.y': 0,
   'desktopLyric.textPosition.x': 'left',

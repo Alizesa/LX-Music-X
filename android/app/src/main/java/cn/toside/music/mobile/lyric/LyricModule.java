@@ -201,18 +201,6 @@ public class LyricModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
-  public void setLyricBackground(String mode, double opacity, Promise promise) {
-    if (lyric != null) lyric.setLyricBackground(mode, (float) opacity);
-    promise.resolve(null);
-  }
-
-  @ReactMethod
-  public void setLyricBackgroundColor(String color, Promise promise) {
-    if (lyric != null) lyric.setLyricBackgroundColor(color);
-    promise.resolve(null);
-  }
-
-  @ReactMethod
   public void checkOverlayPermission(Promise promise) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(reactContext)) {
       // 「权限明明是开的」那类问题上，得能分清是这里判没了，还是后面挂窗口的时候炸的

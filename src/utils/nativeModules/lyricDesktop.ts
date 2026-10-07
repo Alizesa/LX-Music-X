@@ -61,9 +61,6 @@ export const showDesktopLyricView = async({
   positionY,
   textPositionX,
   textPositionY,
-  background,
-  backgroundColor,
-  backgroundOpacity,
 }: {
   isShowToggleAnima: boolean
   isSingleLine: boolean
@@ -81,9 +78,6 @@ export const showDesktopLyricView = async({
   positionY: number
   textPositionX: LX.AppSetting['desktopLyric.textPosition.x']
   textPositionY: LX.AppSetting['desktopLyric.textPosition.y']
-  background: LX.AppSetting['desktopLyric.background']
-  backgroundColor: LX.AppSetting['desktopLyric.background.color']
-  backgroundOpacity: number
 }): Promise<void> => {
   return LyricModule.showDesktopLyric({
     isSingleLine,
@@ -102,9 +96,6 @@ export const showDesktopLyricView = async({
     textY: textPositionY.toUpperCase(),
     width,
     maxLineNum,
-    background,
-    backgroundColor,
-    backgroundOpacity: getAlpha(backgroundOpacity),
   })
 }
 
@@ -216,23 +207,6 @@ export const setVertical = async(isVertical: boolean): Promise<void> => {
  */
 export const setVerticalRotateLatin = async(rotateLatin: boolean): Promise<void> => {
   return LyricModule.setVerticalRotateLatin(rotateLatin)
-}
-
-/**
- * set lyric background
- * @param background text 贴合文字 / window 铺满窗口 / none 不显示
- * @param opacity background opacity
- */
-export const setBackground = async(background: LX.AppSetting['desktopLyric.background'], opacity: number): Promise<void> => {
-  return LyricModule.setLyricBackground(background, getAlpha(opacity))
-}
-
-/**
- * set lyric background color
- * @param color 背景框颜色（rgba 字符串）
- */
-export const setBackgroundColor = async(color: string): Promise<void> => {
-  return LyricModule.setLyricBackgroundColor(color)
 }
 
 export const setPosition = async(x: number, y: number): Promise<void> => {
