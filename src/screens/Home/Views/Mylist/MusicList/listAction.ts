@@ -1,6 +1,6 @@
 import { addListMusics, removeListMusics, updateListMusicPosition, updateListMusics } from '@/core/list'
 import { Alert } from 'react-native'
-import { playList, playListById, playNext } from '@/core/player/player'
+import { addToPlayQueue, playList, playListById, playNext } from '@/core/player/player'
 import { addTempPlayList } from '@/core/player/tempPlayList'
 import settingState from '@/store/setting/state'
 import { similar, sortInsert, toOldMusicInfo } from '@/utils'
@@ -27,6 +27,13 @@ export const handlePlayLater = (listId: SelectInfo['listId'], musicInfo: SelectI
   } else {
     addTempPlayList([{ listId, musicInfo }])
   }
+}
+export const handleAddToPlayQueue = (musicInfo: SelectInfo['musicInfo'], selectedList: SelectInfo['selectedList'], onCancelSelect: () => void) => {
+  void addToPlayQueue(selectedList.length ? selectedList : [musicInfo]).then(count => {
+    // 一首都没加进去，说明队列里已经有这首歌了
+    toast(global.i18n.t(count ? 'list_edit_action_tip_add_success' : 'list_edit_action_tip_exist'))
+  })
+  if (selectedList.length) onCancelSelect()
 }
 
 export const handleDownload = (musicInfo: SelectInfo['musicInfo'], selectedList: SelectInfo['selectedList'], onCancelSelect: () => void) => {

@@ -1,4 +1,5 @@
 import { getPlayQueue as getSavedPlayQueue, savePlayQueue } from '@/utils/data'
+import { LIST_IDS } from '@/config/constant'
 
 const queue: LX.Player.PlayQueueItem[] = []
 let initialized = false
@@ -60,6 +61,24 @@ export const appendPlayQueue = async(sourceListId: string, list: LX.Player.PlayM
       musicInfo,
     })
   })
+  await commit()
+}
+
+/**
+ * 往播放队列中间插入歌曲，用于「添加到播放列表」。
+ * 插进去的歌曲跟着这条队列的来源标记走：队列的来源只认首项（isPlayQueueFromList），
+ * 乱打标记会让「每日推荐」那套续播逻辑认不出自己的队列。
+ */
+export const insertPlayQueue = async(index: number, list: LX.Player.PlayMusic[]) => {
+  if (!list.length) return
+  const sourceListId = queue[0]?.sourceListId ?? LIST_IDS.TEMP
+  const start = Math.min(Math.max(index, 0), queue.length)
+  const seed = Date.now().toString(36)
+  queue.splice(start, 0, ...list.map((musicInfo, offset) => ({
+    queueId: `${seed}_${start + offset}_${musicInfo.id}`,
+    sourceListId,
+    musicInfo,
+  })))
   await commit()
 }
 

@@ -17,6 +17,7 @@ const initSelectInfo = {}
 export interface ListMenuProps {
   onPlay: (selectInfo: SelectInfo) => void
   onPlayLater: (selectInfo: SelectInfo) => void
+  onAddToPlayQueue: (selectInfo: SelectInfo) => void
   onDownload: (selectInfo: SelectInfo) => void
   onAdd: (selectInfo: SelectInfo) => void
   onMove: (selectInfo: SelectInfo) => void
@@ -72,6 +73,7 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
     const menu = [
       { action: 'play', label: t('play') },
       { action: 'playLater', label: t('play_later') },
+      { action: 'addToQueue', label: t('add_to_play_queue') },
       // 本地歌曲已经是一份文件，没有可下载的东西
       { action: 'download', disabled: isLocal, label: t('download') },
       { action: 'add', label: t('add_to') },
@@ -118,6 +120,9 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
       case 'playLater':
         props.onPlayLater(selectInfo)
 
+        break
+      case 'addToQueue':
+        props.onAddToPlayQueue(selectInfo)
         break
       case 'download':
         props.onDownload(selectInfo)

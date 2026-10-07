@@ -29,7 +29,7 @@ import { checkIgnoringBatteryOptimization, checkNotificationPermission, debounce
 import { LIST_IDS } from '@/config/constant'
 import { addListMusics, removeListMusics } from '@/core/list'
 import { addDislikeInfo } from '@/core/dislikeList'
-import { clearPlayQueue, getPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
+import { clearPlayQueue, getPlayQueue, insertPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
 import { parkRecommendQueue } from '@/core/qqMusicRecommendSession'
 
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
@@ -336,6 +336,27 @@ export const moveQueueMusic = async(from: number, to: number) => {
   if (from == currentIndex) setPlayIndex(to)
   else if (from < currentIndex && to >= currentIndex) setPlayIndex(currentIndex - 1)
   else if (from > currentIndex && to <= currentIndex) setPlayIndex(currentIndex + 1)
+}
+
+/**
+ * 把歌曲加到「当前播放列表」里正在播的那首之后，不动当前播放。
+ * 播放位置没落在队列里（队列是刚恢复出来的、还没开播等）就插到队尾：
+ * 队列首项带着这条队列的来源标记，被别的来源顶掉会让「每日推荐」认不出自己的队列。
+ * 已经在队列里的歌跳过：取下一首是按 id 找当前歌曲的，队列里同一首歌有两份时
+ * 「下一首」会跳回前一份，来回播同一首。
+ * @param list 待加入的歌曲
+ * @returns 实际加入的歌曲数（为 0 说明队列里都已经有了）
+ */
+export const addToPlayQueue = async(list: LX.Player.PlayMusic[]): Promise<number> => {
+  const queue = getPlayQueue()
+  const musicList = list.filter(musicInfo => !queue.some(item => item.musicInfo.id == musicInfo.id))
+  if (!musicList.length) return 0
+  const { playerListId, playerPlayIndex } = playerState.playInfo
+  const index = playerListId == LIST_IDS.PLAY_QUEUE && playerPlayIndex >= 0 && playerPlayIndex < queue.length
+    ? playerPlayIndex + 1
+    : queue.length
+  await insertPlayQueue(index, musicList)
+  return musicList.length
 }
 
 export const clearQueue = async() => {

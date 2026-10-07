@@ -6,7 +6,7 @@ import ListMenu, { type ListMenuType, type Position, type SelectInfo } from './L
 import ListMusicMultiAdd, { type MusicMultiAddModalType as ListAddMultiType } from '@/components/MusicMultiAddModal'
 import ListMusicAdd, { type MusicAddModalType as ListMusicAddType } from '@/components/MusicAddModal'
 import MultipleModeBar, { type MultipleModeBarType, type SelectMode } from './MultipleModeBar'
-import { clearMusicUrl, handleDislikeMusic, handlePlay, handlePlayLater, handleShare, handleShowMusicSourceDetail } from './listAction'
+import { clearMusicUrl, handleAddToPlayQueue, handleDislikeMusic, handlePlay, handlePlayLater, handleShare, handleShowMusicSourceDetail } from './listAction'
 import { createStyle, toast } from '@/utils/tools'
 import { addTasks } from '@/core/download'
 
@@ -108,6 +108,7 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
         ref={listMenuRef}
         onPlay={info => { handlePlay(info.musicInfo) }}
         onPlayLater={info => { hancelExitSelect(); handlePlayLater(info.musicInfo, info.selectedList, hancelExitSelect) }}
+        onAddToPlayQueue={info => { hancelExitSelect(); handleAddToPlayQueue(info.musicInfo, info.selectedList, hancelExitSelect) }}
         onDownload={info => {
           const list = info.selectedList.length ? info.selectedList : [info.musicInfo]
           void addTasks(list).catch((error: unknown) => {
