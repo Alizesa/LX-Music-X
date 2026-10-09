@@ -3,6 +3,8 @@ import BackgroundTimer from 'react-native-background-timer'
 import { playMusic as handlePlayMusic } from './playList'
 import { existsFile, moveFile, privateStorageDirectoryPath, temporaryDirectoryPath } from '@/utils/fs'
 import { toast } from '@/utils/tools'
+import { MUSIC_TOGGLE_MODE } from '@/config/constant'
+import settingState from '@/store/setting/state'
 // import { PlayerMusicInfo } from '@/store/modules/player/playInfo'
 
 
@@ -248,6 +250,27 @@ export const onStateChange = async(listener: (state: PlayStatus) => void) => {
  */
 // export const playState = callback => TrackPlayer.addEventListener('playback-state', callback)
 
+// 通知栏按钮用的图标：写的是本应用 drawable 的名字，原生侧按名字找资源
+// （见 dependencies-patch.js）。RNTP 自带的那套 PNG 图形画得比较小，
+// 这里换成图形画得更满的自绘矢量图，看着大一圈
+const NOTIFICATION_ICONS = {
+  previous: 'ic_notify_previous',
+  next: 'ic_notify_next',
+  play: 'ic_notify_play',
+  pause: 'ic_notify_pause',
+}
+// 播放模式按钮的图标跟着当前模式变，通知栏/锁屏上一眼能看出现在是什么模式
+const PLAY_MODE_ICONS: Record<string, string> = {
+  [MUSIC_TOGGLE_MODE.listLoop]: 'ic_notify_mode_list_loop',
+  [MUSIC_TOGGLE_MODE.singleLoop]: 'ic_notify_mode_single_loop',
+  [MUSIC_TOGGLE_MODE.random]: 'ic_notify_mode_random',
+  [MUSIC_TOGGLE_MODE.list]: 'ic_notify_mode_order',
+  [MUSIC_TOGGLE_MODE.none]: 'ic_notify_mode_order',
+}
+// RNTP 的 TS 类型把图标写成 require() 出来的资源 id（是个 number），但原生侧的
+// MetadataManager.getIcon 实际读的是 { uri: 'drawable 名' }，用本应用的 drawable 就得绕过这层类型
+const drawableIcon = (name: string) => ({ uri: name }) as unknown as number
+
 export const updateOptions = async(options = {
   // Whether the player should stop running when the app is closed on Android
   // stopWithApp: true,
@@ -261,6 +284,12 @@ export const updateOptions = async(options = {
     Capability.SeekTo,
     Capability.SkipToNext,
     Capability.SkipToPrevious,
+    // 通知栏里多出来的那两个按钮（播放模式 / 桌面歌词）走的是 ACTION_REWIND /
+    // ACTION_FAST_FORWARD 这两个媒体键，系统把媒体键交给会话之前会先看播放状态里
+    // 有没有对应的 action，所以这两条能力要带上；但别放进 notificationCapabilities，
+    // 一放进去 RNTP 自带的 Rewind / Forward 两个按钮也会跟着冒出来
+    Capability.JumpBackward,
+    Capability.JumpForward,
   ],
 
   // 通知栏只保留 上一首 / 播放暂停 / 下一首，去掉退出（Stop）。
@@ -285,12 +314,19 @@ export const updateOptions = async(options = {
   ],
 
   // Icons for the notification on Android (if you don't like the default ones)
-  // playIcon: require('./play-icon.png'),
-  // pauseIcon: require('./pause-icon.png'),
-  // stopIcon: require('./stop-icon.png'),
-  // previousIcon: require('./previous-icon.png'),
-  // nextIcon: require('./next-icon.png'),
+  previousIcon: drawableIcon(NOTIFICATION_ICONS.previous),
+  nextIcon: drawableIcon(NOTIFICATION_ICONS.next),
+  playIcon: drawableIcon(NOTIFICATION_ICONS.play),
+  pauseIcon: drawableIcon(NOTIFICATION_ICONS.pause),
   // icon: notificationIcon, // The notification icon
+
+  // 通知栏里额外两个按钮：播放模式切换（「上一首」前面）、桌面歌词开关（「下一首」后面）。
+  // 位置和点下去干什么由原生补丁 + src/plugins/player/service.ts 决定；
+  // 图标跟着当前状态走（切模式/开关歌词时会重推一次这里的选项）
+  playModeButton: true,
+  playModeIcon: drawableIcon(PLAY_MODE_ICONS[settingState.setting['player.togglePlayMethod']] ?? PLAY_MODE_ICONS[MUSIC_TOGGLE_MODE.listLoop]),
+  lyricButton: true,
+  lyricIcon: drawableIcon(settingState.setting['desktopLyric.enable'] ? 'ic_notify_lyric_on' : 'ic_notify_lyric_off'),
 }) => {
   return TrackPlayer.updateOptions(options)
 }

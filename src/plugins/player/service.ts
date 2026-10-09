@@ -2,11 +2,16 @@
 import TrackPlayer, { State as TPState, Event as TPEvent } from 'react-native-track-player'
 // import { store } from '@/store'
 // import { action as playerAction, STATUS } from '@/store/modules/player'
-import { isTempId, isEmpty } from './utils'
+import { isTempId, isEmpty, updateOptions } from './utils'
 // import { play as lrcPlay, pause as lrcPause } from '@/core/lyric'
-import { exitApp } from '@/core/common'
+import { exitApp, updateSetting } from '@/core/common'
 import { getCurrentTrackId } from './playList'
 import { pause, play, playNext, playPrev } from '@/core/player/player'
+import { toggleNextPlayMode } from '@/core/player/playMode'
+import { checkDesktopLyricOverlayPermission, hideDesktopLyric, showDesktopLyric } from '@/core/desktopLyric'
+import { translate } from '@/lang'
+import { toast } from '@/utils/tools'
+import settingState from '@/store/setting/state'
 
 let isInitialized = false
 
@@ -21,6 +26,26 @@ let isInitialized = false
 const handleExitApp = async(reason: string) => {
   global.lx.isPlayedStop = false
   exitApp(reason)
+}
+
+/**
+ * 通知栏里那个桌面歌词开关：按当前状态反过来。
+ * 开的时候没权限就只提示一下（这里没有弹窗可弹），设置也不改
+ */
+const handleToggleDesktopLyric = async() => {
+  const enable = !settingState.setting['desktopLyric.enable']
+  if (enable) {
+    try {
+      await checkDesktopLyricOverlayPermission()
+      await showDesktopLyric()
+    } catch (err) {
+      console.log(err)
+      toast(translate('setting_lyric_desktop_permission_tip'), 'long')
+      return
+    }
+  } else await hideDesktopLyric()
+  updateSetting({ 'desktopLyric.enable': enable })
+  toast(translate(enable ? 'setting_lyric_desktop_enabled' : 'setting_lyric_desktop_disabled'))
 }
 
 
@@ -51,6 +76,26 @@ const registerPlaybackService = async() => {
   TrackPlayer.addEventListener(TPEvent.RemoteStop, () => {
     // console.log('remote-stop')
     void handleExitApp('Remote Stop')
+  })
+
+  // 通知栏里「上一首」前面那个按钮：切播放模式。
+  // 这两个事件对应的按钮由原生补丁加在通知栏上（见 dependencies-patch.js）
+  TrackPlayer.addEventListener(TPEvent.RemoteJumpBackward, () => {
+    // console.log('remote-jump-backward')
+    toggleNextPlayMode()
+  })
+
+  // 通知栏里「下一首」后面那个按钮：开关桌面歌词
+  TrackPlayer.addEventListener(TPEvent.RemoteJumpForward, () => {
+    // console.log('remote-jump-forward')
+    void handleToggleDesktopLyric()
+  })
+
+  // 播放模式、桌面歌词开关变了就重推一次选项，让通知栏上的图标跟着当前状态走
+  global.state_event.on('configUpdated', (keys: Array<keyof LX.AppSetting>) => {
+    if (!keys.includes('player.togglePlayMethod') && !keys.includes('desktopLyric.enable')) return
+    if (!global.lx.playerStatus.isInitialized) return
+    void updateOptions().catch(err => { console.log(err) })
   })
 
   // TrackPlayer.addEventListener(TPEvent.RemoteDuck, async({ permanent, paused, ducking }) => {

@@ -56,6 +56,9 @@ const useI18n = () => {
   }, [locale])
 }
 
+// 非 React 环境（比如后台跑着的播放服务）里取翻译，跟 useI18n 用的是同一个实例
+const translate = (key: keyof Message, val?: TranslateValues): string => i18n?.getMessage(key, val) ?? ''
+
 const setLanguage = (lang: Langs) => {
   i18n.setLanguage(lang)
 }
@@ -95,4 +98,5 @@ export {
   setLanguage,
   useI18n,
   createI18n,
+  translate,
 }
