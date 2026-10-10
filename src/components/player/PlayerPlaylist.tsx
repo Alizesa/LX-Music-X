@@ -41,9 +41,11 @@ type PlaylistRow =
 // 内容就会整体平移一批——看起来就是「一顿一顿地移动」，序号越大、要补的单元格越多越明显。
 const ITEM_HEIGHT = scaleSizeH(LIST_ITEM_HEIGHT)
 
-// 初始渲染段给多少行。index>0 时渲染窗口会被 pendingScrollUpdateCount 钉在
-// [index, index + 它) 这一段上（见下面 onContentSizeChange 里那次补滚），给足
-// 一屏才不会在可视区里留下空行。面板最高占屏幕 78%，按屏幕高度折算行数再多留两行。
+// 初始渲染段给多少行，同时决定「要不要把渲染窗口钉在当前项上」（见 show() 里的 pinWindow）：
+// 给了 initialScrollIndex（且 > 0）时，渲染窗口会被 pendingScrollUpdateCount 钉在
+// [index, index + 它) 这一段上、并跳过初始那段，所以它得够一屏才不会在可视区里留下空行；
+// 反过来，队列长度不超过它时整条队列本来就都在初始段里，钉了反而会留白。
+// 面板最高占屏幕 78%，按屏幕高度折算行数再多留两行。
 const INITIAL_ROWS = Math.ceil(Dimensions.get('screen').height / ITEM_HEIGHT) + 2
 
 // 必须 memo：队列动辄几百首，虚拟列表一次就会补进来一批单元格，
@@ -147,8 +149,9 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   // initialScrollIndex 让虚拟列表从当前这一项开始渲染，否则单元格会一个个冒出来，
   // 看起来就是「一顿一顿地移动过去」（索引越大越明显）；但它的值 > 0 时，窗口会被
   // pendingScrollUpdateCount 钉在 [index, index + initialNumToRender) 上，要等一次
-  // 原生滚动事件才会挪窝（见 onContentSizeChange 里那次补滚）。所以 initialNumToRender
-  // 要按「一屏放得下的行数」给足，就算那次补滚没生效，可视区里也不会缺行。
+  // 原生滚动事件才会挪窝（见 onContentSizeChange 里那次补滚）。所以它只在队列长到
+  // 初始渲染段装不下时才给（pinWindow），并且 initialNumToRender 要按「一屏放得下的
+  // 行数」给足，就算那次补滚没生效，可视区里也不会缺行。
   //
   // 这两个「挂载」语义只在挂载时有效，所以值必须在 show() 里定死、打开期间不再变：
   // contentOffset 是原生属性，值一变原生就会 scrollTo。之前它直接取
@@ -156,17 +159,20 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   // 把列表拽到那一行——用户明明是在列表里找到并点的，列表却「跳一下」。
   // 面板关闭时整棵子树返回 null，下次打开是重新挂载，所以冻结在 state 里正合适。
   const [initialIndex, setInitialIndex] = useState(0)
+  // 钉不钉渲染窗口。跟 initialIndex 分开是有意的：定位（contentOffset）和钉窗口
+  // （initialScrollIndex）是两件事，队列不长时只是不该钉，该定的位还是要定。
+  const [pinWindow, setPinWindow] = useState(false)
 
   useImperativeHandle(ref, () => ({
     show() {
       const list = getPlayQueue()
-      // 队列比一屏还短时整条列表本来就全露在外面，这时绝不能用 initialScrollIndex：
-      // 它会把渲染窗口钉在 [index, index + initialNumToRender) 上，当前曲目以上那几行
-      // 就成了空白；而内容短到滚不动时，连一次能解开这个钉死的滚动事件都产生不出来
-      // （拖也没用，原生根本没有可滚的余量），空白就一直挂在那里。不钉的话渲染窗口
-      // 从第 0 行开始，整条队列都在里面。
-      const canPin = list.length > INITIAL_ROWS
-      const index = canPin && playInfo.playerPlayIndex > 0 && playInfo.playerPlayIndex < list.length ? playInfo.playerPlayIndex : 0
+      // 队列长到初始渲染段（[0, INITIAL_ROWS)）装不下，才值得让虚拟列表「从当前项起渲染」；
+      // 装得下时钉了只有坏处：窗口被钉在 [index, index + INITIAL_ROWS) 上、初始那段又不渲染，
+      // 当前曲目以上那几行就成了空白；而内容短到滚不动时，连一次能解开这个钉死的滚动事件
+      // 都产生不出来（拖也没用，原生根本没有可滚的余量），空白就一直挂在那里。不钉的话
+      // 初始那段本来就盖住整条队列，一行都不会缺。
+      setPinWindow(list.length > INITIAL_ROWS)
+      const index = playInfo.playerPlayIndex > 0 && playInfo.playerPlayIndex < list.length ? playInfo.playerPlayIndex : 0
       setQueue([...list])
       setTempList([...playerState.tempPlayList])
       setInitialIndex(index)
@@ -218,7 +224,7 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
     listRef.current?.scrollToOffset({ offset: index * ITEM_HEIGHT, animated: false })
   }, [playInfo.playerPlayIndex, isIndexVisible])
 
-  // 打开面板时不滚动：列表靠 initialScrollIndex + contentOffset 挂载时就位。
+  // 打开面板时不滚动：列表靠 contentOffset（长队列再加 initialScrollIndex）挂载时就位。
   // 只在面板打开期间曲目发生变化时跟随。
   const followedIndexRef = useRef<number | null>(null)
   // 用户点过的那一行。点播说明它就在眼前，跟随逻辑不该再把它滚到第一行。
@@ -298,14 +304,16 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
         getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
         // 钉窗口那段的范围（见上面的说明），给足一屏
         initialNumToRender={INITIAL_ROWS}
-        initialScrollIndex={initialIndex > 0 ? initialIndex : undefined}
+        // 队列不长时不给 initialScrollIndex（只定位，不钉窗口，见 show()）
+        initialScrollIndex={pinWindow && initialIndex > 0 ? initialIndex : undefined}
         contentOffset={{ x: 0, y: initialIndex * ITEM_HEIGHT }}
         onLayout={e => { listHeightRef.current = e.nativeEvent.layout.height }}
         // 补一次打开时的定位。contentOffset 是原生属性，面板挂载时内容往往还没量好，
         // 这次定位会被当成「超出可滚范围」丢掉，列表就停在顶部；而 initialScrollIndex>0
         // 时渲染窗口要等一次原生滚动事件（_onScroll 里那个 pendingScrollUpdateCount）
         // 才会离开初始那段，当前曲目以上那批行就一直是空白——行数不变、重开重装也一样，
-        // 因为每次打开都是重新挂载。
+        // 因为每次打开都是重新挂载。不钉窗口时（队列不长）这一步就只剩「补回定位」，
+        // 内容短到滚不动时它会空转一次，反正那种队列本来就整条都看得见。
         //
         // 必须挂在 onContentSizeChange 上而不是 onLayout：位置真的对得上要求内容已经
         // 量好，早了的话原生那次 scrollTo 会被夹回原处、偏移没变，onScrollChanged 不
