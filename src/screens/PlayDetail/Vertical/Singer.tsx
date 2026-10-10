@@ -10,7 +10,7 @@ import { scaleSizeW } from '@/utils/pixelRatio'
 import { formatPlayCount } from '@/utils'
 import { navigations } from '@/navigation'
 import { NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
-import { usePlayerMusicInfo } from '@/store/player/hook'
+import { usePlayerMusicInfo, usePlayMusicInfo } from '@/store/player/hook'
 import { type SingerItem } from '@/store/search/singer/state'
 import musicSdk from '@/utils/musicSdk'
 
@@ -66,6 +66,7 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
   const theme = useTheme()
   const t = useI18n()
   const musicInfo = usePlayerMusicInfo()
+  const playMusicInfo = usePlayMusicInfo()
   const [list, setList] = useState<SingerItem[]>([])
   // 初值就是 loading：这一页一露头就要去查，中间那一下别闪出「没有数据」
   const [status, setStatus] = useState<Status>('loading')
@@ -84,6 +85,23 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
     () => (musicInfo.singer || '').split(SINGER_SPLIT_RXP).map(name => name.trim()).filter(Boolean),
     [musicInfo.singer],
   )
+
+  // 这首歌属于哪张专辑。专辑名和封面歌里就带着（播放详情那份 musicInfo 的 album / pic），
+  // 这一行不用另发请求。只有 tx 的歌带着专辑 mid，能点进专辑详情——专辑详情页是按 tx 的
+  // 专辑 mid 取歌的，别的源的 id 不是那套，所以非 tx 的这一行只显示名字、点不开
+  const album = useMemo(() => {
+    const info = playMusicInfo.musicInfo
+    if (!info) return null
+    const minfo = 'progress' in info ? info.metadata.musicInfo : info
+    const name = minfo.meta.albumName
+    // 「空」是 tx 给没有专辑的歌的占位名，这种不算真有专辑
+    if (!name || name == '空') return null
+    return {
+      name,
+      pic: minfo.meta.picUrl ?? '',
+      mid: minfo.source == 'tx' ? minfo.meta.albumMid ?? '' : '',
+    }
+  }, [playMusicInfo])
 
   // 这首歌的歌手，一位一行
   const load = useCallback(async(names: string[]) => {
@@ -140,6 +158,46 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
     })
   }, [componentId])
 
+  const handleOpenAlbum = useCallback(() => {
+    if (!album?.mid) return
+    navigations.pushAlbumDetailScreen(componentId, {
+      id: album.mid,
+      mid: album.mid,
+      name: album.name,
+      author: musicInfo.singer,
+      img: album.pic,
+    })
+  }, [album, componentId, musicInfo.singer])
+
+  // 专辑那行摆在歌手行上面：这一页要回答的就是「这首歌是谁唱的、出自哪张专辑」，
+  // 样式和下面的歌手行一样（封面 + 名字 + 一行小字），封面用方角，专辑本来就是方的
+  const albumRow = useMemo(() => {
+    if (!album) return null
+    const content = (
+      <>
+        <Image
+          url={album.pic}
+          // 和专辑网格里那份拼法一致，点进专辑详情时封面能接上
+          nativeID={album.mid ? `${NAV_SHEAR_NATIVE_IDS.albumDetail_pic}_from_${album.mid}` : undefined}
+          style={{ ...styles.albumCover, width: AVATAR_SIZE, height: AVATAR_SIZE }}
+        />
+        <View style={styles.info}>
+          <Text size={16} numberOfLines={1}>{album.name}</Text>
+          <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{t('play_detail_album')}</Text>
+        </View>
+      </>
+    )
+    return album.mid
+      ? (
+        <TouchableOpacity
+          activeOpacity={0.5}
+          style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}
+          onPress={handleOpenAlbum}
+        >{content}</TouchableOpacity>
+        )
+      : <View style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}>{content}</View>
+  }, [album, theme, t, handleOpenAlbum])
+
   const renderItem: FlatListProps<SingerItem>['renderItem'] = ({ item }) => (
     <TouchableOpacity
       activeOpacity={0.5}
@@ -170,6 +228,7 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
         style={styles.list}
         keyExtractor={item => item.mid}
         renderItem={renderItem}
+        ListHeaderComponent={albumRow}
         ListEmptyComponent={
           singers.length > 0 && status == 'idle'
             ? <Text style={styles.empty} color={theme['c-font-label']}>{t('no_item')}</Text>
@@ -207,6 +266,12 @@ const styles = createStyle({
   avatar: {
     flexGrow: 0,
     flexShrink: 0,
+    overflow: 'hidden',
+  },
+  albumCover: {
+    flexGrow: 0,
+    flexShrink: 0,
+    borderRadius: 4,
     overflow: 'hidden',
   },
   info: {
