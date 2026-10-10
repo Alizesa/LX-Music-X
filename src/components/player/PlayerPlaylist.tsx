@@ -42,8 +42,8 @@ type PlaylistRow =
 const ITEM_HEIGHT = scaleSizeH(LIST_ITEM_HEIGHT)
 
 // 初始渲染段给多少行。index>0 时渲染窗口会被 pendingScrollUpdateCount 钉在
-// [index, index + 它) 这一段上（见下面 onLayout 里那次补滚），给足一屏才不会
-// 在可视区里留下空行。面板最高占屏幕 78%，按屏幕高度折算行数再多留两行。
+// [index, index + 它) 这一段上（见下面 onContentSizeChange 里那次补滚），给足
+// 一屏才不会在可视区里留下空行。面板最高占屏幕 78%，按屏幕高度折算行数再多留两行。
 const INITIAL_ROWS = Math.ceil(Dimensions.get('screen').height / ITEM_HEIGHT) + 2
 
 // 必须 memo：队列动辄几百首，虚拟列表一次就会补进来一批单元格，
@@ -120,8 +120,9 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   const listRef = useRef<FlatList<PlaylistRow>>(null)
   const scrollOffsetRef = useRef(0)
   const listHeightRef = useRef(0)
-  // 打开后还要不要补一次定位（见 onLayout 里的说明）
+  // 打开后还要不要补一次定位、以及补的那次有没有真的滚起来（见 onContentSizeChange）
   const pendingInitialScrollRef = useRef(false)
+  const initialScrollDoneRef = useRef(false)
   const [visible, setVisible] = useState(false)
   const [queue, setQueue] = useState<LX.Player.PlayQueueItem[]>([...getPlayQueue()])
   const [tempList, setTempList] = useState<LX.Player.PlayMusicInfo[]>([...playerState.tempPlayList])
@@ -146,8 +147,8 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   // initialScrollIndex 让虚拟列表从当前这一项开始渲染，否则单元格会一个个冒出来，
   // 看起来就是「一顿一顿地移动过去」（索引越大越明显）；但它的值 > 0 时，窗口会被
   // pendingScrollUpdateCount 钉在 [index, index + initialNumToRender) 上，要等一次
-  // 原生滚动事件才会挪窝（见 onLayout 里那次补滚）。所以 initialNumToRender 要按
-  // 「一屏放得下的行数」给足，钉住期间可视区里也不会缺行。
+  // 原生滚动事件才会挪窝（见 onContentSizeChange 里那次补滚）。所以 initialNumToRender
+  // 要按「一屏放得下的行数」给足，就算那次补滚没生效，可视区里也不会缺行。
   //
   // 这两个「挂载」语义只在挂载时有效，所以值必须在 show() 里定死、打开期间不再变：
   // contentOffset 是原生属性，值一变原生就会 scrollTo。之前它直接取
@@ -159,7 +160,13 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   useImperativeHandle(ref, () => ({
     show() {
       const list = getPlayQueue()
-      const index = playInfo.playerPlayIndex > 0 && playInfo.playerPlayIndex < list.length ? playInfo.playerPlayIndex : 0
+      // 队列比一屏还短时整条列表本来就全露在外面，这时绝不能用 initialScrollIndex：
+      // 它会把渲染窗口钉在 [index, index + initialNumToRender) 上，当前曲目以上那几行
+      // 就成了空白；而内容短到滚不动时，连一次能解开这个钉死的滚动事件都产生不出来
+      // （拖也没用，原生根本没有可滚的余量），空白就一直挂在那里。不钉的话渲染窗口
+      // 从第 0 行开始，整条队列都在里面。
+      const canPin = list.length > INITIAL_ROWS
+      const index = canPin && playInfo.playerPlayIndex > 0 && playInfo.playerPlayIndex < list.length ? playInfo.playerPlayIndex : 0
       setQueue([...list])
       setTempList([...playerState.tempPlayList])
       setInitialIndex(index)
@@ -167,7 +174,8 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
       // 否则「是否已可见」会以为还在顶部，首次跟随时会多滚一次
       scrollOffsetRef.current = index * ITEM_HEIGHT
       listHeightRef.current = 0
-      pendingInitialScrollRef.current = true
+      pendingInitialScrollRef.current = index > 0
+      initialScrollDoneRef.current = false
       setVisible(true)
       requestAnimationFrame(() => popupRef.current?.setVisible(true))
     },
@@ -292,26 +300,32 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
         initialNumToRender={INITIAL_ROWS}
         initialScrollIndex={initialIndex > 0 ? initialIndex : undefined}
         contentOffset={{ x: 0, y: initialIndex * ITEM_HEIGHT }}
-        onLayout={e => {
-          listHeightRef.current = e.nativeEvent.layout.height
-          // 补一次定位。contentOffset 是原生属性，假如挂载时内容还没量好，这次定位
-          // 会被当成「超出可滚范围」丢掉，列表就停在顶部；而 initialScrollIndex>0 时
-          // 渲染窗口要等一次原生滚动事件（_onScroll 里减 pendingScrollUpdateCount）
-          // 才会离开初始那一段，开场以上那批行就一直是空白——行数不变、重启也一样，
-          // 因为每次打开都是重新挂载。这次滚动两件事一起解决：位置本来就对时它是
-          // 空操作，不动。scrollToOffset 本身不改 JS 侧的 scrollMetrics，
-          // 只能靠它触发的原生 onScroll。
-          if (!pendingInitialScrollRef.current) return
-          pendingInitialScrollRef.current = false
+        onLayout={e => { listHeightRef.current = e.nativeEvent.layout.height }}
+        // 补一次打开时的定位。contentOffset 是原生属性，面板挂载时内容往往还没量好，
+        // 这次定位会被当成「超出可滚范围」丢掉，列表就停在顶部；而 initialScrollIndex>0
+        // 时渲染窗口要等一次原生滚动事件（_onScroll 里那个 pendingScrollUpdateCount）
+        // 才会离开初始那段，当前曲目以上那批行就一直是空白——行数不变、重开重装也一样，
+        // 因为每次打开都是重新挂载。
+        //
+        // 必须挂在 onContentSizeChange 上而不是 onLayout：位置真的对得上要求内容已经
+        // 量好，早了的话原生那次 scrollTo 会被夹回原处、偏移没变，onScrollChanged 不
+        // 触发，等于白滚。这里内容尺寸已经确定，滚过去一定生效，顺带用那次 onScroll
+        // 把渲染窗口带回正轨（scrollToOffset 本身不改 JS 侧的 scrollMetrics）。
+        // 位置本来就对时它是空操作；真滚过之后（onScroll 里置位）就不再补。
+        onContentSizeChange={() => {
+          if (!pendingInitialScrollRef.current || initialScrollDoneRef.current) return
           const offset = initialIndex * ITEM_HEIGHT
           if (offset <= 0) return
           requestAnimationFrame(() => {
-            // 用户已经自己滚过了就别再拽回来
-            if (scrollOffsetRef.current !== offset) return
+            if (initialScrollDoneRef.current) return
             listRef.current?.scrollToOffset({ offset, animated: false })
           })
         }}
-        onScroll={e => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y }}
+        onScroll={e => {
+          scrollOffsetRef.current = e.nativeEvent.contentOffset.y
+          // 滚过就说明那次补定位生效了（或用户自己滚了），别再补
+          if (pendingInitialScrollRef.current) initialScrollDoneRef.current = true
+        }}
         scrollEventThrottle={16}
         renderItem={({ item: row }) => (
           row.kind === 'temp'
