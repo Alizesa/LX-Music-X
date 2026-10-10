@@ -6,7 +6,7 @@ import { type LayoutChangeEvent, View } from 'react-native'
 // import TipList from './components/TipList'
 // import MusicList from './components/MusicList'
 import HeaderBar, { type HeaderBarProps, type HeaderBarType } from './HeaderBar'
-import searchState, { type SearchType } from '@/store/search/state'
+import searchState, { type SearchType, TX_ONLY_SEARCH_TYPES } from '@/store/search/state'
 import searchMusicState from '@/store/search/music/state'
 import searchSonglistState from '@/store/search/songlist/state'
 import { getSearchSetting, saveSearchSetting } from '@/utils/data'
@@ -19,7 +19,7 @@ import { addHistoryWord } from '@/core/search/search'
 interface SearchInfo {
   temp_source: LX.OnlineSource
   source: LX.OnlineSource | 'all'
-  searchType: 'music' | 'songlist' | 'singer'
+  searchType: SearchType
 }
 
 export default () => {
@@ -44,6 +44,8 @@ export default () => {
           headerBarRef.current?.setSourceList(searchSonglistState.sources, info.source)
           break
         case 'singer':
+        case 'album':
+          // 歌手/专辑只有 tx 源能搜，源列表就固定成 tx 一个
           searchInfo.current.source = 'tx'
           headerBarRef.current?.setSourceList([searchMusicState.sources.find(source => source == 'tx')!], 'tx')
           break
@@ -54,7 +56,7 @@ export default () => {
 
     const handleTypeChange = (type: SearchType) => {
       searchInfo.current.searchType = type
-      if (type == 'singer') {
+      if (TX_ONLY_SEARCH_TYPES.includes(type)) {
         searchInfo.current.source = 'tx'
         headerBarRef.current?.setSourceList([searchMusicState.sources.find(source => source == 'tx')!], 'tx')
         void saveSearchSetting({ type, source: 'tx' })
@@ -80,7 +82,7 @@ export default () => {
   }
 
   const handleSourceChange: HeaderBarProps['onSourceChange'] = (source) => {
-    if (searchInfo.current.searchType == 'singer') source = 'tx'
+    if (TX_ONLY_SEARCH_TYPES.includes(searchInfo.current.searchType)) source = 'tx'
     searchInfo.current.source = source
     void saveSearchSetting({ source })
     listRef.current?.loadList(searchState.searchText, source, searchInfo.current.searchType)

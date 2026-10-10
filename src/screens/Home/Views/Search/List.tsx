@@ -6,6 +6,7 @@ import MusicList from './MusicList'
 import BlankView, { type BlankViewType } from './BlankView'
 import SonglistList from './SonglistList'
 import SingerList from './SingerList'
+import AlbumList from './AlbumList'
 
 interface ListProps {
   onSearch: (keyword: string) => void
@@ -21,7 +22,7 @@ export interface SearchListType {
 export default forwardRef<ListType, ListProps>(({ onSearch }, ref) => {
   const [listType, setListType] = useState<SearchState['searchType']>('music')
   const [showBlankView, setShowListView] = useState(true)
-  // 歌曲/歌单/歌手三个列表的 loadList 形状一致，切标签时整个换掉，ref 跟着指向新组件
+  // 歌曲/歌单/歌手/专辑几个列表的 loadList 形状一致，切标签时整个换掉，ref 跟着指向新组件
   const listRef = useRef<SearchListType>(null)
   const blankViewRef = useRef<BlankViewType>(null)
 
@@ -50,6 +51,8 @@ export default forwardRef<ListType, ListProps>(({ onSearch }, ref) => {
         ? <SonglistList ref={listRef} />
         : listType == 'singer'
           ? <SingerList ref={listRef} />
-          : <MusicList ref={listRef} />
+          : listType == 'album'
+            ? <AlbumList ref={listRef} />
+            : <MusicList ref={listRef} />
   )
 })

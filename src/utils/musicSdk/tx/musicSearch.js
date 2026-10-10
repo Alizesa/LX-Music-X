@@ -8,6 +8,7 @@ const retryDelay = 500
 /** 搜索结果里歌曲所在的 tab：0 单曲、1 歌手、2 专辑、3 歌单、4 MV */
 const SEARCH_TYPE_SONG = 0
 const SEARCH_TYPE_SINGER = 1
+const SEARCH_TYPE_ALBUM = 2
 
 export default {
   limit: 50,
@@ -97,6 +98,60 @@ export default {
           source: 'tx',
         }
       }).filter(item => item.name)
+      const total = meta?.sum ?? list.length
+      return { list, total, allPage: Math.ceil(total / limit), limit, source: 'tx' }
+    })
+  },
+  searchAlbumRequest(str, page, limit, retryNum = 0) {
+    if (retryNum > 3) return Promise.reject(new Error('搜索失败'))
+    const searchRequest = signRequest({
+      comm,
+      'music.search.SearchCgiService': {
+        module: 'music.search.SearchCgiService',
+        method: 'DoSearchForQQMusicDesktop',
+        param: {
+          grp: 1,
+          num_per_page: limit,
+          page_num: page,
+          query: str,
+          remoteplace: 'txt.newclient.top',
+          search_type: SEARCH_TYPE_ALBUM,
+          searchid: this.getSearchId(),
+        },
+      },
+    })
+    return searchRequest.then(({ body }) => {
+      const req = body?.['music.search.SearchCgiService'] ?? body?.req
+      // 和搜歌手一样：2001 是“这个关键词没有结果”，当成空列表返回
+      if (req?.code == this.noResultCode) return { body: { album: { list: [] } }, meta: { sum: 0 } }
+      if (!req || body.code != this.successCode || req.code != this.successCode) {
+        // 失败多半是被限流，等一下再试，别连着打
+        return new Promise(resolve => { setTimeout(resolve, retryDelay) })
+          .then(() => this.searchAlbumRequest(str, page, limit, ++retryNum))
+      }
+      return req.data
+    })
+  },
+  /**
+   * 搜索专辑。专辑在 body.album.list 里，总数同样在 meta.sum 上
+   */
+  searchAlbum(str, page = 1, limit = 30) {
+    return this.searchAlbumRequest(str, page, limit).then(({ body, meta }) => {
+      const list = (body?.album?.list ?? []).map(item => {
+        const mid = item.albumMID ?? ''
+        return {
+          id: mid,
+          mid,
+          name: item.albumName ?? '',
+          author: item.singerName ?? '',
+          // 接口给的是 180 的缩略图地址，换成大图
+          img: mid ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${mid}.jpg` : '',
+          publishDate: item.publicTime ?? '',
+          // 搜索结果里不带专辑类型（专辑详情页这个参数本来就允许空着）
+          albumType: '',
+          source: 'tx',
+        }
+      }).filter(item => item.mid)
       const total = meta?.sum ?? list.length
       return { list, total, allPage: Math.ceil(total / limit), limit, source: 'tx' }
     })

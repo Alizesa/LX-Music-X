@@ -32,6 +32,7 @@ export default forwardRef<AlbumListType, AlbumListProps>(({ onRefresh, onLoadMor
   const [status, setStatus] = useState<Status>('idle')
   const { onLayout, width } = useLayout()
   const theme = useTheme()
+  const t = useI18n()
 
   useImperativeHandle(ref, () => ({
     setList(list) {
@@ -79,6 +80,13 @@ export default forwardRef<AlbumListType, AlbumListProps>(({ onRefresh, onLoadMor
 
   const footerComponent = useMemo(() => <Footer status={status} onLoadMore={onLoadMore} />, [status, onLoadMore])
 
+  // 搜索专辑时可能一条都没有，给个空列表文案（歌手详情页专辑为空时同样适用）
+  const emptyComponent = useMemo(() => (
+    status == 'end' || status == 'idle'
+      ? <Text style={styles.empty} color={theme['c-font-label']}>{t('no_item')}</Text>
+      : null
+  ), [status, theme, t])
+
   const renderItem: FlatListProps<AlbumItem>['renderItem'] = ({ item, index }) => {
     if (!item.mid) return <View style={{ ...styles.item, width: rowInfo.width - GAP }} />
     return <AlbumItemCard item={item} index={index} width={rowInfo.width - GAP} onPress={onOpenDetail} />
@@ -104,6 +112,7 @@ export default forwardRef<AlbumListType, AlbumListProps>(({ onRefresh, onLoadMor
               onEndReachedThreshold={0.6}
               onEndReached={handleLoadMore}
               refreshControl={refreshControl}
+              ListEmptyComponent={emptyComponent}
               ListFooterComponent={footerComponent}
             />
             )
@@ -177,6 +186,10 @@ const styles = createStyle({
     flex: 1,
     paddingLeft: 10,
     paddingRight: 10,
+  },
+  empty: {
+    textAlign: 'center',
+    paddingTop: 40,
   },
   item: {
     margin: 10,
