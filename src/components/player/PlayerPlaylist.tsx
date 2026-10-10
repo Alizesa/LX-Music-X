@@ -224,6 +224,22 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
     requestAnimationFrame(scrollToCurrent)
   }, [visible, playInfo.playerPlayIndex, scrollToCurrent])
 
+  // 打开期间行集会变：队列被重建（queueId 全换，单元格整批重挂）、稍后播放的歌播完
+  // 被移出。行少了以后原生滚动位置不会自己收回来——上面借着 contentOffset 关掉了
+  // RN 那次自我修正（_onContentSizeChange 里那个 scrollToIndex），偏移就停在内容
+  // 末尾之外，原位置留下一块空白。这里在行集变化后把偏移夹回合法范围：
+  // 位置本身合法时什么都不做，不影响用户自己滚动的位置。
+  useEffect(() => {
+    if (!visible) return
+    const raf = requestAnimationFrame(() => {
+      const maxOffset = Math.max(0, rows.length * ITEM_HEIGHT - listHeightRef.current)
+      if (scrollOffsetRef.current <= maxOffset) return
+      listRef.current?.scrollToOffset({ offset: maxOffset, animated: false })
+      scrollOffsetRef.current = maxOffset
+    })
+    return () => { cancelAnimationFrame(raf) }
+  }, [visible, rows])
+
   // 稳定引用，配合 QueueRow 的 memo：否则每渲染一次都会让所有行的
   // PanResponder 重建，长队列下开销很大
   const handleMove = useCallback((from: number, to: number) => { void moveQueueMusic(from, to) }, [])
@@ -251,6 +267,10 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
         ref={listRef}
         data={rows}
         keyExtractor={row => row.key}
+        // 安卓上 ScrollView 默认开着 removeClippedSubviews：行集变化时被「剪掉」
+        // 的单元格会连着还在可视区里的位置一起空着（就是那块空白）。面板生命周期
+        // 很短，取消裁剪的代价可以接受，换来的是行增减后渲染结果一定是全的
+        removeClippedSubviews={false}
         // 必须给列表高度约束。ScrollView 默认 flexShrink:0，高度由内容决定，
         // 队列一长就会远超面板的 maxHeight，和父容器的收缩约束互相打架，
         // 布局稳定下来之前面板会跳一下。同 Popup 的另一个调用方（同步历史）
