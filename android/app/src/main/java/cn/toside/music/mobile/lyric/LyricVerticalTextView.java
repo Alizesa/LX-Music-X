@@ -194,11 +194,40 @@ public class LyricVerticalTextView extends TextView {
   }
 
   /**
+   * 中日韩区里的括号：直角引号 「」『』 和它们的半角 ｢｣、书名号 〈〉《》、
+   * 方括号 【】〔〕〖〗〘〙〚〛。
+   *
+   * 半角、全角 ASCII 变体的括号靠 isRotatable 里的「折回半角」就能倒，这些码位在中日韩区、
+   * 折不回去，所以单独列一份。竖排里它们本来就该倒着（弧口朝上下），跟「」在竖排里的正字一样；
+   * 全角的不倒、半角的倒也不行——「（」和「」混着写时会出现半边倒半边不倒的怪样子。
+   *
+   * 不列 ﹁﹂﹃﹄、︵︶ 这些：它们本身就是竖排专用的字形，再转 90° 就横过来了。
+   */
+  private static boolean isCjkBracket(int codePoint) {
+    switch (codePoint) {
+      case 0x300C: case 0x300D: // 「」
+      case 0x300E: case 0x300F: // 『』
+      case 0x3008: case 0x3009: // 〈〉
+      case 0x300A: case 0x300B: // 《》
+      case 0x3010: case 0x3011: // 【】
+      case 0x3014: case 0x3015: // 〔〕
+      case 0x3016: case 0x3017: // 〖〗
+      case 0x3018: case 0x3019: // 〘〙
+      case 0x301A: case 0x301B: // 〚〛
+      case 0xFF62: case 0xFF63: // ｢｣（半角直角引号）
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /**
    * 能不能横倒。半角拉丁字母、数字、半角符号、词间空格算「能」，中文日文、全角标点、
    * emoji 这些照旧正着摆。0x2E80 是中日韩部首补充的起点，之前的码位基本都是西文。
    *
    * 全角 ASCII 变体（全角括号 （）、全角数字 ０-９、全角符号 ～＊／ 之类）折回半角之后按同一条
    * 规则判：于是全角括号、全角符号跟着半角一起倒，全角的 ．，？！；： 跟半角一样正着。
+   * 中日韩区里的括号（「」《》【】这类）折不回去，由 isCjkBracket 单独兜住。
    *
    * 说「能」的不只是字母数字：不常用的标点（短横线、波浪线、星号、括号……）也直接倒，不再要求
    * 「这一串里得有字母或数字」。半角短横线转 90° 只剩一根两像素宽的细竖线、掉在五六十像素的
@@ -209,6 +238,7 @@ public class LyricVerticalTextView extends TextView {
    */
   private static boolean isRotatable(int codePoint) {
     if (codePoint == ' ') return true;
+    if (isCjkBracket(codePoint)) return true;
     if (codePoint >= 0xFF01 && codePoint <= 0xFF5E) codePoint -= 0xFEE0; // 全角 → 半角
     if (Character.isWhitespace(codePoint)) return false;
     return codePoint < 0x2E80 && !isCommonPunctuation(codePoint);
