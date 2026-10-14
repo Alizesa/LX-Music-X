@@ -22,7 +22,8 @@ import java.util.ArrayList;
  *   字（歪头看是连续的），而不是 h-e-l-l-o 五个正着的字母；
  * - 标点里只有「转 90° 会变难看」的那几个例外（半角 , . ? ! ; : 和它们的全角写法，见
  *   isCommonPunctuation）：正着摆，而且会把左右两边的横倒串切开。破折号、省略号、引号、括号、
- *   数字、短横线这些照旧横倒，不再要求「这一串里得有字母或数字」
+ *   数字、短横线这些照旧横倒，不再要求「这一串里得有字母或数字」。唯一的例外是夹在单词内部的
+ *   常用标点跟着单词一起倒（见 isRotatableAt），"S.O.S" 才不会被截成四段
  *
  * 网格、列数、字号全都沿用原来那套，只有画法不同；开了横倒时窗口会按「每列至少一个行高」
  * 加宽（见 LyricView.applyBoxSize），横倒的字才不用缩、也不会压到隔壁列上。
@@ -158,7 +159,7 @@ public class LyricVerticalTextView extends TextView {
           row++;
           continue;
         }
-        if (!rotateLatin || !isRotatable(codePoint)) {
+        if (!rotateLatin || !isRotatableAt(rowCodePoints, column, row)) {
           addCell(column, new String(Character.toChars(codePoint)), false);
           row++;
           continue;
@@ -168,7 +169,7 @@ public class LyricVerticalTextView extends TextView {
         StringBuilder run = new StringBuilder();
         while (row < rowCount) {
           int cp = codePointAt(rowCodePoints.get(row), column);
-          if (cp < 0 || !isRotatable(cp)) break;
+          if (cp < 0 || !isRotatableAt(rowCodePoints, column, row)) break;
           run.appendCodePoint(cp);
           row++;
         }
@@ -179,7 +180,9 @@ public class LyricVerticalTextView extends TextView {
 
   /**
    * 永远正着摆、并且会把左右两边的横倒串切开的那几个标点（"Hello, world!" 是 Hello 横倒、
-   * 逗号正着、world 横倒、感叹号正着）。全角写法由 isRotatable 折回半角之后一起判。
+   * 逗号正着、world 横倒、感叹号正着）。全角写法由 isRotatable 折回半角之后一起判；
+   * 夹在单词内部的例外见 isRotatableAt。
+   *
    *
    * 判据不是「常用不常用」，而是「倒下去会不会变难看」：逗号是块小尾巴、句号是个点、问号是个钩，
    * 转 90° 之后混在横倒的英文里只是脏。破折号 ——、省略号 …、引号 “ ” 看着也常用，但转 90°
@@ -244,6 +247,30 @@ public class LyricVerticalTextView extends TextView {
     if (codePoint >= 0xFF01 && codePoint <= 0xFF5E) codePoint -= 0xFEE0; // 全角 → 半角
     if (Character.isWhitespace(codePoint)) return false;
     return codePoint < 0x2E80 && !isCommonPunctuation(codePoint);
+  }
+
+  /**
+   * 这一格能不能横倒。多数格子直接看 isRotatable，但常用标点还有个机会：夹在单词内部时跟着单词
+   * 一起倒。
+   *
+   * 不这么例外就会把词从中间截开（踩过："S.O.S" 倒成了 S | . | O | .S）。判据是「前后紧挨着的
+   * 两个码点都是字母或数字」（见 isInsideWord），所以 "Hello, world!" 里的逗号（后面跟着空格）
+   * 照旧正着、把串切开，只有真正在词里的标点才跟着倒。
+   */
+  private static boolean isRotatableAt(ArrayList<int[]> rowCodePoints, int column, int row) {
+    int codePoint = codePointAt(rowCodePoints.get(row), column);
+    return isRotatable(codePoint) || (isCommonPunctuation(codePoint) && isInsideWord(rowCodePoints, column, row));
+  }
+
+  /** 前后紧挨着的两个码点都是字母或数字（"S.O.S" 里那两个点、"12:30" 里那个冒号） */
+  private static boolean isInsideWord(ArrayList<int[]> rowCodePoints, int column, int row) {
+    if (row <= 0 || row + 1 >= rowCodePoints.size()) return false;
+    return isWordChar(codePointAt(rowCodePoints.get(row - 1), column))
+      && isWordChar(codePointAt(rowCodePoints.get(row + 1), column));
+  }
+
+  private static boolean isWordChar(int codePoint) {
+    return codePoint > 0 && Character.isLetterOrDigit(codePoint);
   }
 
   private static int codePointAt(int[] codePoints, int index) {
