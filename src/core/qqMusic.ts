@@ -597,25 +597,43 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
   }
 }
 
+/**
+ * 自建歌单列表的地址。
+ *
+ * 优先用不带 platform 的那套（对齐 MusicOne）：带 `platform=yqq.json` 时服务端按网页老
+ * 格式返回，那种响应里**没有 dirid** —— 而写歌单（加歌/删歌）必须要 dirid。
+ * legacy=true 是早先那套参数，只在新参数取不到东西时兜底，保证歌单列表不会因此消失。
+ */
+const createdPlaylistUrl = (uin: string, legacy: boolean) => legacy
+  ? `${QQ_CREATED_PLAYLIST_URL}?hostUin=0&hostuin=${encodeURIComponent(uin)}&sin=0&size=${PLAYLIST_PAGE_SIZE}&g_tk=5381&loginUin=${encodeURIComponent(uin)}&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0`
+  : `${QQ_CREATED_PLAYLIST_URL}?hostuin=${encodeURIComponent(uin)}&sin=0&size=${PLAYLIST_PAGE_SIZE}&format=json&inCharset=utf8&outCharset=utf-8`
+
+// 自建歌单有两个数组：disslist 是当前格式，list 是旧的。两处都要读 ——
+// 只读 disslist 会漏掉一部分账号（MusicOne 两个都读）
+const readCreatedPlaylists = (body: any): any[] =>
+  [...pickArray(body, ['data.disslist']), ...pickArray(body, ['data.list'])]
+
 export const getQQMusicPlaylists = async(cookie: string): Promise<LX.QQMusic.PlaylistInfo[]> => {
   const cookies = parseQQMusicCookie(cookie)
   const uin = readUin(cookies)
   if (!uin) throw new Error(global.i18n.t('qq_cookie_invalid'))
-  const createdUrl = `${QQ_CREATED_PLAYLIST_URL}?hostUin=0&hostuin=${encodeURIComponent(uin)}&sin=0&size=${PLAYLIST_PAGE_SIZE}&g_tk=5381&loginUin=${encodeURIComponent(uin)}&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0`
   const collectedUrl = `${QQ_COLLECTED_PLAYLIST_URL}?ct=20&cid=205360956&userid=${encodeURIComponent(uin)}&reqtype=3&sin=0&ein=80`
   const options = { headers: { Referer: QQ_PROFILE_REFERER } }
+
+  const createdTask = (async(): Promise<any[]> => {
+    const fresh = await request(createdPlaylistUrl(uin, false), cookie, options).then(readCreatedPlaylists)
+    if (fresh.length) return fresh
+    return request(createdPlaylistUrl(uin, true), cookie, options).then(readCreatedPlaylists)
+  })()
+
   const [created, collected] = await Promise.allSettled([
-    request(createdUrl, cookie, options),
-    request(collectedUrl, cookie, options),
+    createdTask,
+    request(collectedUrl, cookie, options).then(body => pickArray(body, ['data.cdlist'])),
   ])
   // 两个接口都失败说明会话确实不可用，明确报错而不是静默返回空列表
   if (created.status === 'rejected' && collected.status === 'rejected') throw created.reason
-  // 自建歌单有两个数组：disslist 是当前格式，list 是旧的。两处都要读 ——
-  // 只读 disslist 会漏掉一部分账号（MusicOne 两个都读）
-  const createdList = created.status === 'fulfilled'
-    ? [...pickArray(created.value, ['data.disslist']), ...pickArray(created.value, ['data.list'])]
-    : []
-  const collectedList = collected.status === 'fulfilled' ? pickArray(collected.value, ['data.cdlist']) : []
+  const createdList = created.status === 'fulfilled' ? created.value : []
+  const collectedList = collected.status === 'fulfilled' ? collected.value : []
   const seen = new Set<string>()
   return [
     ...createdList.map((raw: any) => normalizePlaylist(raw, false)),
