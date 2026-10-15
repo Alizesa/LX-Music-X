@@ -1,7 +1,5 @@
-import { View, TouchableOpacity } from 'react-native'
-// import Button from '@/components/common/Button'
-// import { navigations } from '@/navigation'
-// import { BorderWidths } from '@/theme'
+import { useCallback } from 'react'
+import { TouchableOpacity, View } from 'react-native'
 import { useTheme } from '@/store/theme/hook'
 import { useNavActiveId, useStatusbarHeight } from '@/store/common/hook'
 import { useI18n } from '@/lang'
@@ -9,106 +7,44 @@ import { createStyle } from '@/utils/tools'
 import { Icon } from '@/components/common/Icon'
 import Text from '@/components/common/Text'
 import StatusBar from '@/components/common/StatusBar'
-import { useSettingValue } from '@/store/setting/hook'
 import { scaleSizeH } from '@/utils/pixelRatio'
 import { HEADER_HEIGHT } from '@/config/constant'
-import { type InitState as CommonState } from '@/store/common/state'
-import SearchTypeSelector from '@/screens/Home/Views/Search/SearchTypeSelector'
+import commonState from '@/store/common/state'
+import { navigations } from '@/navigation'
 
-const headerComponents: Partial<Record<CommonState['navActiveId'], React.ReactNode>> = {
-  nav_search: <SearchTypeSelector />,
-}
-
-
-// const LeftTitle = () => {
-//   const id = useNavActiveId()
-//   const t = useI18n()
-
-//   return <Text style={styles.leftTitle} size={18}>{t(id)}</Text>
-// }
-const LeftHeader = () => {
-  const theme = useTheme()
-  const id = useNavActiveId()
-  const t = useI18n()
-  const statusBarHeight = useStatusbarHeight()
-
-  const openMenu = () => {
-    global.app_event.changeMenuVisible(true)
-  }
-
-  return (
-    <View style={{
-      ...styles.container,
-      height: scaleSizeH(HEADER_HEIGHT) + statusBarHeight,
-      paddingTop: statusBarHeight,
-    }}>
-      <View style={styles.left}>
-        <TouchableOpacity style={styles.btn} onPress={openMenu}>
-          <Icon color={theme['c-font']} name="menu" size={18} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.titleBtn} onPress={openMenu}>
-          <Text style={styles.leftTitle} size={18}>{t(id)}</Text>
-        </TouchableOpacity>
-      </View>
-      {headerComponents[id] ?? null}
-
-      {/* <TouchableOpacity style={styles.btn} onPress={openSetting}>
-        <Icon style={{ ...styles.btnText, color: theme['c-font'] }} name="setting" size={styles.btnText.fontSize} />
-      </TouchableOpacity> */}
-    </View>
-  )
-}
-
-
-// const RightTitle = () => {
-//   const id = useNavActiveId()
-//   const t = useI18n()
-
-//   return <Text style={styles.rightTitle} size={18}>{t(id)}</Text>
-// }
-const RightHeader = () => {
-  const theme = useTheme()
-  const t = useI18n()
-  const id = useNavActiveId()
-  const statusBarHeight = useStatusbarHeight()
-
-  const openMenu = () => {
-    global.app_event.changeMenuVisible(true)
-  }
-  return (
-    <View style={{
-      ...styles.container,
-      height: scaleSizeH(HEADER_HEIGHT) + statusBarHeight,
-      paddingTop: statusBarHeight,
-    }}>
-      <View style={styles.left}>
-        <TouchableOpacity style={styles.titleBtn} onPress={openMenu}>
-          <Text style={styles.rightTitle} size={18}>{t(id)}</Text>
-        </TouchableOpacity>
-      </View>
-      {headerComponents[id] ?? null}
-      <TouchableOpacity style={styles.btn} onPress={openMenu}>
-        <Icon color={theme['c-font']} name="menu" size={18} />
-      </TouchableOpacity>
-      {/* <TouchableOpacity style={styles.btn} onPress={openSetting}>
-        <Icon style={{ ...styles.btnText, color: theme['c-font'] }} name="setting" size={styles.btnText.fontSize} />
-      </TouchableOpacity> */}
-    </View>
-  )
-}
-
+// 抽屉拆掉后顶栏只剩标题 + 右侧一个动作：
+// 「首页」是搜索（推入搜索页），「我的」是设置（推入设置页）。
+// 原来的搜索类型切换器跟着搜索页一起走了，不再挂在顶栏上。
 const Header = () => {
-  const drawerLayoutPosition = useSettingValue('common.drawerLayoutPosition')
+  const theme = useTheme()
+  const t = useI18n()
+  const id = useNavActiveId()
+  const statusBarHeight = useStatusbarHeight()
+
+  const openSearch = useCallback(() => {
+    navigations.pushSearchScreen(commonState.componentIds.home!)
+  }, [])
+  const openSetting = useCallback(() => {
+    navigations.pushSettingScreen(commonState.componentIds.home!)
+  }, [])
+
+  const isHome = id != 'nav_mine'
 
   return (
     <>
       <StatusBar />
-      {
-        drawerLayoutPosition == 'left'
-          ? <LeftHeader />
-          : <RightHeader />
-      }
-
+      <View style={{
+        ...styles.container,
+        height: scaleSizeH(HEADER_HEIGHT) + statusBarHeight,
+        paddingTop: statusBarHeight,
+      }}>
+        <View style={styles.left}>
+          <Text style={styles.title} size={19}>{t(id)}</Text>
+        </View>
+        <TouchableOpacity style={styles.btn} onPress={isHome ? openSearch : openSetting}>
+          <Icon name={isHome ? 'search-2' : 'menu'} color={theme['c-font']} size={20} />
+        </TouchableOpacity>
+      </View>
     </>
   )
 }
@@ -116,12 +52,10 @@ const Header = () => {
 
 const styles = createStyle({
   container: {
-    // width: '100%',
     paddingRight: 5,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    // backgroundColor: 'rgba(0,0,0,0.1)',
     zIndex: 10,
   },
   left: {
@@ -132,25 +66,13 @@ const styles = createStyle({
     height: '100%',
   },
   btn: {
-    // flex: 1,
     width: HEADER_HEIGHT,
-    // backgroundColor: 'rgba(0,0,0,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
     height: '100%',
   },
-  titleBtn: {
-    flex: 1,
-    // backgroundColor: 'rgba(0,0,0,0.1)',
-    height: '100%',
-    justifyContent: 'center',
-  },
-  leftTitle: {
+  title: {
     paddingLeft: 14,
-    paddingRight: 16,
-  },
-  rightTitle: {
-    paddingLeft: 16,
     paddingRight: 16,
   },
 })

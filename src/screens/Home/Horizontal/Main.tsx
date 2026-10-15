@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import Search from '../Views/Search'
-import SongList from '../Views/SongList'
-import Mylist from '../Views/Mylist'
-import Leaderboard from '../Views/Leaderboard'
-import Setting from '../Views/Setting'
-import Download from '../Views/Download'
-import QQMusic from '../Views/QQMusic'
-import PlayHistory from '../Views/Setting/settings/PlayHistoryPage'
+import Recommend from '../Views/Recommend'
+import Mine from '../Views/Mine'
 import commonState, { type InitState as CommonState } from '@/store/common/state'
 
 
@@ -27,15 +21,8 @@ const Main = () => {
 
   const component = useMemo(() => {
     switch (id) {
-      case 'nav_songlist': return <SongList />
-      case 'nav_top': return <Leaderboard />
-      case 'nav_love': return <Mylist />
-      case 'nav_qq': return <QQMusic />
-      case 'nav_download': return <Download />
-      case 'nav_setting': return <Setting />
-      case 'nav_history': return <PlayHistory />
-      case 'nav_search':
-      default: return <Search />
+      case 'nav_mine': return <Mine />
+      default: return <Recommend />
     }
   }, [id])
 
@@ -44,4 +31,3 @@ const Main = () => {
 
 
 export default Main
-

@@ -41,6 +41,12 @@ export enum COMPONENT_IDS {
   albumDetail = 'albumDetail',
   comment = 'comment',
   qqMusicRecommend = 'qqMusicRecommend',
+  // 原来占 pager 页的四个页面，现在改成推入式页面，需要各自登记 id ——
+  // Home 的返回键处理靠 componentIds 的条目数判断「上面有没有压着详情页」
+  search = 'search',
+  setting = 'setting',
+  download = 'download',
+  playHistory = 'playHistory',
 }
 
 export enum NAV_SHEAR_NATIVE_IDS {
@@ -127,18 +133,27 @@ export const storageDataPrefixOld = {
 export const APP_PROVIDER_NAME = 'io.github.alizesa.lxmusicx.provider'
 
 
+// 底部导航栏只剩「首页」和「我的」两个 tab。
+// 图标用 Ionicons（icomoon 里没有首页/用户这类字形），选中态用实心、未选中用描边。
 export const NAV_MENUS = [
-  { id: 'nav_search', icon: 'search-2' },
-  { id: 'nav_songlist', icon: 'album' },
-  { id: 'nav_top', icon: 'leaderboard' },
-  { id: 'nav_love', icon: 'love' },
-  { id: 'nav_qq', icon: 'album' },
-  { id: 'nav_download', icon: 'download-2' },
-  { id: 'nav_setting', icon: 'setting' },
-  { id: 'nav_history', icon: 'music_time' },
+  { id: 'nav_home', icon: 'home', outlineIcon: 'home-outline' },
+  { id: 'nav_mine', icon: 'person', outlineIcon: 'person-outline' },
 ] as const
 
-export type NAV_ID_Type = typeof NAV_MENUS[number]['id']
+// 页面 id 全集。除两个 tab 外的 id 属于未清理干净的旧页面：
+// 搜索/设置/下载/播放历史已经改成推入式页面（不再占 pager 页），
+// 歌单/排行榜/我的列表会在后续清理中删掉，届时这里只剩 nav_home / nav_mine。
+export type NAV_ID_Type =
+  | 'nav_home'
+  | 'nav_mine'
+  | 'nav_search'
+  | 'nav_songlist'
+  | 'nav_top'
+  | 'nav_love'
+  | 'nav_qq'
+  | 'nav_download'
+  | 'nav_setting'
+  | 'nav_history'
 
 export const LXM_FILE_EXT_RXP = ['json', 'lxmc', 'bin']
 export const USER_API_SOURCE_FILE_EXT_RXP = ['js']
@@ -180,7 +195,7 @@ export const DEFAULT_SETTING = {
   },
 
   viewPrevState: {
-    id: 'nav_search' as NAV_ID_Type,
+    id: 'nav_home' as NAV_ID_Type,
     // query: {},
   },
 }

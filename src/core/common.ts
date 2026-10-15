@@ -9,7 +9,7 @@ import settingState from '@/store/setting/state'
 import commonActions from '@/store/common/action'
 import commonState, { type InitState as CommonStateType } from '@/store/common/state'
 
-import { storageDataPrefix } from '@/config/constant'
+import { storageDataPrefix, type NAV_ID_Type } from '@/config/constant'
 import { saveData } from '@/plugins/storage'
 import { throttle } from '@/utils/common'
 import { getSelectedManagedFolder, saveFontSize, saveViewPrevState, setSelectedManagedFolder } from '@/utils/data'
@@ -80,13 +80,16 @@ export const removeComponentId = (name: string) => {
   commonActions.removeComponentId(name)
 }
 
+// 底部导航只剩这两个 tab，页面上也只有它们。旧版本会把 nav_search / nav_setting 这类
+// id 存进 viewPrevState，启动时原样恢复会让两个 tab 同时失去选中态，所以入口统一折回
+// 「首页」。设置页改成推入式页面后不再占 nav id，原来对 nav_setting 的特判也一并去掉。
+const TAB_NAV_IDS = new Set<NAV_ID_Type>(['nav_home', 'nav_mine'])
+
 export const setNavActiveId = (id: Parameters<typeof commonActions.setNavActiveId>['0']) => {
-  if (id == commonState.navActiveId) return
-  commonActions.setNavActiveId(id)
-  if (id != 'nav_setting') {
-    commonActions.setLastNavActiveId(id)
-    saveViewPrevState({ id })
-  }
+  const nextId = TAB_NAV_IDS.has(id) ? id : 'nav_home'
+  if (nextId == commonState.navActiveId) return
+  commonActions.setNavActiveId(nextId)
+  saveViewPrevState({ id: nextId })
 }
 
 export const showPactModal = () => {

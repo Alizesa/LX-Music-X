@@ -9,7 +9,10 @@ import {
   ALBUM_DETAIL_SCREEN,
   COMMENT_SCREEN,
   QQMUSIC_RECOMMEND_SCREEN,
-  // SETTING_SCREEN,
+  SEARCH_SCREEN,
+  SETTING_SCREEN,
+  DOWNLOAD_SCREEN,
+  PLAY_HISTORY_SCREEN,
 } from './screenNames'
 
 import themeState from '@/store/theme/state'
@@ -336,6 +339,57 @@ export function pushQQMusicRecommendScreen(componentId: string) {
       },
     })
   })
+}
+
+/**
+ * 搜索/设置/下载/播放历史这四个原来占 pager 页的页面，现在都是同一种朴素推入页：
+ * 隐藏原生 topBar，顶栏由页面里的 SimpleHeader 自绘。
+ */
+function pushPlainScreen(componentId: string, screenName: string) {
+  const theme = themeState.theme
+
+  requestAnimationFrame(() => {
+    void Navigation.push(componentId, {
+      component: {
+        name: screenName,
+        options: {
+          topBar: {
+            visible: false,
+            height: 0,
+            drawBehind: false,
+          },
+          statusBar: {
+            drawBehind: true,
+            visible: true,
+            style: getStatusBarStyle(theme.isDark),
+            backgroundColor: 'transparent',
+          },
+          navigationBar: {
+            backgroundColor: theme['c-content-background'],
+          },
+          layout: {
+            componentBackgroundColor: theme['c-content-background'],
+          },
+        },
+      },
+    })
+  })
+}
+
+export function pushSearchScreen(componentId: string) {
+  pushPlainScreen(componentId, SEARCH_SCREEN)
+}
+
+export function pushSettingScreen(componentId: string) {
+  pushPlainScreen(componentId, SETTING_SCREEN)
+}
+
+export function pushDownloadScreen(componentId: string) {
+  pushPlainScreen(componentId, DOWNLOAD_SCREEN)
+}
+
+export function pushPlayHistoryScreen(componentId: string) {
+  pushPlainScreen(componentId, PLAY_HISTORY_SCREEN)
 }
 
 /**

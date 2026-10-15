@@ -10,7 +10,10 @@ import {
   AlbumDetail,
   Comment,
   QQMusicRecommend,
-  // Setting,
+  Search,
+  Setting,
+  Download,
+  PlayHistory,
 } from '@/screens'
 import { Provider } from '@/store/Provider'
 
@@ -22,6 +25,10 @@ import {
   ALBUM_DETAIL_SCREEN,
   COMMENT_SCREEN,
   QQMUSIC_RECOMMEND_SCREEN,
+  SEARCH_SCREEN,
+  SETTING_SCREEN,
+  DOWNLOAD_SCREEN,
+  PLAY_HISTORY_SCREEN,
   VERSION_MODAL,
   PACT_MODAL,
   SYNC_MODE_MODAL,
@@ -53,6 +60,10 @@ export default () => {
   Navigation.registerComponent(ALBUM_DETAIL_SCREEN, () => WrappedComponent(AlbumDetail))
   Navigation.registerComponent(COMMENT_SCREEN, () => WrappedComponent(Comment))
   Navigation.registerComponent(QQMUSIC_RECOMMEND_SCREEN, () => WrappedComponent(QQMusicRecommend))
+  Navigation.registerComponent(SEARCH_SCREEN, () => WrappedComponent(Search))
+  Navigation.registerComponent(SETTING_SCREEN, () => WrappedComponent(Setting))
+  Navigation.registerComponent(DOWNLOAD_SCREEN, () => WrappedComponent(Download))
+  Navigation.registerComponent(PLAY_HISTORY_SCREEN, () => WrappedComponent(PlayHistory))
   Navigation.registerComponent(VERSION_MODAL, () => WrappedComponent(VersionModal))
   Navigation.registerComponent(PACT_MODAL, () => WrappedComponent(PactModal))
   Navigation.registerComponent(SYNC_MODE_MODAL, () => WrappedComponent(SyncModeModal))

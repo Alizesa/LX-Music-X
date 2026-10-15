@@ -15,14 +15,14 @@ interface Props {
   componentId: string
 }
 
-// 「我的列表」和「QQ音乐」相当于首页，其它标签按返回键都回到这两个页中的一个
-const PRIMARY_NAV_IDS = new Set<NAV_ID_Type>(['nav_love', 'nav_qq'])
+// 「首页」和「我的」是两个 tab，按返回键时都回到这两个页中的一个
+const PRIMARY_NAV_IDS = new Set<NAV_ID_Type>(['nav_home', 'nav_mine'])
 
 
 export default ({ componentId }: Props) => {
   const isHorizontalMode = useHorizontalMode()
   // 记住最近看的是这两个页里的哪一个，返回时回到它
-  const lastPrimaryRef = useRef<NAV_ID_Type>('nav_love')
+  const lastPrimaryRef = useRef<NAV_ID_Type>('nav_home')
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.home, componentId)

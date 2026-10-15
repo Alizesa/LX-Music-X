@@ -13,7 +13,9 @@ import { StyleSheet, type StyleProp, type TextStyle } from 'react-native'
 // import IconFontAwesome5 from 'react-native-vector-icons/FontAwesome5'
 // import IconFontisto from 'react-native-vector-icons/Fontisto'
 // import IconFoundation from 'react-native-vector-icons/Foundation'
-// import IconIonicons from 'react-native-vector-icons/Ionicons'
+// Ionicons 用于底部导航栏：icomoon 里没有「用户/首页」这类图标，
+// 字体已链接进 android/app/src/main/assets/fonts/Ionicons.ttf
+import IconIonicons from 'react-native-vector-icons/Ionicons'
 // import IconMaterialIcons from 'react-native-vector-icons/MaterialIcons'
 // import IconMaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons'
 // import IconOcticons from 'react-native-vector-icons/Octicons'
@@ -62,7 +64,7 @@ export {
   // IconFontAwesome5,
   // IconFontisto,
   // IconFoundation,
-  // IconIonicons,
+  IconIonicons,
   // IconMaterialIcons,
   // IconMaterialCommunityIcons,
   // IconOcticons,
