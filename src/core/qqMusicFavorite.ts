@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getQQMusicPlaylistSongs, getQQMusicSession, postAuthedMusicu } from './qqMusic'
-
+import { getQQMusicPlaylistSongs, getQQMusicSession, getQQMusicTrackIdentity, postAuthedMusicu } from './qqMusic'
 import { getQQMusicLikedSongsCache, removeQQMusicLikedSongsCache, saveQQMusicLikedSongsCache } from '@/utils/data'
 import { clearPlaylistSongsCache } from './qqMusicPlaylistSongsCache'
 
@@ -160,13 +159,28 @@ export const setQQMusicTrackInPlaylist = async(
   add: boolean,
 ): Promise<FavoriteResult> => {
   if (musicInfo.source != 'tx') return 'unsupported'
-  const songId = Number(musicInfo.meta.id ?? 0)
-  if (!songId) return 'unsupported'
   const numericId = Number(playlist.id)
   const dirId = playlist.dirId ?? (Number.isFinite(numericId) && numericId > 0 ? numericId : 0)
   if (!dirId) return 'unsupported'
   const { cookie } = await getQQMusicSession()
   if (!cookie) return 'unsupported'
+
+  // 写入前补一次歌曲详情，拿服务端眼中的「规范身份」：**删除要求身份和当初添加进去的
+  // 完全一致**，对不上就会被当成「删一个不存在的条目」——返回成功但什么都不做
+  // （实测就是这个现象）。详情取不到就退回列表里那套值。
+  const fallbackSongId = Number(musicInfo.meta.id ?? 0)
+  const fallbackSongType = readSongType(musicInfo)
+  const songMid = String(musicInfo.meta.songId ?? '')
+  const detail = songMid
+    ? await getQQMusicTrackIdentity(cookie, songMid, fallbackSongType, fallbackSongId).catch(error => {
+      console.warn('[QQMusic] 取歌曲详情失败，用列表里的身份:', error instanceof Error ? error.message : error)
+      return null
+    })
+    : null
+  // 详情里缺字段时它自己已经退回传入的兜底值了，所以这里用 ?? 就够
+  const songId = detail?.songId ?? fallbackSongId
+  const songType = detail?.songType ?? fallbackSongType
+  if (!songId) return 'unsupported'
 
   const body = await postAuthedMusicu(cookie, {
     req_0: {
@@ -177,7 +191,7 @@ export const setQQMusicTrackInPlaylist = async(
         tid: 0,
         bFmtUtf8: true,
         source: WRITE_SOURCE,
-        v_songInfo: [{ songId, songType: readSongType(musicInfo) }],
+        v_songInfo: [{ songId, songType }],
       },
     },
   })

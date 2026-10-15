@@ -555,6 +555,34 @@ const hash33 = (value: string, seed: number): number => {
   return hash & 0x7fffffff
 }
 
+/**
+ * 取一首歌在服务端眼中的「规范身份」：数值 songId 和歌曲类型。
+ *
+ * 写歌单必须要这两个值，而且**删除时必须和当初添加进去的完全一致** —— 对不上，
+ * 服务端会把这次删除当成「删一个不存在的条目」，返回成功但什么都不做。
+ * MusicOne 在写入前会先补一次详情（`enrichTrackMetadata`），就是为此。
+ */
+export const getQQMusicTrackIdentity = async(
+  cookie: string,
+  songMid: string,
+  fallbackSongType: number,
+  fallbackSongId: number,
+): Promise<{ songId: number, songType: number } | null> => {
+  const body = await postAuthedMusicu(cookie, {
+    req_0: {
+      module: 'music.pf_song_detail_svr',
+      method: 'get_song_detail_yqq',
+      param: { song_mid: songMid, song_type: fallbackSongType, song_id: fallbackSongId },
+    },
+  })
+  const info = body?.req_0?.data?.track_info
+  if (!info) return null
+  return {
+    songId: Number(info.id ?? 0) || fallbackSongId,
+    songType: Number(info.type ?? 0) || fallbackSongType,
+  }
+}
+
 export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.UserInfo> => {
   const cookies = parseQQMusicCookie(cookie)
   const uin = readUin(cookies)
