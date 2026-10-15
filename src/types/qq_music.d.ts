@@ -23,6 +23,12 @@ declare namespace LX {
       liked?: boolean
     }
 
+    /** 相似歌曲推荐。title 是服务端给的小标题，可能为空。 */
+    interface SimilarRecommendation {
+      title: string
+      songs: LX.Music.MusicInfoOnline[]
+    }
+
     /**
      * 推荐歌单的本地缓存。推荐流是分页的，所以除了已取到的列表，
      * 还要记住下一页的游标，避免每次进页面都从头请求。

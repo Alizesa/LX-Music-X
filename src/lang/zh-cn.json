@@ -150,6 +150,8 @@
   "qq_session_expired": "QQ 音乐登录状态已失效，请重新登录",
   "qq_playlist_created": "自建",
   "qq_playlist_collected": "收藏",
+  "qq_guess_you_like": "猜你喜欢",
+  "home_similar_title": "听「{name}」也会喜欢",
   "mine_liked": "我喜欢",
   "mine_created_playlists": "自建歌单",
   "mine_collected_playlists": "收藏歌单",

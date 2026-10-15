@@ -6,6 +6,7 @@ import {
   saveQQMusicUser,
   removeQQMusicCookie,
   removeQQMusicPlaylistsCache,
+  removeQQMusicDailyPlaylistCache,
   removeQQMusicDailyRecommendCache,
   removeQQMusicRecommendPlaylistsCache,
 } from '@/utils/data'
@@ -21,6 +22,8 @@ const QQ_COLLECTED_PLAYLIST_URL = 'https://c.y.qq.com/fav/fcgi-bin/fcg_get_profi
 const QQ_PLAYLIST_DETAIL_URL = 'https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg'
 // "我喜欢"在歌单列表里是 dirid=201 的虚拟歌单，旧接口取不到，必须走 CgiGetDiss
 const LIKED_PLAYLIST_DIRID = 201
+// 每日推荐同样是 dirid 定位的虚拟歌单，和「我喜欢」走同一条 CgiGetDiss 通道
+const DAILY_RECOMMEND_DIRID = 202
 const DISS_PAGE_SIZE = 100
 const DISS_MAX_PAGES = 20
 const QQ_REFERER = 'https://y.qq.com/'
@@ -377,6 +380,7 @@ export const saveQQMusicSession = async(cookie: string) => {
 
 const clearQQMusicDataCache = async() => {
   await removeQQMusicPlaylistsCache()
+  await removeQQMusicDailyPlaylistCache()
   await removeQQMusicDailyRecommendCache()
   await removeQQMusicRecommendPlaylistsCache()
 }
@@ -396,6 +400,48 @@ export const clearQQMusicSession = async() => {
     }))
     await CookieManager.flush()
   } catch {}
+}
+
+/**
+ * 每日推荐（dirid=202）。和「我喜欢」一样是 dirid 定位的虚拟歌单，
+ * 只有 CgiGetDiss 通道认它 —— 当 disstid 传是取不到的。
+ */
+export const getQQMusicDailyPlaylist = async(cookie: string) => {
+  const songs = await fetchPlaylistSongsByDiss(cookie, '', DAILY_RECOMMEND_DIRID)
+  if (!songs.length) throw new Error(global.i18n.t('qq_load_failed'))
+  return songs
+}
+
+// 服务端对 GetRadioSimilarSongs 的 amount 上限就是 12
+const SIMILAR_SONGS_AMOUNT = 12
+
+/**
+ * 相似歌曲。vecSong 是要找相似的种子曲（QQ 的数值 songId）。
+ * 未登录或没有种子时返回空而不是抛错：首页少一块推荐不该让整个页面失败。
+ */
+export const getQQMusicSimilarSongs = async(cookie: string, songId: string | number): Promise<LX.QQMusic.SimilarRecommendation> => {
+  const empty: LX.QQMusic.SimilarRecommendation = { title: '', songs: [] }
+  const id = Number(songId)
+  if (!id) return empty
+  const cookies = parseQQMusicCookie(cookie)
+  if (!readUin(cookies) || !readMusicKey(cookies)) return empty
+  const body = await request(QQ_MUSICU_URL, cookie, {
+    method: 'post',
+    body: {
+      comm: buildAuthComm(cookies),
+      req_0: {
+        module: 'music.recommend.AutoPlayServer',
+        method: 'GetRadioSimilarSongs',
+        param: { vecSong: [id], from: 0, amount: SIMILAR_SONGS_AMOUNT, ext: {} },
+      },
+    },
+  })
+  const data = body?.req_0?.data ?? {}
+  const values: any[] = Array.isArray(data.vecSong) ? data.vecSong : Array.isArray(data.songList) ? data.songList : []
+  return {
+    title: String(data.recTitle ?? '').trim(),
+    songs: mapSongs(values.map((item: any) => item?.track ?? item?.Track ?? item?.songInfo ?? item)),
+  }
 }
 
 const RECENT_PLAY_SONG_TYPE = 2
@@ -603,12 +649,12 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
 }
 
 // 现代接口，分页取全量。也是唯一能取到"我喜欢"(dirid=201)的方式
-const fetchPlaylistSongsByDiss = async(cookie: string, playlistId: string) => {
+// dirid 是「虚拟歌单」的编号（201=我喜欢，202=每日推荐）。给了 dirid 就不看 disstid。
+const fetchPlaylistSongsByDiss = async(cookie: string, playlistId: string, dirid = 0) => {
   const cookies = parseQQMusicCookie(cookie)
   // 未登录时别走这条需要鉴权的通道：它必然失败，白白多一次请求。
   // 直接返回空，让上层落到公开的旧接口（公开歌单不需要登录也能取）。
   if (!readUin(cookies) || !readMusicKey(cookies)) return []
-  const liked = Number(playlistId) === LIKED_PLAYLIST_DIRID
   const comm = buildAuthComm(cookies)
   const songs: LX.Music.MusicInfoOnline[] = []
   const seen = new Set<string>()
@@ -621,8 +667,8 @@ const fetchPlaylistSongsByDiss = async(cookie: string, playlistId: string) => {
           module: 'music.srfDissInfo.DissInfo',
           method: 'CgiGetDiss',
           param: {
-            disstid: liked ? 0 : Number(playlistId) || 0,
-            dirid: liked ? LIKED_PLAYLIST_DIRID : 0,
+            disstid: dirid ? 0 : Number(playlistId) || 0,
+            dirid,
             tag: true,
             song_begin: page * DISS_PAGE_SIZE,
             song_num: DISS_PAGE_SIZE,
@@ -657,7 +703,8 @@ const fetchPlaylistSongsByDiss = async(cookie: string, playlistId: string) => {
 export const getQQMusicPlaylistSongs = async(cookie: string, playlistId: string) => {
   // 现代接口优先，旧接口兜底，最后退回公开的 SDK 接口
   try {
-    const songs = await fetchPlaylistSongsByDiss(cookie, playlistId)
+    const dirid = Number(playlistId) === LIKED_PLAYLIST_DIRID ? LIKED_PLAYLIST_DIRID : 0
+    const songs = await fetchPlaylistSongsByDiss(cookie, playlistId, dirid)
     if (songs.length) return songs
   } catch (error) {
     console.warn('[QQMusic] CgiGetDiss failed:', error instanceof Error ? error.message : error)

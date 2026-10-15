@@ -113,6 +113,9 @@ export const storageDataPrefix = {
   qqMusicUser: '@qq_music_user',
   qqMusicPlaylists: '@qq_music_playlists',
   qqMusicDailyRecommend: '@qq_music_daily_recommend',
+  // 注意与上面的区分：qqMusicDailyRecommend 存的是「猜你喜欢」电台的结果
+  // (get_radio_track)，这里存的才是真正的每日推荐歌单 (CgiGetDiss dirid=202)
+  qqMusicDailyPlaylist: '@qq_music_daily_playlist',
   qqMusicRecommendPlaylists: '@qq_music_recommend_playlists',
   qqMusicRecommendSession: '@qq_music_recommend_session',
 } as const
