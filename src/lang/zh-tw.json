@@ -157,6 +157,7 @@
   "qq_playlist_added": "已加入「{name}」",
   "qq_playlist_removed": "已從「{name}」刪除",
   "qq_playlist_write_failed": "歌單操作失敗",
+  "qq_playlist_write_no_effect": "伺服器回報成功，但歌單並沒有變化",
   "qq_playlist_write_unsupported": "只能操作自己建立的歌單",
   "qq_playlist_write_empty": "還沒有自建歌單",
   "qq_like_added": "已加入我喜歡",

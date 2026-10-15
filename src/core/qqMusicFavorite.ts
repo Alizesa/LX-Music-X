@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getQQMusicPlaylistSongs, getQQMusicSession, postAuthedMusicu } from './qqMusic'
+
 import { getQQMusicLikedSongsCache, removeQQMusicLikedSongsCache, saveQQMusicLikedSongsCache } from '@/utils/data'
 import { clearPlaylistSongsCache } from './qqMusicPlaylistSongsCache'
 
@@ -188,7 +189,25 @@ export const setQQMusicTrackInPlaylist = async(
     // 把 dirId 也带出来：写不进去时最容易怀疑的就是它，不带就只能再猜一轮
     throw new Error(`${global.i18n.t('qq_playlist_write_failed')} (code=${code} retCode=${retCode} dirId=${dirId})`)
   }
+
+  // **读回验证**：这个接口会「返回成功但什么都没改」（删一个不存在的条目就是幂等成功），
+  // 光看返回码会把 no-op 当成成功报给用户。参考实现也是写完读回来验一遍的。
+  await assertPlaylistMember(cookie, playlist.id, songId, add)
   return 'ok'
+}
+
+/** 写完读回歌单，确认这首歌的状态真的变了。对不上就抛错，不能谎报成功。 */
+const assertPlaylistMember = async(cookie: string, playlistId: string, songId: number, shouldExist: boolean) => {
+  let songs: LX.Music.MusicInfoOnline[]
+  try {
+    songs = await getQQMusicPlaylistSongs(cookie, playlistId)
+  } catch (error) {
+    // 读不回来时不轻易判失败：写本身可能已经成功了，只是这次读出错
+    console.warn('[QQMusic] 写歌单后读回失败:', error instanceof Error ? error.message : error)
+    return
+  }
+  const exists = songs.some(song => song.source == 'tx' && Number(song.meta.id) === songId)
+  if (exists !== shouldExist) throw new Error(global.i18n.t('qq_playlist_write_no_effect'))
 }
 
 /**

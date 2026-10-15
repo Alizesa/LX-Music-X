@@ -157,6 +157,7 @@
   "qq_playlist_added": "Added to 「{name}」",
   "qq_playlist_removed": "Removed from 「{name}」",
   "qq_playlist_write_failed": "Playlist operation failed",
+  "qq_playlist_write_no_effect": "The server reported success, but the playlist did not change",
   "qq_playlist_write_unsupported": "Only playlists you created can be changed",
   "qq_playlist_write_empty": "No playlists created yet",
   "qq_like_added": "Added to Liked",
