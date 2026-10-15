@@ -212,6 +212,13 @@ export default () => {
               <Text size={12} color={theme['c-font-label']} numberOfLines={1}>
                 {loggedIn ? (user.uin ? `QQ ${user.uin}` : t('qq_logged_in')) : t('qq_login_hint')}
               </Text>
+              {/* 临时诊断：头像的候选地址全都加载不出来时，把实际用的 uin 和地址显示出来。
+                  用来判断到底是地址不对、还是 uin 不是 QQ 号（qlogo 查不到）。定位完就删。 */}
+              {!avatarUrl && loggedIn
+                ? <Text size={9} color={theme['c-font-label']} numberOfLines={2}>
+                    {`uin=[${user.uin ? user.uin : '空'}] avatar=[${user.avatar ? user.avatar : '空'}]`}
+                  </Text>
+                : null}
             </View>
           </TouchableOpacity>
           {
