@@ -13,6 +13,7 @@ import {
   SETTING_SCREEN,
   DOWNLOAD_SCREEN,
   PLAY_HISTORY_SCREEN,
+  QQ_PLAYLIST_SCREEN,
 } from './screenNames'
 
 import themeState from '@/store/theme/state'
@@ -345,13 +346,14 @@ export function pushQQMusicRecommendScreen(componentId: string) {
  * 搜索/设置/下载/播放历史这四个原来占 pager 页的页面，现在都是同一种朴素推入页：
  * 隐藏原生 topBar，顶栏由页面里的 SimpleHeader 自绘。
  */
-function pushPlainScreen(componentId: string, screenName: string) {
+function pushPlainScreen(componentId: string, screenName: string, passProps?: Record<string, any>) {
   const theme = themeState.theme
 
   requestAnimationFrame(() => {
     void Navigation.push(componentId, {
       component: {
         name: screenName,
+        ...(passProps ? { passProps } : {}),
         options: {
           topBar: {
             visible: false,
@@ -390,6 +392,11 @@ export function pushDownloadScreen(componentId: string) {
 
 export function pushPlayHistoryScreen(componentId: string) {
   pushPlainScreen(componentId, PLAY_HISTORY_SCREEN)
+}
+
+/** QQ 歌单页。info.liked 为 true 时走 dirid=201（「我喜欢」）的取歌通道。 */
+export function pushQQPlaylistScreen(componentId: string, info: { id: string, name: string, liked?: boolean }) {
+  pushPlainScreen(componentId, QQ_PLAYLIST_SCREEN, { info })
 }
 
 /**

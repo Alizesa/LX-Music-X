@@ -47,6 +47,8 @@ export enum COMPONENT_IDS {
   setting = 'setting',
   download = 'download',
   playHistory = 'playHistory',
+  // QQ 歌单（含「我喜欢」dirid=201）。走自己的取歌通道，不复用多源的 SonglistDetail
+  qqPlaylist = 'qqPlaylist',
 }
 
 export enum NAV_SHEAR_NATIVE_IDS {

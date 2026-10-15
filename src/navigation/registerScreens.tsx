@@ -14,6 +14,7 @@ import {
   Setting,
   Download,
   PlayHistory,
+  QQPlaylist,
 } from '@/screens'
 import { Provider } from '@/store/Provider'
 
@@ -29,6 +30,7 @@ import {
   SETTING_SCREEN,
   DOWNLOAD_SCREEN,
   PLAY_HISTORY_SCREEN,
+  QQ_PLAYLIST_SCREEN,
   VERSION_MODAL,
   PACT_MODAL,
   SYNC_MODE_MODAL,
@@ -64,6 +66,7 @@ export default () => {
   Navigation.registerComponent(SETTING_SCREEN, () => WrappedComponent(Setting))
   Navigation.registerComponent(DOWNLOAD_SCREEN, () => WrappedComponent(Download))
   Navigation.registerComponent(PLAY_HISTORY_SCREEN, () => WrappedComponent(PlayHistory))
+  Navigation.registerComponent(QQ_PLAYLIST_SCREEN, () => WrappedComponent(QQPlaylist))
   Navigation.registerComponent(VERSION_MODAL, () => WrappedComponent(VersionModal))
   Navigation.registerComponent(PACT_MODAL, () => WrappedComponent(PactModal))
   Navigation.registerComponent(SYNC_MODE_MODAL, () => WrappedComponent(SyncModeModal))
