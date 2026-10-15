@@ -8,7 +8,6 @@ import {
   SINGER_DETAIL_SCREEN,
   ALBUM_DETAIL_SCREEN,
   COMMENT_SCREEN,
-  QQMUSIC_RECOMMEND_SCREEN,
   SEARCH_SCREEN,
   SETTING_SCREEN,
   DOWNLOAD_SCREEN,
@@ -311,37 +310,6 @@ export function pushSonglistDetailScreen(componentId: string, info: ListInfoItem
     })
   })
 }
-export function pushQQMusicRecommendScreen(componentId: string) {
-  const theme = themeState.theme
-
-  requestAnimationFrame(() => {
-    void Navigation.push(componentId, {
-      component: {
-        name: QQMUSIC_RECOMMEND_SCREEN,
-        options: {
-          topBar: {
-            visible: false,
-            height: 0,
-            drawBehind: false,
-          },
-          statusBar: {
-            drawBehind: true,
-            visible: true,
-            style: getStatusBarStyle(theme.isDark),
-            backgroundColor: 'transparent',
-          },
-          navigationBar: {
-            backgroundColor: theme['c-content-background'],
-          },
-          layout: {
-            componentBackgroundColor: theme['c-content-background'],
-          },
-        },
-      },
-    })
-  })
-}
-
 /**
  * 搜索/设置/下载/播放历史这四个原来占 pager 页的页面，现在都是同一种朴素推入页：
  * 隐藏原生 topBar，顶栏由页面里的 SimpleHeader 自绘。

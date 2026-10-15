@@ -9,7 +9,6 @@ import {
   SingerDetail,
   AlbumDetail,
   Comment,
-  QQMusicRecommend,
   Search,
   Setting,
   Download,
@@ -25,7 +24,6 @@ import {
   SINGER_DETAIL_SCREEN,
   ALBUM_DETAIL_SCREEN,
   COMMENT_SCREEN,
-  QQMUSIC_RECOMMEND_SCREEN,
   SEARCH_SCREEN,
   SETTING_SCREEN,
   DOWNLOAD_SCREEN,
@@ -33,12 +31,10 @@ import {
   QQ_PLAYLIST_SCREEN,
   VERSION_MODAL,
   PACT_MODAL,
-  SYNC_MODE_MODAL,
   // SETTING_SCREEN,
 } from './screenNames'
 import VersionModal from './components/VersionModal'
 import PactModal from './components/PactModal'
-import SyncModeModal from './components/SyncModeModal'
 
 function WrappedComponent(Component: any) {
   return function inject(props: Record<string, any>) {
@@ -61,7 +57,6 @@ export default () => {
   Navigation.registerComponent(SINGER_DETAIL_SCREEN, () => WrappedComponent(SingerDetail))
   Navigation.registerComponent(ALBUM_DETAIL_SCREEN, () => WrappedComponent(AlbumDetail))
   Navigation.registerComponent(COMMENT_SCREEN, () => WrappedComponent(Comment))
-  Navigation.registerComponent(QQMUSIC_RECOMMEND_SCREEN, () => WrappedComponent(QQMusicRecommend))
   Navigation.registerComponent(SEARCH_SCREEN, () => WrappedComponent(Search))
   Navigation.registerComponent(SETTING_SCREEN, () => WrappedComponent(Setting))
   Navigation.registerComponent(DOWNLOAD_SCREEN, () => WrappedComponent(Download))
@@ -69,7 +64,6 @@ export default () => {
   Navigation.registerComponent(QQ_PLAYLIST_SCREEN, () => WrappedComponent(QQPlaylist))
   Navigation.registerComponent(VERSION_MODAL, () => WrappedComponent(VersionModal))
   Navigation.registerComponent(PACT_MODAL, () => WrappedComponent(PactModal))
-  Navigation.registerComponent(SYNC_MODE_MODAL, () => WrappedComponent(SyncModeModal))
   // Navigation.registerComponent(SETTING_SCREEN, () => WrappedComponent(Setting))
 
   console.info('All screens have been registered...')

@@ -7,7 +7,7 @@ import playerState from '@/store/player/state'
 import { addTempPlayList } from '@/core/player/tempPlayList'
 import { LIST_IDS } from '@/config/constant'
 import { playNext } from '@/core/player/player'
-import { buildLocalMusicInfo, buildLocalMusicInfoByFilePath } from '@/screens/Home/Views/Mylist/MyList/listAction'
+import { buildLocalMusicInfo, buildLocalMusicInfoByFilePath } from '@/utils/music'
 
 
 export const handleFileLXMCAction = async(file: FileType) => {

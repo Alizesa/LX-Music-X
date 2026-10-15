@@ -173,10 +173,6 @@ export class AppEvent extends Event {
     this.emit('musicInfoUpdate', musicInfo)
   }
 
-  changeMenuVisible(visible: boolean) {
-    this.emit('changeMenuVisible', visible)
-  }
-
   /**
    * 搜索类型改变事件
    * @param type

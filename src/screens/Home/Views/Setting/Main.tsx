@@ -6,7 +6,6 @@ import LyricDesktop from './settings/LyricDesktop'
 import Search from './settings/Search'
 import List from './settings/List'
 import Download from './settings/Download'
-import Sync from './settings/Sync'
 import Backup from './settings/Backup'
 import Other from './settings/Other'
 import Version from './settings/Version'
@@ -29,7 +28,6 @@ export const SETTING_COMPONENTS = {
   search: Search,
   list: List,
   download: Download,
-  sync: Sync,
   backup: Backup,
   other: Other,
   version: Version,
@@ -45,7 +43,7 @@ export const SETTING_GROUPS = {
   player: ['player', 'lyric_desktop'],
   search: ['search', 'list'],
   download: ['download'],
-  data: ['sync', 'backup'],
+  data: ['backup'],
   other: ['other', 'version', 'about'],
 } as const satisfies Record<string, SettingScreenIds[]>
 export type SettingGroupIds = keyof typeof SETTING_GROUPS

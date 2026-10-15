@@ -49,11 +49,6 @@ declare global {
       'common.autoHidePlayBar': boolean
 
       /**
-       * 抽屉组件弹出方向
-       */
-      'common.drawerLayoutPosition': 'left' | 'right'
-
-      /**
        * 启用首页滑动
        */
       'common.homePageScroll': boolean
@@ -62,16 +57,6 @@ declare global {
        * 允许通过底栏进度条调整进度
        */
       'common.allowProgressBarSeek': boolean
-
-      /**
-       * 是否显示返回按钮
-       */
-      'common.showBackBtn': boolean
-
-      /**
-       * 是否显示退出按钮
-       */
-      'common.showExitBtn': boolean
 
       /**
        * 使用系统文件选择器

@@ -40,7 +40,6 @@ export enum COMPONENT_IDS {
   singerDetail = 'singerDetail',
   albumDetail = 'albumDetail',
   comment = 'comment',
-  qqMusicRecommend = 'qqMusicRecommend',
   // 原来占 pager 页的四个页面，现在改成推入式页面，需要各自登记 id ——
   // Home 的返回键处理靠 componentIds 的条目数判断「上面有没有压着详情页」
   search = 'search',
