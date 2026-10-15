@@ -610,7 +610,11 @@ export const getQQMusicPlaylists = async(cookie: string): Promise<LX.QQMusic.Pla
   ])
   // 两个接口都失败说明会话确实不可用，明确报错而不是静默返回空列表
   if (created.status === 'rejected' && collected.status === 'rejected') throw created.reason
-  const createdList = created.status === 'fulfilled' ? pickArray(created.value, ['data.disslist']) : []
+  // 自建歌单有两个数组：disslist 是当前格式，list 是旧的。两处都要读 ——
+  // 只读 disslist 会漏掉一部分账号（MusicOne 两个都读）
+  const createdList = created.status === 'fulfilled'
+    ? [...pickArray(created.value, ['data.disslist']), ...pickArray(created.value, ['data.list'])]
+    : []
   const collectedList = collected.status === 'fulfilled' ? pickArray(collected.value, ['data.cdlist']) : []
   const seen = new Set<string>()
   return [
