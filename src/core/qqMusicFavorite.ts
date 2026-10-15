@@ -145,12 +145,13 @@ export const setQQMusicTrackLiked = async(musicInfo: LX.Music.MusicInfo, liked: 
 /**
  * 把一首歌加进 / 移出某个**自己创建的** QQ 歌单。
  *
- * 写接口的 dirId 是目录编号。**优先用歌单自带的 dirId，没有就退回用歌单 id 顶上** ——
- * 很多账号的创建歌单响应里根本没有 dirid 字段，只有编号，硬性要求 dirId 会让功能整个不可用。
- * （MusicOne 也是这么回退的。）
+ * 参数形状**刻意和红心那条完全一致，只换 dirId**：红心（dirId 固定 201）实测是能写进去的，
+ * 所以「同一个接口 + 已验证的形状 + 目标歌单的目录编号」是最稳的组合。
+ * 早先这条多发了 `dirName`、还把歌单 id 当 `tid` 传（参考实现里 tid 默认 0），
+ * 都可能让服务端认定目标歌单不存在 —— 报的就是 80092。
  *
- * 校验失败时**抛错并带上服务端的返回码**：写不通的原因基本都在码里，
- * 只回一句「失败」等于把唯一的线索丢了。
+ * dirId 优先用歌单自带的（来自 PlaylistBaseRead，那份响应里才带 dirid），
+ * 没有才退回用歌单 id 顶。
  */
 export const setQQMusicTrackInPlaylist = async(
   musicInfo: LX.Music.MusicInfo,
@@ -172,8 +173,7 @@ export const setQQMusicTrackInPlaylist = async(
       method: add ? 'AddSonglist' : 'DelSonglist',
       param: {
         dirId,
-        dirName: playlist.name,
-        tid: Number.isFinite(numericId) ? numericId : 0,
+        tid: 0,
         bFmtUtf8: true,
         source: WRITE_SOURCE,
         v_songInfo: [{ songId, songType: readSongType(musicInfo) }],
@@ -185,7 +185,8 @@ export const setQQMusicTrackInPlaylist = async(
   if (LOGIN_ERROR_CODES.has(code)) throw new Error(global.i18n.t('qq_session_expired'))
   const retCode = Number(result?.data?.retCode ?? -1)
   if (code !== 0 || retCode !== 0) {
-    throw new Error(`${global.i18n.t('qq_playlist_write_failed')} (code=${code} retCode=${retCode})`)
+    // 把 dirId 也带出来：写不进去时最容易怀疑的就是它，不带就只能再猜一轮
+    throw new Error(`${global.i18n.t('qq_playlist_write_failed')} (code=${code} retCode=${retCode} dirId=${dirId})`)
   }
   return 'ok'
 }
