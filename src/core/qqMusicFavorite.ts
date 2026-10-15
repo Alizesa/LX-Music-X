@@ -208,14 +208,14 @@ export const setQQMusicTrackInPlaylist = async(
     throw new Error(`${global.i18n.t('qq_playlist_write_failed')} (code=${code} retCode=${retCode} dirId=${dirId})`)
   }
 
-  // **读回验证**：这个接口会「返回成功但什么都没改」（删一个不存在的条目就是幂等成功），
+  // **读回验证**：这个接口会「返回成功但什么都没改」（服务端把「条目不存在」当成幂等成功），
   // 光看返回码会把 no-op 当成成功报给用户。参考实现也是写完读回来验一遍的。
-  await assertPlaylistMember(cookie, playlist.id, songId, add)
+  await assertPlaylistMember(cookie, playlist.id, songId, songType, add)
   return 'ok'
 }
 
 /** 写完读回歌单，确认这首歌的状态真的变了。对不上就抛错，不能谎报成功。 */
-const assertPlaylistMember = async(cookie: string, playlistId: string, songId: number, shouldExist: boolean) => {
+const assertPlaylistMember = async(cookie: string, playlistId: string, songId: number, songType: number, shouldExist: boolean) => {
   let songs: LX.Music.MusicInfoOnline[]
   try {
     songs = await getQQMusicPlaylistSongs(cookie, playlistId)
@@ -226,14 +226,17 @@ const assertPlaylistMember = async(cookie: string, playlistId: string, songId: n
   }
   const exists = songs.some(song => song.source == 'tx' && Number(song.meta.id) === songId)
   if (exists !== shouldExist) {
-    // 把两边的 id 都带进提示：写不通时最该看的就是「歌单里那首歌的实际 id 是多少」，
-    // 只报一句「没有变化」等于把唯一的线索丢了（临时诊断片段，定位完删）
-    const actualIds = songs
-      .filter(song => song.source == 'tx')
-      .map(song => String(song.meta.id))
-      .slice(0, 6)
-      .join(',')
-    throw new Error(`${global.i18n.t('qq_playlist_write_no_effect')} (${shouldExist ? '要加' : '要删'}=${songId} 歌单里=${actualIds})`)
+    // 服务端把「条目不存在」当成静默成功 —— 说明它按 (songId, songType) 匹配不到那条记录。
+    // 所以提示里要把两个身份都摊出来：id 对上了就得看 songType 对不对。
+    // （临时诊断片段，定位完删）
+    const entry = songs.find(song => song.source == 'tx' && Number(song.meta.id) === songId)
+    const entryType = entry && entry.source == 'tx' ? entry.meta.songType : undefined
+    throw new Error(
+      `${global.i18n.t('qq_playlist_write_no_effect')}` +
+      ` (${shouldExist ? '要加' : '要删'} id=${songId} type=${songType}` +
+      ` / 歌单里 id=${entry ? String(songId) : '未找到'}` +
+      ` type=${entryType ?? '未读到'})`,
+    )
   }
 }
 
