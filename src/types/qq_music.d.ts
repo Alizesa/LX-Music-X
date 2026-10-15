@@ -8,6 +8,11 @@ declare namespace LX {
 
     interface PlaylistInfo {
       id: string
+      /**
+       * 目录编号（raw.dirid）。**写接口用的是它，不是公开的 disstid**，
+       * 两个编号不通用。只有自己创建的歌单才有，收藏来的歌单是 undefined。
+       */
+      dirId?: number
       name: string
       cover?: string
       description?: string

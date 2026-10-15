@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getQQMusicPlaylistSongs, getQQMusicSession, postAuthedMusicu } from './qqMusic'
 import { getQQMusicLikedSongsCache, removeQQMusicLikedSongsCache, saveQQMusicLikedSongsCache } from '@/utils/data'
+import { clearPlaylistSongsCache } from './qqMusicPlaylistSongsCache'
 
 // 「我喜欢」是 dirid=201 的虚拟歌单
 const LIKED_DIRID = '201'
@@ -86,7 +87,11 @@ export const clearQQMusicLikedSongs = () => {
  * 未必已经建好。由 core/init/dataInit 调用。
  */
 export const initQQMusicFavorite = () => {
-  global.app_event.on('qqMusicAccountUpdated', clearQQMusicLikedSongs)
+  global.app_event.on('qqMusicAccountUpdated', () => {
+    clearQQMusicLikedSongs()
+    // 歌单内容的缓存是另一个号的，一并清掉
+    void clearPlaylistSongsCache()
+  })
 }
 
 /**
@@ -123,6 +128,46 @@ export const setQQMusicTrackLiked = async(musicInfo: LX.Music.MusicInfo, liked: 
   if (retCode !== 0) return 'failed'
 
   markLiked(musicInfo, liked)
+  return 'ok'
+}
+
+/**
+ * 把一首歌加进 / 移出某个**自己创建的** QQ 歌单。
+ *
+ * dirId 是目录编号，写接口用的是它 —— 公开的 disstid 不能当目录编号使，两者不通用。
+ * 收藏来的歌单没有目录编号（dirId 为空），只能读不能写。
+ */
+export const setQQMusicTrackInPlaylist = async(
+  musicInfo: LX.Music.MusicInfo,
+  playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name' | 'dirId'>,
+  add: boolean,
+): Promise<FavoriteResult> => {
+  if (musicInfo.source != 'tx') return 'unsupported'
+  const songId = Number(musicInfo.meta.id ?? 0)
+  if (!songId) return 'unsupported'
+  if (!playlist.dirId) return 'unsupported'
+  const { cookie } = await getQQMusicSession()
+  if (!cookie) return 'unsupported'
+
+  const body = await postAuthedMusicu(cookie, {
+    req_0: {
+      module: 'music.musicasset.PlaylistDetailWrite',
+      method: add ? 'AddSonglist' : 'DelSonglist',
+      param: {
+        dirId: playlist.dirId,
+        dirName: playlist.name,
+        tid: Number(playlist.id) || 0,
+        bFmtUtf8: true,
+        source: WRITE_SOURCE,
+        v_songInfo: [{ songId, songType: 0 }],
+      },
+    },
+  })
+  const result = body?.req_0
+  const code = Number(result?.code ?? -1)
+  if (LOGIN_ERROR_CODES.has(code)) throw new Error(global.i18n.t('qq_session_expired'))
+  if (code !== 0) return 'failed'
+  if (Number(result?.data?.retCode ?? -1) !== 0) return 'failed'
   return 'ok'
 }
 

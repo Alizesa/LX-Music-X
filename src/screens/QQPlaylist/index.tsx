@@ -10,6 +10,7 @@ import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
 import { getQQMusicLikedSongs, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
+import { cachePlaylistSongs, getCachedPlaylistSongs } from '@/core/qqMusicPlaylistSongsCache'
 import { toast } from '@/utils/tools'
 import { useI18n } from '@/lang'
 
@@ -36,9 +37,16 @@ export default ({ componentId, info }: Props) => {
         if (force) await refreshQQMusicLikedSongs()
         songs = getQQMusicLikedSongs() ?? await loadQQMusicLikedSongsCache()
       } else {
-        const { cookie } = await getQQMusicSession()
-        if (!cookie) throw new Error(t('qq_not_logged_in'))
-        songs = await getQQMusicPlaylistSongs(cookie, info.id)
+        // 打开过的歌单同样读缓存，只有下拉刷新才联网
+        const cached = force ? null : await getCachedPlaylistSongs(info.id)
+        if (cached) {
+          songs = cached
+        } else {
+          const { cookie } = await getQQMusicSession()
+          if (!cookie) throw new Error(t('qq_not_logged_in'))
+          songs = await getQQMusicPlaylistSongs(cookie, info.id)
+          void cachePlaylistSongs(info.id, songs)
+        }
       }
       songsRef.current = songs
       listRef.current?.setList(songs)

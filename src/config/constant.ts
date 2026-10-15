@@ -119,6 +119,8 @@ export const storageDataPrefix = {
   // 「我喜欢」的全量歌曲。获取要翻好几页，缓存下来供心形状态和歌单页直接读，
   // 只有手动下拉刷新才重新拉
   qqMusicLikedSongs: '@qq_music_liked_songs',
+  // 各个歌单的歌曲，按歌单 id 存。只留最近打开的几个（见 core/qqMusicPlaylistSongsCache）
+  qqMusicPlaylistSongs: '@qq_music_playlist_songs',
   qqMusicRecommendPlaylists: '@qq_music_recommend_playlists',
   qqMusicRecommendSession: '@qq_music_recommend_session',
 } as const

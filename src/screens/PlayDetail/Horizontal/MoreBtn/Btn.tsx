@@ -8,15 +8,17 @@ import { strongIconShadow } from '@/screens/PlayDetail/components/iconStyle'
 export const BTN_WIDTH = scaleSizeW(32)
 export const BTN_ICON_SIZE = 22
 
-export default ({ icon, color, onPress }: {
+export default ({ icon, color, onPress, size = BTN_ICON_SIZE }: {
   icon: string
   color?: string
   onPress: () => void
+  /** 覆盖默认图标大小。个别字形（比如爱心）在同一个 em 框里画得比别人满，得单独调小 */
+  size?: number
 }) => {
   const theme = useTheme()
   return (
     <TouchableOpacity style={{ ...styles.cotrolBtn, width: BTN_WIDTH, height: BTN_WIDTH }} activeOpacity={0.5} onPress={onPress}>
-      <Icon name={icon} color={color ?? theme['c-font']} size={BTN_ICON_SIZE} style={strongIconShadow} />
+      <Icon name={icon} color={color ?? theme['c-font']} size={size} style={strongIconShadow} />
     </TouchableOpacity>
   )
 }

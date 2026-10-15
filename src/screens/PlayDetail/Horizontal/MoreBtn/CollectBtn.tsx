@@ -16,6 +16,8 @@ export default () => {
     <Btn
       icon="love"
       color={liked ? theme['c-primary-font'] : undefined}
+      // 爱心这个字形在同一个 em 框里画得比别人满，按默认的 22 会显得偏大，单独调小
+      size={19}
       onPress={() => { if (liked) uncollectMusic(); else collectMusic() }}
     />
   )

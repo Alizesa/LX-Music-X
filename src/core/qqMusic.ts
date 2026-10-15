@@ -336,6 +336,8 @@ const normalizePlaylist = (raw: any, subscribed: boolean): LX.QQMusic.PlaylistIn
   if (!liked && isHiddenPlaylistName(decodedName)) return null
   return {
     id: String(id),
+    // 写接口（加歌/移歌）要的是目录编号，不是公开的 disstid，这里原样留着
+    dirId: dirid > 0 ? dirid : undefined,
     name: decodedName,
     cover: raw?.diss_cover ?? raw?.logo ?? raw?.imgurl ?? raw?.picurl ?? raw?.cover?.medium_url ?? raw?.cover_url_medium,
     description: decodeName(String(raw?.desc ?? raw?.introduction ?? '')).replace(/<br>/g, '\n'),

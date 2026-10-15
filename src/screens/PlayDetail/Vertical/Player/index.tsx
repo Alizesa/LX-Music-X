@@ -4,17 +4,18 @@ import { View } from 'react-native'
 // import Title from './components/Title'
 import MoreBtn from './components/MoreBtn'
 import PlayInfo from './components/PlayInfo'
-import ControlBtn from './components/ControlBtn'
+import PlayRow from './components/PlayRow'
 import { createStyle } from '@/utils/tools'
 import { NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
 
 
+// 上下两层：上层是歌词/红心/评论/三点，中间是进度条，下层是循环/播放控件/播放列表
 export default memo(() => {
   return (
     <View style={styles.container} nativeID={NAV_SHEAR_NATIVE_IDS.playDetail_player}>
-      <PlayInfo />
-      <ControlBtn />
       <MoreBtn />
+      <PlayInfo />
+      <PlayRow />
     </View>
   )
 })
