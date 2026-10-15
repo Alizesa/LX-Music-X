@@ -67,6 +67,8 @@ declare namespace LX {
       strMediaMid: string // 歌曲strMediaMid
       id?: number // 歌曲songId
       albumMid?: string // 歌曲albumMid
+      /** 歌曲类型：1 普通歌曲 / 2 长音频 / 6 视频直播。写接口（红心、歌单）要用 */
+      songType?: number
     }
     interface MusicInfo_tx extends MusicInfoBase<'tx'> {
       meta: MusicInfoMeta_tx

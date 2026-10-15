@@ -66,6 +66,8 @@ export const toNewMusicInfo = (oldMusicInfo: any): LX.Music.MusicInfo => {
         meta.strMediaMid = oldMusicInfo.strMediaMid
         meta.albumMid = oldMusicInfo.albumMid
         meta.id = oldMusicInfo.songId
+        // 写接口（红心、歌单）要带歌曲类型，取值见核心层的 rawSongToOldInfo
+        meta.songType = oldMusicInfo.songType
         break
       case 'mg':
         meta.copyrightId = oldMusicInfo.copyrightId

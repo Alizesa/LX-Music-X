@@ -13,6 +13,17 @@ const LOGIN_ERROR_CODES = new Set([1000, 104400, 104401])
 export type FavoriteResult = 'ok' | 'unsupported' | 'failed'
 
 /**
+ * 写接口要带的歌曲类型：1 普通歌曲 / 2 长音频 / 6 视频直播。
+ *
+ * **必须是真类型，传 0 会被拒**（早先这里硬编码 0，写歌单一直报 80092）。
+ * 歌曲详情里没有这个字段时按普通歌曲算 —— 绝大多数歌都是 1。
+ */
+const readSongType = (musicInfo: LX.Music.MusicInfo_tx) => {
+  const type = Number(musicInfo.meta.songType)
+  return Number.isFinite(type) && type > 0 ? type : 1
+}
+
+/**
  * 「我喜欢」的全量歌曲。
  *
  * 拉一次要翻好几页（两百多首），所以**持久缓存**：内存 → 存储 → 联网。
@@ -116,7 +127,7 @@ export const setQQMusicTrackLiked = async(musicInfo: LX.Music.MusicInfo, liked: 
         tid: 0,
         bFmtUtf8: true,
         source: WRITE_SOURCE,
-        v_songInfo: [{ songId, songType: 0 }],
+        v_songInfo: [{ songId, songType: readSongType(musicInfo) }],
       },
     },
   })
@@ -165,7 +176,7 @@ export const setQQMusicTrackInPlaylist = async(
         tid: Number.isFinite(numericId) ? numericId : 0,
         bFmtUtf8: true,
         source: WRITE_SOURCE,
-        v_songInfo: [{ songId, songType: 0 }],
+        v_songInfo: [{ songId, songType: readSongType(musicInfo) }],
       },
     },
   })

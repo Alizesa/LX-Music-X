@@ -281,8 +281,13 @@ const rawSongToOldInfo = (raw: any) => {
     types.push({ type: '128k', size: '' })
     _types['128k'] = { size: '' }
   }
+  // 歌曲类型：1 = 普通歌曲，2 = 长音频，6 = 视频/直播。写歌单/写红心都要带上它，
+  // 传 0（早先我们硬编码的值）不是合法类型，服务端会拒（80092）。
+  const rawType = Number(song?.type ?? song?.songtype ?? song?.song_type)
+  const songType = Number.isFinite(rawType) && rawType > 0 ? rawType : 1
   return {
     songmid: String(songmid),
+    songType,
     songId: song?.id ?? song?.songid ?? songmid,
     name: song?.title ?? song?.name,
     singer,
