@@ -188,7 +188,11 @@ export const setQQMusicTrackInPlaylist = async(
       method: add ? 'AddSonglist' : 'DelSonglist',
       param: {
         dirId,
-        tid: 0,
+        // tid 和 dirName 都按 MusicOne 的原样带上。早先我把这两项去掉过，理由是
+        // 「参数形状对齐红心那条」—— 但那个判断是建立在 dirId 的错误诊断上的
+        // （当时真正的毛病是旧缓存）。添加不需要它们，删除可能需要靠 tid 定位条目。
+        dirName: playlist.name,
+        tid: Number.isFinite(numericId) ? numericId : 0,
         bFmtUtf8: true,
         source: WRITE_SOURCE,
         v_songInfo: [{ songId, songType }],
@@ -221,7 +225,16 @@ const assertPlaylistMember = async(cookie: string, playlistId: string, songId: n
     return
   }
   const exists = songs.some(song => song.source == 'tx' && Number(song.meta.id) === songId)
-  if (exists !== shouldExist) throw new Error(global.i18n.t('qq_playlist_write_no_effect'))
+  if (exists !== shouldExist) {
+    // 把两边的 id 都带进提示：写不通时最该看的就是「歌单里那首歌的实际 id 是多少」，
+    // 只报一句「没有变化」等于把唯一的线索丢了（临时诊断片段，定位完删）
+    const actualIds = songs
+      .filter(song => song.source == 'tx')
+      .map(song => String(song.meta.id))
+      .slice(0, 6)
+      .join(',')
+    throw new Error(`${global.i18n.t('qq_playlist_write_no_effect')} (${shouldExist ? '要加' : '要删'}=${songId} 歌单里=${actualIds})`)
+  }
 }
 
 /**
