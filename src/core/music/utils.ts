@@ -11,6 +11,7 @@ import settingState from '@/store/setting/state'
 import { requestMsg } from '@/utils/message'
 import BackgroundTimer from 'react-native-background-timer'
 import { apis } from '@/utils/musicSdk/api-source'
+import { getQQMusicUrlByAccount } from '@/core/qqMusicUrl'
 
 
 const getOtherSourcePromises = new Map()
@@ -295,9 +296,23 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   quality: LX.Quality
   isFromCache: boolean
 }> => {
+  const targetQuality = quality ?? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
+
+  // QQ 音乐优先走账号直取。这段放在 apiInitPromise 检查之前，因为它不依赖
+  // 用户 API 脚本 —— 没配脚本时也能播 QQ 的免费歌曲。
+  // 免费可听的歌这里就能拿到完整音源；VIP 歌只会拿到试听重定向，函数返回 null，
+  // 流程继续往下走音源。本地优先已经在 core/music/index.ts 里做过了。
+  if (musicInfo.source == 'tx') {
+    try {
+      const byAccount = await getQQMusicUrlByAccount(musicInfo, quality ?? settingState.setting['player.playQuality'])
+      if (byAccount) return { musicInfo, url: byAccount.url, quality: byAccount.quality, isFromCache: false }
+    } catch (error) {
+      console.log('[QQMusic] 账号取链失败，回落到音源:', error)
+    }
+  }
+
   if (!await global.lx.apiInitPromise[0]) throw new Error('source init failed')
   // console.log(musicInfo.source)
-  const targetQuality = quality ?? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
 
   let reqPromise
   try {

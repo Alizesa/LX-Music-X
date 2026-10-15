@@ -46,6 +46,9 @@ export default async(appSetting: LX.AppSetting) => {
   // 这里补上；它是幂等的，点每日推荐那次注册不会重复。
   const { initQQMusicRecommendAutoRefresh, migrateRecommendPlayQueue } = await import('@/core/qqMusicRecommend')
   initQQMusicRecommendAutoRefresh()
+  // 「我喜欢」的状态集合要跟着账号变化清掉，否则换号后会显示上一个号的收藏状态
+  const { initQQMusicFavorite } = await import('@/core/qqMusicFavorite')
+  initQQMusicFavorite()
   // 老版本落盘的推荐队列没有专属来源标记，补一次，之后判断只看队列自己的标记。
   // 要放在上面的 setTempListMeta 之后（判断要用到临时列表标记）和 initPlayQueue 之后。
   await migrateRecommendPlayQueue()

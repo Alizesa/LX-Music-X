@@ -163,6 +163,11 @@ export class AppEvent extends Event {
     this.emit('qqMusicAccountUpdated', user)
   }
 
+  // 「我喜欢」的本地状态集合变了（收藏/取消收藏后，或重新拉取后）
+  qqMusicLikedUpdated() {
+    this.emit('qqMusicLikedUpdated')
+  }
+
   // 列表里的音乐信息改变事件
   musicInfoUpdate(musicInfo: LX.Music.MusicInfo) {
     this.emit('musicInfoUpdate', musicInfo)

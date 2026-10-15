@@ -150,6 +150,19 @@ const buildAuthComm = (cookies: Record<string, string>) => {
   }
 }
 
+/**
+ * 带登录态的 musicu.fcg 请求。extra 是要并进 body 的字段（req_0 / req_1 ...），
+ * comm 由这里统一用 App 信封拼好。取链、写红心这类新链路都走这里。
+ */
+export const postAuthedMusicu = async(cookie: string, extra: Record<string, unknown>) => {
+  const cookies = parseQQMusicCookie(cookie)
+  if (!readUin(cookies) || !readMusicKey(cookies)) throw new Error(global.i18n.t('qq_cookie_invalid'))
+  return request(QQ_MUSICU_URL, cookie, {
+    method: 'post',
+    body: { comm: buildAuthComm(cookies), ...extra },
+  })
+}
+
 // 未登录时的 App 信封：和登录态同一套标识，只是不带账号与票据。
 // 原来这里用的是 { cv: 1602, ct: 20 }，属于网页端那套，一并换掉。
 const buildAnonymousComm = () => ({

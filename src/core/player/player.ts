@@ -25,9 +25,10 @@ import { requestMsg } from '@/utils/message'
 import { getRandom } from '@/utils/common'
 import { filterList } from './utils'
 import BackgroundTimer from 'react-native-background-timer'
-import { checkIgnoringBatteryOptimization, checkNotificationPermission, debounceBackgroundTimer } from '@/utils/tools'
+import { checkIgnoringBatteryOptimization, checkNotificationPermission, debounceBackgroundTimer, toast } from '@/utils/tools'
 import { LIST_IDS } from '@/config/constant'
 import { addListMusics, removeListMusics } from '@/core/list'
+import { setQQMusicTrackLiked } from '@/core/qqMusicFavorite'
 import { addDislikeInfo } from '@/core/dislikeList'
 import { clearPlayQueue, getPlayQueue, insertPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
 import { parkRecommendQueue } from '@/core/qqMusicRecommendSession'
@@ -717,28 +718,42 @@ export const togglePlay = () => {
 }
 
 /**
+ * 收藏/取消收藏当前播放的歌曲。
+ *
+ * QQ 的歌且已登录时直接写账号的「我喜欢」，不再落本地列表；
+ * 其余情况（不是 QQ 的歌、或没登录）退回本地「我的收藏」列表。
+ */
+const toggleCollect = async(liked: boolean) => {
+  const raw = playerState.playMusicInfo.musicInfo
+  if (!raw) return
+  const musicInfo = 'progress' in raw ? raw.metadata.musicInfo : raw
+  try {
+    const result = await setQQMusicTrackLiked(musicInfo, liked)
+    if (result == 'ok') {
+      toast(global.i18n.t(liked ? 'qq_like_added' : 'qq_like_removed'))
+      return
+    }
+    if (result == 'failed') {
+      toast(global.i18n.t('qq_like_failed'), 'long')
+      return
+    }
+  } catch (error: unknown) {
+    toast(error instanceof Error ? error.message : global.i18n.t('qq_like_failed'), 'long')
+    return
+  }
+  if (liked) void addListMusics(LIST_IDS.LOVE, [musicInfo], settingState.setting['list.addMusicLocationType'])
+  else void removeListMusics(LIST_IDS.LOVE, [musicInfo.id])
+}
+
+/**
  * 收藏当前播放的歌曲
  */
-export const collectMusic = () => {
-  if (!playerState.playMusicInfo.musicInfo) return
-  void addListMusics(LIST_IDS.LOVE, [
-    'progress' in playerState.playMusicInfo.musicInfo
-      ? playerState.playMusicInfo.musicInfo.metadata.musicInfo
-      : playerState.playMusicInfo.musicInfo,
-  ], settingState.setting['list.addMusicLocationType'])
-}
+export const collectMusic = () => { void toggleCollect(true) }
 
 /**
  * 取消收藏当前播放的歌曲
  */
-export const uncollectMusic = () => {
-  if (!playerState.playMusicInfo.musicInfo) return
-  void removeListMusics(LIST_IDS.LOVE, [
-    'progress' in playerState.playMusicInfo.musicInfo
-      ? playerState.playMusicInfo.musicInfo.metadata.musicInfo.id
-      : playerState.playMusicInfo.musicInfo.id,
-  ])
-}
+export const uncollectMusic = () => { void toggleCollect(false) }
 
 /**
  * 不喜欢当前播放的歌曲
