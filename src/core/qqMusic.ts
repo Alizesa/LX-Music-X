@@ -15,7 +15,8 @@ import musicSdk from '@/utils/musicSdk'
 import CookieManager from '@react-native-cookies/cookies'
 
 const QQ_MUSICU_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
-const QQ_PROFILE_URL = 'https://c.y.qq.com/rsc/fcgi-bin/fcg_get_profile_homepage.fcg'
+// 用 c6 这个主机：c.y.qq.com 是老站点，资料接口在它上面拿不到头像
+const QQ_PROFILE_URL = 'https://c6.y.qq.com/rsc/fcgi-bin/fcg_get_profile_homepage.fcg'
 const QQ_CREATED_PLAYLIST_URL = 'https://c.y.qq.com/rsc/fcgi-bin/fcg_user_created_diss'
 const QQ_COLLECTED_PLAYLIST_URL = 'https://c.y.qq.com/fav/fcgi-bin/fcg_get_profile_order_asset.fcg'
 // 注意是 fcg-bin 而不是 fcgi-bin：写成 fcgi-bin 会直接 404
@@ -510,25 +511,54 @@ export const normalizeAvatarUrl = (raw: unknown): string => {
   const url = typeof raw == 'string' ? raw.trim() : ''
   if (!url) return ''
   if (url.startsWith('//')) return `https:${url}`
-  return /^https?:\/\//i.test(url) ? url : ''
+  // http 也一并升到 https：QQ 的图片 CDN 都支持，省得受 Android 明文流量策略影响
+  if (/^http:\/\//i.test(url)) return `https://${url.slice('http://'.length)}`
+  return /^https:\/\//i.test(url) ? url : ''
+}
+
+/**
+ * 资料/票据接口的 g_tk：由音乐票据按 hash33 算出来。
+ * 早先这里硬编码 5381 —— 那是未登录匿名请求才碰巧能用的值，带票据的请求要用算出来的。
+ * 逐位计算要和 Kotlin/Java 的 Int 溢出行为一致，所以每步都用 |0 收成 32 位。
+ */
+const hash33 = (value: string, seed: number): number => {
+  let hash = seed
+  for (let index = 0; index < value.length; index++) {
+    hash = (hash + ((hash << 5) + value.charCodeAt(index))) | 0
+  }
+  return hash & 0x7fffffff
 }
 
 export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.UserInfo> => {
   const cookies = parseQQMusicCookie(cookie)
   const uin = readUin(cookies)
-  if (!uin || !readMusicKey(cookies)) throw new Error(global.i18n.t('qq_cookie_invalid'))
+  const musicKey = readMusicKey(cookies)
+  if (!uin || !musicKey) throw new Error(global.i18n.t('qq_cookie_invalid'))
   const fallback: LX.QQMusic.UserInfo = {
     uin,
     nickname: `QQ ${uin}`,
-    avatar: `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(uin)}&s=100`,
+    avatar: `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(uin)}&s=640`,
   }
   // 资料接口只用来取昵称和头像。票据失效由 request() 统一判定，这里必须放行，
   // 否则会被下面的 catch 吞掉、退化成 Cookie 派生的资料，登录时就变成"明明失败了却显示已登录"；
   // 网络异常等其它情况仍然退化为 Cookie 派生的资料，不阻断登录流程。
   let body: any = null
   try {
+    const query = new URLSearchParams({
+      g_tk: String(hash33(musicKey, 5381)),
+      format: 'json',
+      inCharset: 'utf-8',
+      outCharset: 'utf-8',
+      notice: '0',
+      cid: '205360838',
+      needNewCode: '0',
+      loginUin: uin,
+      hostUin: '0',
+      userid: uin,
+      reqfrom: '1',
+    }).toString()
     body = await request(
-      `${QQ_PROFILE_URL}?cid=205360838&userid=${encodeURIComponent(uin)}&reqfrom=1&g_tk=5381&loginUin=${encodeURIComponent(uin)}&hostUin=0&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0`,
+      `${QQ_PROFILE_URL}?${query}`,
       cookie,
       { headers: { Referer: QQ_PROFILE_REFERER } },
       // 登录流程：过期只让这次登录失败，不动已有会话
@@ -539,11 +569,18 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
     console.warn('[QQMusic] profile request failed:', error instanceof Error ? error.message : error)
   }
   if (!body) return fallback
-  const creator = body?.data?.creator ?? body?.data?.user ?? body?.data?.profile ?? {}
+  const data = body?.data ?? {}
+  // 有些账号/接口变体不给 creator 这一层，资料直接平铺在 data 上
+  const creator = data.creator ?? data.user ?? data.profile ?? data
+  const nickname = creator.nick || creator.nickname || creator.name || creator.hostname ||
+    cookies.nickname || cookies.nick || fallback.nickname
+  // 头像除了 creator 上那几处，登录 Cookie 里有时也带着一份，兜住它
+  const avatar = creator.headpic || creator.avatar || creator.avatarUrl || creator.logo ||
+    cookies.avatar || cookies.avatarUrl || cookies.headpic
   return {
     uin: normalizeUin(creator.uin ?? uin) || uin,
-    nickname: creator.nick || creator.nickname || creator.name || creator.hostname || fallback.nickname,
-    avatar: normalizeAvatarUrl(creator.headpic || creator.avatar || creator.avatarUrl || creator.logo) || fallback.avatar,
+    nickname,
+    avatar: normalizeAvatarUrl(avatar) || fallback.avatar,
   }
 }
 

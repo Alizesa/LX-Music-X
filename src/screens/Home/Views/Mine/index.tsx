@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, RefreshControl, ScrollView, TouchableOpacity, View } from 'react-native'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
@@ -8,13 +8,13 @@ import QQMusicCookieModal, { type QQMusicCookieModalType } from '@/components/QQ
 import { useTheme } from '@/store/theme/hook'
 import { useDownloadTasks } from '@/store/download/hook'
 import { createStyle, toast } from '@/utils/tools'
-import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession } from '@/core/qqMusic'
+import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo } from '@/core/qqMusic'
 import { refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
 import { getListMusics } from '@/core/list'
 import { LIST_IDS } from '@/config/constant'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
-import { getPlayHistory, getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache } from '@/utils/data'
+import { getPlayHistory, getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
 import { useI18n } from '@/lang'
 
 const AVATAR_SIZE = 56
@@ -68,7 +68,8 @@ export default () => {
   const [playlists, setPlaylists] = useState<LX.QQMusic.PlaylistInfo[]>([])
   const [historyCount, setHistoryCount] = useState(0)
   const [localCount, setLocalCount] = useState(0)
-  const [avatarFailed, setAvatarFailed] = useState(false)
+  // 当前试到第几个头像地址。换了账号要从头再试
+  const [avatarStage, setAvatarStage] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const refreshingRef = useRef(false)
   const tasks = useDownloadTasks()
@@ -152,10 +153,31 @@ export default () => {
     navigations.pushQQPlaylistScreen(commonState.componentIds.home!, { id: info.id, name: info.name, liked: info.liked })
   }
 
-  // 头像兜底：接口给的头像可能是空的、或者根本加载不出来（老账号常见），
-  // 那就退回 QQ 头像服务；连它都挂了才显示占位图
-  const fallbackAvatar = user?.uin ? `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(user.uin)}&s=100` : ''
-  const avatarUrl = user?.avatar && !avatarFailed ? user.avatar : fallbackAvatar
+  // 头像按顺序试：接口给的地址 → QQ 头像服务。前一个加载失败就换下一个，
+  // 全都失败才退回纯色占位（比 LX 占位图好看，也说明确实没辙了）
+  const avatarCandidates = useMemo(() => {
+    const list: string[] = []
+    if (user?.avatar) list.push(user.avatar)
+    if (user?.uin) list.push(`https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(user.uin)}&s=640`)
+    return list
+  }, [user?.avatar, user?.uin])
+  const avatarUrl = avatarCandidates[avatarStage] ?? ''
+
+  // 换账号后地址全变了，从头再试一遍
+  useEffect(() => { setAvatarStage(0) }, [user?.uin])
+
+  // 资料是登录时抓一次就存下来的，换了接口也不会重取。头像缺失、或者退成了兜底地址，
+  // 说明当初那次没取到，这里补一次并落盘。只补一次，避免取不到时反复请求。
+  const profileRefetchedRef = useRef(false)
+  useEffect(() => {
+    if (!cookie || !user || profileRefetchedRef.current) return
+    if (user.avatar && !user.avatar.includes('qlogo.cn')) return
+    profileRefetchedRef.current = true
+    void getQQMusicUserInfo(cookie).then(async nextUser => {
+      setUser(nextUser)
+      await saveQQMusicUser(nextUser)
+    }).catch(() => {})
+  }, [cookie, user])
 
   const liked = playlists.find(item => item.liked)
   const created = playlists.filter(item => !item.liked && !item.subscribed)
@@ -182,7 +204,7 @@ export default () => {
           <TouchableOpacity style={styles.userMain} activeOpacity={0.7} onPress={() => { if (!loggedIn) loginRef.current?.show() }}>
             {
               avatarUrl
-                ? <Image url={avatarUrl} style={styles.avatar} onError={() => { setAvatarFailed(true) }} />
+                ? <Image url={avatarUrl} style={styles.avatar} onError={() => { setAvatarStage(stage => stage + 1) }} />
                 : <View style={{ ...styles.avatar, backgroundColor: theme['c-primary-background'] }} />
             }
             <View style={styles.userInfo}>
