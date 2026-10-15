@@ -13,6 +13,8 @@ declare namespace LX {
        * 两个编号不通用。只有自己创建的歌单才有，收藏来的歌单是 undefined。
        */
       dirId?: number
+      /** 【临时诊断】原始响应里和编号有关的字段，用来确认 dirid 到底叫什么。定位完删 */
+      debugRaw?: string
       name: string
       cover?: string
       description?: string
