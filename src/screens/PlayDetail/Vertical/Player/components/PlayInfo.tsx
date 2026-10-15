@@ -14,12 +14,14 @@ import { useBufferProgress } from '@/plugins/player'
 const PlayTimeCurrent = ({ timeStr }: { timeStr: string }) => {
   const theme = useTheme()
   // console.log(timeStr)
-  return <Text color={theme['c-500']}>{timeStr}</Text>
+  // 和播放控件用一个色（c-button-font）：原来用的 c-500 是固定灰阶、比图标淡一截，
+  // 数字看着发虚
+  return <Text color={theme['c-button-font']}>{timeStr}</Text>
 }
 
 const PlayTimeMax = memo(({ timeStr }: { timeStr: string }) => {
   const theme = useTheme()
-  return <Text color={theme['c-500']}>{timeStr}</Text>
+  return <Text color={theme['c-button-font']}>{timeStr}</Text>
 })
 
 export default () => {
@@ -29,7 +31,7 @@ export default () => {
   // console.log('render playInfo')
 
   return (
-    <>
+    <View style={styles.container}>
       <View style={styles.progress}><Progress progress={progress} duration={maxPlayTime} buffered={buffered} /></View>
       <View style={styles.info}>
         <PlayTimeCurrent timeStr={nowPlayTimeStr} />
@@ -38,12 +40,17 @@ export default () => {
         </View>
         <PlayTimeMax timeStr={maxPlayTimeStr} />
       </View>
-    </>
+    </View>
   )
 }
 
 
 const styles = createStyle({
+  container: {
+    // 进度条两侧的空要留匀：下面那条播放控件自带 paddingVertical，上面那条没有，
+    // 不留 paddingTop 的话进度条会贴着上层、看着偏上
+    paddingTop: 22,
+  },
   progress: {
     flexGrow: 1,
     flexShrink: 0,
