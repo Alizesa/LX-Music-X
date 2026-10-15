@@ -158,7 +158,8 @@ export default () => {
   const avatarCandidates = useMemo(() => {
     const list: string[] = []
     if (user?.avatar) list.push(user.avatar)
-    if (user?.uin) list.push(`https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(user.uin)}&s=640`)
+    // 「0」是网页登录的占位 uin，拿去查 qlogo 必然 404，别浪费一次请求
+    if (user?.uin && user.uin != '0') list.push(`https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(user.uin)}&s=640`)
     return list
   }, [user?.avatar, user?.uin])
   const avatarUrl = avatarCandidates[avatarStage] ?? ''

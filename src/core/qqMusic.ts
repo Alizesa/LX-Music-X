@@ -74,12 +74,20 @@ const normalizeUin = (raw: unknown) => {
   return digits.replace(/^0+/, '') || digits
 }
 
-// 微信登录(login_type=2)时账号标识在 wxuin 上
-const readUin = (cookies: Record<string, string>) => normalizeUin(
-  Number(cookies.login_type) === 2
-    ? cookies.wxuin || cookies.uin || cookies.p_uin
-    : cookies.uin || cookies.qqmusic_uin || cookies.wxuin || cookies.p_uin,
-)
+// 微信登录(login_type=2)时账号标识在 wxuin 上。
+//
+// 注意：**「0」是 QQ 音乐网页登录很常见的占位值**。它不是真账号，但又是 truthy ——
+// 早先按 `||` 链取第一个非空值会直接拿到它，后面的 wxuin / qqmusic_uin 永远没机会。
+// uin 于是变成字面量 0，凡是拿它拼地址的接口全废（qlogo 头像查 nk=0 必然查不到）。
+const readUin = (cookies: Record<string, string>) => {
+  const candidates = Number(cookies.login_type) === 2
+    ? [cookies.wxuin, cookies.uin, cookies.p_uin]
+    : [cookies.uin, cookies.qqmusic_uin, cookies.wxuin, cookies.p_uin]
+  const values = candidates.map(normalizeUin).filter(Boolean)
+  // 有真号就优先用真号；一个都没有时仍退回占位值，
+  // 否则会把一个本来能用的 Cookie 判成未登录
+  return values.find(value => value != '0') ?? values[0] ?? ''
+}
 
 // 只有 qm_keyst / qqmusic_key / music_key 是 QQ 音乐自己的登录票据。
 // skey / p_skey 属于 QQ 互联(.qq.com)，对音乐接口无效 —— 早先把它们当兜底，
@@ -534,10 +542,11 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
   const uin = readUin(cookies)
   const musicKey = readMusicKey(cookies)
   if (!uin || !musicKey) throw new Error(global.i18n.t('qq_cookie_invalid'))
+  // 用占位值 0 去拼 qlogo 是必然 404 的空请求，宁可不给地址让界面显示占位
   const fallback: LX.QQMusic.UserInfo = {
     uin,
     nickname: `QQ ${uin}`,
-    avatar: `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(uin)}&s=640`,
+    avatar: uin && uin != '0' ? `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(uin)}&s=640` : '',
   }
   // 资料接口只用来取昵称和头像。票据失效由 request() 统一判定，这里必须放行，
   // 否则会被下面的 catch 吞掉、退化成 Cookie 派生的资料，登录时就变成"明明失败了却显示已登录"；
@@ -577,8 +586,10 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
   // 头像除了 creator 上那几处，登录 Cookie 里有时也带着一份，兜住它
   const avatar = creator.headpic || creator.avatar || creator.avatarUrl || creator.logo ||
     cookies.avatar || cookies.avatarUrl || cookies.headpic
+  // 资料接口有的账号会给 uin: 0（占位），别拿它把 Cookie 里的真号覆盖掉
+  const profileUin = normalizeUin(creator.uin)
   return {
-    uin: normalizeUin(creator.uin ?? uin) || uin,
+    uin: profileUin && profileUin != '0' ? profileUin : uin,
     nickname,
     avatar: normalizeAvatarUrl(avatar) || fallback.avatar,
   }
