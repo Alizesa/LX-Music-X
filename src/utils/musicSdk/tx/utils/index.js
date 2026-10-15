@@ -1,14 +1,21 @@
 import { httpFetch } from '@/utils/request'
 import { zzcSign } from './crypto'
 
-// 手机 App 信封。ct/cv/chid 是一组互相对应的 App 端标识，
-// UA 必须跟着配套（见下面 signRequest），否则服务端会按网页端返回、字段和功能都有出入。
+// 注意：**这里是搜索链路，不能用 App 信封**。
+//
+// 2026-10-15 曾把这里整块换成 App 信封（ct=11 / cv=14090008 / chid / UA
+// QQMusic 14090008），结果 tx 的搜索整个失效。之所以只暴露成「歌手和专辑搜索失败」，
+// 是因为歌曲 tab 走的是多源聚合（core/search/music.ts 的 source == 'all'），
+// 每个失败的源都被静默吞成空列表，kw/kg/wy 把结果兜住了；而歌手/专辑只有 tx 一个源，
+// 没有兜底就原形毕露。
+//
+// 账号相关的链路（取链、写红心、我的页数据）在 core/qqMusic.ts 那边单独用 App 信封，
+// 两边互不影响。改这里之前先想清楚影响的是整个搜索。
 export const comm = {
   _channelid: '0',
-  _os_version: '14',
-  ct: '11',
-  cv: '14090008',
-  chid: '10003505',
+  _os_version: '6.2.9200-2',
+  ct: '19',
+  cv: '2151',
   guid: '1F70E520B2EAA7D25E11760783C53CA9',
   patch: '118',
   psrf_access_token_expiresAt: 0,
@@ -32,8 +39,8 @@ export const signRequest = async(data, path = 'musics.fcg') => {
   return httpFetch(`https://u.y.qq.com/cgi-bin/${path}?sign=${sign}`, {
     method: 'post',
     headers: {
-      // 与 comm 的 cv=14090008 配套，改一个就要改另一个
-      'User-Agent': 'QQMusic 14090008(android 14)',
+      // 与上面 comm 的 cv=2151 配套，改一个就要改另一个
+      'User-Agent': 'QQMusic 14090508(android 12)',
     },
     body: data,
   }).promise

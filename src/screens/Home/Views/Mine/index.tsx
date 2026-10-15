@@ -68,6 +68,7 @@ export default () => {
   const [playlists, setPlaylists] = useState<LX.QQMusic.PlaylistInfo[]>([])
   const [historyCount, setHistoryCount] = useState(0)
   const [localCount, setLocalCount] = useState(0)
+  const [avatarFailed, setAvatarFailed] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const refreshingRef = useRef(false)
   const tasks = useDownloadTasks()
@@ -151,11 +152,10 @@ export default () => {
     navigations.pushQQPlaylistScreen(commonState.componentIds.home!, { id: info.id, name: info.name, liked: info.liked })
   }
 
-  // 头像兜底：存下来的 user 可能是更早的版本写进去的（那时还没有地址归一化），
-  // 拿到空值就退回 QQ 头像服务，别让头像位开天窗
-  const avatarUrl = user?.avatar
-    ? user.avatar
-    : (user?.uin ? `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(user.uin)}&s=100` : '')
+  // 头像兜底：接口给的头像可能是空的、或者根本加载不出来（老账号常见），
+  // 那就退回 QQ 头像服务；连它都挂了才显示占位图
+  const fallbackAvatar = user?.uin ? `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(user.uin)}&s=100` : ''
+  const avatarUrl = user?.avatar && !avatarFailed ? user.avatar : fallbackAvatar
 
   const liked = playlists.find(item => item.liked)
   const created = playlists.filter(item => !item.liked && !item.subscribed)
@@ -182,7 +182,7 @@ export default () => {
           <TouchableOpacity style={styles.userMain} activeOpacity={0.7} onPress={() => { if (!loggedIn) loginRef.current?.show() }}>
             {
               avatarUrl
-                ? <Image url={avatarUrl} style={styles.avatar} />
+                ? <Image url={avatarUrl} style={styles.avatar} onError={() => { setAvatarFailed(true) }} />
                 : <View style={{ ...styles.avatar, backgroundColor: theme['c-primary-background'] }} />
             }
             <View style={styles.userInfo}>

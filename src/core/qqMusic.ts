@@ -100,7 +100,10 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
     headers: {
       Referer: QQ_REFERER,
       Origin: 'https://y.qq.com',
-      'User-Agent': QQ_APP_USER_AGENT,
+      // UA 按接口分：musicu.fcg 是手机 App 接口，要和 App 信封配套；
+      // 其余（资料、歌单列表这类页面级 .fcg）是网页端的，必须用登录时那套浏览器 UA，
+      // 换成 App UA 会被拒 —— 这也是头像一度取不到的原因。
+      'User-Agent': url == QQ_MUSICU_URL ? QQ_APP_USER_AGENT : QQ_USER_AGENT,
       // 未登录时不要发一个空的 Cookie 头
       ...(cookie ? { Cookie: cookie } : {}),
       ...(options.headers ?? {}),
@@ -119,6 +122,7 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
   }
   return body
 }
+
 
 // QQ 音乐 App 用 tmeLoginType 区分登录方式：1 = QQ，2 = 微信。
 // 判据与 readUin 里的 login_type 保持一致。
@@ -365,10 +369,15 @@ export const isLikedPlaylistId = (id: string | number) => Number(id) === LIKED_P
 export const isLikedPlaylist = (info: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'liked'>) =>
   !!info.liked || isLikedPlaylistId(info.id)
 
-export const getQQMusicSession = async() => ({
-  cookie: await getQQMusicCookie() ?? '',
-  user: await getQQMusicUser() ?? null,
-})
+export const getQQMusicSession = async() => {
+  const user = await getQQMusicUser() ?? null
+  return {
+    cookie: await getQQMusicCookie() ?? '',
+    // 头像在读取时再归一化一遍：地址归一化是后加的，早先存下来的 user 里可能还是
+    // 协议相对地址，不改的话得重新登录才会好
+    user: user ? { ...user, avatar: normalizeAvatarUrl(user.avatar) || user.avatar } : null,
+  }
+}
 
 export const saveQQMusicSession = async(cookie: string) => {
   const cookies = parseQQMusicCookie(cookie)
@@ -497,7 +506,7 @@ export const getQQMusicRecentSongs = async(cookie: string): Promise<LX.Player.Pl
  * scheme，RN 的 Image 会直接加载失败、界面上就是没有头像。补成 https。
  * 非 http(s) 的一律当无效，交给调用方退到 qlogo 兜底地址。
  */
-const normalizeAvatarUrl = (raw: unknown): string => {
+export const normalizeAvatarUrl = (raw: unknown): string => {
   const url = typeof raw == 'string' ? raw.trim() : ''
   if (!url) return ''
   if (url.startsWith('//')) return `https:${url}`
