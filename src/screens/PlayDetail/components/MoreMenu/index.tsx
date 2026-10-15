@@ -7,10 +7,10 @@ import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle, toast } from '@/utils/tools'
 import playerState from '@/store/player/state'
-import { filterVisiblePlaylists } from '@/core/qqMusic'
+import { filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession } from '@/core/qqMusic'
 import { setQQMusicTrackInPlaylist } from '@/core/qqMusicFavorite'
 import { dropCachedPlaylistSongs } from '@/core/qqMusicPlaylistSongsCache'
-import { getQQMusicPlaylistsCache } from '@/utils/data'
+import { getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache } from '@/utils/data'
 
 type Mode = 'actions' | 'add' | 'remove'
 type Playlist = LX.QQMusic.PlaylistInfo
@@ -41,14 +41,33 @@ export default forwardRef<MoreMenuType>((_, ref) => {
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [busy, setBusy] = useState(false)
 
+  const loadPlaylists = async() => {
+    const cached = filterVisiblePlaylists(await getQQMusicPlaylistsCache())
+    // 只列自己创建的歌单：收藏来的写不了
+    let created = cached.filter(item => !item.subscribed && !item.liked)
+    // 缓存可能是**旧版本**写进去的（那时歌单对象上还没有 dirId 字段，而页面只有手动下拉
+    // 才会重拉），拿不到目录编号就没法写歌单。发现缺编号就自己重拉一次并落盘，
+    // 不指望用户记得去下拉刷新。
+    if (created.some(item => !item.dirId)) {
+      const { cookie } = await getQQMusicSession()
+      if (cookie) {
+        try {
+          const fresh = await getQQMusicPlaylists(cookie)
+          await saveQQMusicPlaylistsCache(fresh)
+          created = filterVisiblePlaylists(fresh).filter(item => !item.subscribed && !item.liked)
+        } catch (error) {
+          console.warn('[QQMusic] 刷新歌单失败:', error instanceof Error ? error.message : error)
+        }
+      }
+    }
+    setPlaylists(created)
+  }
+
   useImperativeHandle(ref, () => ({
     show() {
       setMode('actions')
       popupRef.current?.setVisible(true)
-      void getQQMusicPlaylistsCache().then(cached => {
-        // 只列自己创建的歌单：收藏来的写不了
-        setPlaylists(filterVisiblePlaylists(cached).filter(item => !item.subscribed && !item.liked))
-      })
+      void loadPlaylists()
     },
   }))
 
