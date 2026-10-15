@@ -13,6 +13,7 @@ import {
   DOWNLOAD_SCREEN,
   PLAY_HISTORY_SCREEN,
   QQ_PLAYLIST_SCREEN,
+  LOCAL_SONGS_SCREEN,
 } from './screenNames'
 
 import themeState from '@/store/theme/state'
@@ -360,6 +361,10 @@ export function pushDownloadScreen(componentId: string) {
 
 export function pushPlayHistoryScreen(componentId: string) {
   pushPlainScreen(componentId, PLAY_HISTORY_SCREEN)
+}
+
+export function pushLocalSongsScreen(componentId: string) {
+  pushPlainScreen(componentId, LOCAL_SONGS_SCREEN)
 }
 
 /** QQ 歌单页。info.liked 为 true 时走 dirid=201（「我喜欢」）的取歌通道。 */

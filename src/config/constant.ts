@@ -48,6 +48,7 @@ export enum COMPONENT_IDS {
   playHistory = 'playHistory',
   // QQ 歌单（含「我喜欢」dirid=201）。走自己的取歌通道，不复用多源的 SonglistDetail
   qqPlaylist = 'qqPlaylist',
+  localSongs = 'localSongs',
 }
 
 export enum NAV_SHEAR_NATIVE_IDS {
@@ -115,6 +116,9 @@ export const storageDataPrefix = {
   // 注意与上面的区分：qqMusicDailyRecommend 存的是「猜你喜欢」电台的结果
   // (get_radio_track)，这里存的才是真正的每日推荐歌单 (CgiGetDiss dirid=202)
   qqMusicDailyPlaylist: '@qq_music_daily_playlist',
+  // 「我喜欢」的全量歌曲。获取要翻好几页，缓存下来供心形状态和歌单页直接读，
+  // 只有手动下拉刷新才重新拉
+  qqMusicLikedSongs: '@qq_music_liked_songs',
   qqMusicRecommendPlaylists: '@qq_music_recommend_playlists',
   qqMusicRecommendSession: '@qq_music_recommend_session',
 } as const

@@ -490,6 +490,20 @@ export const getQQMusicRecentSongs = async(cookie: string): Promise<LX.Player.Pl
   return result.sort((a, b) => b.playedAt - a.playedAt)
 }
 
+/**
+ * 头像地址归一化。
+ *
+ * 资料接口给的头像经常是**协议相对地址**（`//thirdqq.qlogo.cn/...`），这种 URI 没有
+ * scheme，RN 的 Image 会直接加载失败、界面上就是没有头像。补成 https。
+ * 非 http(s) 的一律当无效，交给调用方退到 qlogo 兜底地址。
+ */
+const normalizeAvatarUrl = (raw: unknown): string => {
+  const url = typeof raw == 'string' ? raw.trim() : ''
+  if (!url) return ''
+  if (url.startsWith('//')) return `https:${url}`
+  return /^https?:\/\//i.test(url) ? url : ''
+}
+
 export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.UserInfo> => {
   const cookies = parseQQMusicCookie(cookie)
   const uin = readUin(cookies)
@@ -520,7 +534,7 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
   return {
     uin: normalizeUin(creator.uin ?? uin) || uin,
     nickname: creator.nick || creator.nickname || creator.name || creator.hostname || fallback.nickname,
-    avatar: creator.headpic || creator.avatar || creator.avatarUrl || creator.logo || fallback.avatar,
+    avatar: normalizeAvatarUrl(creator.headpic || creator.avatar || creator.avatarUrl || creator.logo) || fallback.avatar,
   }
 }
 

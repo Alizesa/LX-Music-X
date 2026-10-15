@@ -62,12 +62,20 @@ const pickSinger = (list: SingerItem[], name: string) =>
  * 列表就被顶掉了（回到搜索页会看到搜索框是自己的词、列表却是这边的人）。所以这里自己
  * 拿 musicSdk 请求、自己管缓存。
  */
+// 一行的数据。item 为 null 表示这个名字在 tx 上搜不到对应的歌手（或取 mid 失败）——
+// 那种情况仍然把名字显示出来，只是点不开。这一页的职责是回答「这首歌是谁唱的」，
+// 查不到 mid 不该让整页空掉。
+interface SingerRow {
+  name: string
+  item: SingerItem | null
+}
+
 export default memo(({ componentId, active }: { componentId: string, active: boolean }) => {
   const theme = useTheme()
   const t = useI18n()
   const musicInfo = usePlayerMusicInfo()
   const playMusicInfo = usePlayMusicInfo()
-  const [list, setList] = useState<SingerItem[]>([])
+  const [list, setList] = useState<SingerRow[]>([])
   // 初值就是 loading：这一页一露头就要去查，中间那一下别闪出「没有数据」
   const [status, setStatus] = useState<Status>('loading')
   // 每次请求发一个号，回来时号对不上，说明歌换了，这次结果作废。
@@ -116,7 +124,7 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
         return item
       }))
       if (!mountedRef.current || seq != seqRef.current) return
-      setList(items.filter((item): item is SingerItem => item != null))
+      setList(names.map((name, index) => ({ name, item: items[index] })))
       setStatus('idle')
     } catch (err) {
       console.log(err)
@@ -137,7 +145,7 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
     }
     // 都查过了就直接摆出来，省掉一次「加载中」的闪烁
     if (singers.every(name => cache.has(name))) {
-      setList(singers.map(name => cache.get(name)).filter((item): item is SingerItem => item != null))
+      setList(singers.map(name => ({ name, item: cache.get(name) ?? null })))
       setStatus('idle')
       return
     }
@@ -198,35 +206,49 @@ export default memo(({ componentId, active }: { componentId: string, active: boo
       : <View style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}>{content}</View>
   }, [album, theme, t, handleOpenAlbum])
 
-  const renderItem: FlatListProps<SingerItem>['renderItem'] = ({ item }) => (
-    <TouchableOpacity
-      activeOpacity={0.5}
-      style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}
-      onPress={() => { handleOpenDetail(item) }}
-    >
-      <Image
-        url={item.picUrl}
-        nativeID={`${NAV_SHEAR_NATIVE_IDS.singerDetail_pic}_from_${item.mid}`}
-        style={{ ...styles.avatar, width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }}
-      />
-      <View style={styles.info}>
-        <Text size={16} numberOfLines={1}>{item.name}</Text>
-        <Text size={12} color={theme['c-font-label']} numberOfLines={1}>
-          {[
-            t('singer_song_count', { num: formatPlayCount(item.songSize) }),
-            t('singer_album_count', { num: formatPlayCount(item.albumSize) }),
-          ].join('  ·  ')}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  )
+  const renderItem: FlatListProps<SingerRow>['renderItem'] = ({ item: row }) => {
+    // 换不到 mid：只把名字摆出来，不显示头像也不给点击
+    if (!row.item) {
+      return (
+        <View style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}>
+          <View style={{ ...styles.avatar, width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2, backgroundColor: theme['c-primary-background'] }} />
+          <View style={styles.info}>
+            <Text size={16} numberOfLines={1}>{row.name}</Text>
+            <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{t('search_type_singer')}</Text>
+          </View>
+        </View>
+      )
+    }
+    return (
+      <TouchableOpacity
+        activeOpacity={0.5}
+        style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}
+        onPress={() => { handleOpenDetail(row.item!) }}
+      >
+        <Image
+          url={row.item.picUrl}
+          nativeID={`${NAV_SHEAR_NATIVE_IDS.singerDetail_pic}_from_${row.item.mid}`}
+          style={{ ...styles.avatar, width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 }}
+        />
+        <View style={styles.info}>
+          <Text size={16} numberOfLines={1}>{row.item.name}</Text>
+          <Text size={12} color={theme['c-font-label']} numberOfLines={1}>
+            {[
+              t('singer_song_count', { num: formatPlayCount(row.item.songSize) }),
+              t('singer_album_count', { num: formatPlayCount(row.item.albumSize) }),
+            ].join('  ·  ')}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    )
+  }
 
   return (
     <View style={styles.container}>
       <FlatList
         data={list}
         style={styles.list}
-        keyExtractor={item => item.mid}
+        keyExtractor={row => row.name}
         renderItem={renderItem}
         ListHeaderComponent={albumRow}
         ListEmptyComponent={

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getQQMusicPlaylistSongs, getQQMusicSession, postAuthedMusicu } from './qqMusic'
+import { getQQMusicLikedSongsCache, removeQQMusicLikedSongsCache, saveQQMusicLikedSongsCache } from '@/utils/data'
 
 // 「我喜欢」是 dirid=201 的虚拟歌单
 const LIKED_DIRID = '201'
@@ -7,52 +8,77 @@ const LIKED_DIRID = '201'
 const WRITE_SOURCE = 'normal'
 // 这几个返回码表示票据失效
 const LOGIN_ERROR_CODES = new Set([1000, 104400, 104401])
-// QQ 歌曲的 id 形如 tx_<songmid>
-const TX_ID_PREFIX = 'tx_'
 
 export type FavoriteResult = 'ok' | 'unsupported' | 'failed'
 
-// 已收藏歌曲的 id 集合。心形状态从这里来 —— 收藏动作已经改成直接写账号，
-// 本地「我的收藏」列表不再是真源。拿不到这个集合时心形先按未收藏显示。
+/**
+ * 「我喜欢」的全量歌曲。
+ *
+ * 拉一次要翻好几页（两百多首），所以**持久缓存**：内存 → 存储 → 联网。
+ * 心形状态和「我喜欢」歌单页都读这份缓存，只有手动下拉刷新才联网 ——
+ * 这个分支有意压低对音源的请求量。
+ */
+let likedSongs: LX.Music.MusicInfoOnline[] | null = null
 let likedIds: Set<string> | null = null
-let refreshPromise: Promise<void> | null = null
+let fetchPromise: Promise<void> | null = null
+
+const setLikedSongs = (songs: LX.Music.MusicInfoOnline[] | null) => {
+  likedSongs = songs
+  likedIds = songs ? new Set(songs.map(song => song.id)) : null
+  global.app_event.qqMusicLikedUpdated()
+}
 
 export const isQQMusicTrackLiked = (id: string | null | undefined) =>
   id ? likedIds?.has(id) ?? false : false
 
-const doRefresh = async() => {
+/** 已缓存的「我喜欢」歌曲；还没加载过返回 null。 */
+export const getQQMusicLikedSongs = () => likedSongs
+
+/** 只读本地缓存（内存 → 存储），不联网。 */
+export const loadQQMusicLikedSongsCache = async(): Promise<LX.Music.MusicInfoOnline[]> => {
+  if (likedSongs) return likedSongs
+  const cached = await getQQMusicLikedSongsCache()
+  if (cached.length) setLikedSongs(cached)
+  return cached
+}
+
+const doFetch = async() => {
   try {
     const { cookie } = await getQQMusicSession()
     if (!cookie) {
-      likedIds = null
-    } else {
-      const songs = await getQQMusicPlaylistSongs(cookie, LIKED_DIRID)
-      likedIds = new Set(songs.map(song => song.id))
+      setLikedSongs(null)
+      await removeQQMusicLikedSongsCache()
+      return
     }
+    const songs = await getQQMusicPlaylistSongs(cookie, LIKED_DIRID)
+    setLikedSongs(songs)
+    await saveQQMusicLikedSongsCache(songs)
   } catch (error) {
-    // 拿不到就保持未知，心形按未收藏显示，不阻断播放
+    // 失败保留上一次的缓存，不要因为一次网络抖动把心形状态全清空
     console.log('[QQMusic] 拉取我喜欢失败:', error)
   }
-  global.app_event.qqMusicLikedUpdated()
 }
 
-/** 拉一次「我喜欢」全量填充 id 集合。并发调用共用同一次请求。 */
-export const refreshQQMusicLikedIds = async(): Promise<void> => {
-  refreshPromise ??= doRefresh().finally(() => { refreshPromise = null })
-  await refreshPromise
+/** 联网拉一次「我喜欢」并落盘。并发调用共用同一次请求。 */
+export const refreshQQMusicLikedSongs = async(): Promise<void> => {
+  fetchPromise ??= doFetch().finally(() => { fetchPromise = null })
+  await fetchPromise
 }
 
-const markLiked = (id: string, liked: boolean) => {
-  if (!likedIds) likedIds = new Set()
-  if (liked) likedIds.add(id)
-  else likedIds.delete(id)
-  global.app_event.qqMusicLikedUpdated()
+/** 收藏/取消后同步更新本地缓存，省掉一次全量重拉 */
+const markLiked = (musicInfo: LX.Music.MusicInfo, liked: boolean) => {
+  const songs = likedSongs ?? []
+  const next = liked
+    ? (songs.some(song => song.id == musicInfo.id) ? songs : [musicInfo as LX.Music.MusicInfoOnline, ...songs])
+    : songs.filter(song => song.id != musicInfo.id)
+  setLikedSongs(next)
+  void saveQQMusicLikedSongsCache(next)
 }
 
-/** 换号/退出时把集合清掉，否则新号会看到上一个号的收藏状态 */
-export const clearQQMusicLikedIds = () => {
-  likedIds = null
-  global.app_event.qqMusicLikedUpdated()
+/** 换号/退出时清掉，否则新号会看到上一个号的收藏状态 */
+export const clearQQMusicLikedSongs = () => {
+  setLikedSongs(null)
+  void removeQQMusicLikedSongsCache()
 }
 
 /**
@@ -60,7 +86,7 @@ export const clearQQMusicLikedIds = () => {
  * 未必已经建好。由 core/init/dataInit 调用。
  */
 export const initQQMusicFavorite = () => {
-  global.app_event.on('qqMusicAccountUpdated', clearQQMusicLikedIds)
+  global.app_event.on('qqMusicAccountUpdated', clearQQMusicLikedSongs)
 }
 
 /**
@@ -96,20 +122,22 @@ export const setQQMusicTrackLiked = async(musicInfo: LX.Music.MusicInfo, liked: 
   const retCode = Number(result?.data?.retCode ?? -1)
   if (retCode !== 0) return 'failed'
 
-  markLiked(musicInfo.id, liked)
+  markLiked(musicInfo, liked)
   return 'ok'
 }
 
 /**
- * 心形状态。入参是歌曲 id（播放栏拿到的只有 LX.Player.MusicInfo，没有完整歌曲信息）。
- * 集合还没拉过、且这首歌是 QQ 的就先拉一次。
+ * 心形状态。入参是歌曲 id（播放详情页拿到的是 LX.Player.MusicInfo，没有完整歌曲信息）。
+ * 只读缓存，不发请求 —— 缓存为空时才去读一次存储。
  */
 export const useQQMusicLiked = (id: string | null | undefined) => {
   const [liked, setLiked] = useState(() => isQQMusicTrackLiked(id))
 
   useEffect(() => {
     setLiked(isQQMusicTrackLiked(id))
-    if (likedIds == null && id?.startsWith(TX_ID_PREFIX)) void refreshQQMusicLikedIds()
+    if (likedIds == null) {
+      void loadQQMusicLikedSongsCache().then(() => { setLiked(isQQMusicTrackLiked(id)) })
+    }
     const update = () => { setLiked(isQQMusicTrackLiked(id)) }
     global.app_event.on('qqMusicLikedUpdated', update)
     return () => { global.app_event.off('qqMusicLikedUpdated', update) }

@@ -9,6 +9,9 @@ import { useTheme } from '@/store/theme/hook'
 import { useDownloadTasks } from '@/store/download/hook'
 import { createStyle, toast } from '@/utils/tools'
 import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession } from '@/core/qqMusic'
+import { refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
+import { getListMusics } from '@/core/list'
+import { LIST_IDS } from '@/config/constant'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
 import { getPlayHistory, getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache } from '@/utils/data'
@@ -64,6 +67,7 @@ export default () => {
   const [user, setUser] = useState<LX.QQMusic.UserInfo | null>(null)
   const [playlists, setPlaylists] = useState<LX.QQMusic.PlaylistInfo[]>([])
   const [historyCount, setHistoryCount] = useState(0)
+  const [localCount, setLocalCount] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const refreshingRef = useRef(false)
   const tasks = useDownloadTasks()
@@ -97,6 +101,20 @@ export default () => {
     return () => { global.app_event.off('playHistoryUpdate', load) }
   }, [])
 
+  // 本地歌曲就是 LIST_IDS.LOCAL 那个列表（下载完成的歌也写在这里）。
+  // 导入/删除会走列表事件，跟着更新一下数量
+  useEffect(() => {
+    // 用 async 声明：列表事件的监听签名要求返回 Promise<void>
+    const load = async() => { setLocalCount((await getListMusics(LIST_IDS.LOCAL)).length) }
+    void load()
+    global.list_event.on('list_music_add', load)
+    global.list_event.on('list_music_remove', load)
+    return () => {
+      global.list_event.off('list_music_add', load)
+      global.list_event.off('list_music_remove', load)
+    }
+  }, [])
+
   const refresh = useCallback(async() => {
     // setRefreshing 要到下次渲染才生效，光靠 disabled 挡不住这个窗口内的第二次触发
     if (refreshingRef.current) return
@@ -110,6 +128,9 @@ export default () => {
       const list = await getQQMusicPlaylists(cookie)
       setPlaylists(list)
       await saveQQMusicPlaylistsCache(list)
+      // 顺手把「我喜欢」也刷一遍：它平时只读本地缓存（拉全量要翻好几页），
+      // 下拉刷新是唯一的重拉时机
+      void refreshQQMusicLikedSongs()
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
@@ -129,6 +150,12 @@ export default () => {
   const openPlaylist = (info: LX.QQMusic.PlaylistInfo) => {
     navigations.pushQQPlaylistScreen(commonState.componentIds.home!, { id: info.id, name: info.name, liked: info.liked })
   }
+
+  // 头像兜底：存下来的 user 可能是更早的版本写进去的（那时还没有地址归一化），
+  // 拿到空值就退回 QQ 头像服务，别让头像位开天窗
+  const avatarUrl = user?.avatar
+    ? user.avatar
+    : (user?.uin ? `https://q1.qlogo.cn/g?b=qq&nk=${encodeURIComponent(user.uin)}&s=100` : '')
 
   const liked = playlists.find(item => item.liked)
   const created = playlists.filter(item => !item.liked && !item.subscribed)
@@ -154,8 +181,8 @@ export default () => {
         <View style={styles.userCard}>
           <TouchableOpacity style={styles.userMain} activeOpacity={0.7} onPress={() => { if (!loggedIn) loginRef.current?.show() }}>
             {
-              user?.avatar
-                ? <Image url={user.avatar} style={styles.avatar} />
+              avatarUrl
+                ? <Image url={avatarUrl} style={styles.avatar} />
                 : <View style={{ ...styles.avatar, backgroundColor: theme['c-primary-background'] }} />
             }
             <View style={styles.userInfo}>
@@ -176,6 +203,7 @@ export default () => {
           <Entry icon="love" label={t('mine_liked')} count={liked?.trackCount} onPress={() => { if (liked) openPlaylist(liked) }} />
           <Entry icon="music_time" label={t('nav_history')} count={historyCount} onPress={() => { navigations.pushPlayHistoryScreen(commonState.componentIds.home!) }} />
           <Entry icon="download-2" label={t('nav_download')} count={tasks.length} onPress={() => { navigations.pushDownloadScreen(commonState.componentIds.home!) }} />
+          <Entry icon="sd-card" label={t('mine_local_songs')} count={localCount} onPress={() => { navigations.pushLocalSongsScreen(commonState.componentIds.home!) }} />
         </View>
 
         {renderSection(t('mine_created_playlists'), created)}

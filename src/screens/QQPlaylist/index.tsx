@@ -9,6 +9,7 @@ import { COMPONENT_IDS, LIST_IDS } from '@/config/constant'
 import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
+import { getQQMusicLikedSongs, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
 import { toast } from '@/utils/tools'
 import { useI18n } from '@/lang'
 
@@ -26,12 +27,19 @@ export default ({ componentId, info }: Props) => {
   const songsRef = useRef<LX.Music.MusicInfoOnline[]>([])
   const loadedRef = useRef(false)
 
-  const load = useCallback(async() => {
+  const load = useCallback(async(force: boolean) => {
     listRef.current?.setStatus('refreshing')
     try {
-      const { cookie } = await getQQMusicSession()
-      if (!cookie) throw new Error(t('qq_not_logged_in'))
-      const songs = await getQQMusicPlaylistSongs(cookie, info.id)
+      let songs: LX.Music.MusicInfoOnline[]
+      if (info.liked) {
+        // 「我喜欢」走持久缓存：全量要翻好几页，进页面不该重拉，只有下拉刷新才联网
+        if (force) await refreshQQMusicLikedSongs()
+        songs = getQQMusicLikedSongs() ?? await loadQQMusicLikedSongsCache()
+      } else {
+        const { cookie } = await getQQMusicSession()
+        if (!cookie) throw new Error(t('qq_not_logged_in'))
+        songs = await getQQMusicPlaylistSongs(cookie, info.id)
+      }
       songsRef.current = songs
       listRef.current?.setList(songs)
       // 取歌是一次拿全的，没有分页，所以直接标记到底
@@ -40,14 +48,14 @@ export default ({ componentId, info }: Props) => {
       listRef.current?.setStatus('error')
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     }
-  }, [info.id, t])
+  }, [info.id, info.liked, t])
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.qqPlaylist, componentId)
     // 守卫要同步置位：依赖变化重跑时，上一次的请求可能还没回来
     if (loadedRef.current) return
     loadedRef.current = true
-    void load()
+    void load(false)
   }, [componentId, load])
 
   const handlePlayList: OnlineListProps['onPlayList'] = (index) => {
@@ -65,7 +73,7 @@ export default ({ componentId, info }: Props) => {
       <OnlineList
         ref={listRef}
         onPlayList={handlePlayList}
-        onRefresh={load}
+        onRefresh={() => { void load(true) }}
         onLoadMore={() => { listRef.current?.setStatus('end') }}
       />
       <PlayerBar />

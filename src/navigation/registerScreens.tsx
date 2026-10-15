@@ -14,6 +14,7 @@ import {
   Download,
   PlayHistory,
   QQPlaylist,
+  LocalSongs,
 } from '@/screens'
 import { Provider } from '@/store/Provider'
 
@@ -29,6 +30,7 @@ import {
   DOWNLOAD_SCREEN,
   PLAY_HISTORY_SCREEN,
   QQ_PLAYLIST_SCREEN,
+  LOCAL_SONGS_SCREEN,
   VERSION_MODAL,
   PACT_MODAL,
   // SETTING_SCREEN,
@@ -62,6 +64,7 @@ export default () => {
   Navigation.registerComponent(DOWNLOAD_SCREEN, () => WrappedComponent(Download))
   Navigation.registerComponent(PLAY_HISTORY_SCREEN, () => WrappedComponent(PlayHistory))
   Navigation.registerComponent(QQ_PLAYLIST_SCREEN, () => WrappedComponent(QQPlaylist))
+  Navigation.registerComponent(LOCAL_SONGS_SCREEN, () => WrappedComponent(LocalSongs))
   Navigation.registerComponent(VERSION_MODAL, () => WrappedComponent(VersionModal))
   Navigation.registerComponent(PACT_MODAL, () => WrappedComponent(PactModal))
   // Navigation.registerComponent(SETTING_SCREEN, () => WrappedComponent(Setting))
