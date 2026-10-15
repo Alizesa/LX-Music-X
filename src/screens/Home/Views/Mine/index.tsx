@@ -167,31 +167,6 @@ export default () => {
   // 换账号后地址全变了，从头再试一遍
   useEffect(() => { setAvatarStage(0) }, [user?.uin])
 
-  // 临时诊断：候选地址全挂了时，自己 fetch 一遍看真实返回码，
-  // 区分「地址本身有问题」和「请求发不出去」。定位完删。
-  const [avatarProbe, setAvatarProbe] = useState('')
-  useEffect(() => {
-    if (avatarUrl || !loggedIn) {
-      setAvatarProbe('')
-      return
-    }
-    if (!avatarCandidates.length) {
-      setAvatarProbe('无候选地址')
-      return
-    }
-    let cancelled = false
-    void Promise.all(avatarCandidates.map(async url => {
-      const short = url.length > 46 ? `${url.slice(0, 46)}…` : url
-      try {
-        const res = await fetch(url)
-        return `${short} → HTTP ${res.status}`
-      } catch (error: unknown) {
-        return `${short} → 网络失败: ${error instanceof Error ? error.message : String(error)}`
-      }
-    })).then(lines => { if (!cancelled) setAvatarProbe(lines.join('\n')) })
-    return () => { cancelled = true }
-  }, [avatarUrl, avatarCandidates, loggedIn])
-
   // 资料是登录时抓一次就存下来的，换了接口也不会重取。头像缺失、或者退成了兜底地址，
   // 说明当初那次没取到，这里补一次并落盘。只补一次，避免取不到时反复请求。
   const profileRefetchedRef = useRef(false)
@@ -238,13 +213,6 @@ export default () => {
               <Text size={12} color={theme['c-font-label']} numberOfLines={1}>
                 {loggedIn ? (user.uin ? `QQ ${user.uin}` : t('qq_logged_in')) : t('qq_login_hint')}
               </Text>
-              {/* 临时诊断：头像的候选地址全都加载不出来时，把实际用的 uin 和地址显示出来。
-                  用来判断到底是地址不对、还是 uin 不是 QQ 号（qlogo 查不到）。定位完就删。 */}
-              {!avatarUrl && loggedIn
-                ? <Text size={9} color={theme['c-font-label']} numberOfLines={8}>
-                    {`uin=[${user.uin ? user.uin : '空'}]\navatar=[${user.avatar ? user.avatar : '空'}]\n${avatarProbe}`}
-                  </Text>
-                : null}
             </View>
           </TouchableOpacity>
           {
