@@ -134,8 +134,12 @@ export const setQQMusicTrackLiked = async(musicInfo: LX.Music.MusicInfo, liked: 
 /**
  * 把一首歌加进 / 移出某个**自己创建的** QQ 歌单。
  *
- * dirId 是目录编号，写接口用的是它 —— 公开的 disstid 不能当目录编号使，两者不通用。
- * 收藏来的歌单没有目录编号（dirId 为空），只能读不能写。
+ * 写接口的 dirId 是目录编号。**优先用歌单自带的 dirId，没有就退回用歌单 id 顶上** ——
+ * 很多账号的创建歌单响应里根本没有 dirid 字段，只有编号，硬性要求 dirId 会让功能整个不可用。
+ * （MusicOne 也是这么回退的。）
+ *
+ * 校验失败时**抛错并带上服务端的返回码**：写不通的原因基本都在码里，
+ * 只回一句「失败」等于把唯一的线索丢了。
  */
 export const setQQMusicTrackInPlaylist = async(
   musicInfo: LX.Music.MusicInfo,
@@ -145,7 +149,9 @@ export const setQQMusicTrackInPlaylist = async(
   if (musicInfo.source != 'tx') return 'unsupported'
   const songId = Number(musicInfo.meta.id ?? 0)
   if (!songId) return 'unsupported'
-  if (!playlist.dirId) return 'unsupported'
+  const numericId = Number(playlist.id)
+  const dirId = playlist.dirId ?? (Number.isFinite(numericId) && numericId > 0 ? numericId : 0)
+  if (!dirId) return 'unsupported'
   const { cookie } = await getQQMusicSession()
   if (!cookie) return 'unsupported'
 
@@ -154,9 +160,9 @@ export const setQQMusicTrackInPlaylist = async(
       module: 'music.musicasset.PlaylistDetailWrite',
       method: add ? 'AddSonglist' : 'DelSonglist',
       param: {
-        dirId: playlist.dirId,
+        dirId,
         dirName: playlist.name,
-        tid: Number(playlist.id) || 0,
+        tid: Number.isFinite(numericId) ? numericId : 0,
         bFmtUtf8: true,
         source: WRITE_SOURCE,
         v_songInfo: [{ songId, songType: 0 }],
@@ -166,8 +172,10 @@ export const setQQMusicTrackInPlaylist = async(
   const result = body?.req_0
   const code = Number(result?.code ?? -1)
   if (LOGIN_ERROR_CODES.has(code)) throw new Error(global.i18n.t('qq_session_expired'))
-  if (code !== 0) return 'failed'
-  if (Number(result?.data?.retCode ?? -1) !== 0) return 'failed'
+  const retCode = Number(result?.data?.retCode ?? -1)
+  if (code !== 0 || retCode !== 0) {
+    throw new Error(`${global.i18n.t('qq_playlist_write_failed')} (code=${code} retCode=${retCode})`)
+  }
   return 'ok'
 }
 

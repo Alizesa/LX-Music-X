@@ -39,7 +39,6 @@ export default forwardRef<MoreMenuType>((_, ref) => {
   const popupRef = useRef<PopupType>(null)
   const [mode, setMode] = useState<Mode>('actions')
   const [playlists, setPlaylists] = useState<Playlist[]>([])
-  const [debugInfo, setDebugInfo] = useState('')
   const [busy, setBusy] = useState(false)
 
   useImperativeHandle(ref, () => ({
@@ -47,15 +46,8 @@ export default forwardRef<MoreMenuType>((_, ref) => {
       setMode('actions')
       popupRef.current?.setVisible(true)
       void getQQMusicPlaylistsCache().then(cached => {
-        const visible = filterVisiblePlaylists(cached)
-        // 只有自己创建的歌单能写：收藏来的没有目录编号，写接口用不了
-        const created = visible.filter(item => !item.subscribed && !item.liked)
-        setPlaylists(created.filter(item => !!item.dirId))
-        // 临时诊断：列表空的时候把实际情况摆出来，定位完删
-        setDebugInfo(
-          `缓存 ${cached.length} / 可见 ${visible.length} / 自建 ${created.length} / 有目录号 ${created.filter(i => !!i.dirId).length}\n` +
-          created.map(i => `${i.name}[id=${i.id} dirId=${i.dirId ?? '无'}]`).join('  '),
-        )
+        // 只列自己创建的歌单：收藏来的写不了
+        setPlaylists(filterVisiblePlaylists(cached).filter(item => !item.subscribed && !item.liked))
       })
     },
   }))
@@ -75,10 +67,7 @@ export default forwardRef<MoreMenuType>((_, ref) => {
         popupRef.current?.setVisible(false)
         return
       }
-      if (result == 'failed') {
-        toast(t('qq_playlist_write_failed'), 'long')
-        return
-      }
+      // 写失败是抛错出来的（带服务端返回码），走下面的 catch
       toast(t('qq_playlist_write_unsupported'), 'long')
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_playlist_write_failed'), 'long')
@@ -101,13 +90,7 @@ export default forwardRef<MoreMenuType>((_, ref) => {
       )
     }
     if (!playlists.length) {
-      return (
-        <>
-          <Text style={styles.empty} color={theme['c-font-label']}>{t('qq_playlist_write_empty')}</Text>
-          {/* 临时诊断：定位完删 */}
-          <Text style={styles.debug} size={9} color={theme['c-font-label']}>{debugInfo}</Text>
-        </>
-      )
+      return <Text style={styles.empty} color={theme['c-font-label']}>{t('qq_playlist_write_empty')}</Text>
     }
     return (
       <ScrollView style={styles.list}>
@@ -168,11 +151,6 @@ const styles = createStyle({
   },
   empty: {
     textAlign: 'center',
-    paddingTop: 28,
-    paddingBottom: 6,
-  },
-  debug: {
-    paddingHorizontal: 12,
-    paddingBottom: 16,
+    paddingVertical: 28,
   },
 })
