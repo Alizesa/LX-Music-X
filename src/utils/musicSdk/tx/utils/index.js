@@ -1,11 +1,14 @@
 import { httpFetch } from '@/utils/request'
 import { zzcSign } from './crypto'
 
+// 手机 App 信封。ct/cv/chid 是一组互相对应的 App 端标识，
+// UA 必须跟着配套（见下面 signRequest），否则服务端会按网页端返回、字段和功能都有出入。
 export const comm = {
   _channelid: '0',
-  _os_version: '6.2.9200-2',
-  ct: '19',
-  cv: '2151',
+  _os_version: '14',
+  ct: '11',
+  cv: '14090008',
+  chid: '10003505',
   guid: '1F70E520B2EAA7D25E11760783C53CA9',
   patch: '118',
   psrf_access_token_expiresAt: 0,
@@ -29,7 +32,8 @@ export const signRequest = async(data, path = 'musics.fcg') => {
   return httpFetch(`https://u.y.qq.com/cgi-bin/${path}?sign=${sign}`, {
     method: 'post',
     headers: {
-      'User-Agent': 'QQMusic 14090508(android 12)',
+      // 与 comm 的 cv=14090008 配套，改一个就要改另一个
+      'User-Agent': 'QQMusic 14090008(android 14)',
     },
     body: data,
   }).promise

@@ -28,9 +28,13 @@ const QQ_REFERER = 'https://y.qq.com/'
 const QQ_PROFILE_REFERER = 'https://y.qq.com/portal/profile.html'
 const QQ_COOKIE_URLS = ['https://y.qq.com/', 'https://qq.com/', 'https://c.y.qq.com/', 'https://u.y.qq.com/']
 
-// 与 WebView 登录时使用的 UA 保持一致：Cookie 在哪个 UA 下签发，就用哪个 UA 请求，
-// 避免因指纹不一致被风控。项目默认的 Chrome/69 也过于陈旧。
+// 这个 UA 只给登录用的 WebView：y.qq.com 的登录页要靠浏览器 UA 才能正常渲染。
+// 项目默认的 Chrome/69 过于陈旧，这里用较新的版本。
 export const QQ_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+// 接口请求一律走手机 App 信封，UA 必须和 comm 里的 cv=14090008 对得上；
+// 用浏览器 UA 配 App 版本号的话，服务端会按网页端返回，字段和可用功能都有出入。
+export const QQ_APP_USER_AGENT = 'QQMusic 14090008(android 14)'
 
 const RECOMMEND_TARGET = 20
 const RECOMMEND_MAX_TRIES = 6
@@ -93,7 +97,7 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
     headers: {
       Referer: QQ_REFERER,
       Origin: 'https://y.qq.com',
-      'User-Agent': QQ_USER_AGENT,
+      'User-Agent': QQ_APP_USER_AGENT,
       // 未登录时不要发一个空的 Cookie 头
       ...(cookie ? { Cookie: cookie } : {}),
       ...(options.headers ?? {}),
@@ -113,22 +117,48 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
   return body
 }
 
+// QQ 音乐 App 用 tmeLoginType 区分登录方式：1 = QQ，2 = 微信。
+// 判据与 readUin 里的 login_type 保持一致。
+const readLoginType = (cookies: Record<string, string>) => Number(cookies.login_type) === 2 ? 2 : 1
+
 /**
  * 登录态请求的 comm 块。uin 必须是账号 UIN，且必须带 authst(音乐票据)，
  * 否则服务端不认这个身份 —— 这是早先 "session expired" 的直接原因之一。
- * ct=19 表示已登录通道，cv=0 是 Web 端使用的版本号；musicu.fcg 目前不校验 sign。
+ *
+ * 这里用的是手机 App 信封：ct/cv/chid/tmeAppID/tmeLoginType 是一组互相对应的
+ * App 端标识，UA 也要配套（见 QQ_APP_USER_AGENT）。qq 和 uin 都带账号：
+ * App 端习惯读 qq，而本仓既有的调用点读 uin，两个都给上最稳。
+ * musicu.fcg 目前不校验 sign。
  */
 const buildAuthComm = (cookies: Record<string, string>) => {
   const uin = readUin(cookies)
   const authst = readMusicKey(cookies)
   return {
     uin,
+    qq: uin,
     format: 'json',
-    ct: 19,
-    cv: 0,
+    ct: 11,
+    cv: 14090008,
+    v: 14090008,
+    chid: '10003505',
+    tmeAppID: 'qqmusic',
+    tmeLoginType: readLoginType(cookies),
     ...(authst ? { authst } : {}),
   }
 }
+
+// 未登录时的 App 信封：和登录态同一套标识，只是不带账号与票据。
+// 原来这里用的是 { cv: 1602, ct: 20 }，属于网页端那套，一并换掉。
+const buildAnonymousComm = () => ({
+  uin: '0',
+  format: 'json',
+  ct: 11,
+  cv: 14090008,
+  v: 14090008,
+  chid: '10003505',
+  tmeAppID: 'qqmusic',
+  tmeLoginType: 0,
+})
 
 // 服务端用这两个码明确表示"未登录/票据失效"，区别于网络错误和结构变更
 const isSessionExpiredBody = (body: any) => Number(body?.code) === 1000 || Number(body?.result) === 301
@@ -446,7 +476,7 @@ export const getQQMusicRecommendedPlaylists = async(cookie: string, from = 0): P
   const body = await request(QQ_MUSICU_URL, authed ? cookie : '', {
     method: 'post',
     body: {
-      comm: authed ? buildAuthComm(cookies) : { cv: 1602, ct: 20 },
+      comm: authed ? buildAuthComm(cookies) : buildAnonymousComm(),
       playlist: {
         module: 'music.playlist.PlaylistSquare',
         method: 'GetRecommendWhole',

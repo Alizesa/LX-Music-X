@@ -44,18 +44,12 @@ export default memo(({ isHome = false }: { isHome?: boolean }) => {
 
 const styles = createStyle({
   container: {
-    width: '100%',
-    // height: 100,
-    // paddingTop: progressContentPadding,
-    // marginTop: -progressContentPadding,
-    // backgroundColor: 'rgba(0, 0, 0, .1)',
-    // borderTopWidth: BorderWidths.normal2,
+    // 悬浮样式：左右和底部留出边距，四角都收圆，靠 elevation 浮在背景之上
+    marginHorizontal: 8,
+    marginBottom: 6,
+    borderRadius: 10,
     paddingVertical: 5,
     paddingLeft: 5,
-    // backgroundColor: AppColors.primary,
-    // backgroundColor: 'red',
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
     flexDirection: 'row',
     alignItems: 'center',
     elevation: 10,
