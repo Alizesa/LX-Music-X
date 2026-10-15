@@ -597,33 +597,44 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
   }
 }
 
-/**
- * 自建歌单列表的地址。
- *
- * 优先用不带 platform 的那套（对齐 MusicOne）：带 `platform=yqq.json` 时服务端按网页老
- * 格式返回，那种响应里**没有 dirid** —— 而写歌单（加歌/删歌）必须要 dirid。
- * legacy=true 是早先那套参数，只在新参数取不到东西时兜底，保证歌单列表不会因此消失。
- */
-const createdPlaylistUrl = (uin: string, legacy: boolean) => legacy
-  ? `${QQ_CREATED_PLAYLIST_URL}?hostUin=0&hostuin=${encodeURIComponent(uin)}&sin=0&size=${PLAYLIST_PAGE_SIZE}&g_tk=5381&loginUin=${encodeURIComponent(uin)}&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0`
-  : `${QQ_CREATED_PLAYLIST_URL}?hostuin=${encodeURIComponent(uin)}&sin=0&size=${PLAYLIST_PAGE_SIZE}&format=json&inCharset=utf8&outCharset=utf-8`
-
-// 自建歌单有两个数组：disslist 是当前格式，list 是旧的。两处都要读 ——
-// 只读 disslist 会漏掉一部分账号（MusicOne 两个都读）
-const readCreatedPlaylists = (body: any): any[] =>
+// 网页老接口的自建歌单有两个数组：disslist 是当前格式，list 是旧的，两处都要读
+// （只读 disslist 会漏掉一部分账号，MusicOne 两个都读）
+const readLegacyCreatedPlaylists = (body: any): any[] =>
   [...pickArray(body, ['data.disslist']), ...pickArray(body, ['data.list'])]
 
+/**
+ * 自建歌单列表。
+ *
+ * **先走服务端接口 `PlaylistBaseRead / GetPlaylistByUin`**：它的响应里带 `dirid`，
+ * 而写歌单（加歌/删歌）必须要 dirid。网页老接口 `fcg_user_created_diss` 那份响应里
+ * 没有这个字段 —— 这就是「添加到歌单」一直报 80092 的根因（服务端认为目标歌单不存在）。
+ *
+ * 服务端接口取不到东西时退回老接口：老的没有 dirid，但至少歌单列表不会空掉。
+ */
 export const getQQMusicPlaylists = async(cookie: string): Promise<LX.QQMusic.PlaylistInfo[]> => {
   const cookies = parseQQMusicCookie(cookie)
   const uin = readUin(cookies)
   if (!uin) throw new Error(global.i18n.t('qq_cookie_invalid'))
+  const createdUrl = `${QQ_CREATED_PLAYLIST_URL}?hostUin=0&hostuin=${encodeURIComponent(uin)}&sin=0&size=${PLAYLIST_PAGE_SIZE}&g_tk=5381&loginUin=${encodeURIComponent(uin)}&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0`
   const collectedUrl = `${QQ_COLLECTED_PLAYLIST_URL}?ct=20&cid=205360956&userid=${encodeURIComponent(uin)}&reqtype=3&sin=0&ein=80`
   const options = { headers: { Referer: QQ_PROFILE_REFERER } }
 
   const createdTask = (async(): Promise<any[]> => {
-    const fresh = await request(createdPlaylistUrl(uin, false), cookie, options).then(readCreatedPlaylists)
-    if (fresh.length) return fresh
-    return request(createdPlaylistUrl(uin, true), cookie, options).then(readCreatedPlaylists)
+    const modern = await postAuthedMusicu(cookie, {
+      req_0: {
+        module: 'music.musicasset.PlaylistBaseRead',
+        method: 'GetPlaylistByUin',
+        param: { uin: String(uin) },
+      },
+    }).then(body => {
+      const data = body?.req_0?.data
+      return Array.isArray(data?.v_playlist) ? data.v_playlist : []
+    }).catch(error => {
+      console.warn('[QQMusic] PlaylistBaseRead failed:', error instanceof Error ? error.message : error)
+      return []
+    })
+    if (modern.length) return modern
+    return request(createdUrl, cookie, options).then(readLegacyCreatedPlaylists)
   })()
 
   const [created, collected] = await Promise.allSettled([
