@@ -2,9 +2,7 @@ import { useRef, forwardRef, useImperativeHandle } from 'react'
 import { View } from 'react-native'
 // import LoadingMask, { LoadingMaskType } from '@/components/common/LoadingMask'
 import List, { type ListProps, type ListType, type Status, type RowInfoType } from './List'
-import ListMenu, { type ListMenuType, type Position, type SelectInfo } from './ListMenu'
-import ListMusicMultiAdd, { type MusicMultiAddModalType as ListAddMultiType } from '@/components/MusicMultiAddModal'
-import ListMusicAdd, { type MusicAddModalType as ListMusicAddType } from '@/components/MusicAddModal'
+import ListMenu, { type ListMenuType, type Position } from './ListMenu'
 import MultipleModeBar, { type MultipleModeBarType, type SelectMode } from './MultipleModeBar'
 import { clearMusicUrl, handleAddToPlayQueue, handleDislikeMusic, handlePlay, handlePlayLater, handleShare, handleShowMusicSourceDetail } from './listAction'
 import { createStyle, toast } from '@/utils/tools'
@@ -35,10 +33,7 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
 }, ref) => {
   const listRef = useRef<ListType>(null)
   const multipleModeBarRef = useRef<MultipleModeBarType>(null)
-  const listMusicAddRef = useRef<ListMusicAddType>(null)
-  const listMusicMultiAddRef = useRef<ListAddMultiType>(null)
   const listMenuRef = useRef<ListMenuType>(null)
-  // const loadingMaskRef = useRef<LoadingMaskType>(null)
 
   useImperativeHandle(ref, () => ({
     setList(list, isAppend = false, showSource = false) {
@@ -71,14 +66,6 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
       selectedList: listRef.current!.getSelectedList(),
     }, position)
   }
-  const handleAddMusic = (info: SelectInfo) => {
-    if (info.selectedList.length) {
-      listMusicMultiAddRef.current?.show({ selectedList: info.selectedList, listId: '', isMove: false })
-    } else {
-      listMusicAddRef.current?.show({ musicInfo: info.musicInfo, listId: '', isMove: false })
-    }
-  }
-
   return (
     <View style={styles.container}>
       <View style={{ flex: 1 }}>
@@ -102,8 +89,6 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
           onExitSelectMode={hancelExitSelect}
         />
       </View>
-      <ListMusicAdd ref={listMusicAddRef} onAdded={() => { hancelExitSelect() }} />
-      <ListMusicMultiAdd ref={listMusicMultiAddRef} onAdded={() => { hancelExitSelect() }} />
       <ListMenu
         ref={listMenuRef}
         onPlay={info => { handlePlay(info.musicInfo) }}
@@ -117,7 +102,6 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
           hancelExitSelect()
         }}
         onCopyName={info => { handleShare(info.musicInfo) }}
-        onAdd={handleAddMusic}
         onMusicSourceDetail={info => { void handleShowMusicSourceDetail(info.musicInfo) }}
         onRemoveCache={info => { void clearMusicUrl(info.musicInfo) }}
         onDislikeMusic={info => { void handleDislikeMusic(info.musicInfo) }}

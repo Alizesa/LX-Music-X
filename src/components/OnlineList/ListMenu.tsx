@@ -19,7 +19,6 @@ export interface ListMenuProps {
   onPlay: (selectInfo: SelectInfo) => void
   onPlayLater: (selectInfo: SelectInfo) => void
   onAddToPlayQueue: (selectInfo: SelectInfo) => void
-  onAdd: (selectInfo: SelectInfo) => void
   onCopyName: (selectInfo: SelectInfo) => void
   onMusicSourceDetail: (selectInfo: SelectInfo) => void
   onRemoveCache: (selectInfo: SelectInfo) => void
@@ -62,8 +61,8 @@ export default forwardRef<ListMenuType, ListMenuProps>((props: ListMenuProps, re
       { action: 'playLater', label: t('play_later') },
       { action: 'addToQueue', label: t('add_to_play_queue') },
       { action: 'download', label: t('download') },
-      // { action: 'download', label: '下载' },
-      { action: 'add', label: t('add_to') },
+      // 已经没有「添加到本地列表」了：列表一律来自 QQ 账号，本机不再存歌单。
+      // 「喜欢」走播放详情页那颗红心（直接写账号的「我喜欢」）。
       { action: 'copyName', label: t('copy_name') },
       { action: 'musicSourceDetail', label: t('music_source_detail') },
       { action: 'removeCache', disabled: !has_url_cache, label: t('list_remove_cache') },
@@ -96,9 +95,6 @@ export default forwardRef<ListMenuType, ListMenuProps>((props: ListMenuProps, re
         break
       case 'download':
         props.onDownload(selectInfo)
-        break
-      case 'add':
-        props.onAdd(selectInfo)
         break
       case 'copyName':
         props.onCopyName(selectInfo)
