@@ -160,11 +160,8 @@ export const setQQMusicTrackLiked = async(musicInfo: LX.Music.MusicInfo, liked: 
     throw new Error(`${global.i18n.t('qq_like_failed')} (code=${code} retCode=${retCode})`)
   }
 
-  // 读回验证**只在取消收藏时做**：这个接口会「返回成功但什么都没改」，而收藏一直是好的，
-  // 取消才是真正不可靠的方向。读回要拉回整个「我喜欢」列表（几百首、好几个请求），
-  // 收藏那边省掉它 —— 这个分支有意压低对音源的请求量。
-  if (!liked) await assertPlaylistMember(cookie, LIKED_DIRID, Number(LIKED_DIRID), songId, liked)
-
+  // 不做读回验证：那要把整个「我喜欢」拉回来核对（几百首、好几个请求），代价太大。
+  // 这个分支有意压低对音源的请求量，写入失败时用户自己就能看出来。
   markLiked(musicInfo, liked)
   return 'ok'
 }
