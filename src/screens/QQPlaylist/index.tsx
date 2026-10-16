@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { TouchableOpacity, View } from 'react-native'
 import PageContent from '@/components/PageContent'
 import StatusBar from '@/components/common/StatusBar'
@@ -8,15 +8,17 @@ import OnlineList, { type OnlineListType, type OnlineListProps } from '@/compone
 import Text from '@/components/common/Text'
 import ImageBackground from '@/components/common/ImageBackground'
 import { IconIonicons } from '@/components/common/Icon'
+import IconAction from '@/components/common/IconAction'
+import PlusMinusIcon from '@/components/common/PlusMinusIcon'
 import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS, LIST_IDS } from '@/config/constant'
 import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { getQQMusicDailyPlaylist, getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
-import { getQQMusicLikedSongs, isQQMusicLikedSongsStale, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
+import { getQQMusicLikedSongs, isQQMusicLikedSongsStale, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs, toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
 import { cachePlaylistSongs, getCachedPlaylistSongs } from '@/core/qqMusicPlaylistSongsCache'
 import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist } from '@/core/qqMusicDailyPosition'
-import { getQQMusicDailyPlaylistCache, saveQQMusicDailyPlaylistCache } from '@/utils/data'
+import { getQQMusicDailyPlaylistCache, getQQMusicPlaylistsCache, saveQQMusicDailyPlaylistCache } from '@/utils/data'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { useWindowSize } from '@/utils/hooks'
@@ -34,15 +36,21 @@ interface Props {
     cover?: string | null
     /** 头图副标题（共 N 首 / 作者之类）。调用方按自己的语境拼好，这里不猜 */
     subtitle?: string
+    /** 收藏状态：true 已收藏 / false 自己建的 / 不给就是别人的歌单（推荐流那种） */
+    subscribed?: boolean
   }
 }
 
-/** 头图。作为列表头跟着内容一起滚，所以不用管吸顶 */
-const PlaylistHero = ({ name, subtitle, cover, onPlay }: {
+/**
+ * 头图。作为列表头跟着内容一起滚，所以不用管吸顶。
+ * action 挂在右下角（歌单收藏那个＋/－），跟左下角的播放钮同一行。
+ */
+const PlaylistHero = ({ name, subtitle, cover, onPlay, action }: {
   name: string
   subtitle?: string
   cover?: string | null
   onPlay: () => void
+  action?: ReactNode
 }) => {
   const t = useI18n()
   const windowSize = useWindowSize()
@@ -72,12 +80,15 @@ const PlaylistHero = ({ name, subtitle, cover, onPlay }: {
       {/* 没有渐变库，文字可读性用纯色暗层代替（跟首页方形卡一个做法） */}
       <View style={styles.heroOverlay} />
       <View style={styles.heroBody}>
-        <Text size={20} color="#fff" numberOfLines={2}>{name}</Text>
-        {subtitle ? <Text size={12} color="rgba(255,255,255,0.85)" style={styles.heroSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
-        <TouchableOpacity style={styles.heroPlay} activeOpacity={0.8} onPress={onPlay}>
-          <IconIonicons name="play" size={scaleSizeW(15)} color="#fff" />
-          <Text size={14} color="#fff" style={styles.heroPlayText}>{t('play')}</Text>
-        </TouchableOpacity>
+        <View style={styles.heroText}>
+          <Text size={20} color="#fff" numberOfLines={2}>{name}</Text>
+          {subtitle ? <Text size={12} color="rgba(255,255,255,0.85)" style={styles.heroSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
+          <TouchableOpacity style={styles.heroPlay} activeOpacity={0.8} onPress={onPlay}>
+            <IconIonicons name="play" size={scaleSizeW(15)} color="#fff" />
+            <Text size={14} color="#fff" style={styles.heroPlayText}>{t('play')}</Text>
+          </TouchableOpacity>
+        </View>
+        {action}
       </View>
     </View>
   )
@@ -92,6 +103,36 @@ export default ({ componentId, info }: Props) => {
   const listRef = useRef<OnlineListType>(null)
   const songsRef = useRef<LX.Music.MusicInfoOnline[]>([])
   const loadedRef = useRef(false)
+  // 头图上那个收藏角标的状态。初始值来自进页面时带的 subscribed，点完就地翻转
+  const [collected, setCollected] = useState(info.subscribed === true)
+  const [collecting, setCollecting] = useState(false)
+
+  // 「我喜欢」和每日推荐都没有可收藏的歌单身份；subscribed 明确是 false 的说明是自己建的
+  const canCollect = !info.liked && !info.daily && info.subscribed !== false
+
+  // 调用方没给收藏状态时（推荐流那种：手上只有别人的歌单信息），去「我的歌单」缓存里查一下
+  // —— 本地读，不发请求。缓存里没有就当没收藏
+  useEffect(() => {
+    if (!canCollect || info.subscribed !== undefined) return
+    let alive = true
+    void getQQMusicPlaylistsCache().then(cached => {
+      if (!alive) return
+      if (cached.some(item => item.subscribed === true && item.id == info.id)) setCollected(true)
+    })
+    return () => { alive = false }
+  }, [canCollect, info.id, info.subscribed])
+
+  const toggleCollected = useCallback(async() => {
+    if (collecting) return
+    const next = !collected
+    setCollecting(true)
+    try {
+      // 提示和歌单缓存作废都在里面做掉了
+      if (await toggleQQMusicPlaylistCollected(info, next)) setCollected(next)
+    } finally {
+      setCollecting(false)
+    }
+  }, [collecting, collected, info])
 
   const load = useCallback(async(force: boolean) => {
     listRef.current?.setStatus('refreshing')
@@ -181,7 +222,24 @@ export default ({ componentId, info }: Props) => {
         onPlayList={playFrom}
         onRefresh={() => { void load(true) }}
         onLoadMore={() => { listRef.current?.setStatus('end') }}
-        ListHeaderComponent={<PlaylistHero name={info.name} subtitle={info.subtitle} cover={info.cover} onPlay={playAll} />}
+        ListHeaderComponent={
+          <PlaylistHero
+            name={info.name}
+            subtitle={info.subtitle}
+            cover={info.cover}
+            onPlay={playAll}
+            action={canCollect
+              ? <IconAction
+                  overlay
+                  disabled={collecting}
+                  onPress={() => { void toggleCollected() }}
+                >
+                  {/* QQ 音乐那个样子：没收藏是＋，收藏了只剩－ */}
+                  <PlusMinusIcon saved={collected} color="#fff" />
+                </IconAction>
+              : undefined}
+          />
+        }
       />
       <PlayerBar />
     </PageContent>
@@ -193,7 +251,9 @@ const styles = createStyle({
   // overflow: hidden 是为了裁掉封面超出头图的下半截（见 PlaylistHero 里对 coverHeight 的说明）
   heroBg: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, overflow: 'hidden' },
   heroOverlay: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)' },
-  heroBody: { padding: 16 },
+  // 文字在左下、收藏角标在右下，同一行贴底
+  heroBody: { flexDirection: 'row', alignItems: 'flex-end', padding: 16 },
+  heroText: { flex: 1, paddingRight: 8 },
   heroSubtitle: { paddingTop: 4 },
   // 半透明胶囊：压在封面暗层上，白字白图标
   heroPlay: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginTop: 12, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.22)' },

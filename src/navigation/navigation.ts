@@ -371,6 +371,8 @@ export function pushLocalSongsScreen(componentId: string) {
  * QQ 歌单页（头图 + 歌曲列表）。
  * info.liked 为 true 时走 dirid=201（「我喜欢」）的取歌通道；info.daily 为 true 时是每日推荐，
  * 那种列表没有歌单 id，歌曲读首页那份本地缓存。cover / subtitle 只给头图用，调用方手上就有就带上。
+ * subscribed：true 已收藏 / false 自己建的 / 不给就是别人的歌单（推荐流那种）——
+ * 头图上那个收藏角标靠它决定显不显示、以及点下去是收藏还是取消。
  */
 export function pushQQPlaylistScreen(componentId: string, info: {
   id: string
@@ -379,6 +381,7 @@ export function pushQQPlaylistScreen(componentId: string, info: {
   daily?: boolean
   cover?: string | null
   subtitle?: string
+  subscribed?: boolean
 }) {
   pushPlainScreen(componentId, QQ_PLAYLIST_SCREEN, { info })
 }

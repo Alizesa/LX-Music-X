@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { filterVisiblePlaylists, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicTrackIdentity, postAuthedMusicu } from './qqMusic'
-import { getQQMusicLikedSongsCache, getQQMusicLikedSongsStale, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, removeQQMusicLikedSongsStale, saveQQMusicLikedSongsCache, saveQQMusicLikedSongsStale, saveQQMusicPlaylistsCache } from '@/utils/data'
+import { getQQMusicLikedSongsCache, getQQMusicLikedSongsStale, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, removeQQMusicLikedSongsStale, removeQQMusicPlaylistsCache, saveQQMusicLikedSongsCache, saveQQMusicLikedSongsStale, saveQQMusicPlaylistsCache } from '@/utils/data'
 import { clearPlaylistSongsCache, dropCachedPlaylistSongs } from './qqMusicPlaylistSongsCache'
 import { toast } from '@/utils/tools'
 
@@ -309,6 +309,74 @@ export const changeQQMusicPlaylistMembership = async(
     }
     // 写失败是抛错出来的（带服务端返回码），走下面的 catch
     toast(global.i18n.t('qq_playlist_write_unsupported'), 'long')
+  } catch (error: unknown) {
+    toast(error instanceof Error ? error.message : global.i18n.t('qq_playlist_write_failed'), 'long')
+  }
+  return false
+}
+
+/**
+ * 收藏 / 取消收藏一个歌单（把别人的歌单存进自己的「收藏歌单」）。
+ *
+ * 参数形状照参考实现那条：模块 music.musicasset.PlaylistFavWrite，方法 FavPlaylist /
+ * CancelFavPlaylist，param 只带 v_playlistId（数字 id 的数组）；UA 用写接口那套
+ * （和参考实现这条用的完全一致）。Referer / Origin 由 request 统一带上，不用在这里写。
+ *
+ * 这条的返回比别处细：顶层 code、req_0.code、data.result 都为 0 才算成功，
+ * 而且 data.v_failedPlaylistId 会列出没处理成功的 id —— 只判 code 会把部分失败当成功。
+ */
+export const setQQMusicPlaylistCollected = async(
+  playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'>,
+  collected: boolean,
+): Promise<FavoriteResult> => {
+  const { cookie } = await getQQMusicSession()
+  if (!cookie) return 'unsupported'
+  // 这条接口只认数字 id（disstid/tid 那一类），拿不到就没法收藏
+  const playlistId = Number(playlist.id)
+  if (!Number.isFinite(playlistId) || playlistId <= 0) return 'unsupported'
+
+  const body = await postAuthedMusicu(cookie, {
+    req_0: {
+      module: 'music.musicasset.PlaylistFavWrite',
+      method: collected ? 'FavPlaylist' : 'CancelFavPlaylist',
+      param: { v_playlistId: [playlistId] },
+    },
+  }, { 'User-Agent': QQ_PLAYLIST_WRITE_USER_AGENT })
+
+  const request = body?.req_0
+  const code = Number(body?.code ?? -1)
+  const requestCode = Number(request?.code ?? -1)
+  if (LOGIN_ERROR_CODES.has(code) || LOGIN_ERROR_CODES.has(requestCode)) {
+    throw new Error(global.i18n.t('qq_session_expired'))
+  }
+  const result = Number(request?.data?.result ?? -1)
+  const failedIds: unknown[] = Array.isArray(request?.data?.v_failedPlaylistId) ? request.data.v_failedPlaylistId : []
+  if (code !== 0 || requestCode !== 0 || result !== 0 || failedIds.some(id => Number(id) === playlistId)) {
+    // 服务端有时会带一句原因，带上它比只报几个码好查
+    const reason = String(request?.data?.reason ?? request?.message ?? body?.message ?? '').trim()
+    throw new Error(reason || `${global.i18n.t('qq_playlist_write_failed')} (code=${code} reqCode=${requestCode} result=${result})`)
+  }
+  return 'ok'
+}
+
+/**
+ * 收藏/取消收藏歌单，连提示和缓存作废一起做掉 —— 歌单页头图那个角标只管调它。
+ * 返回是否成功；失败时提示已经发出去了。
+ */
+export const toggleQQMusicPlaylistCollected = async(
+  playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'>,
+  collected: boolean,
+): Promise<boolean> => {
+  try {
+    const result = await setQQMusicPlaylistCollected(playlist, collected)
+    if (result == 'ok') {
+      toast(global.i18n.t(collected ? 'qq_playlist_faved' : 'qq_playlist_unfaved', { name: playlist.name }))
+      // 「我的」页那两个歌单分区读的是这份缓存，作废掉，下次进页面会重新取
+      await removeQQMusicPlaylistsCache()
+      return true
+    }
+    // unsupported：没登录，或这个歌单没有数字 id
+    toast(global.i18n.t('qq_not_logged_in'), 'long')
   } catch (error: unknown) {
     toast(error instanceof Error ? error.message : global.i18n.t('qq_playlist_write_failed'), 'long')
   }

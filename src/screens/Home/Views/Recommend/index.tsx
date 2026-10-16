@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { RefreshControl, ScrollView, TouchableOpacity, View } from 'react-native'
 import Text from '@/components/common/Text'
 import Image from '@/components/common/Image'
 import ImageBackground from '@/components/common/ImageBackground'
-import { IconIonicons } from '@/components/common/Icon'
+import IconAction from '@/components/common/IconAction'
 import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMusicLoginModal'
 import { useTheme } from '@/store/theme/hook'
 import { useWindowSize } from '@/utils/hooks'
@@ -42,37 +42,6 @@ type Playlist = LX.QQMusic.PlaylistInfo
 const DAILY_LIST_ID = QQ_DAILY_PLAYLIST_ID
 const H_PADDING = 14
 const CARD_GAP = 10
-
-/**
- * 小圆钮（每日推荐是播放、猜你喜欢和推荐歌单是刷新）。
- * overlay：压在封面/头图上，用半透明黑底 + 白图标；不给就落在页面里，跟着主题色走、不加底色。
- */
-const IconAction = ({ icon, onPress, disabled, overlay }: {
-  icon: ComponentProps<typeof IconIonicons>['name']
-  onPress: () => void
-  disabled?: boolean
-  overlay?: boolean
-}) => {
-  const theme = useTheme()
-  return (
-    <TouchableOpacity
-      style={{
-        ...styles.iconAction,
-        ...(overlay ? styles.iconActionOverlay : null),
-        opacity: disabled ? 0.5 : 1,
-      }}
-      activeOpacity={0.7}
-      disabled={disabled}
-      onPress={onPress}
-    >
-      <IconIonicons
-        name={icon}
-        size={scaleSizeW(overlay ? 17 : 18)}
-        color={overlay ? '#fff' : theme['c-font-label']}
-      />
-    </TouchableOpacity>
-  )
-}
 
 /**
  * 方形推荐卡。封面铺满，底部压一层暗色保证文字可读（没有渐变库，用纯色代替）。
@@ -445,8 +414,6 @@ const styles = createStyle({
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
   // 板块标题和右上角的刷新钮同一行
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 20, paddingBottom: 10 },
-  iconAction: { width: scaleSizeW(30), height: scaleSizeW(30), borderRadius: scaleSizeW(15), justifyContent: 'center', alignItems: 'center' },
-  iconActionOverlay: { backgroundColor: 'rgba(0,0,0,0.4)' },
   card: { borderRadius: 12, overflow: 'hidden', justifyContent: 'flex-end' },
   cardBg: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 },
   cardOverlay: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.3)' },

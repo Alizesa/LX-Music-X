@@ -94,8 +94,20 @@ export default () => {
       setUser(session.user)
       // 歌单直接读本地缓存，进页面不发网络请求
       if (!session.cookie) return
-      void getQQMusicPlaylistsCache().then(cached => {
-        setPlaylists(filterVisiblePlaylists(cached))
+      const activeCookie = session.cookie
+      void getQQMusicPlaylistsCache().then(async cached => {
+        const list = filterVisiblePlaylists(cached)
+        setPlaylists(list)
+        // 缓存还没铺（新装、刚登录，或刚收藏/取消收藏过歌单把缓存作废了）：自己拉一次，
+        // 别让「我的」页空着等用户下拉
+        if (list.length) return
+        try {
+          const fresh = await getQQMusicPlaylists(activeCookie)
+          await saveQQMusicPlaylistsCache(fresh)
+          setPlaylists(filterVisiblePlaylists(fresh))
+        } catch (error) {
+          console.warn('[QQMusic] 拉取歌单失败:', error instanceof Error ? error.message : error)
+        }
       })
     })
     const handleAccountUpdate = (nextUser: LX.QQMusic.UserInfo | null) => {
@@ -166,6 +178,8 @@ export default () => {
       id: info.id,
       name: info.name,
       liked: info.liked,
+      // 头图那个收藏角标靠它决定：true 已收藏（能取消）、false 自己建的（不显示）
+      subscribed: info.subscribed,
       // 歌单页的头图要用封面和一行副标题，这边手上的就是这一份
       cover: info.cover,
       // 作者缺失（空串也算）时退回曲目数

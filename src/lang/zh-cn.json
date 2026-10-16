@@ -112,6 +112,8 @@
   "qq_playlist_write_no_effect": "服务端返回成功，但歌单并没有变化",
   "qq_playlist_write_unsupported": "只能操作自己创建的歌单",
   "qq_playlist_write_empty": "还没有自建歌单",
+  "qq_playlist_faved": "已收藏「{name}」",
+  "qq_playlist_unfaved": "已取消收藏「{name}」",
   "qq_like_added": "已加入我喜欢",
   "qq_like_removed": "已从我喜欢移除",
   "qq_like_unsupported": "只能收藏 QQ 音乐的歌",
