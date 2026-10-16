@@ -733,10 +733,7 @@ const toggleCollect = async(liked: boolean) => {
       toast(global.i18n.t(liked ? 'qq_like_added' : 'qq_like_removed'))
       return
     }
-    if (result == 'failed') {
-      toast(global.i18n.t('qq_like_failed'), 'long')
-      return
-    }
+    // 失败是抛错出来的（带服务端返回码），走下面的 catch
   } catch (error: unknown) {
     toast(error instanceof Error ? error.message : global.i18n.t('qq_like_failed'), 'long')
     return

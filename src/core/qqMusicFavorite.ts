@@ -12,7 +12,12 @@ const QQ_PLAYLIST_WRITE_USER_AGENT = 'QQMusic 2005000982(android 14)'
 // 这几个返回码表示票据失效
 const LOGIN_ERROR_CODES = new Set([1000, 104400, 104401])
 
-export type FavoriteResult = 'ok' | 'unsupported' | 'failed'
+/**
+ * 两个写接口的返回值：'ok' 成功；'unsupported' 表示这次不该走账号（非 QQ 歌、未登录、
+ * 或拿不到目标），调用方据此退回本地列表。**失败是抛错出来的**（带服务端返回码），
+ * 不在这里用返回值表达 —— 否则调用方很容易把 no-op 当成成功。
+ */
+export type FavoriteResult = 'ok' | 'unsupported'
 
 /**
  * 写接口要带的歌曲类型：1 普通歌曲 / 2 长音频 / 6 视频直播。
@@ -115,10 +120,24 @@ export const initQQMusicFavorite = () => {
  */
 export const setQQMusicTrackLiked = async(musicInfo: LX.Music.MusicInfo, liked: boolean): Promise<FavoriteResult> => {
   if (musicInfo.source != 'tx') return 'unsupported'
-  const songId = Number(musicInfo.meta.id ?? 0)
-  if (!songId) return 'unsupported'
   const { cookie } = await getQQMusicSession()
   if (!cookie) return 'unsupported'
+
+  // 和写歌单走同一套身份：先补一次详情拿服务端眼中的规范 songId / songType。
+  // 取消收藏（DelSonglist）和从歌单删歌是同一个接口、同一个匹配规则 —— 身份对不上
+  // 就会被当成「删一个不存在的条目」，返回成功但什么都不做（实测：能收藏、取消删不掉）。
+  const fallbackSongId = Number(musicInfo.meta.id ?? 0)
+  const fallbackSongType = readSongType(musicInfo)
+  const songMid = String(musicInfo.meta.songId ?? '')
+  const detail = songMid
+    ? await getQQMusicTrackIdentity(cookie, songMid, fallbackSongType, fallbackSongId).catch(error => {
+      console.warn('[QQMusic] 取歌曲详情失败，用列表里的身份:', error instanceof Error ? error.message : error)
+      return null
+    })
+    : null
+  const songId = detail?.songId ?? fallbackSongId
+  const songType = detail?.songType ?? fallbackSongType
+  if (!songId) return 'unsupported'
 
   const body = await postAuthedMusicu(cookie, {
     req_0: {
@@ -129,16 +148,20 @@ export const setQQMusicTrackLiked = async(musicInfo: LX.Music.MusicInfo, liked: 
         tid: 0,
         bFmtUtf8: true,
         source: WRITE_SOURCE,
-        v_songInfo: [{ songId, songType: readSongType(musicInfo) }],
+        v_songInfo: [{ songId, songType }],
       },
     },
   })
   const result = body?.req_0
   const code = Number(result?.code ?? -1)
   if (LOGIN_ERROR_CODES.has(code)) throw new Error(global.i18n.t('qq_session_expired'))
-  if (code !== 0) return 'failed'
   const retCode = Number(result?.data?.retCode ?? -1)
-  if (retCode !== 0) return 'failed'
+  if (code !== 0 || retCode !== 0) {
+    throw new Error(`${global.i18n.t('qq_like_failed')} (code=${code} retCode=${retCode})`)
+  }
+
+  // 读回验证：这个接口会「返回成功但什么都没改」，不验就会把 no-op 谎报成成功
+  await assertPlaylistMember(cookie, LIKED_DIRID, Number(LIKED_DIRID), songId, liked)
 
   markLiked(musicInfo, liked)
   return 'ok'
