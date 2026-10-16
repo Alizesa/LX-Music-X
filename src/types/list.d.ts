@@ -10,18 +10,6 @@ declare namespace LX {
       locationUpdateTime: number | null
     }
 
-    interface MyDefaultListInfo {
-      id: 'default'
-      name: '试听列表'
-      // list: LX.Music.MusicInfo[]
-    }
-
-    interface MyLoveListInfo {
-      id: 'love'
-      name: '我的收藏'
-      // list: LX.Music.MusicInfo[]
-    }
-
     interface MyTempListInfo {
       id: 'temp'
       name: '临时列表'
@@ -37,11 +25,10 @@ declare namespace LX {
       name: '本地音乐'
     }
 
-    type MyListInfo = MyDefaultListInfo | MyLoveListInfo | MyLocalListInfo | UserListInfo
+    type MyListInfo = MyLocalListInfo | UserListInfo
 
+    /** 列表清单。只剩本地音乐、自建列表和临时列表（试听/我的收藏那两类早拆了） */
     interface MyAllList {
-      defaultList: MyDefaultListInfo
-      loveList: MyLoveListInfo
       localList: MyLocalListInfo
       userList: UserListInfo[]
       tempList: MyTempListInfo
@@ -124,12 +111,6 @@ declare namespace LX {
 
     type ListActionMusicClear = string[]
 
-    interface MyDefaultListInfoFull extends MyDefaultListInfo {
-      list: LX.Music.MusicInfo[]
-    }
-    interface MyLoveListInfoFull extends MyLoveListInfo {
-      list: LX.Music.MusicInfo[]
-    }
     interface UserListInfoFull extends UserListInfo {
       list: LX.Music.MusicInfo[]
     }
@@ -138,8 +119,6 @@ declare namespace LX {
     }
 
     interface ListDataFull {
-      defaultList: LX.Music.MusicInfo[]
-      loveList: LX.Music.MusicInfo[]
       localList?: LX.Music.MusicInfo[]
       userList: UserListInfoFull[]
       tempList: LX.Music.MusicInfo[]

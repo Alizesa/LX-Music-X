@@ -3,7 +3,7 @@ import listAction from '@/store/list/action'
 import listState from '@/store/list/state'
 import settingState from '@/store/setting/state'
 import { fixNewMusicInfoQuality } from '@/utils'
-import { saveListPrevSelectId, saveTempListMeta } from '@/utils/data'
+import { saveTempListMeta } from '@/utils/data'
 
 /**
  * 覆盖全部列表数据
@@ -93,30 +93,20 @@ export const clearListMusics = async(ids: string[]) => {
 }
 
 /**
- * 覆盖单个列表
- * @param listInfo
- * @param musics
+ * 覆盖单个列表。
+ * 内置列表里只剩本地音乐（它由下载管理，不会走这里），所以现在只管自建列表。
  */
-export const overwriteList = async(listInfoFull: LX.List.MyDefaultListInfoFull | LX.List.MyLoveListInfoFull | LX.List.UserListInfoFull) => {
-  let userListInfo
-  switch (listInfoFull.id) {
-    case LIST_IDS.DEFAULT:
-    case LIST_IDS.LOVE:
-      break
-
-    default:
-      userListInfo = listInfoFull as LX.List.UserListInfo
-      await updateUserList([
-        {
-          name: userListInfo.name,
-          id: userListInfo.id,
-          source: userListInfo.source,
-          sourceListId: userListInfo.sourceListId,
-          locationUpdateTime: userListInfo.locationUpdateTime,
-        },
-      ])
-      break
-  }
+export const overwriteList = async(listInfoFull: LX.List.UserListInfoFull) => {
+  const userListInfo = listInfoFull
+  await updateUserList([
+    {
+      name: userListInfo.name,
+      id: userListInfo.id,
+      source: userListInfo.source,
+      sourceListId: userListInfo.sourceListId,
+      locationUpdateTime: userListInfo.locationUpdateTime,
+    },
+  ])
   await overwriteListMusics(listInfoFull.id, listInfoFull.list.map(m => fixNewMusicInfoQuality(m)))
 }
 /**
@@ -142,16 +132,6 @@ export const createList = async({ name, id = `userlist_${Date.now()}`, list = []
     },
   ])
   if (list) await addListMusics(id, list, settingState.setting['list.addMusicLocationType'])
-}
-
-/**
- * 设置当前激活的歌曲列表
- * @param id
- */
-export const setActiveList = (id: string) => {
-  if (listState.activeListId == id) return
-  listAction.setActiveList(id)
-  saveListPrevSelectId(id)
 }
 
 /**

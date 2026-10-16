@@ -18,18 +18,11 @@ import {
   allMusicList,
 } from '@/utils/listManage'
 import { LIST_IDS } from '@/config/constant'
-import { setActiveList, setUserList } from '@/core/list'
-import listState from '@/store/list/state'
+import { setUserList } from '@/core/list'
 
 const updateUserList = async(userLists: LX.List.UserListInfo[]) => {
   await saveUserList(userLists)
   setUserList(userLists)
-}
-
-const checkListExist = (changedIds: string[]) => {
-  const index = changedIds.indexOf(listState.activeListId)
-  if (index < 0 || listState.allList.some(l => l.id == listState.activeListId)) return
-  setActiveList(LIST_IDS.DEFAULT)
 }
 
 export const checkUpdateList = async(changedIds: string[]) => {
@@ -83,13 +76,12 @@ export class ListEvent extends Event {
     // await checkUpdateList(changedIds)
     const removedList = oldIds.filter(id => !allMusicList.has(id))
     if (removedList.length) await removeListMusics(removedList)
-    const allListIds = [LIST_IDS.DEFAULT, LIST_IDS.LOVE, LIST_IDS.LOCAL, ...userLists.map(l => l.id)]
+    const allListIds = [LIST_IDS.LOCAL, ...userLists.map(l => l.id)]
     if (changedIds.includes(LIST_IDS.TEMP)) allListIds.push(LIST_IDS.TEMP)
     await saveListMusics([...allListIds.map(id => ({ id, musics: allMusicList.get(id) as LX.List.ListMusics }))])
 
     global.app_event.myListMusicUpdate(changedIds)
     this.emit('list_data_overwrite', listData, isRemote)
-    checkListExist(changedIds)
   }
 
   /**
@@ -120,8 +112,6 @@ export class ListEvent extends Event {
     await removeListMusics(ids)
     this.emit('list_remove', ids, isRemote)
     global.app_event.myListMusicUpdate(changedIds)
-
-    checkListExist(changedIds)
   }
 
   /**

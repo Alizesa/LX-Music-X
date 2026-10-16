@@ -64,9 +64,6 @@ const updateList = ({
 }: LX.List.UserListInfo & { meta?: { id?: string } }) => {
   let index
   switch (id) {
-    case LIST_IDS.DEFAULT:
-    case LIST_IDS.LOVE:
-      break
     case LIST_IDS.TEMP:
     //   tempList.meta = meta ?? {}
       // break
@@ -104,7 +101,7 @@ export const getUserLists = async() => {
 }
 
 
-export const listDataOverwrite = ({ defaultList, loveList, localList, userList, tempList }: MakeOptional<LX.List.ListDataFull, 'tempList'>): string[] => {
+export const listDataOverwrite = ({ localList, userList, tempList }: MakeOptional<LX.List.ListDataFull, 'tempList'>): string[] => {
   const updatedListIds: string[] = []
   const newUserIds: string[] = []
   const newUserListInfos = userList.map(({ list, ...listInfo }) => {
@@ -120,10 +117,6 @@ export const listDataOverwrite = ({ defaultList, loveList, localList, userList, 
   }
   overwriteUserList(newUserListInfos)
 
-  if (allMusicList.has(LIST_IDS.DEFAULT)) updatedListIds.push(LIST_IDS.DEFAULT)
-  setMusicList(LIST_IDS.DEFAULT, defaultList)
-  setMusicList(LIST_IDS.LOVE, loveList)
-  updatedListIds.push(LIST_IDS.LOVE)
   // Older backups and sync payloads do not contain localList. Keep local files
   // managed on this device unless the sender explicitly provides the list.
   const nextLocalList = localList ?? allMusicList.get(LIST_IDS.LOCAL) ?? []
@@ -134,7 +127,7 @@ export const listDataOverwrite = ({ defaultList, loveList, localList, userList, 
     setMusicList(LIST_IDS.TEMP, tempList)
     updatedListIds.push(LIST_IDS.TEMP)
   }
-  const newIds = [LIST_IDS.DEFAULT, LIST_IDS.LOVE, LIST_IDS.LOCAL, ...userList.map(l => l.id)]
+  const newIds = [LIST_IDS.LOCAL, ...userList.map(l => l.id)]
   if (tempList) newIds.push(LIST_IDS.TEMP)
   void overwriteListPosition(newIds)
   void overwriteListUpdateInfo(newIds)

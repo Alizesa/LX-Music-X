@@ -59,17 +59,14 @@ interface OldUserListInfo {
 }
  */
 export const getAllListData = async(): Promise<{
-  defaultList?: { list: any[] }
-  loveList?: { list: any[] }
   tempList?: { list: any[] }
   userList?: OldUserListInfo[]
 }> => {
-  const defaultListKey = storageDataPrefixOld.list + 'default'
-  const loveListKey = storageDataPrefixOld.list + 'love'
-  let defaultList
-  let loveList
-  let userList = []
-  let keys = await getAllKeys()
+  // 老数据里的「试听列表」/「我的收藏」（@list_default / @list_love）已经没有落点了，
+  // 迁移时直接跳过 —— 不能当自建列表导进来
+  const removedListKeys = [storageDataPrefixOld.list + 'default', storageDataPrefixOld.list + 'love']
+  const userList = []
+  const keys = await getAllKeys()
   const listKeys: string[] = []
   for (const key of keys) {
     if (key.startsWith(storageDataPrefixOld.list)) {
@@ -78,17 +75,8 @@ export const getAllListData = async(): Promise<{
   }
   const listData = await getDataMultiple(listKeys) as Array<[string, any]>
   for (const [key, value] of listData) {
-    switch (key) {
-      case defaultListKey:
-        defaultList = value
-        break
-      case loveListKey:
-        loveList = value
-        break
-      default:
-        userList.push(value)
-        break
-    }
+    if (removedListKeys.includes(key)) continue
+    userList.push(value)
   }
 
   const listSort: Record<string, number> = await getData(storageDataPrefixOld.listSort) ?? {}
@@ -105,8 +93,6 @@ export const getAllListData = async(): Promise<{
   })
 
   return {
-    defaultList,
-    loveList,
     userList,
   }
 }
@@ -117,15 +103,11 @@ export const getAllListData = async(): Promise<{
  */
 export const migrateListData = async() => {
   const playList = await getAllListData()
-  let listDataAll: LX.List.ListDataFull = {
-    defaultList: [],
-    loveList: [],
-    localList: [],
+  // localList 不传：本地文件由这台设备自己管，迁移不该把它清空
+  const listDataAll: LX.List.ListDataFull = {
     userList: [],
     tempList: [],
   }
-  if (playList.defaultList) listDataAll.defaultList = filterMusicList(playList.defaultList.list.map(m => toNewMusicInfo(m)))
-  if (playList.loveList) listDataAll.loveList = filterMusicList(playList.loveList.list.map(m => toNewMusicInfo(m)))
   if (playList.userList) {
     listDataAll.userList = playList.userList.map(l => {
       return {
@@ -137,7 +119,7 @@ export const migrateListData = async() => {
   }
   listDataOverwrite(listDataAll)
   await saveUserList(userLists)
-  const allListIds = [LIST_IDS.DEFAULT, LIST_IDS.LOVE, LIST_IDS.LOCAL, ...userLists.map(l => l.id)]
+  const allListIds = [LIST_IDS.LOCAL, ...userLists.map(l => l.id)]
   await saveListMusics([...allListIds.map(id => ({ id, musics: allMusicList.get(id) as LX.List.ListMusics }))])
   await removeData(storageDataPrefixOld.listSort)
 

@@ -9,9 +9,12 @@ export const SPLIT_CHAR = {
   DISLIKE_NAME_ALIAS: '#',
 } as const
 
+/**
+ * 列表 id。只剩这三个 + 自建列表（userList）：
+ * 「试听列表」和本地「我的收藏」已经没有界面也没人写了，整套跟着拆掉；
+ * LOCAL 不能动 —— 下载完成写的就是它，本地文件优先播放和「我的 → 本地歌曲」都靠它。
+ */
 export const LIST_IDS = {
-  DEFAULT: 'default',
-  LOVE: 'love',
   LOCAL: 'local',
   PLAY_QUEUE: 'play_queue',
   TEMP: 'temp',
@@ -70,7 +73,6 @@ export const storageDataPrefix = {
 
   list: '@list__',
   listScrollPosition: '@list_scroll_position',
-  listPrevSelectId: '@list_prev_select_id',
 
   lyric: '@lyric__',
   musicUrl: '@music_url__',

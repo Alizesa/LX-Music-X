@@ -1,5 +1,4 @@
-import { LIST_IDS } from '@/config/constant'
-import { createList, getListMusics, overwriteList, overwriteListFull, overwriteListMusics } from '@/core/list'
+import { createList, getListMusics, overwriteList, overwriteListFull } from '@/core/list'
 import { filterMusicList, fixNewMusicInfoQuality, toNewMusicInfo } from '@/utils'
 import { log } from '@/utils/log'
 import { confirmDialog, handleReadFile, handleSaveFile, showImportTip, toast } from '@/utils/tools'
@@ -7,9 +6,7 @@ import listState from '@/store/list/state'
 
 
 const getAllLists = async() => {
-  const lists = []
-  lists.push(await getListMusics(listState.defaultList.id).then(musics => ({ ...listState.defaultList, list: musics })))
-  lists.push(await getListMusics(listState.loveList.id).then(musics => ({ ...listState.loveList, list: musics })))
+  const lists: LX.List.UserListInfoFull[] = []
 
   for await (const list of listState.userList) {
     lists.push(await getListMusics(list.id).then(musics => ({ ...list, list: musics })))
@@ -17,10 +14,16 @@ const getAllLists = async() => {
 
   return lists
 }
+
+// 老备份里会混着「试听列表」/「我的收藏」（id 是 default / love）。这两类已经没有落点了，
+// 放进来只会凭空多出一个自建列表，直接跳过
+const isRemovedListId = (id: unknown) => id === 'default' || id === 'love'
+
 const importOldListData = async(lists: any[]) => {
   const allLists = await getAllLists()
   for (const list of lists) {
     try {
+      if (isRemovedListId(list?.id)) continue
       const targetList = allLists.find(l => l.id == list.id)
       if (targetList) {
         targetList.list = filterMusicList((list.list as any[]).map(m => toNewMusicInfo(m)))
@@ -39,14 +42,13 @@ const importOldListData = async(lists: any[]) => {
       console.log(err)
     }
   }
-  const defaultList = allLists.shift()!.list
-  const loveList = allLists.shift()!.list
-  await overwriteListFull({ defaultList, loveList, userList: allLists as LX.List.UserListInfoFull[] })
+  await overwriteListFull({ userList: allLists })
 }
-const importNewListData = async(lists: Array<LX.List.MyDefaultListInfoFull | LX.List.MyLoveListInfoFull | LX.List.UserListInfoFull>) => {
+const importNewListData = async(lists: LX.List.UserListInfoFull[]) => {
   const allLists = await getAllLists()
   for (const list of lists) {
     try {
+      if (isRemovedListId(list?.id)) continue
       const targetList = allLists.find(l => l.id == list.id)
       if (targetList) {
         targetList.list = filterMusicList(list.list).map(m => fixNewMusicInfoQuality(m))
@@ -55,9 +57,9 @@ const importNewListData = async(lists: Array<LX.List.MyDefaultListInfoFull | LX.
           name: list.name,
           id: list.id,
           list: filterMusicList(list.list).map(m => fixNewMusicInfoQuality(m)),
-          source: (list as LX.List.UserListInfoFull).source,
-          sourceListId: (list as LX.List.UserListInfoFull).sourceListId,
-          locationUpdateTime: (list as LX.List.UserListInfoFull).locationUpdateTime ?? null,
+          source: list.source,
+          sourceListId: list.sourceListId,
+          locationUpdateTime: list.locationUpdateTime ?? null,
         }
         allLists.push(data as LX.List.UserListInfoFull)
       }
@@ -65,9 +67,7 @@ const importNewListData = async(lists: Array<LX.List.MyDefaultListInfoFull | LX.
       console.log(err)
     }
   }
-  const defaultList = allLists.shift()!.list
-  const loveList = allLists.shift()!.list
-  await overwriteListFull({ defaultList, loveList, userList: allLists as LX.List.UserListInfoFull[] })
+  await overwriteListFull({ userList: allLists })
 }
 
 /**
@@ -97,7 +97,7 @@ export const handleImportListPart = async(listData: LX.ConfigFile.MyListInfoPart
     }
     listData.id += `__${Date.now()}`
   }
-  const userList = listData as LX.List.UserListInfoFull
+  const userList = listData
   void createList({
     name: userList.name,
     id: userList.id,
@@ -131,9 +131,10 @@ const importPlayList = async(path: string) => {
   }
 
   switch (configData.type) {
-    case 'defautlList': // 兼容0.6.2及以前版本的列表数据
+    // 兼容 0.6.2 及以前版本的列表数据。那两种导出的都是「试听列表」，
+    // 这个列表已经拆了，导进来没有落点，确认完就当空处理
+    case 'defautlList':
       if (!await showConfirm()) return true
-      await overwriteListMusics(LIST_IDS.DEFAULT, filterMusicList((configData.data as LX.List.MyDefaultListInfoFull).list.map(m => toNewMusicInfo(m))))
       break
     case 'playList':
       if (!await showConfirm()) return true
@@ -147,10 +148,8 @@ const importPlayList = async(path: string) => {
       break
     case 'allData':
       if (!await showConfirm()) return true
-      // 兼容0.6.2及以前版本的列表数据
-      if (configData.defaultList) await overwriteListMusics(LIST_IDS.DEFAULT, filterMusicList((configData.defaultList as LX.List.MyDefaultListInfoFull).list.map(m => toNewMusicInfo(m))))
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      else await importOldListData(configData.playList)
+      await importOldListData(configData.playList)
       break
     case 'allData_v2':
       if (!await showConfirm()) return true

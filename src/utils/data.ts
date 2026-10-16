@@ -1,5 +1,5 @@
 import { getData, saveData, getAllKeys, removeDataMultiple, saveDataMultiple, removeData, getDataMultiple } from '@/plugins/storage'
-import { DEFAULT_SETTING, LIST_IDS, storageDataPrefix, type NAV_ID_Type } from '@/config/constant'
+import { DEFAULT_SETTING, storageDataPrefix, type NAV_ID_Type } from '@/config/constant'
 import { throttle } from './common'
 import { getSecureItem, removeSecureItem, setSecureItem } from './nativeModules/secureStorage'
 // import { gzip, ungzip } from '@/utils/nativeModules/gzip'
@@ -21,7 +21,6 @@ const searchSettingKey = storageDataPrefix.searchSetting
 const searchHistoryListKey = storageDataPrefix.searchHistoryList
 const songListSettingKey = storageDataPrefix.songListSetting
 const leaderboardSettingKey = storageDataPrefix.leaderboardSetting
-const listPrevSelectIdKey = storageDataPrefix.listPrevSelectId
 const syncAuthKeyPrefix = storageDataPrefix.syncAuthKey
 const syncHostPrefix = storageDataPrefix.syncHost
 const syncHostHistoryPrefix = storageDataPrefix.syncHostHistory
@@ -50,7 +49,6 @@ const qqMusicRecommendSessionKey = storageDataPrefix.qqMusicRecommendSession
 // const loveListKey = listPrefix + 'love'
 
 let listPosition: LX.List.ListPositionInfo
-let listPrevSelectId: string
 let listUpdateInfo: LX.List.ListUpdateInfo
 
 let searchSetting: typeof DEFAULT_SETTING['search']
@@ -115,19 +113,6 @@ export const overwriteListPosition = async(ids: string[]) => {
   }
   for (const id of removedIds) delete listPosition[id]
   saveListPositionThrottle()
-}
-
-const saveListPrevSelectIdThrottle = throttle(() => {
-  void saveData(listPrevSelectIdKey, listPrevSelectId)
-}, 200)
-export const getListPrevSelectId = async() => {
-  // eslint-disable-next-line require-atomic-updates
-  listPrevSelectId ??= await getData(listPrevSelectIdKey) ?? LIST_IDS.DEFAULT
-  return listPrevSelectId || LIST_IDS.DEFAULT
-}
-export const saveListPrevSelectId = (id: string) => {
-  listPrevSelectId = id
-  saveListPrevSelectIdThrottle()
 }
 
 const saveListUpdateInfoThrottle = throttle(() => {
