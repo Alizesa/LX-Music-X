@@ -3,6 +3,9 @@ import { ScrollView, TouchableOpacity, View } from 'react-native'
 import Popup, { type PopupType } from '@/components/common/Popup'
 import Text from '@/components/common/Text'
 import Image from '@/components/common/Image'
+import { Icon } from '@/components/common/Icon'
+import AddToPlaylistIcon from '@/components/common/AddToPlaylistIcon'
+import MenuRow from '@/components/common/MenuRow'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
@@ -70,12 +73,17 @@ export default forwardRef<MoreMenuType>((_, ref) => {
     if (mode == 'actions') {
       return (
         <>
-          <TouchableOpacity style={{ ...styles.row, borderBottomColor: theme['c-border-background'] }} onPress={() => { setMode('add') }}>
-            <Text>{t('qq_playlist_add_to')}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={{ ...styles.row, borderBottomColor: theme['c-border-background'] }} onPress={() => { setMode('remove') }}>
-            <Text>{t('qq_playlist_remove_from')}</Text>
-          </TouchableOpacity>
+          {/* 跟列表行的三点菜单共用同一套行：图标位、行高、字号都一样 */}
+          <MenuRow
+            icon={<AddToPlaylistIcon size={18} color={theme['c-font']} />}
+            label={t('qq_playlist_add_to')}
+            onPress={() => { setMode('add') }}
+          />
+          <MenuRow
+            icon={<Icon name="remove" size={18} color={theme['c-font']} />}
+            label={t('qq_playlist_remove_from')}
+            onPress={() => { setMode('remove') }}
+          />
         </>
       )
     }
@@ -88,7 +96,7 @@ export default forwardRef<MoreMenuType>((_, ref) => {
           playlists.map(item => (
             <TouchableOpacity
               key={item.id}
-              style={{ ...styles.row, ...styles.playlistRow, borderBottomColor: theme['c-border-background'], opacity: busy ? 0.5 : 1 }}
+              style={{ ...styles.playlistRow, borderBottomColor: theme['c-border-background'], opacity: busy ? 0.5 : 1 }}
               disabled={busy}
               onPress={() => { void change(item) }}
             >
@@ -118,14 +126,13 @@ export default forwardRef<MoreMenuType>((_, ref) => {
 })
 
 const styles = createStyle({
-  row: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
+  // 歌单那一屏的行：封面 + 名字（跟列表行菜单那边同一套尺寸）
   playlistRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
   },
   list: {
     maxHeight: 320,

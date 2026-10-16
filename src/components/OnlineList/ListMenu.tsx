@@ -1,4 +1,4 @@
-import { useRef, useImperativeHandle, forwardRef, useState, type ComponentProps, type ReactNode } from 'react'
+import { useRef, useImperativeHandle, forwardRef, useState, type ComponentProps } from 'react'
 import { ScrollView, TouchableOpacity, View } from 'react-native'
 import { useI18n } from '@/lang'
 import { type Position } from '@/components/common/Menu'
@@ -8,6 +8,7 @@ import Image from '@/components/common/Image'
 import { Icon } from '@/components/common/Icon'
 import AddToPlaylistIcon from '@/components/common/AddToPlaylistIcon'
 import LikedHeart from '@/components/common/LikedHeart'
+import MenuRow from '@/components/common/MenuRow'
 import { useTheme } from '@/store/theme/hook'
 import { hasDislike } from '@/core/dislikeList'
 import { hasMusicUrlByMusic } from '@/utils/data'
@@ -39,28 +40,6 @@ interface Row {
   label: string
   icon?: IconName
   disabled?: boolean
-}
-
-/** 图标 + 文案 */
-const MenuRow = ({ icon, label, disabled, onPress }: {
-  icon?: ReactNode
-  label: string
-  disabled?: boolean
-  onPress: () => void
-}) => {
-  const theme = useTheme()
-  return (
-    <TouchableOpacity
-      style={{ ...styles.row, borderBottomColor: theme['c-border-background'], opacity: disabled ? 0.4 : 1 }}
-      activeOpacity={0.7}
-      disabled={disabled}
-      onPress={onPress}
-    >
-      {/* 图标位宽度固定：没有图标的行（「不喜欢」）也留着，各行文案才对得齐 */}
-      <View style={styles.iconWrap}>{icon}</View>
-      <Text size={15} numberOfLines={1}>{label}</Text>
-    </TouchableOpacity>
-  )
 }
 
 export interface ListMenuProps {
@@ -255,7 +234,7 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
           playlists.map(item => (
             <TouchableOpacity
               key={item.id}
-              style={{ ...styles.row, ...styles.playlistRow, borderBottomColor: theme['c-border-background'], opacity: busy ? 0.5 : 1 }}
+              style={{ ...styles.playlistRow, borderBottomColor: theme['c-border-background'], opacity: busy ? 0.5 : 1 }}
               disabled={busy}
               onPress={() => { void changeMembership(item) }}
             >
@@ -285,20 +264,13 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
 })
 
 const styles = createStyle({
-  row: {
+  // 歌单那一屏的行：封面 + 名字，比动作行矮一点
+  playlistRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  playlistRow: {
     paddingVertical: 10,
-  },
-  iconWrap: {
-    width: 26,
-    height: 20,
-    justifyContent: 'center',
+    borderBottomWidth: 1,
   },
   list: {
     maxHeight: 380,
