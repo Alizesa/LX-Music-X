@@ -1,18 +1,19 @@
-import { useRef, useImperativeHandle, forwardRef, useState, type ComponentProps } from 'react'
+import { useRef, useImperativeHandle, forwardRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { ScrollView, TouchableOpacity, View } from 'react-native'
 import { useI18n } from '@/lang'
 import { type Position } from '@/components/common/Menu'
 import Popup, { type PopupType } from '@/components/common/Popup'
 import Text from '@/components/common/Text'
 import Image from '@/components/common/Image'
-import { Icon, IconIonicons } from '@/components/common/Icon'
+import { Icon } from '@/components/common/Icon'
+import AddToPlaylistIcon from '@/components/common/AddToPlaylistIcon'
+import LikedHeart from '@/components/common/LikedHeart'
 import { useTheme } from '@/store/theme/hook'
 import { hasDislike } from '@/core/dislikeList'
 import { hasMusicUrlByMusic } from '@/utils/data'
 import { setMusicCollected } from '@/core/player/player'
 import { changeQQMusicPlaylistMembership, loadWritableQQMusicPlaylists, useQQMusicLiked } from '@/core/qqMusicFavorite'
 import { createStyle } from '@/utils/tools'
-import { scaleSizeW } from '@/utils/pixelRatio'
 
 export interface SelectInfo {
   musicInfo: LX.Music.MusicInfoOnline
@@ -29,7 +30,10 @@ const hasUrlCache = async(musicInfo: LX.Music.MusicInfo) => {
 type IconName = ComponentProps<typeof Icon>['name']
 type Mode = 'actions' | 'add' | 'remove'
 
-/** 面板里的一行。「收藏」那行的文案和勾要跟着实时收藏状态走，渲染时才算 */
+/**
+ * 面板里的一行。`icon` 是字体里那个图标；「收藏」和「添加到歌单」用的是自绘图标
+ * （见 renderRowIcon），所以这两行的 icon 留空。
+ */
 interface Row {
   action: string
   label: string
@@ -37,11 +41,10 @@ interface Row {
   disabled?: boolean
 }
 
-/** 图标 + 文案。badge 是图标右下角那个小勾（「已收藏」的标识） */
-const MenuRow = ({ icon, label, badge, disabled, onPress }: {
-  icon?: IconName
+/** 图标 + 文案 */
+const MenuRow = ({ icon, label, disabled, onPress }: {
+  icon?: ReactNode
   label: string
-  badge?: boolean
   disabled?: boolean
   onPress: () => void
 }) => {
@@ -54,17 +57,7 @@ const MenuRow = ({ icon, label, badge, disabled, onPress }: {
       onPress={onPress}
     >
       {/* 图标位宽度固定：没有图标的行（「不喜欢」）也留着，各行文案才对得齐 */}
-      <View style={styles.iconWrap}>
-        {icon ? <Icon name={icon} size={18} color={badge ? theme['c-primary-font'] : theme['c-font']} /> : null}
-        {/* 已收藏的标识：图标右下角一个勾，跟「还没收藏」区分开 */}
-        {
-          badge
-            ? <View style={{ ...styles.badge, backgroundColor: theme['c-primary-font'] }}>
-                <IconIonicons name="checkmark" size={scaleSizeW(9)} color={theme['c-content-background']} />
-              </View>
-            : null
-        }
-      </View>
+      <View style={styles.iconWrap}>{icon}</View>
       <Text size={15} numberOfLines={1}>{label}</Text>
     </TouchableOpacity>
   )
@@ -109,9 +102,9 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
     // 收藏和歌单都得落到 QQ 账号上（本地列表早就不维护了），别的源不摆这几个入口
     if (musicInfo.source == 'tx') {
       next.push(
-        // 文案按收藏状态拼，这里先占个位
-        { action: 'like', label: '', icon: 'love' },
-        { action: 'addToPlaylist', label: t('qq_playlist_add_to'), icon: 'add-music' },
+        // 这两行的图标是自绘的（见 renderRowIcon），文案也按状态拼，所以这里都留空
+        { action: 'like', label: '' },
+        { action: 'addToPlaylist', label: t('qq_playlist_add_to') },
         { action: 'removeFromPlaylist', label: t('qq_playlist_remove_from'), icon: 'remove' },
       )
     }
@@ -229,15 +222,21 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
     }
   }
 
+  /** 每行左边的图标。收藏和歌单那两行是自绘的，其余走字体图标 */
+  const renderRowIcon = (row: Row) => {
+    if (row.action == 'like') return <LikedHeart liked={liked} size={18} />
+    if (row.action == 'addToPlaylist') return <AddToPlaylistIcon size={18} color={theme['c-font']} />
+    return row.icon ? <Icon name={row.icon} size={18} color={theme['c-font']} /> : null
+  }
+
   const renderActions = () => (
     <ScrollView style={styles.list}>
       {
         rows.map(row => (
           <MenuRow
             key={row.action}
-            icon={row.icon}
+            icon={renderRowIcon(row)}
             label={row.action == 'like' ? (liked ? t('uncollect') : t('collect')) : row.label}
-            badge={row.action == 'like' && liked}
             disabled={row.disabled}
             onPress={() => { handleMenuPress(row.action) }}
           />
@@ -300,16 +299,6 @@ const styles = createStyle({
     width: 26,
     height: 20,
     justifyContent: 'center',
-  },
-  badge: {
-    position: 'absolute',
-    right: 0,
-    bottom: -2,
-    width: scaleSizeW(12),
-    height: scaleSizeW(12),
-    borderRadius: scaleSizeW(6),
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   list: {
     maxHeight: 380,

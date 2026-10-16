@@ -1,3 +1,4 @@
+import { type ReactNode } from 'react'
 import { TouchableOpacity } from 'react-native'
 import { Icon } from '@/components/common/Icon'
 import { createStyle } from '@/utils/tools'
@@ -8,17 +9,19 @@ import { strongIconShadow } from '@/screens/PlayDetail/components/iconStyle'
 export const BTN_WIDTH = scaleSizeW(32)
 export const BTN_ICON_SIZE = 22
 
-export default ({ icon, color, onPress, size = BTN_ICON_SIZE }: {
-  icon: string
+export default ({ icon, color, onPress, size = BTN_ICON_SIZE, children }: {
+  icon?: string
   color?: string
   onPress: () => void
   /** 覆盖默认图标大小。个别字形（比如爱心）在同一个 em 框里画得比别人满，得单独调小 */
   size?: number
+  /** 自绘图标（比如带「已收藏」勾的心）：给了就用它，忽略 icon */
+  children?: ReactNode
 }) => {
   const theme = useTheme()
   return (
     <TouchableOpacity style={{ ...styles.cotrolBtn, width: BTN_WIDTH, height: BTN_WIDTH }} activeOpacity={0.5} onPress={onPress}>
-      <Icon name={icon} color={color ?? theme['c-font']} size={size} style={strongIconShadow} />
+      {children ?? (icon ? <Icon name={icon} color={color ?? theme['c-font']} size={size} style={strongIconShadow} /> : null)}
     </TouchableOpacity>
   )
 }
