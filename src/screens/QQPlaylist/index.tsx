@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { TouchableOpacity, View } from 'react-native'
 import PageContent from '@/components/PageContent'
 import StatusBar from '@/components/common/StatusBar'
@@ -47,12 +47,26 @@ const PlaylistHero = ({ name, subtitle, cover, onPlay }: {
   const t = useI18n()
   const windowSize = useWindowSize()
   const height = Math.round(windowSize.width * 0.52)
+  // 封面按自己的比例铺满宽度后的高度。头图这么扁，方形封面铺开是放不下的，
+  // 超出的部分由容器从下面裁掉 —— 露出来的是封面上半截（歌名/歌手那块），
+  // 而不是 cover 居中裁出来的中间那一条
+  const [coverHeight, setCoverHeight] = useState(height)
 
   return (
     <View style={{ ...styles.hero, height }}>
       {
         cover
-          ? <ImageBackground style={styles.heroBg} source={{ uri: cover }} resizeMode="cover" />
+          ? <ImageBackground
+              style={styles.heroBg}
+              imageStyle={{ height: coverHeight }}
+              source={{ uri: cover }}
+              resizeMode="cover"
+              onLoad={({ nativeEvent }) => {
+                const size = nativeEvent?.source
+                if (!size?.width || !size?.height) return
+                setCoverHeight(Math.max(height, Math.round(windowSize.width * size.height / size.width)))
+              }}
+            />
           : <View style={{ ...styles.heroBg, backgroundColor: '#4daf7c' }} />
       }
       {/* 没有渐变库，文字可读性用纯色暗层代替（跟首页方形卡一个做法） */}
@@ -170,7 +184,8 @@ export default ({ componentId, info }: Props) => {
 
 const styles = createStyle({
   hero: { width: '100%', justifyContent: 'flex-end' },
-  heroBg: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 },
+  // overflow: hidden 是为了裁掉封面超出头图的下半截（见 PlaylistHero 里对 coverHeight 的说明）
+  heroBg: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, overflow: 'hidden' },
   heroOverlay: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)' },
   heroBody: { padding: 16 },
   heroSubtitle: { paddingTop: 4 },

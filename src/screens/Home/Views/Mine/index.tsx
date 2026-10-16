@@ -22,11 +22,13 @@ const AVATAR_SIZE = 56
 
 /**
  * 入口宫格的一格。`ionIcon` 用 Ionicons 的 sharp 版（粗线），
- * `icon` 是 icomoon 的填充字形，二选一；两者按同一个名义尺寸画。
+ * `icon` 是 icomoon 的填充字形，二选一。
+ * `ionSize` 单独调线条版那一档：线条字形四周留白比填充字形多，同一个名义尺寸看着会偏小。
  */
-const Entry = ({ icon, ionIcon, label, count, onPress }: {
+const Entry = ({ icon, ionIcon, ionSize, label, count, onPress }: {
   icon?: string
   ionIcon?: ComponentProps<typeof IconIonicons>['name']
+  ionSize?: number
   label: string
   count?: number
   onPress: () => void
@@ -36,7 +38,7 @@ const Entry = ({ icon, ionIcon, label, count, onPress }: {
     <TouchableOpacity style={styles.entry} activeOpacity={0.7} onPress={onPress}>
       {
         ionIcon
-          ? <IconIonicons name={ionIcon} size={scaleSizeW(24)} color={theme['c-primary-font']} />
+          ? <IconIonicons name={ionIcon} size={scaleSizeW(ionSize ?? 24)} color={theme['c-primary-font']} />
           : icon ? <Icon name={icon} size={24} color={theme['c-primary-font']} /> : null
       }
       <Text style={styles.entryLabel} size={13} numberOfLines={1}>{label}</Text>
@@ -242,7 +244,7 @@ export default () => {
 
         <View style={styles.entries}>
           <Entry icon="love" label={t('mine_liked')} count={liked?.trackCount} onPress={() => { if (liked) openPlaylist(liked) }} />
-          <Entry ionIcon="time-sharp" label={t('nav_history')} count={historyCount} onPress={() => { navigations.pushPlayHistoryScreen(commonState.componentIds.home!) }} />
+          <Entry ionIcon="time-sharp" ionSize={27} label={t('nav_history')} count={historyCount} onPress={() => { navigations.pushPlayHistoryScreen(commonState.componentIds.home!) }} />
           <Entry icon="download-2" label={t('nav_download')} count={tasks.length} onPress={() => { navigations.pushDownloadScreen(commonState.componentIds.home!) }} />
           <Entry ionIcon="folder-sharp" label={t('mine_local_songs')} count={localCount} onPress={() => { navigations.pushLocalSongsScreen(commonState.componentIds.home!) }} />
         </View>
