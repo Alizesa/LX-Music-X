@@ -87,6 +87,13 @@ declare namespace LX {
     type MusicInfoOnline = MusicInfo_online_common | MusicInfo_kg | MusicInfo_tx | MusicInfo_mg
     type MusicInfo = MusicInfoOnline | MusicInfoLocal
 
+    /**
+     * 取链时两条链的先后（见 core/music/utils.ts 的 handleGetOnlineMusicUrl）：
+     * accountFirst 账号优先 → 音源兜底；sourceFirst 音源优先 → 账号兜底；
+     * sourceOnly 只走音源（下载选了「音源」时用）。
+     */
+    type UrlSourceOrder = 'accountFirst' | 'sourceFirst' | 'sourceOnly'
+
     interface LyricInfo {
       // 歌曲歌词
       lyric: string

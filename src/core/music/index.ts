@@ -28,15 +28,15 @@ export const getMusicUrl = async({
   isRefresh = false,
   onToggleSource,
   allowToggleSource,
-  useAccountUrl,
+  urlSourceOrder,
 }: {
   musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   isRefresh?: boolean
   quality?: LX.Quality
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
   allowToggleSource?: boolean
-  /** 下载那边按设置传：false = 只走音源，不走 QQ 账号直取。不传按允许处理 */
-  useAccountUrl?: boolean
+  /** 两条链的先后，见 core/music/utils.ts。下载按自己的设置传，不传按播放设置走 */
+  urlSourceOrder?: LX.Music.UrlSourceOrder
 }): Promise<string> => {
   if ('progress' in musicInfo) {
     return getDownloadMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource })
@@ -50,7 +50,7 @@ export const getMusicUrl = async({
         if (localPath) return localPath
       }
     }
-    return getOnlineMusicUrl({ musicInfo, isRefresh, quality, onToggleSource, allowToggleSource, useAccountUrl })
+    return getOnlineMusicUrl({ musicInfo, isRefresh, quality, onToggleSource, allowToggleSource, urlSourceOrder })
   }
 }
 

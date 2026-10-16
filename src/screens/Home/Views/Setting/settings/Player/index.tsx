@@ -16,6 +16,7 @@ import MaxCache from './MaxCache'
 import { useI18n } from '@/lang'
 import PlayHistory from './PlayHistory'
 import IsNoVipStandardQuality from './IsNoVipStandardQuality'
+import UrlSource from './UrlSource'
 
 
 export default memo(() => {
@@ -36,7 +37,8 @@ export default memo(() => {
       <IsS2T />
       <MaxCache />
       <PlayHighQuality />
-      {/* 紧跟在音质后面：它就是对上面那个音质选择的补充说明 */}
+      {/* 这一组是连着的：先选音质 → 再从哪条链取 → 最后声明账号有没有会员（只影响账号那条链） */}
+      <UrlSource />
       <IsNoVipStandardQuality />
     </Section>
   )

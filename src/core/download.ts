@@ -278,9 +278,9 @@ const processQueue = async() => {
             musicInfo: task.musicInfo,
             quality: task.quality,
             isRefresh: true,
-            // 下载按设置选链路：'account' 走 QQ 账号直取，'source'（默认）只走音源。
-            // 播放不受这个设置影响，那边始终账号优先
-            useAccountUrl: settingState.setting['download.urlSource'] === 'account',
+            // 下载按自己的设置选链路：'account' 账号优先（拿不到再音源），
+            // 'source'（默认）只走音源。播放不传这个，走它自己的 player.urlSource
+            urlSourceOrder: settingState.setting['download.urlSource'] === 'account' ? 'accountFirst' : 'sourceOnly',
           })
           const currentTask = tasks.find(item => item.id == task.id)
           if (currentTask?.status != 'resolving') continue

@@ -19,6 +19,8 @@ const defaultSetting: LX.AppSetting = {
   'player.startupPushPlayDetailScreen': false,
   'player.togglePlayMethod': 'listLoop',
   'player.playQuality': '128k',
+  // 播放取链的先后：'account' 账号优先（拿不到再走音源），'source' 音源优先（拿不到回落账号）
+  'player.urlSource': 'account',
   // 默认开：本机账号没开会员，只有标准音质可听。
   // 开了会员的话把它关掉，音质就按 player.playQuality 逐档往上取
   'player.noVipStandardQuality': true,

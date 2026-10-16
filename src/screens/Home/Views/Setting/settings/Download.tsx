@@ -30,7 +30,7 @@ const UrlSourceItem = ({ id }: { id: UrlSource }) => {
   return <CheckBox
     marginRight={8}
     check={isActive}
-    label={t(id == 'source' ? 'download_url_source_script' : 'download_url_source_account')}
+    label={t(id == 'source' ? 'url_source_script' : 'url_source_account')}
     onChange={() => { updateSetting({ 'download.urlSource': id }) }}
     need
   />

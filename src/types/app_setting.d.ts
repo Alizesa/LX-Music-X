@@ -140,6 +140,13 @@ declare global {
       'player.noVipStandardQuality': boolean
 
       /**
+       * 播放取链的先后。
+       * 'account' 账号优先（默认）：QQ 的歌先账号直取，拿不到再走音源。
+       * 'source' 音源优先：先按配置的自定义源取，拿不到才回落账号。
+       */
+      'player.urlSource': 'account' | 'source'
+
+      /**
        * 启动软件时是否恢复上次播放进度
        */
       'player.isSavePlayTime': boolean

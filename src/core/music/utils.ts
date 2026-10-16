@@ -284,14 +284,20 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
 /**
  * 获取在线音乐URL
  */
-export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, useAccountUrl = true }: {
+export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality?: LX.Quality
   isRefresh: boolean
   allowToggleSource: boolean
   onToggleSource: (musicInfo?: LX.Music.MusicInfoOnline) => void
-  /** 是否允许走 QQ 账号直取。下载那边按设置可以关掉，改成只走音源；播放始终开着 */
-  useAccountUrl?: boolean
+  /**
+   * 两条链的先后：
+   * - 'accountFirst' 账号优先，拿不到再走音源（播放的默认）
+   * - 'sourceFirst' 音源优先，拿不到再回落账号（播放设置里选了「音源」）
+   * - 'sourceOnly' 只走音源，不回落账号（下载设置里选了「音源」）
+   * 不传就按播放设置 player.urlSource 来
+   */
+  urlSourceOrder?: LX.Music.UrlSourceOrder
 }): Promise<{
   url: string
   musicInfo: LX.Music.MusicInfoOnline
@@ -303,52 +309,73 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   // 不再逐档往下试无损/320k —— 每试一档就是一次 vkey 请求，非会员账号那些尝试注定落空。
   // 开了会员（或没开这个设置）时按 targetQuality 走，不设上限。
   const accountQuality = settingState.setting['player.noVipStandardQuality'] ? '128k' : targetQuality
+  const order = urlSourceOrder ?? (settingState.setting['player.urlSource'] === 'source' ? 'sourceFirst' : 'accountFirst')
 
-  // QQ 音乐优先走账号直取。这段放在 apiInitPromise 检查之前，因为它不依赖
-  // 用户 API 脚本 —— 没配脚本时也能播 QQ 的免费歌曲。
-  // 免费可听的歌这里就能拿到完整音源；VIP 歌只会拿到试听重定向，函数返回 null，
-  // 流程继续往下走音源。本地优先已经在 core/music/index.ts 里做过了。
-  // useAccountUrl 为 false 时整段跳过（下载里选了「走音源」），
-  // 于是不管拿不拿得到都会落到下面音源那条路，不会再回头试账号。
-  if (musicInfo.source == 'tx' && useAccountUrl) {
+  // QQ 账号直取。免费可听的歌能拿到完整音源；VIP 歌只会拿到试听重定向（函数返回 null），
+  // 这时交给音源那条路。它不依赖用户 API 脚本，所以默认排在音源前面 ——
+  // 没配脚本时也能播 QQ 的免费歌曲。
+  const byAccountUrl = async() => {
+    if (musicInfo.source != 'tx') return null
     try {
       const byAccount = await getQQMusicUrlByAccount(musicInfo, accountQuality, accountQuality)
-      if (byAccount) return { musicInfo, url: byAccount.url, quality: byAccount.quality, isFromCache: false }
+      return byAccount ? { musicInfo, url: byAccount.url, quality: byAccount.quality, isFromCache: false } : null
     } catch (error) {
-      console.log('[QQMusic] 账号取链失败，回落到音源:', error)
+      console.log('[QQMusic] 账号取链失败:', error)
+      return null
     }
   }
 
-  if (!await global.lx.apiInitPromise[0]) throw new Error('source init failed')
-  // console.log(musicInfo.source)
+  // 音源（用户配置的自定义源 / 内置源）。这段必须在 apiInitPromise 之后：
+  // 脚本没初始化完就取链会直接失败。
+  const bySourceUrl = async() => {
+    if (!await global.lx.apiInitPromise[0]) throw new Error('source init failed')
+    // console.log(musicInfo.source)
 
-  let reqPromise
-  try {
-    reqPromise = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), targetQuality).promise
-  } catch (err: any) {
-    reqPromise = Promise.reject(err)
-  }
-  return reqPromise.then(({ url, type }: { url: string, type: LX.Quality }) => {
-    return { musicInfo, url, quality: type, isFromCache: false }
-  }).catch(async(err: any) => {
-    console.log(err)
-    if (!allowToggleSource || err.message == requestMsg.tooManyRequests) throw err
-    onToggleSource()
-    // eslint-disable-next-line @typescript-eslint/promise-function-async
-    return getOtherSource(musicInfo).then(otherSource => {
-      // console.log('find otherSource', otherSource.length)
-      if (otherSource.length) {
-        return getOnlineOtherSourceMusicUrl({
-          musicInfos: [...otherSource],
-          onToggleSource,
-          quality,
-          isRefresh,
-          retryedSource: [musicInfo.source],
-        })
-      }
-      throw err
+    let reqPromise
+    try {
+      reqPromise = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), targetQuality).promise
+    } catch (err: any) {
+      reqPromise = Promise.reject(err)
+    }
+    return reqPromise.then(({ url, type }: { url: string, type: LX.Quality }) => {
+      return { musicInfo, url, quality: type, isFromCache: false }
+    }).catch(async(err: any) => {
+      console.log(err)
+      if (!allowToggleSource || err.message == requestMsg.tooManyRequests) throw err
+      onToggleSource()
+      // eslint-disable-next-line @typescript-eslint/promise-function-async
+      return getOtherSource(musicInfo).then(otherSource => {
+        // console.log('find otherSource', otherSource.length)
+        if (otherSource.length) {
+          return getOnlineOtherSourceMusicUrl({
+            musicInfos: [...otherSource],
+            onToggleSource,
+            quality,
+            isRefresh,
+            retryedSource: [musicInfo.source],
+          })
+        }
+        throw err
+      })
     })
-  })
+  }
+
+  if (order === 'accountFirst') {
+    const byAccount = await byAccountUrl()
+    if (byAccount) return byAccount
+    return bySourceUrl()
+  }
+
+  try {
+    return await bySourceUrl()
+  } catch (error) {
+    // 音源优先时它拿不到才回落账号，别让播放直接失败（下载的 'sourceOnly' 不走这一步）
+    if (order === 'sourceFirst') {
+      const byAccount = await byAccountUrl()
+      if (byAccount) return byAccount
+    }
+    throw error
+  }
 }
 
 
