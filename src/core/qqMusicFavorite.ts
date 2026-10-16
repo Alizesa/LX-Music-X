@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getQQMusicPlaylistSongs, getQQMusicSession, getQQMusicTrackIdentity, postAuthedMusicu } from './qqMusic'
+import { getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicTrackIdentity, postAuthedMusicu } from './qqMusic'
 import { getQQMusicLikedSongsCache, removeQQMusicLikedSongsCache, saveQQMusicLikedSongsCache } from '@/utils/data'
 import { clearPlaylistSongsCache } from './qqMusicPlaylistSongsCache'
 
@@ -7,6 +7,8 @@ import { clearPlaylistSongsCache } from './qqMusicPlaylistSongsCache'
 const LIKED_DIRID = '201'
 // 服务端要求的写入来源标识
 const WRITE_SOURCE = 'normal'
+// 与 MusicOne 已验证可用的歌单写接口保持同一 App UA。
+const QQ_PLAYLIST_WRITE_USER_AGENT = 'QQMusic 2005000982(android 14)'
 // 这几个返回码表示票据失效
 const LOGIN_ERROR_CODES = new Set([1000, 104400, 104401])
 
@@ -159,11 +161,21 @@ export const setQQMusicTrackInPlaylist = async(
   add: boolean,
 ): Promise<FavoriteResult> => {
   if (musicInfo.source != 'tx') return 'unsupported'
-  const numericId = Number(playlist.id)
-  const dirId = playlist.dirId ?? (Number.isFinite(numericId) && numericId > 0 ? numericId : 0)
-  if (!dirId) return 'unsupported'
   const { cookie } = await getQQMusicSession()
   if (!cookie) return 'unsupported'
+
+  // 歌单列表在播放页来自持久缓存。写入前必须重新取当前账号的目标，
+  // 否则旧的 dirId 会让接口把删除当成「不存在的条目」并返回成功。
+  const freshPlaylists = await getQQMusicPlaylists(cookie)
+  const target = freshPlaylists.find(item =>
+    !item.subscribed && !item.liked &&
+    (item.id == playlist.id || (playlist.dirId != null && item.dirId == playlist.dirId)),
+  )
+  if (!target) return 'unsupported'
+
+  const numericId = Number(target.id)
+  const dirId = target.dirId ?? (Number.isFinite(numericId) && numericId > 0 ? numericId : 0)
+  if (!dirId) return 'unsupported'
 
   // 写入前补一次歌曲详情，拿服务端眼中的「规范身份」：**删除要求身份和当初添加进去的
   // 完全一致**，对不上就会被当成「删一个不存在的条目」——返回成功但什么都不做
@@ -191,14 +203,14 @@ export const setQQMusicTrackInPlaylist = async(
         // tid 和 dirName 都按 MusicOne 的原样带上。早先我把这两项去掉过，理由是
         // 「参数形状对齐红心那条」—— 但那个判断是建立在 dirId 的错误诊断上的
         // （当时真正的毛病是旧缓存）。添加不需要它们，删除可能需要靠 tid 定位条目。
-        dirName: playlist.name,
+        dirName: target.name,
         tid: Number.isFinite(numericId) ? numericId : 0,
         bFmtUtf8: true,
         source: WRITE_SOURCE,
         v_songInfo: [{ songId, songType }],
       },
     },
-  })
+  }, { 'User-Agent': QQ_PLAYLIST_WRITE_USER_AGENT })
   const result = body?.req_0
   const code = Number(result?.code ?? -1)
   if (LOGIN_ERROR_CODES.has(code)) throw new Error(global.i18n.t('qq_session_expired'))
@@ -210,15 +222,22 @@ export const setQQMusicTrackInPlaylist = async(
 
   // **读回验证**：这个接口会「返回成功但什么都没改」（服务端把「条目不存在」当成幂等成功），
   // 光看返回码会把 no-op 当成成功报给用户。参考实现也是写完读回来验一遍的。
-  await assertPlaylistMember(cookie, playlist.id, songId, songType, add)
+  await assertPlaylistMember(cookie, target.id, target.dirId, songId, songType, add)
   return 'ok'
 }
 
 /** 写完读回歌单，确认这首歌的状态真的变了。对不上就抛错，不能谎报成功。 */
-const assertPlaylistMember = async(cookie: string, playlistId: string, songId: number, songType: number, shouldExist: boolean) => {
+const assertPlaylistMember = async(
+  cookie: string,
+  playlistId: string,
+  dirId: number | undefined,
+  songId: number,
+  songType: number,
+  shouldExist: boolean,
+) => {
   let songs: LX.Music.MusicInfoOnline[]
   try {
-    songs = await getQQMusicPlaylistSongs(cookie, playlistId)
+    songs = await getQQMusicPlaylistSongs(cookie, playlistId, dirId)
   } catch (error) {
     // 读不回来时不轻易判失败：写本身可能已经成功了，只是这次读出错
     console.warn('[QQMusic] 写歌单后读回失败:', error instanceof Error ? error.message : error)

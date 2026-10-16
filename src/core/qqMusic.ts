@@ -167,12 +167,17 @@ const buildAuthComm = (cookies: Record<string, string>) => {
  * 带登录态的 musicu.fcg 请求。extra 是要并进 body 的字段（req_0 / req_1 ...），
  * comm 由这里统一用 App 信封拼好。取链、写红心这类新链路都走这里。
  */
-export const postAuthedMusicu = async(cookie: string, extra: Record<string, unknown>) => {
+export const postAuthedMusicu = async(
+  cookie: string,
+  extra: Record<string, unknown>,
+  headers: Record<string, string> = {},
+) => {
   const cookies = parseQQMusicCookie(cookie)
   if (!readUin(cookies) || !readMusicKey(cookies)) throw new Error(global.i18n.t('qq_cookie_invalid'))
   return request(QQ_MUSICU_URL, cookie, {
     method: 'post',
     body: { comm: buildAuthComm(cookies), ...extra },
+    headers,
   })
 }
 
@@ -331,7 +336,9 @@ const normalizePlaylist = (raw: any, subscribed: boolean): LX.QQMusic.PlaylistIn
   // 虚拟歌单没有可用的 disstid，统一归一化成 dirid，详情接口据此切换取数方式
   const dirid = Number(raw?.dirid ?? raw?.dirId ?? 0)
   const liked = dirid === LIKED_PLAYLIST_DIRID
-  const realId = raw?.dissid ?? raw?.tid ?? raw?.disstid ?? raw?.diss_id ?? raw?.id
+  // 与 QQ 客户端一致：dissid 可能会返回 0，此时继续使用 tid 等真实编号。
+  const realId = [raw?.dissid, raw?.tid, raw?.disstid, raw?.diss_id, raw?.id]
+    .find(value => isRealPlaylistId(value))
   // 不是「我喜欢」又没有真实 disstid，就是服务端塞进来的虚拟歌单
   if (!liked && !isRealPlaylistId(realId)) return null
   const id = liked ? LIKED_PLAYLIST_DIRID : realId ?? dirid
@@ -854,10 +861,10 @@ const fetchPlaylistSongsByDiss = async(cookie: string, playlistId: string, dirid
   return songs
 }
 
-export const getQQMusicPlaylistSongs = async(cookie: string, playlistId: string) => {
+export const getQQMusicPlaylistSongs = async(cookie: string, playlistId: string, directoryId?: number) => {
   // 现代接口优先，旧接口兜底，最后退回公开的 SDK 接口
   try {
-    const dirid = Number(playlistId) === LIKED_PLAYLIST_DIRID ? LIKED_PLAYLIST_DIRID : 0
+    const dirid = directoryId ?? (Number(playlistId) === LIKED_PLAYLIST_DIRID ? LIKED_PLAYLIST_DIRID : 0)
     const songs = await fetchPlaylistSongsByDiss(cookie, playlistId, dirid)
     if (songs.length) return songs
   } catch (error) {
