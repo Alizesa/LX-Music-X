@@ -118,6 +118,7 @@
   "qq_playlist_write_empty": "No playlists created yet",
   "qq_like_added": "Added to Liked",
   "qq_like_removed": "Removed from Liked",
+  "qq_like_unsupported": "Only QQ Music tracks can be liked",
   "qq_like_failed": "Failed to update Liked",
   "home_similar_title": "You may also like 「{name}」",
   "mine_liked": "Liked",

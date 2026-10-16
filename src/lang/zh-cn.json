@@ -118,6 +118,7 @@
   "qq_playlist_write_empty": "还没有自建歌单",
   "qq_like_added": "已加入我喜欢",
   "qq_like_removed": "已从我喜欢移除",
+  "qq_like_unsupported": "只能收藏 QQ 音乐的歌",
   "qq_like_failed": "我喜欢操作失败",
   "home_similar_title": "听「{name}」也会喜欢",
   "mine_liked": "我喜欢",

@@ -27,7 +27,6 @@ import { filterList } from './utils'
 import BackgroundTimer from 'react-native-background-timer'
 import { checkIgnoringBatteryOptimization, checkNotificationPermission, debounceBackgroundTimer, toast } from '@/utils/tools'
 import { LIST_IDS } from '@/config/constant'
-import { addListMusics, removeListMusics } from '@/core/list'
 import { setQQMusicTrackLiked } from '@/core/qqMusicFavorite'
 import { addDislikeInfo } from '@/core/dislikeList'
 import { clearPlayQueue, getPlayQueue, insertPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
@@ -718,10 +717,10 @@ export const togglePlay = () => {
 }
 
 /**
- * 收藏/取消收藏当前播放的歌曲。
+ * 收藏/取消收藏一首歌。写的是账号里的「我喜欢」。
  *
- * QQ 的歌且已登录时直接写账号的「我喜欢」，不再落本地列表；
- * 其余情况（不是 QQ 的歌、或没登录）退回本地「我的收藏」列表。
+ * 不再往本地「我的收藏」列表兜底：那个列表这个分支早就不维护了（没有界面能看到，
+ * 列表一律来自 QQ 账号），写进去等于扔进黑洞。非 QQ 的歌、或没登录时明确提示。
  */
 const toggleCollect = async(liked: boolean, target?: LX.Music.MusicInfo) => {
   // 不传就收拾当前正在播的那首（播放详情页的红心）；列表行菜单会传具体某一首
@@ -739,8 +738,8 @@ const toggleCollect = async(liked: boolean, target?: LX.Music.MusicInfo) => {
     toast(error instanceof Error ? error.message : global.i18n.t('qq_like_failed'), 'long')
     return
   }
-  if (liked) void addListMusics(LIST_IDS.LOVE, [musicInfo], settingState.setting['list.addMusicLocationType'])
-  else void removeListMusics(LIST_IDS.LOVE, [musicInfo.id])
+  // 走到这儿是 'unsupported'：不是 QQ 的歌，或者没登录
+  toast(global.i18n.t('qq_like_unsupported'), 'long')
 }
 
 /**

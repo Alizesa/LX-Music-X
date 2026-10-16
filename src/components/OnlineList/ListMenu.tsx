@@ -105,14 +105,12 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
   const close = () => { popupRef.current?.setVisible(false) }
 
   const buildRows = (musicInfo: LX.Music.MusicInfoOnline): Row[] => {
-    const next: Row[] = [
-      { action: 'play', label: t('play'), icon: 'play' },
-      // 「收藏」的文案按状态拼，这里先占个位
-      { action: 'like', label: '', icon: 'love' },
-    ]
-    // 歌单只能写 QQ 的歌，别的源就别摆这两个入口了
+    const next: Row[] = [{ action: 'play', label: t('play'), icon: 'play' }]
+    // 收藏和歌单都得落到 QQ 账号上（本地列表早就不维护了），别的源不摆这几个入口
     if (musicInfo.source == 'tx') {
       next.push(
+        // 文案按收藏状态拼，这里先占个位
+        { action: 'like', label: '', icon: 'love' },
         { action: 'addToPlaylist', label: t('qq_playlist_add_to'), icon: 'add-music' },
         { action: 'removeFromPlaylist', label: t('qq_playlist_remove_from'), icon: 'remove' },
       )
