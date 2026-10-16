@@ -83,13 +83,6 @@ export class StateEvent extends Event {
     this.emit('mylistUpdated', lists)
   }
 
-  /**
-   * 我的列表切换
-   */
-  mylistToggled(id: string) {
-    this.emit('mylistToggled', id)
-  }
-
   fetchingListStatusUpdated(fetchingListStatus: ListState['fetchingListStatus']) {
     this.emit('fetchingListStatusUpdated', fetchingListStatus)
   }

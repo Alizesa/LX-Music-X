@@ -343,8 +343,13 @@ export const addTasks = async(musicInfos: LX.Music.MusicInfoOnline[], quality: L
     existing.add(task.id)
   }
   const added: LX.Download.DownloadTask[] = []
+  // 选了「QQ 账号」取链、而账号没会员（设置里那一项）时，账号那边只能给标准音质。
+  // 任务音质得跟着降到 128k：不然取回来的是 128k 文件，后面的文件大小校验却拿
+  // 320k 的预期大小去比，判成「可能下错了音质」把任务废掉。
+  const accountOnlyStandard = settingState.setting['player.noVipStandardQuality'] &&
+    settingState.setting['download.urlSource'] === 'account'
   for (const musicInfo of musicInfos) {
-    const targetQuality = getPlayQuality(quality, musicInfo)
+    const targetQuality = accountOnlyStandard ? '128k' : getPlayQuality(quality, musicInfo)
     const id = toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`)
     if (existing.has(id)) continue
     existing.add(id)

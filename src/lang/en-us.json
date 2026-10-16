@@ -260,6 +260,7 @@
   "setting_backup_part_import_list": "Import lists",
   "setting_backup_part_import_list_desc": "Choose a list backup file",
   "setting_backup_part_import_list_tip_error": "Failed to import list 😕",
+  "setting_backup_part_import_list_tip_removed": "The default/liked lists are gone, so this backup is skipped",
   "setting_backup_part_import_list_tip_running": "🚀I am trying to import...\nIf the list is too big, it may take some time⏳",
   "setting_backup_part_import_list_tip_success": "Successfully imported 🎉",
   "setting_backup_part_import_list_tip_unzip": "📦File parsing...\nIf the file is too large, it may take some time⏳",

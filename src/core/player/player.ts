@@ -738,8 +738,9 @@ const toggleCollect = async(liked: boolean, target?: LX.Music.MusicInfo) => {
     toast(error instanceof Error ? error.message : global.i18n.t('qq_like_failed'), 'long')
     return
   }
-  // 走到这儿是 'unsupported'：不是 QQ 的歌，或者没登录
-  toast(global.i18n.t('qq_like_unsupported'), 'long')
+  // 走到这儿是 'unsupported'，三种原因：不是 QQ 的歌 / 没登录 / 拿不到歌曲身份。
+  // 头两种得分开提示 —— 对着 QQ 的歌说「只能收藏 QQ 音乐的歌」，用户根本不知道该去登录
+  toast(global.i18n.t(musicInfo.source == 'tx' ? 'qq_not_logged_in' : 'qq_like_unsupported'), 'long')
 }
 
 /**

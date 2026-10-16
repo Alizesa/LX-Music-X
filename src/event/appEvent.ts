@@ -29,13 +29,6 @@ export class AppEvent extends Event {
   }
 
   /**
-   * 我的列表切换
-   */
-  mylistToggled(id: string) {
-    this.emit('listToggled', id)
-  }
-
-  /**
    * 音乐信息切换
    */
   musicToggled() {

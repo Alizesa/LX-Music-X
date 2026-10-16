@@ -1,5 +1,5 @@
 import { getQQMusicDailyPosition, removeQQMusicDailyPosition, saveQQMusicDailyPosition } from '@/utils/data'
-import { setTempList } from '@/core/list'
+import { getListMusics, setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { isPlayQueueFromList } from '@/core/player/playQueue'
 import listState from '@/store/list/state'
@@ -33,7 +33,15 @@ export const initQQMusicDailyPosition = () => {
     const raw = playerState.playMusicInfo.musicInfo
     if (!raw) return
     const musicInfo = 'progress' in raw ? raw.metadata.musicInfo : raw
-    void saveQQMusicDailyPosition({ songId: musicInfo.id, savedAt: Date.now() })
+    // 上面三道还不够：单曲播放是往队列尾部追加（见 OnlineList 的 handlePlay），
+    // 新歌会继承队列首项的 temp 标记，而首项可能正是每日推荐那批 —— 队列来源和
+    // 临时列表标记都没变，于是别的歌也能混进来被记成「每日推荐播到哪了」。
+    // 所以再确认这首确实在那批歌里：每日推荐整表播放就是把那批灌进临时列表的。
+    // 读用异步那份：重启后临时列表还没载入内存，同步读会读到空
+    void getListMusics(LIST_IDS.TEMP).then(songs => {
+      if (!songs.some(song => song.id == musicInfo.id)) return
+      void saveQQMusicDailyPosition({ songId: musicInfo.id, savedAt: Date.now() })
+    })
   })
 }
 

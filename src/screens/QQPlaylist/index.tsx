@@ -107,7 +107,13 @@ export default ({ componentId, info }: Props) => {
           await saveQQMusicDailyPlaylistCache(songs)
         } else {
           songs = await getQQMusicDailyPlaylistCache()
-          if (!songs.length) throw new Error(t('qq_load_failed'))
+          if (!songs.length) {
+            // 缓存还没铺：首页那个入口进页面前会先拉一次，这里是兜底（比如从别处进来）
+            const { cookie } = await getQQMusicSession()
+            if (!cookie) throw new Error(t('qq_not_logged_in'))
+            songs = await getQQMusicDailyPlaylist(cookie)
+            await saveQQMusicDailyPlaylistCache(songs)
+          }
         }
       } else if (info.liked) {
         // 「我喜欢」走持久缓存：全量要翻好几页，进页面不该重拉，只有下拉刷新才联网。

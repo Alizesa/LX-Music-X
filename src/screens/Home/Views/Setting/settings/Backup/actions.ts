@@ -77,6 +77,12 @@ const importNewListData = async(lists: LX.List.UserListInfoFull[]) => {
  * @returns
  */
 export const handleImportListPart = async(listData: LX.ConfigFile.MyListInfoPart['data'], position: number = listState.userList.length) => {
+  // 老备份里可能是「试听列表」/「我的收藏」的单列表导出。这两类已经拆了，
+  // 放进来只会在自建歌单里凭空多一个幽灵列表，跟整份导入那边的处理保持一致：跳过
+  if (isRemovedListId(listData.id)) {
+    toast(global.i18n.t('setting_backup_part_import_list_tip_removed'), 'long')
+    return
+  }
   const targetList = listState.allList.find(l => l.id === listData.id)
   if (targetList) {
     const confirm = await confirmDialog({
@@ -131,11 +137,13 @@ const importPlayList = async(path: string) => {
   }
 
   switch (configData.type) {
-    // 兼容 0.6.2 及以前版本的列表数据。那两种导出的都是「试听列表」，
-    // 这个列表已经拆了，导进来没有落点，确认完就当空处理
+    // 兼容 0.6.2 及以前版本的列表数据。单列表导出的都是「试听列表」，
+    // 这个列表已经拆了，导进来没有落点 —— 明确说一声并跳过，
+    // 不能让它走成「导入成功」（数据其实被丢掉了）
     case 'defautlList':
       if (!await showConfirm()) return true
-      break
+      toast(global.i18n.t('setting_backup_part_import_list_tip_removed'), 'long')
+      return true
     case 'playList':
       if (!await showConfirm()) return true
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument

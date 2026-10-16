@@ -107,12 +107,12 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
       const next = buildRows(selectInfo.musicInfo)
       setRows(next)
       popupRef.current?.setVisible(true)
-      // 有没有缓存是异步问的，回来后补一次禁用态
+      // 有没有缓存是异步问的，回来后补一次禁用态。
+      // 这期间可能已经关掉、又在另一首上打开了菜单（selectInfoRef 一直指向当前面板那首），
+      // 那这份结果就属于上一首了，直接丢掉
       void hasUrlCache(selectInfo.musicInfo).then(hasCache => {
-        const index = next.findIndex(row => row.action == 'removeCache')
-        if (index < 0) return
-        next[index] = { ...next[index], disabled: !hasCache }
-        setRows([...next])
+        if (selectInfoRef.current.musicInfo.id != selectInfo.musicInfo.id) return
+        setRows(prev => prev.map(row => row.action == 'removeCache' ? { ...row, disabled: !hasCache } : row))
       })
     },
   }))

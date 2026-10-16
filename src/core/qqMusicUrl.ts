@@ -96,8 +96,9 @@ export interface QQAccountUrl {
  * 逐档往下试：首选音质拿不到就退一档。各档都只给试听时，再用网页兼容票
  * (platform 20) 试一次 —— App 通道偶尔只会返回试听重定向，而这首其实是能听的。
  *
- * maxQuality 是账号能拿到的最高档：没开会员的账号只有标准音质，传 '128k' 就只试这一档
- * （每档一次请求，白试无损/320k 是纯浪费）。默认无损，等于不设限。
+ * maxQuality 是这次允许试到的最高档，调用方按「用户选的音质」+「账号有没有会员」来传，
+ * 不传按无损处理（等于不设限）。每试一档就是一次 vkey 请求，所以把上限收窄是有意义的：
+ * 没开会员的账号只有标准音质，传 '128k' 时就只剩这一档，不会再白试上面那三档。
  */
 export const getQQMusicUrlByAccount = async(
   musicInfo: LX.Music.MusicInfo_tx,

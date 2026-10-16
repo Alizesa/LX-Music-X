@@ -255,30 +255,48 @@ export default () => {
     }
   }, [cookie, loggedIn, t])
 
+  /**
+   * 要用的那批每日推荐。缓存还没铺（新装、刚登录、上次拉取失败）时先联网拉一次 ——
+   * 「进页面只读缓存」是说进页面，用户点了卡片却弹登录是说不通的。
+   * 没登录才弹登录框；拉取失败提示一下就收工。
+   */
+  const ensureDailySongs = useCallback(async(): Promise<Songs | null> => {
+    if (daily.length) return daily
+    if (!loggedIn) {
+      loginRef.current?.show()
+      return null
+    }
+    try {
+      const songs = await getQQMusicDailyPlaylist(cookie)
+      setDaily(songs)
+      await saveQQMusicDailyPlaylistCache(songs)
+      return songs
+    } catch (error: unknown) {
+      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      return null
+    }
+  }, [cookie, daily, loggedIn, t])
+
   // 每日推荐整表播放。用 30 首的独立列表，不挂电台续播那套
   const playDaily = useCallback(async() => {
-    if (!daily.length) {
-      loginRef.current?.show()
-      return
-    }
+    const songs = await ensureDailySongs()
+    if (!songs) return
     // 接着上次那首放（见 core/qqMusicDailyPosition）。列表换了/歌没了会自动回到开头
-    await playQQMusicDailyPlaylist(daily)
-  }, [daily])
+    await playQQMusicDailyPlaylist(songs)
+  }, [ensureDailySongs])
 
   // 卡片本身进歌单页（头图 + 那 30 首），播放交给右下角的按钮
-  const openDaily = useCallback(() => {
-    if (!daily.length) {
-      loginRef.current?.show()
-      return
-    }
+  const openDaily = useCallback(async() => {
+    const songs = await ensureDailySongs()
+    if (!songs) return
     navigations.pushQQPlaylistScreen(commonState.componentIds.home!, {
       id: DAILY_LIST_ID,
       name: t('qq_daily_recommend'),
       daily: true,
-      cover: daily[0]?.meta.picUrl,
-      subtitle: t('mine_song_count', { num: daily.length }),
+      cover: songs[0]?.meta.picUrl,
+      subtitle: t('mine_song_count', { num: songs.length }),
     })
-  }, [daily, t])
+  }, [ensureDailySongs, t])
 
   // 猜你喜欢走电台续播：播到快结束自动续下一批
   const playGuess = useCallback(async() => {
@@ -346,7 +364,7 @@ export default () => {
             title={t('qq_daily_recommend')}
             subtitle={t('mine_song_count', { num: daily.length })}
             cover={daily[0]?.meta.picUrl}
-            onPress={openDaily}
+            onPress={() => { void openDaily() }}
             action={<IconAction overlay icon="play" onPress={() => { void playDaily() }} />}
           />
           <SquareCard

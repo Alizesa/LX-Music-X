@@ -260,6 +260,7 @@
   "setting_backup_part_import_list": "导入列表",
   "setting_backup_part_import_list_desc": "选择列表备份文件",
   "setting_backup_part_import_list_tip_error": "列表导入失败😕",
+  "setting_backup_part_import_list_tip_removed": "「试听列表」/「我的收藏」已经拆掉了，这类备份不再导入",
   "setting_backup_part_import_list_tip_running": "🚀正在努力导入中...\n若列表太大可能需要一些时间⏳",
   "setting_backup_part_import_list_tip_success": "导入成功🎉",
   "setting_backup_part_import_list_tip_unzip": "📦文件解析中...\n若文件太大可能需要一些时间⏳",

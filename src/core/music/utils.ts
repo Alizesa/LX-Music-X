@@ -307,7 +307,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   const targetQuality = quality ?? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
   // 没开会员的账号只有标准音质这一档（设置里那一项就是给这种情况用的）：账号取链按这一档走，
   // 不再逐档往下试无损/320k —— 每试一档就是一次 vkey 请求，非会员账号那些尝试注定落空。
-  // 开了会员（或没开这个设置）时按 targetQuality 走，不设上限。
+  // 开了会员（或没开这个设置）时按 targetQuality 走：上限就是用户选的那一档，不越过它往上试。
   const accountQuality = settingState.setting['player.noVipStandardQuality'] ? '128k' : targetQuality
   const order = urlSourceOrder ?? (settingState.setting['player.urlSource'] === 'source' ? 'sourceFirst' : 'accountFirst')
 

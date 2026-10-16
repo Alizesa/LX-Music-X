@@ -260,6 +260,7 @@
   "setting_backup_part_import_list": "匯入清單",
   "setting_backup_part_import_list_desc": "選取清單備份檔案",
   "setting_backup_part_import_list_tip_error": "清單匯入失敗😕",
+  "setting_backup_part_import_list_tip_removed": "「試聽清單」/「我的最愛」已經拆掉了，這類備份不再匯入",
   "setting_backup_part_import_list_tip_running": "🚀正在努力匯入中...\n若清單太大可能需要一些時間⏳",
   "setting_backup_part_import_list_tip_success": "匯入成功🎉",
   "setting_backup_part_import_list_tip_unzip": "📦檔案解析中...\n若檔案太大可能需要一些時間⏳",
