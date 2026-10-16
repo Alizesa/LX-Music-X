@@ -49,8 +49,9 @@ const RECOMMEND_MAX_TRIES = 6
 const GUESS_RECOMMEND_ID = 99
 const RECOMMEND_PAGE_SIZE = 5
 const PLAYLIST_PAGE_SIZE = 200
-// 推荐歌单每批取多少。推荐流匿名也能用，登录后带票据请求
-const RECOMMEND_PLAYLIST_PAGE_SIZE = 20
+// 推荐歌单每批取多少。MusicOne 打这个接口用的就是 8，跟它保持一致；
+// 这个值同时当「这批是不是满页」的判据用（响应里没有 HasMore 时靠它推还有没有下一批）
+const RECOMMEND_PLAYLIST_PAGE_SIZE = 8
 
 export const parseQQMusicCookie = (cookie: string): Record<string, string> => {
   const result: Record<string, string> = {}
@@ -710,12 +711,17 @@ export const getQQMusicPlaylists = async(cookie: string): Promise<LX.QQMusic.Pla
 }
 
 /**
- * 推荐歌单。走 music.playlist.PlaylistSquare/GetRecommendWhole。
+ * 推荐歌单。走 music.playlist.PlaylistSquare/GetRecommendFeed —— MusicOne 用的就是这个方法
+ * （它的「专属推荐歌单」，登录态才有，参数是扁平的 From/Size），请求形状和 getQQMusicSimilarSongs
+ * 一样走 req_0 信封。
  *
- * 这个接口匿名就能用；已登录时带上账号票据，服务端若能据此个性化就会返回更贴合的结果，
- * 不能的话也只是回落成通用推荐，不影响功能可用。
+ * 早先这里用的是同族的 GetRecommendWhole + IsReqFeed/FeedReq 信封，匿名也能拿到一份通用推荐；
+ * 换过来是为了拿登录态下服务端真正给的个性化结果。
  *
- * From 是偏移量而不是页码，HasMore 指示后面是否还有内容。
+ * 歌单本身仍然是 Playlist.basic 那层嵌套（normalizeRecommendedPlaylist 就是按它写的），
+ * 只是外层容器换成了 data.List（老方法走 data.FeedRsp.List），两个容器都认，免得形态不同就空列表。
+ *
+ * From 是偏移量而不是页码。
  */
 export const getQQMusicRecommendedPlaylists = async(cookie: string, from = 0): Promise<{
   list: LX.QQMusic.PlaylistInfo[]
@@ -728,17 +734,17 @@ export const getQQMusicRecommendedPlaylists = async(cookie: string, from = 0): P
     method: 'post',
     body: {
       comm: authed ? buildAuthComm(cookies) : buildAnonymousComm(),
-      playlist: {
+      req_0: {
         module: 'music.playlist.PlaylistSquare',
-        method: 'GetRecommendWhole',
+        method: 'GetRecommendFeed',
         param: {
-          IsReqFeed: true,
-          FeedReq: { From: from, Size: RECOMMEND_PLAYLIST_PAGE_SIZE },
+          From: from,
+          Size: RECOMMEND_PLAYLIST_PAGE_SIZE,
         },
       },
     },
   })
-  const block = body?.playlist
+  const block = body?.req_0
   // 先确认业务块拿到了。响应被拦、或没解析成 JSON 时 block 是 undefined，
   // 此时若只判 block.code 会当成"成功但为空"，界面显示空列表、还把空结果写进缓存。
   // 这里只拦「块不存在」，不额外校验外层 code —— 外层码在登录态下的取值没有验证过，
@@ -747,9 +753,11 @@ export const getQQMusicRecommendedPlaylists = async(cookie: string, from = 0): P
     throw new Error(String(body?.message ?? body?.msg ?? global.i18n.t('qq_load_failed')))
   }
   if (Number(block.code ?? 0) !== 0) {
-    throw new Error(String(block.message ?? block.msg ?? global.i18n.t('qq_load_failed')))
+    // 业务码的消息有的在 block 上，有的塞在 data.msg 里（MusicOne 也是这么兜的）
+    throw new Error(String(block.message ?? block.msg ?? block.data?.msg ?? global.i18n.t('qq_load_failed')))
   }
-  const feed = block?.data?.FeedRsp ?? {}
+  const data = block?.data ?? {}
+  const feed = data.FeedRsp ?? data
   const rawList: any[] = Array.isArray(feed.List) ? feed.List : []
   const list = rawList
     .map((item: any) => normalizeRecommendedPlaylist(item?.Playlist))
@@ -757,9 +765,13 @@ export const getQQMusicRecommendedPlaylists = async(cookie: string, from = 0): P
   return {
     list,
     // 请求的 From 是服务端原始流的偏移量，所以游标要按原始条数前进，
-    // 不能用映射后的条数：个别条目缺字段被丢掉时会让下一批重复上一批的尾巴
-    // 空批次视为取尽，否则游标原地不动，每次刷新都在请求同一个偏移量
-    hasMore: !!feed.HasMore && rawList.length > 0,
+    // 不能用映射后的条数：个别条目缺字段被丢掉时会让下一批重复上一批的尾巴。
+    // 空批次视为取尽，否则游标原地不动，每次刷新都在请求同一个偏移量。
+    // HasMore 是 GetRecommendWhole 保证有的字段，换到 GetRecommendFeed 后不一定给，
+    // 缺了就按「这批是不是满页」推：不兜这一下的话 hasMore 恒为 false，
+    // 页面每次刷新都会把游标打回 0，反复看到同一批。
+    hasMore: rawList.length > 0 &&
+      (feed.HasMore == null ? rawList.length >= RECOMMEND_PLAYLIST_PAGE_SIZE : !!feed.HasMore),
     nextFrom: from + rawList.length,
   }
 }
