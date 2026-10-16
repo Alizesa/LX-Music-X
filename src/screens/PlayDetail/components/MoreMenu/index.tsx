@@ -5,12 +5,9 @@ import Text from '@/components/common/Text'
 import Image from '@/components/common/Image'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
-import { createStyle, toast } from '@/utils/tools'
+import { createStyle } from '@/utils/tools'
 import playerState from '@/store/player/state'
-import { filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession } from '@/core/qqMusic'
-import { setQQMusicTrackInPlaylist } from '@/core/qqMusicFavorite'
-import { dropCachedPlaylistSongs } from '@/core/qqMusicPlaylistSongsCache'
-import { getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache } from '@/utils/data'
+import { changeQQMusicPlaylistMembership, loadWritableQQMusicPlaylists } from '@/core/qqMusicFavorite'
 
 type Mode = 'actions' | 'add' | 'remove'
 type Playlist = LX.QQMusic.PlaylistInfo
@@ -42,25 +39,9 @@ export default forwardRef<MoreMenuType>((_, ref) => {
   const [busy, setBusy] = useState(false)
 
   const loadPlaylists = async() => {
-    const cached = filterVisiblePlaylists(await getQQMusicPlaylistsCache())
-    // 只列自己创建的歌单：收藏来的写不了
-    let created = cached.filter(item => !item.subscribed && !item.liked)
-    // 缓存可能是**旧版本**写进去的（那时歌单对象上还没有 dirId 字段，而页面只有手动下拉
-    // 才会重拉），拿不到目录编号就没法写歌单。发现缺编号就自己重拉一次并落盘，
-    // 不指望用户记得去下拉刷新。
-    if (created.some(item => !item.dirId)) {
-      const { cookie } = await getQQMusicSession()
-      if (cookie) {
-        try {
-          const fresh = await getQQMusicPlaylists(cookie)
-          await saveQQMusicPlaylistsCache(fresh)
-          created = filterVisiblePlaylists(fresh).filter(item => !item.subscribed && !item.liked)
-        } catch (error) {
-          console.warn('[QQMusic] 刷新歌单失败:', error instanceof Error ? error.message : error)
-        }
-      }
-    }
-    setPlaylists(created)
+    // 候选（自己创建的歌单）和「缓存里缺 dirId 就自己重拉一次」都在 core 里，
+    // 行菜单用的是同一份
+    setPlaylists(await loadWritableQQMusicPlaylists())
   }
 
   useImperativeHandle(ref, () => ({
@@ -78,22 +59,12 @@ export default forwardRef<MoreMenuType>((_, ref) => {
     const add = mode == 'add'
     setBusy(true)
     try {
-      const result = await setQQMusicTrackInPlaylist(musicInfo, playlist, add)
-      if (result == 'ok') {
-        toast(t(add ? 'qq_playlist_added' : 'qq_playlist_removed', { name: playlist.name }))
-        // 歌单内容变了，缓存作废，下次进歌单页会重新取
-        void dropCachedPlaylistSongs(playlist.id)
-        popupRef.current?.setVisible(false)
-        return
-      }
-      // 写失败是抛错出来的（带服务端返回码），走下面的 catch
-      toast(t('qq_playlist_write_unsupported'), 'long')
-    } catch (error: unknown) {
-      toast(error instanceof Error ? error.message : t('qq_playlist_write_failed'), 'long')
+      // 提示和缓存作废都在里面做掉了
+      if (await changeQQMusicPlaylistMembership(musicInfo, playlist, add)) popupRef.current?.setVisible(false)
     } finally {
       setBusy(false)
     }
-  }, [busy, mode, t])
+  }, [busy, mode])
 
   const renderBody = () => {
     if (mode == 'actions') {

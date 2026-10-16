@@ -723,8 +723,9 @@ export const togglePlay = () => {
  * QQ 的歌且已登录时直接写账号的「我喜欢」，不再落本地列表；
  * 其余情况（不是 QQ 的歌、或没登录）退回本地「我的收藏」列表。
  */
-const toggleCollect = async(liked: boolean) => {
-  const raw = playerState.playMusicInfo.musicInfo
+const toggleCollect = async(liked: boolean, target?: LX.Music.MusicInfo) => {
+  // 不传就收拾当前正在播的那首（播放详情页的红心）；列表行菜单会传具体某一首
+  const raw = target ?? playerState.playMusicInfo.musicInfo
   if (!raw) return
   const musicInfo = 'progress' in raw ? raw.metadata.musicInfo : raw
   try {
@@ -751,6 +752,15 @@ export const collectMusic = () => { void toggleCollect(true) }
  * 取消收藏当前播放的歌曲
  */
 export const uncollectMusic = () => { void toggleCollect(false) }
+
+/**
+ * 收藏/取消收藏指定的某一首（列表行菜单用）。
+ * 分流（QQ 写账号的「我喜欢」、其余退本地列表）和失败提示都在 toggleCollect 里，
+ * 和播放详情页那颗红心走的是同一条路。
+ */
+export const setMusicCollected = async(musicInfo: LX.Music.MusicInfo, liked: boolean) => {
+  await toggleCollect(liked, musicInfo)
+}
 
 /**
  * 不喜欢当前播放的歌曲

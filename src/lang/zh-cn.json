@@ -448,6 +448,7 @@
   "timeout_exit_tip_on": "{time} 后停止播放",
   "toggle_source_failed": "换源失败，请尝试手动在搜索页指定其他来源搜索该歌曲播放",
   "toggle_source_try": "尝试切换到其他来源...",
+  "uncollect": "取消收藏",
   "understand": "已了解 👌",
   "user_api__init_failed_alert": "自定义源「{name}」初始化失败：",
   "user_api_add_failed_tip": "无效的自定义源文件",

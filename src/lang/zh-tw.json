@@ -448,6 +448,7 @@
   "timeout_exit_tip_on": "{time} 後停止播放",
   "toggle_source_failed": "變更來源失敗，請嘗試手動在搜尋頁指定其他音樂串流平台搜尋該歌曲播放",
   "toggle_source_try": "嘗試變更到其他來源...",
+  "uncollect": "取消收藏",
   "understand": "已了解 👌",
   "user_api__init_failed_alert": "自訂來源 API「{name}」初始化失敗：",
   "user_api_add_failed_tip": "無效的自訂來源 API 檔案",

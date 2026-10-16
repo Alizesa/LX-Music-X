@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicTrackIdentity, postAuthedMusicu } from './qqMusic'
-import { getQQMusicLikedSongsCache, removeQQMusicLikedSongsCache, saveQQMusicLikedSongsCache } from '@/utils/data'
-import { clearPlaylistSongsCache } from './qqMusicPlaylistSongsCache'
+import { filterVisiblePlaylists, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicTrackIdentity, postAuthedMusicu } from './qqMusic'
+import { getQQMusicLikedSongsCache, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, saveQQMusicLikedSongsCache, saveQQMusicPlaylistsCache } from '@/utils/data'
+import { clearPlaylistSongsCache, dropCachedPlaylistSongs } from './qqMusicPlaylistSongsCache'
+import { toast } from '@/utils/tools'
 
 // 「我喜欢」是 dirid=201 的虚拟歌单
 const LIKED_DIRID = '201'
@@ -246,6 +247,57 @@ export const setQQMusicTrackInPlaylist = async(
   // 光看返回码会把 no-op 当成成功报给用户。参考实现也是写完读回来验一遍的。
   await assertPlaylistMember(cookie, target.id, target.dirId, songId, add)
   return 'ok'
+}
+
+/** 能往里写歌的那批：自己创建的歌单。收藏来的写不了 */
+const writablePlaylists = (list: LX.QQMusic.PlaylistInfo[]) =>
+  filterVisiblePlaylists(list).filter(item => !item.subscribed && !item.liked)
+
+/**
+ * 「添加到歌单」的候选列表。
+ *
+ * 缓存可能是**旧版本**写进去的（那时歌单对象上还没有 dirId 字段，而页面只有手动下拉
+ * 才会重拉），拿不到目录编号就没法写歌单。发现缺编号就自己重拉一次并落盘，
+ * 不指望用户记得去下拉刷新。
+ */
+export const loadWritableQQMusicPlaylists = async(): Promise<LX.QQMusic.PlaylistInfo[]> => {
+  const cached = writablePlaylists(await getQQMusicPlaylistsCache())
+  if (!cached.some(item => !item.dirId)) return cached
+  const { cookie } = await getQQMusicSession()
+  if (!cookie) return cached
+  try {
+    const fresh = await getQQMusicPlaylists(cookie)
+    await saveQQMusicPlaylistsCache(fresh)
+    return writablePlaylists(fresh)
+  } catch (error) {
+    console.warn('[QQMusic] 刷新歌单失败:', error instanceof Error ? error.message : error)
+    return cached
+  }
+}
+
+/**
+ * 加进/移出歌单，连提示和缓存作废一起做掉 —— 菜单只管调它、按返回值决定要不要收尾。
+ * 返回是否成功；失败时提示语已经发出去了，调用方不用再拼一遍。
+ */
+export const changeQQMusicPlaylistMembership = async(
+  musicInfo: LX.Music.MusicInfo,
+  playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name' | 'dirId'>,
+  add: boolean,
+): Promise<boolean> => {
+  try {
+    const result = await setQQMusicTrackInPlaylist(musicInfo, playlist, add)
+    if (result == 'ok') {
+      toast(global.i18n.t(add ? 'qq_playlist_added' : 'qq_playlist_removed', { name: playlist.name }))
+      // 歌单内容变了，缓存作废，下次进歌单页会重新取
+      void dropCachedPlaylistSongs(playlist.id)
+      return true
+    }
+    // 写失败是抛错出来的（带服务端返回码），走下面的 catch
+    toast(global.i18n.t('qq_playlist_write_unsupported'), 'long')
+  } catch (error: unknown) {
+    toast(error instanceof Error ? error.message : global.i18n.t('qq_playlist_write_failed'), 'long')
+  }
+  return false
 }
 
 /** 写完读回歌单，确认这首歌的状态真的变了。对不上就抛错，不能谎报成功。 */

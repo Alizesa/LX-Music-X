@@ -4,7 +4,7 @@ import { View } from 'react-native'
 import List, { type ListProps, type ListType, type Status, type RowInfoType } from './List'
 import ListMenu, { type ListMenuType, type Position } from './ListMenu'
 import MultipleModeBar, { type MultipleModeBarType, type SelectMode } from './MultipleModeBar'
-import { clearMusicUrl, handleAddToPlayQueue, handleDislikeMusic, handlePlay, handlePlayLater, handleShare, handleShowMusicSourceDetail } from './listAction'
+import { clearMusicUrl, handleAddToPlayQueue, handleDislikeMusic, handlePlay, handlePlayLater, handleShare } from './listAction'
 import { createStyle, toast } from '@/utils/tools'
 import { addTasks } from '@/core/download'
 
@@ -102,7 +102,6 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
           hancelExitSelect()
         }}
         onCopyName={info => { handleShare(info.musicInfo) }}
-        onMusicSourceDetail={info => { void handleShowMusicSourceDetail(info.musicInfo) }}
         onRemoveCache={info => { void clearMusicUrl(info.musicInfo) }}
         onDislikeMusic={info => { void handleDislikeMusic(info.musicInfo) }}
       />
