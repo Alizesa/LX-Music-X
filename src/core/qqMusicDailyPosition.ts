@@ -1,4 +1,4 @@
-import { getQQMusicDailyPosition, saveQQMusicDailyPosition } from '@/utils/data'
+import { getQQMusicDailyPosition, removeQQMusicDailyPosition, saveQQMusicDailyPosition } from '@/utils/data'
 import { isPlayQueueFromList } from '@/core/player/playQueue'
 import listState from '@/store/list/state'
 import playerState from '@/store/player/state'
@@ -35,12 +35,31 @@ export const initQQMusicDailyPosition = () => {
   })
 }
 
+/** 跨天的存档作废：每日推荐每天都换一批，昨天记的位置只对昨天那批有意义 */
+const isSameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString()
+
+// 存档是尽力而为的：读写失败只记一条日志。
+// 读这一侧在点「每日推荐」的关键路径上（resolveQQMusicDailyIndex 的返回值决定起播位置），
+// 不该因为一次存储抖动就让整个起播失败。同 qqMusicRecommendSession 的 onStorageError。
+const onStorageError = (error: unknown): null => {
+  console.warn('[QQMusic] daily position io failed:', error instanceof Error ? error.message : error)
+  return null
+}
+
 /**
  * 上次播到的那首歌在当前列表里的位置；找不到就从头放（0）。
  * 今天换了新的一批、或那首歌被下掉了，都会落到 0。
+ *
+ * 跨天也作废：昨天那首哪怕今天还在列表里，也从头开始放
+ * （与 qqMusicRecommendSession 的存档同一个规矩）。
  */
 export const resolveQQMusicDailyIndex = async(songs: LX.Music.MusicInfoOnline[]) => {
-  const saved = await getQQMusicDailyPosition()
+  const saved = await getQQMusicDailyPosition().catch(onStorageError)
   if (!saved) return 0
+  if (!isSameDay(saved.savedAt, Date.now())) {
+    // 作废掉的那份留着没意义，顺手清掉，免得下次再判一遍；清失败不影响这次起播
+    void removeQQMusicDailyPosition().catch(onStorageError)
+    return 0
+  }
   return Math.max(songs.findIndex(song => song.id == saved.songId), 0)
 }
