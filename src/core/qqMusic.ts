@@ -182,8 +182,6 @@ export const postAuthedMusicu = async(
   })
 }
 
-// 歌曲详情接口使用网页端信封。MusicOne 的可用实现固定为 req_1 + yqq.json，
-// 与写歌单使用的 App 登录信封不是同一套协议。
 const buildCommonComm = (cookies: Record<string, string>) => ({
   cv: 4747474,
   ct: 24,
@@ -610,7 +608,6 @@ export const getQQMusicTrackIdentity = async(
   const songType = Number(info.type)
   return {
     songId: Number.isFinite(songId) && songId > 0 ? songId : fallbackSongId,
-    // QQ 的普通歌曲 providerType 可能就是 0，不能用 `||` 把它回退成旧值。
     songType: Number.isFinite(songType) && songType >= 0 ? songType : fallbackSongType,
   }
 }
