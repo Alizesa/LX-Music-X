@@ -129,7 +129,6 @@
   "local_songs_imported": "已匯入 {num} 首",
   "local_songs_empty": "還沒有本地歌曲，點右上角匯入",
   "local_songs_import_failed": "匯入失敗",
-  "mine_cloud_history": "QQ 雲端記錄",
   "list_remove": "移除",
   "list_remove_cache": "清理快取",
   "list_remove_cache_fail_tip": "清理失敗：{msg}",

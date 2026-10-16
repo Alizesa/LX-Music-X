@@ -503,39 +503,6 @@ export const getQQMusicSimilarSongs = async(cookie: string, songId: string | num
   }
 }
 
-const RECENT_PLAY_SONG_TYPE = 2
-// 一次最多取多少条云端记录。服务端没给明确上限，取一个足够大的窗口。
-const RECENT_PLAY_WINDOW = 500
-
-/**
- * 云端「最近播放」的歌曲。type=2 是歌曲维度（type=4 是歌单维度，这里用不上）。
- * lastTime 是秒级时间戳，按它倒序；缺失的按 0 排到最后。
- */
-export const getQQMusicRecentSongs = async(cookie: string): Promise<LX.Player.PlayHistoryItem[]> => {
-  const cookies = parseQQMusicCookie(cookie)
-  if (!readUin(cookies) || !readMusicKey(cookies)) throw new Error(global.i18n.t('qq_cookie_invalid'))
-  const body = await request(QQ_MUSICU_URL, cookie, {
-    method: 'post',
-    body: {
-      comm: buildAuthComm(cookies),
-      req_0: {
-        module: 'music.musicasset.PlayRecentlyRead',
-        method: 'GetPlayRecentlyInfo',
-        param: { type: RECENT_PLAY_SONG_TYPE, updateTime: 0, requestCnt: RECENT_PLAY_WINDOW },
-      },
-    },
-  })
-  const items = body?.req_0?.data?.songList
-  if (!Array.isArray(items)) return []
-  const result: LX.Player.PlayHistoryItem[] = []
-  for (const item of items) {
-    const musicInfo = mapSongs([item?.track])[0]
-    if (!musicInfo) continue
-    result.push({ musicInfo, playedAt: Number(item?.lastTime ?? 0) * 1000 })
-  }
-  return result.sort((a, b) => b.playedAt - a.playedAt)
-}
-
 /**
  * 头像地址归一化。
  *

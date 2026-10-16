@@ -129,7 +129,6 @@
   "local_songs_imported": "Imported {num} songs",
   "local_songs_empty": "No local songs yet — tap Import in the top right",
   "local_songs_import_failed": "Import failed",
-  "mine_cloud_history": "QQ cloud history",
   "list_remove": "Remove",
   "list_remove_cache": "Clear cache",
   "list_remove_cache_fail_tip": "Cleanup failed: {msg}",

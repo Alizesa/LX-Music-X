@@ -52,6 +52,9 @@ export default async(appSetting: LX.AppSetting) => {
   // 每日推荐的播放位置记忆
   const { initQQMusicDailyPosition } = await import('@/core/qqMusicDailyPosition')
   initQQMusicDailyPosition()
+  // 把本机播放上报到 QQ 的云端「最近播放」（只写不读，见那个模块的说明）
+  const { initQQMusicRecentPlayReport } = await import('@/core/qqMusicRecentPlay')
+  initQQMusicRecentPlayReport()
   // 老版本落盘的推荐队列没有专属来源标记，补一次，之后判断只看队列自己的标记。
   // 要放在上面的 setTempListMeta 之后（判断要用到临时列表标记）和 initPlayQueue 之后。
   await migrateRecommendPlayQueue()

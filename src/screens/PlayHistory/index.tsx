@@ -9,15 +9,15 @@ import Image from '@/components/common/Image'
 import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS } from '@/config/constant'
 import { addTempPlayList } from '@/core/player/tempPlayList'
-import { getQQMusicRecentSongs, getQQMusicSession } from '@/core/qqMusic'
 import { getPlayHistory } from '@/utils/data'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
 
-type Row =
-  | { kind: 'header', key: string, title: string }
-  | { kind: 'item', key: string, item: LX.Player.PlayHistoryItem }
+interface Row {
+  key: string
+  item: LX.Player.PlayHistoryItem
+}
 
 const formatDate = (timestamp: number) => {
   if (!timestamp) return ''
@@ -26,13 +26,13 @@ const formatDate = (timestamp: number) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-// 最近播放：本机记录 + QQ 云端记录两个来源。
-// 云端只补本机没有的（按歌曲 id 去重），所以同一次播放不会出现两行。
+// 播放历史。这里只显示本机这份记录 —— 本机播放会一并上报到 QQ 的云端「最近播放」，
+// 但那份不读回来（只写不读，见 core/qqMusicRecentPlay），要去 QQ 客户端那边看。
+// 已播列表（随机模式的去重表）和这个没关系，见 core/player/playedList。
 export default ({ componentId }: { componentId: string }) => {
   const t = useI18n()
   const theme = useTheme()
   const [local, setLocal] = useState<LX.Player.PlayHistoryItem[]>([])
-  const [cloud, setCloud] = useState<LX.Player.PlayHistoryItem[]>([])
   const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
@@ -43,41 +43,16 @@ export default ({ componentId }: { componentId: string }) => {
     return () => { global.app_event.off('playHistoryUpdate', loadLocal) }
   }, [componentId])
 
-  const loadCloud = useCallback(async() => {
-    const { cookie } = await getQQMusicSession()
-    // 没登录就没有云端记录，静默跳过（本机记录照常显示）
-    if (!cookie) {
-      setCloud([])
-      return
-    }
-    try {
-      setCloud(await getQQMusicRecentSongs(cookie))
-    } catch {
-      // 云端失败不该把本机记录一起废掉，保持上一次的结果
-    }
-  }, [])
-
-  useEffect(() => { void loadCloud() }, [loadCloud])
-
   const refresh = useCallback(async() => {
     setRefreshing(true)
     try {
       setLocal(await getPlayHistory())
-      await loadCloud()
     } finally {
       setRefreshing(false)
     }
-  }, [loadCloud])
+  }, [])
 
-  const localIds = new Set(local.map(item => item.musicInfo.id))
-  const cloudOnly = cloud.filter(item => !localIds.has(item.musicInfo.id))
-
-  const rows: Row[] = [
-    ...(local.length ? [{ kind: 'header' as const, key: 'h-local', title: t('setting_history') }] : []),
-    ...local.map((item, index) => ({ kind: 'item' as const, key: `l-${item.musicInfo.id}-${item.playedAt}-${index}`, item })),
-    ...(cloudOnly.length ? [{ kind: 'header' as const, key: 'h-cloud', title: t('mine_cloud_history') }] : []),
-    ...cloudOnly.map((item, index) => ({ kind: 'item' as const, key: `c-${item.musicInfo.id}-${item.playedAt}-${index}`, item })),
-  ]
+  const rows: Row[] = local.map((item, index) => ({ kind: 'item' as const, key: `l-${item.musicInfo.id}-${item.playedAt}-${index}`, item }))
 
   return (
     <PageContent>
@@ -90,9 +65,6 @@ export default ({ componentId }: { componentId: string }) => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh() }} colors={[theme['c-primary']]} />}
         ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{t('setting_play_history_empty')}</Text>}
         renderItem={({ item: row }) => {
-          if (row.kind == 'header') {
-            return <Text style={styles.sectionTitle} size={13} color={theme['c-font-label']}>{row.title}</Text>
-          }
           // 播放历史里的条目可能是「下载列表」那种旧结构，取真实歌曲信息时要拆一层
           const info = 'metadata' in row.item.musicInfo ? row.item.musicInfo.metadata.musicInfo : row.item.musicInfo
           return (
@@ -120,7 +92,6 @@ export default ({ componentId }: { componentId: string }) => {
 
 const styles = createStyle({
   list: { flex: 1 },
-  sectionTitle: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
   item: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1 },
   pic: { width: 48, height: 48, borderRadius: 3, marginRight: 10 },
   info: { flex: 1 },
