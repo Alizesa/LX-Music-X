@@ -379,6 +379,8 @@
   "setting_play_handle_audio_focus": "其他应用播放声音时，自动暂停播放",
   "setting_play_handle_audio_focus_tip": "重启应用后生效",
   "setting_play_lyric_transition": "显示歌词翻译",
+  "setting_play_no_vip_standard": "没有 VIP 的账号只用标准音质",
+  "setting_play_no_vip_standard_tip": "没开绿钻的账号在 QQ 那边只有标准音质，320k/无损试了也拿不到。开着它取链直接按标准档走，省掉每首歌白试的那几次请求",
   "setting_play_play_quality": "优先播放的音质（如果可用）",
   "setting_play_s2t": "将播放的中文歌词转换为繁体",
   "setting_play_save_play_time": "记住播放进度",

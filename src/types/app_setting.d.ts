@@ -134,6 +134,12 @@ declare global {
       'player.playQuality': LX.Quality
 
       /**
+       * 账号没有会员（没开绿钻）时只用标准音质。
+       * 开启后 QQ 账号取链不再逐档试无损/320k —— 那些档次非会员拿不到，试一次就是白跑一次请求
+       */
+      'player.noVipStandardQuality': boolean
+
+      /**
        * 启动软件时是否恢复上次播放进度
        */
       'player.isSavePlayTime': boolean

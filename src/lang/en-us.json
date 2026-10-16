@@ -379,6 +379,8 @@
   "setting_play_handle_audio_focus": "Automatically pause playback when other apps playing sound",
   "setting_play_handle_audio_focus_tip": "Take effect after restarting the app",
   "setting_play_lyric_transition": "Show translated lyrics",
+  "setting_play_no_vip_standard": "Standard quality only for accounts without VIP",
+  "setting_play_no_vip_standard_tip": "A QQ Music account without a membership can only play standard quality, so trying 320k/lossless wastes one request per song. Turn this on to fetch standard quality directly",
   "setting_play_play_quality": "Prioritize Sound Quality for Playback If Available",
   "setting_play_s2t": "Convert Chinese lyrics that are playing to traditional",
   "setting_play_save_play_time": "Remember playback progress",

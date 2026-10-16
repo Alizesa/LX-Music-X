@@ -297,6 +297,10 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   isFromCache: boolean
 }> => {
   const targetQuality = quality ?? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
+  // 没开会员的账号只有标准音质这一档（设置里那一项就是给这种情况用的）：账号取链按这一档走，
+  // 不再逐档往下试无损/320k —— 每试一档就是一次 vkey 请求，非会员账号那些尝试注定落空。
+  // 开了会员（或没开这个设置）时按 targetQuality 走，不设上限。
+  const accountQuality = settingState.setting['player.noVipStandardQuality'] ? '128k' : targetQuality
 
   // QQ 音乐优先走账号直取。这段放在 apiInitPromise 检查之前，因为它不依赖
   // 用户 API 脚本 —— 没配脚本时也能播 QQ 的免费歌曲。
@@ -304,7 +308,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   // 流程继续往下走音源。本地优先已经在 core/music/index.ts 里做过了。
   if (musicInfo.source == 'tx') {
     try {
-      const byAccount = await getQQMusicUrlByAccount(musicInfo, quality ?? settingState.setting['player.playQuality'])
+      const byAccount = await getQQMusicUrlByAccount(musicInfo, accountQuality, accountQuality)
       if (byAccount) return { musicInfo, url: byAccount.url, quality: byAccount.quality, isFromCache: false }
     } catch (error) {
       console.log('[QQMusic] 账号取链失败，回落到音源:', error)

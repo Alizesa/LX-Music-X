@@ -15,6 +15,7 @@ import IsS2T from './IsS2T'
 import MaxCache from './MaxCache'
 import { useI18n } from '@/lang'
 import PlayHistory from './PlayHistory'
+import IsNoVipStandardQuality from './IsNoVipStandardQuality'
 
 
 export default memo(() => {
@@ -35,6 +36,8 @@ export default memo(() => {
       <IsS2T />
       <MaxCache />
       <PlayHighQuality />
+      {/* 紧跟在音质后面：它就是对上面那个音质选择的补充说明 */}
+      <IsNoVipStandardQuality />
     </Section>
   )
 })

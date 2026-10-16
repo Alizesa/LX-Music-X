@@ -11,6 +11,19 @@ const QUALITY_SPEC: Partial<Record<LX.Quality, { prefix: string, extension: stri
 // 逐档往下试的顺序。QQ 只有这四档，覆盖足够
 const FALLBACK_ORDER: LX.Quality[] = ['flac24bit', 'flac', '320k', '128k']
 
+/**
+ * 试链顺序：从 maxQuality 这一档开始往下，首选档（没超过上限的话）排最前。
+ *
+ * 试一档就是一次 vkey 请求，所以这个上限是有意义的：没开会员的账号只有标准音质，
+ * 把 maxQuality 传成 '128k' 时这里只剩一档，不会再白试上面那三档。
+ */
+const buildTryOrder = (preferredQuality: LX.Quality | undefined, maxQuality: LX.Quality): LX.Quality[] => {
+  const ceiling = Math.max(0, FALLBACK_ORDER.indexOf(maxQuality))
+  const allowed = FALLBACK_ORDER.slice(ceiling)
+  if (!preferredQuality || !QUALITY_SPEC[preferredQuality] || !allowed.includes(preferredQuality)) return allowed
+  return [preferredQuality, ...allowed.filter(quality => quality != preferredQuality)]
+}
+
 // 固定 guid，和 tx SDK 的 comm 用同一个
 const GUID = '1F70E520B2EAA7D25E11760783C53CA9'
 
@@ -82,10 +95,14 @@ export interface QQAccountUrl {
  *
  * 逐档往下试：首选音质拿不到就退一档。各档都只给试听时，再用网页兼容票
  * (platform 20) 试一次 —— App 通道偶尔只会返回试听重定向，而这首其实是能听的。
+ *
+ * maxQuality 是账号能拿到的最高档：没开会员的账号只有标准音质，传 '128k' 就只试这一档
+ * （每档一次请求，白试无损/320k 是纯浪费）。默认无损，等于不设限。
  */
 export const getQQMusicUrlByAccount = async(
   musicInfo: LX.Music.MusicInfo_tx,
   preferredQuality?: LX.Quality,
+  maxQuality: LX.Quality = 'flac24bit',
 ): Promise<QQAccountUrl | null> => {
   const meta = musicInfo.meta
   const songMid = String(meta.songId ?? '')
@@ -93,9 +110,7 @@ export const getQQMusicUrlByAccount = async(
   const { cookie } = await getQQMusicSession()
   if (!cookie) return null
 
-  const order = preferredQuality && QUALITY_SPEC[preferredQuality]
-    ? [preferredQuality, ...FALLBACK_ORDER.filter(quality => quality != preferredQuality)]
-    : FALLBACK_ORDER
+  const order = buildTryOrder(preferredQuality, maxQuality)
 
   const mediaMid = String(meta.strMediaMid ?? '')
   let trial: { quality: LX.Quality, filenames: string[], prefix: string } | null = null
