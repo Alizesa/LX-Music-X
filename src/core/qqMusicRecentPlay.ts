@@ -63,6 +63,8 @@ export const initQQMusicRecentPlayReport = () => {
     if (!raw) return
     const musicInfo = 'progress' in raw ? raw.metadata.musicInfo : raw
     if (musicInfo.source != 'tx' || musicInfo.id === reportedId) return
+    // 先记下再发：一首歌只发一次。失败（网络抖动）这一首就漏了 —— 换来的是
+    // 网络不好时不会因为 Buffering→Playing 反复跳而反复重发（见下面注释）
     reportedId = musicInfo.id
     void report(musicInfo).catch(error => {
       // 上报是给云端看的旁路，失败不打扰用户，也别影响播放
