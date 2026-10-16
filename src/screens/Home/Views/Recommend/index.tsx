@@ -29,9 +29,11 @@ import {
   getQQMusicDailyPlaylistCache,
   getQQMusicDailyRecommendCache,
   getQQMusicRecommendPlaylistsCache,
+  getQQMusicRefreshDay,
   saveQQMusicDailyPlaylistCache,
   saveQQMusicDailyRecommendCache,
   saveQQMusicRecommendPlaylistsCache,
+  saveQQMusicRefreshDay,
 } from '@/utils/data'
 import { useI18n } from '@/lang'
 
@@ -149,6 +151,57 @@ export default () => {
 
   useEffect(() => { void loadSimilar(cookie) }, [cookie, loadSimilar])
 
+  /** 拉一份新的每日推荐：铺上、落盘、记下「今天刷过了」 */
+  const fetchDaily = useCallback(async() => {
+    const songs = await getQQMusicDailyPlaylist(cookie)
+    setDaily(songs)
+    await saveQQMusicDailyPlaylistCache(songs)
+    await saveQQMusicRefreshDay('playlist')
+    return songs
+  }, [cookie])
+
+  /** 拉一份新的猜你喜欢：铺上、落盘、作废上次那批的续播存档、记下「今天刷过了」 */
+  const fetchGuess = useCallback(async() => {
+    const songs = await getQQMusicDailyRecommendations(cookie)
+    if (!songs.length) throw new Error(t('qq_load_failed'))
+    setGuess(songs)
+    await saveQQMusicDailyRecommendCache(songs)
+    await saveQQMusicRefreshDay('recommend')
+    // 刷新就是要换一批：上次那批的续播存档作废，下次点「猜你喜欢」从新的这批开头放。
+    // 失败时不能丢——用户没拿到新列表，不该连续播也一起没了。
+    await dropRecommendSession()
+    return songs
+  }, [cookie, t])
+
+  // 跨天自动刷新：首页铺完缓存后看一眼这份缓存是不是「今天刷的」，不是就自己去拉一次
+  // （缓存空的时候记账也没有，同样落到这里）。每天首次进首页各一次请求，
+  // 之后就不管了 —— 中途要看新的一批还是下拉/点刷新钮。失败保持旧内容，不打扰用户
+  useEffect(() => {
+    if (!cookie) return
+    const check = async() => {
+      const [dailyDay, guessDay] = await Promise.all([
+        getQQMusicRefreshDay('playlist'),
+        getQQMusicRefreshDay('recommend'),
+      ])
+      const today = new Date().toDateString()
+      // 用户刚好在下拉刷新时别凑热闹
+      if (refreshingRef.current || refreshingGuessRef.current) return
+      const failures: string[] = []
+      if (dailyDay != today) {
+        await fetchDaily().catch(error => {
+          failures.push(`每日推荐: ${error instanceof Error ? error.message : error}`)
+        })
+      }
+      if (guessDay != today) {
+        await fetchGuess().catch(error => {
+          failures.push(`猜你喜欢: ${error instanceof Error ? error.message : error}`)
+        })
+      }
+      if (failures.length) console.warn('[QQMusic] 跨天自动刷新失败，先用旧内容:', failures.join('; '))
+    }
+    void check()
+  }, [cookie, fetchDaily, fetchGuess])
+
   const refresh = useCallback(async() => {
     // setRefreshing 要到下次渲染才生效，光靠 disabled 挡不住这个窗口内的第二次触发
     if (refreshingRef.current) return
@@ -161,9 +214,7 @@ export default () => {
     try {
       // 下拉刷新只管「每日推荐」这一块：猜你喜欢和推荐歌单都各自带了刷新钮，
       // 下拉不该顺手换掉用户正在看/正在听的那一批。
-      const songs = await getQQMusicDailyPlaylist(cookie)
-      setDaily(songs)
-      await saveQQMusicDailyPlaylistCache(songs)
+      await fetchDaily()
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
@@ -172,7 +223,7 @@ export default () => {
     }
     // 相似推荐是顺带算的，跟着下拉一起更新；它自己失败是静默的
     void loadSimilar(cookie)
-  }, [cookie, loadSimilar, loggedIn, t])
+  }, [cookie, fetchDaily, loadSimilar, loggedIn, t])
 
   // 推荐歌单标题右侧那个刷新钮。每点一次换一批：游标往下走，取尽后回到开头
   const refreshPlaylists = useCallback(async() => {
@@ -209,20 +260,14 @@ export default () => {
     refreshingGuessRef.current = true
     setRefreshingGuess(true)
     try {
-      const songs = await getQQMusicDailyRecommendations(cookie)
-      if (!songs.length) throw new Error(t('qq_load_failed'))
-      setGuess(songs)
-      await saveQQMusicDailyRecommendCache(songs)
-      // 刷新就是要换一批：上次那批的续播存档作废，下次点「猜你喜欢」从新的这批开头放。
-      // 失败时不能丢——用户没拿到新列表，不该连续播也一起没了。
-      await dropRecommendSession()
+      await fetchGuess()
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
       refreshingGuessRef.current = false
       setRefreshingGuess(false)
     }
-  }, [cookie, loggedIn, t])
+  }, [fetchGuess, loggedIn, t])
 
   /**
    * 要用的那批每日推荐。缓存还没铺（新装、刚登录、上次拉取失败）时先联网拉一次 ——
@@ -236,15 +281,12 @@ export default () => {
       return null
     }
     try {
-      const songs = await getQQMusicDailyPlaylist(cookie)
-      setDaily(songs)
-      await saveQQMusicDailyPlaylistCache(songs)
-      return songs
+      return await fetchDaily()
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
       return null
     }
-  }, [cookie, daily, loggedIn, t])
+  }, [daily, fetchDaily, loggedIn, t])
 
   // 每日推荐整表播放。用 30 首的独立列表，不挂电台续播那套
   const playDaily = useCallback(async() => {

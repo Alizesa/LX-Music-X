@@ -9,6 +9,7 @@ import {
   removeQQMusicDailyPlaylistCache,
   removeQQMusicDailyRecommendCache,
   removeQQMusicRecommendPlaylistsCache,
+  removeQQMusicRefreshDay,
 } from '@/utils/data'
 import { toNewMusicInfo, decodeName } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
@@ -442,6 +443,8 @@ const clearQQMusicDataCache = async() => {
   await removeQQMusicDailyPlaylistCache()
   await removeQQMusicDailyRecommendCache()
   await removeQQMusicRecommendPlaylistsCache()
+  // 「哪天刷过」的记账也清掉：换号后新号的缓存是空的，别让旧号那天的记录挡住自动刷新
+  await removeQQMusicRefreshDay()
 }
 
 export const clearQQMusicSession = async() => {

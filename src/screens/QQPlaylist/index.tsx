@@ -18,7 +18,7 @@ import { getQQMusicDailyPlaylist, getQQMusicPlaylistSongs, getQQMusicSession } f
 import { getQQMusicLikedSongs, isQQMusicLikedSongsStale, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs, toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
 import { cachePlaylistSongs, getCachedPlaylistSongs } from '@/core/qqMusicPlaylistSongsCache'
 import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist } from '@/core/qqMusicDailyPosition'
-import { getQQMusicDailyPlaylistCache, getQQMusicPlaylistsCache, saveQQMusicDailyPlaylistCache } from '@/utils/data'
+import { getQQMusicDailyPlaylistCache, getQQMusicPlaylistsCache, saveQQMusicDailyPlaylistCache, saveQQMusicRefreshDay } from '@/utils/data'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { useWindowSize } from '@/utils/hooks'
@@ -140,12 +140,14 @@ export default ({ componentId, info }: Props) => {
       let songs: LX.Music.MusicInfoOnline[]
       if (info.daily) {
         // 每日推荐读首页那份缓存，只有下拉刷新才联网重取（取回来顺手更新缓存，
-        // 首页下次进来读到的就是新的）
+        // 首页下次进来读到的就是新的；「今天刷过了」的记账一起写上，
+        // 免得首页再为同一批多拉一次）
         if (force) {
           const { cookie } = await getQQMusicSession()
           if (!cookie) throw new Error(t('qq_not_logged_in'))
           songs = await getQQMusicDailyPlaylist(cookie)
           await saveQQMusicDailyPlaylistCache(songs)
+          await saveQQMusicRefreshDay('playlist')
         } else {
           songs = await getQQMusicDailyPlaylistCache()
           if (!songs.length) {
@@ -154,6 +156,7 @@ export default ({ componentId, info }: Props) => {
             if (!cookie) throw new Error(t('qq_not_logged_in'))
             songs = await getQQMusicDailyPlaylist(cookie)
             await saveQQMusicDailyPlaylistCache(songs)
+            await saveQQMusicRefreshDay('playlist')
           }
         }
       } else if (info.liked) {

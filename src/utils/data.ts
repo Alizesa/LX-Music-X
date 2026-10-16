@@ -41,6 +41,10 @@ const qqMusicDailyRecommendKey = storageDataPrefix.qqMusicDailyRecommend
 const qqMusicDailyPlaylistKey = storageDataPrefix.qqMusicDailyPlaylist
 const qqMusicLikedSongsKey = storageDataPrefix.qqMusicLikedSongs
 const qqMusicLikedSongsStaleKey = storageDataPrefix.qqMusicLikedSongsStale
+const qqMusicRefreshDayKey = storageDataPrefix.qqMusicRefreshDay
+
+/** 两份会跨天自动刷新的缓存：每日推荐 / 猜你喜欢 */
+export type QQMusicRefreshKind = 'playlist' | 'recommend'
 const qqMusicPlaylistSongsKey = storageDataPrefix.qqMusicPlaylistSongs
 const qqMusicDailyPositionKey = storageDataPrefix.qqMusicDailyPosition
 const qqMusicRecommendPlaylistsKey = storageDataPrefix.qqMusicRecommendPlaylists
@@ -530,6 +534,17 @@ export const removeQQMusicDailyPlaylistCache = async() => removeData(qqMusicDail
 export const getQQMusicDailyRecommendCache = async() => await getData<LX.Music.MusicInfoOnline[]>(qqMusicDailyRecommendKey) ?? []
 export const saveQQMusicDailyRecommendCache = async(list: LX.Music.MusicInfoOnline[]) => saveData(qqMusicDailyRecommendKey, list)
 export const removeQQMusicDailyRecommendCache = async() => removeData(qqMusicDailyRecommendKey)
+
+/** 每日推荐/猜你喜欢那两份缓存最后一次刷新是哪天（本地日期字符串）。没刷过就是 undefined */
+export const getQQMusicRefreshDay = async(kind: QQMusicRefreshKind) =>
+  (await getData<Record<string, string>>(qqMusicRefreshDayKey))?.[kind]
+/** 记下「这份缓存是今天刷的」。内容拉成功之后调用 */
+export const saveQQMusicRefreshDay = async(kind: QQMusicRefreshKind) => {
+  const days = (await getData<Record<string, string>>(qqMusicRefreshDayKey)) ?? {}
+  days[kind] = new Date().toDateString()
+  await saveData(qqMusicRefreshDayKey, days)
+}
+export const removeQQMusicRefreshDay = async() => removeData(qqMusicRefreshDayKey)
 export const getQQMusicRecommendPlaylistsCache = async() => await getData<LX.QQMusic.RecommendPlaylistCache>(qqMusicRecommendPlaylistsKey) ?? null
 export const saveQQMusicRecommendPlaylistsCache = async(cache: LX.QQMusic.RecommendPlaylistCache) => saveData(qqMusicRecommendPlaylistsKey, cache)
 export const removeQQMusicRecommendPlaylistsCache = async() => removeData(qqMusicRecommendPlaylistsKey)

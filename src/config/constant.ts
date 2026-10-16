@@ -127,6 +127,9 @@ export const storageDataPrefix = {
   // 「我喜欢」那份缓存被本地改过（红心/取消红心）、还没跟服务端核对过的标记。
   // 下次打开「我喜欢」时据此重拉一次，见 core/qqMusicFavorite 的 markLiked
   qqMusicLikedSongsStale: '@qq_music_liked_stale',
+  // 每日推荐 / 猜你喜欢那两份缓存「最后一次刷新是哪天」。进首页时不是今天就自动刷一次，
+  // 见 Home/Views/Recommend 里那段跨天检查
+  qqMusicRefreshDay: '@qq_music_refresh_day',
   // 各个歌单的歌曲，按歌单 id 存。只留最近打开的几个（见 core/qqMusicPlaylistSongsCache）
   qqMusicPlaylistSongs: '@qq_music_playlist_songs',
   qqMusicRecommendPlaylists: '@qq_music_recommend_playlists',
