@@ -35,6 +35,7 @@ const QQ_COOKIE_URLS = ['https://y.qq.com/', 'https://qq.com/', 'https://c.y.qq.
 // 这个 UA 只给登录用的 WebView：y.qq.com 的登录页要靠浏览器 UA 才能正常渲染。
 // 项目默认的 Chrome/69 过于陈旧，这里用较新的版本。
 export const QQ_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+const QQ_WEB_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 
 // 接口请求一律走手机 App 信封，UA 必须和 comm 里的 cv=14090008 对得上；
 // 用浏览器 UA 配 App 版本号的话，服务端会按网页端返回，字段和可用功能都有出入。
@@ -180,6 +181,20 @@ export const postAuthedMusicu = async(
     headers,
   })
 }
+
+// 歌曲详情接口使用网页端信封。MusicOne 的可用实现固定为 req_1 + yqq.json，
+// 与写歌单使用的 App 登录信封不是同一套协议。
+const buildCommonComm = (cookies: Record<string, string>) => ({
+  cv: 4747474,
+  ct: 24,
+  format: 'json',
+  inCharset: 'utf-8',
+  outCharset: 'utf-8',
+  notice: 0,
+  platform: 'yqq.json',
+  needNewCode: 1,
+  uin: readUin(cookies),
+})
 
 // 未登录时的 App 信封：和登录态同一套标识，只是不带账号与票据。
 // 原来这里用的是 { cv: 1602, ct: 20 }，属于网页端那套，一并换掉。
@@ -575,18 +590,28 @@ export const getQQMusicTrackIdentity = async(
   fallbackSongType: number,
   fallbackSongId: number,
 ): Promise<{ songId: number, songType: number } | null> => {
-  const body = await postAuthedMusicu(cookie, {
-    req_0: {
-      module: 'music.pf_song_detail_svr',
-      method: 'get_song_detail_yqq',
-      param: { song_mid: songMid, song_type: fallbackSongType, song_id: fallbackSongId },
+  const cookies = parseQQMusicCookie(cookie)
+  if (!readUin(cookies) || !readMusicKey(cookies)) throw new Error(global.i18n.t('qq_cookie_invalid'))
+  const body = await request(QQ_MUSICU_URL, cookie, {
+    method: 'post',
+    headers: { 'User-Agent': QQ_WEB_USER_AGENT },
+    body: {
+      comm: buildCommonComm(cookies),
+      req_1: {
+        module: 'music.pf_song_detail_svr',
+        method: 'get_song_detail_yqq',
+        param: { song_mid: songMid, song_type: fallbackSongType, song_id: fallbackSongId },
+      },
     },
   })
-  const info = body?.req_0?.data?.track_info
+  const info = body?.req_1?.data?.track_info
   if (!info) return null
+  const songId = Number(info.id)
+  const songType = Number(info.type)
   return {
-    songId: Number(info.id ?? 0) || fallbackSongId,
-    songType: Number(info.type ?? 0) || fallbackSongType,
+    songId: Number.isFinite(songId) && songId > 0 ? songId : fallbackSongId,
+    // QQ 的普通歌曲 providerType 可能就是 0，不能用 `||` 把它回退成旧值。
+    songType: Number.isFinite(songType) && songType >= 0 ? songType : fallbackSongType,
   }
 }
 
