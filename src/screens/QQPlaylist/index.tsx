@@ -13,7 +13,7 @@ import { COMPONENT_IDS, LIST_IDS } from '@/config/constant'
 import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { getQQMusicDailyPlaylist, getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
-import { getQQMusicLikedSongs, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
+import { getQQMusicLikedSongs, isQQMusicLikedSongsStale, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
 import { cachePlaylistSongs, getCachedPlaylistSongs } from '@/core/qqMusicPlaylistSongsCache'
 import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist } from '@/core/qqMusicDailyPosition'
 import { getQQMusicDailyPlaylistCache, saveQQMusicDailyPlaylistCache } from '@/utils/data'
@@ -96,8 +96,13 @@ export default ({ componentId, info }: Props) => {
           if (!songs.length) throw new Error(t('qq_load_failed'))
         }
       } else if (info.liked) {
-        // 「我喜欢」走持久缓存：全量要翻好几页，进页面不该重拉，只有下拉刷新才联网
-        if (force) await refreshQQMusicLikedSongs()
+        // 「我喜欢」走持久缓存：全量要翻好几页，进页面不该重拉，只有下拉刷新才联网。
+        // 例外是缓存被标脏了（红心/取消红心之后本地改过、还没跟服务端核对）——
+        // 这时重拉一次，跟歌单页「内容变了就丢缓存、下次打开自动刷新」是一个效果。
+        // 拉失败继续用现有缓存，别让一次网络抖动把列表清空
+        if (force || await isQQMusicLikedSongsStale()) {
+          await refreshQQMusicLikedSongs().catch(() => {})
+        }
         songs = getQQMusicLikedSongs() ?? await loadQQMusicLikedSongsCache()
       } else {
         // 打开过的歌单同样读缓存，只有下拉刷新才联网

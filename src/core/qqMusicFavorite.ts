@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { filterVisiblePlaylists, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicTrackIdentity, postAuthedMusicu } from './qqMusic'
-import { getQQMusicLikedSongsCache, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, saveQQMusicLikedSongsCache, saveQQMusicPlaylistsCache } from '@/utils/data'
+import { getQQMusicLikedSongsCache, getQQMusicLikedSongsStale, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, removeQQMusicLikedSongsStale, saveQQMusicLikedSongsCache, saveQQMusicLikedSongsStale, saveQQMusicPlaylistsCache } from '@/utils/data'
 import { clearPlaylistSongsCache, dropCachedPlaylistSongs } from './qqMusicPlaylistSongsCache'
 import { toast } from '@/utils/tools'
 
@@ -68,13 +68,17 @@ const doFetch = async() => {
     if (!cookie) {
       setLikedSongs(null)
       await removeQQMusicLikedSongsCache()
+      await removeQQMusicLikedSongsStale()
       return
     }
     const songs = await getQQMusicPlaylistSongs(cookie, LIKED_DIRID)
     setLikedSongs(songs)
     await saveQQMusicLikedSongsCache(songs)
+    // 这份就是服务端的，之前标脏的可以清了
+    await saveQQMusicLikedSongsStale(false)
   } catch (error) {
-    // 失败保留上一次的缓存，不要因为一次网络抖动把心形状态全清空
+    // 失败保留上一次的缓存（标脏那笔也留着，下次进来还会再试），
+    // 不要因为一次网络抖动把心形状态全清空
     console.log('[QQMusic] 拉取我喜欢失败:', error)
   }
 }
@@ -85,7 +89,13 @@ export const refreshQQMusicLikedSongs = async(): Promise<void> => {
   await fetchPromise
 }
 
-/** 收藏/取消后同步更新本地缓存，省掉一次全量重拉 */
+/**
+ * 收藏/取消后同步更新本地缓存，省掉一次全量重拉。
+ *
+ * 本地这份是「写入成功、没读回验证」的结果：心形状态和列表就近用它（不然每点一次红心
+ * 就要把几百首的「我喜欢」全拉一遍），但会标脏 —— 下次打开「我喜欢」时重拉一次拿服务端
+ * 那份替换掉，跟歌单那边「内容变了就丢缓存、下次打开自动刷新」是一个效果。
+ */
 const markLiked = (musicInfo: LX.Music.MusicInfo, liked: boolean) => {
   const songs = likedSongs ?? []
   const next = liked
@@ -93,12 +103,17 @@ const markLiked = (musicInfo: LX.Music.MusicInfo, liked: boolean) => {
     : songs.filter(song => song.id != musicInfo.id)
   setLikedSongs(next)
   void saveQQMusicLikedSongsCache(next)
+  void saveQQMusicLikedSongsStale(true)
 }
+
+/** 「我喜欢」那份缓存是不是被本地改过、还没核对过。true 时下次打开那个歌单先重拉 */
+export const isQQMusicLikedSongsStale = async() => await getQQMusicLikedSongsStale()
 
 /** 换号/退出时清掉，否则新号会看到上一个号的收藏状态 */
 export const clearQQMusicLikedSongs = () => {
   setLikedSongs(null)
   void removeQQMusicLikedSongsCache()
+  void removeQQMusicLikedSongsStale()
 }
 
 /**

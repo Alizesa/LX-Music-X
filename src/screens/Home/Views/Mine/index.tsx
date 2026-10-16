@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { Alert, RefreshControl, ScrollView, TouchableOpacity, View } from 'react-native'
 import Text from '@/components/common/Text'
-import { Icon } from '@/components/common/Icon'
+import { Icon, IconIonicons } from '@/components/common/Icon'
 import Image from '@/components/common/Image'
 import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMusicLoginModal'
 import QQMusicCookieModal, { type QQMusicCookieModalType } from '@/components/QQMusicCookieModal'
 import { useTheme } from '@/store/theme/hook'
 import { useDownloadTasks } from '@/store/download/hook'
 import { createStyle, toast } from '@/utils/tools'
+import { scaleSizeW } from '@/utils/pixelRatio'
 import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo } from '@/core/qqMusic'
 import { refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
 import { getListMusics } from '@/core/list'
@@ -19,8 +20,13 @@ import { useI18n } from '@/lang'
 
 const AVATAR_SIZE = 56
 
-const Entry = ({ icon, label, count, onPress }: {
-  icon: string
+/**
+ * 入口宫格的一格。`ionIcon` 用 Ionicons 的 sharp 版（粗线），
+ * `icon` 是 icomoon 的填充字形，二选一；两者按同一个名义尺寸画。
+ */
+const Entry = ({ icon, ionIcon, label, count, onPress }: {
+  icon?: string
+  ionIcon?: ComponentProps<typeof IconIonicons>['name']
   label: string
   count?: number
   onPress: () => void
@@ -28,7 +34,11 @@ const Entry = ({ icon, label, count, onPress }: {
   const theme = useTheme()
   return (
     <TouchableOpacity style={styles.entry} activeOpacity={0.7} onPress={onPress}>
-      <Icon name={icon} size={24} color={theme['c-primary-font']} />
+      {
+        ionIcon
+          ? <IconIonicons name={ionIcon} size={scaleSizeW(24)} color={theme['c-primary-font']} />
+          : icon ? <Icon name={icon} size={24} color={theme['c-primary-font']} /> : null
+      }
       <Text style={styles.entryLabel} size={13} numberOfLines={1}>{label}</Text>
       {count == null ? null : <Text size={11} color={theme['c-font-label']}>{count}</Text>}
     </TouchableOpacity>
@@ -232,9 +242,9 @@ export default () => {
 
         <View style={styles.entries}>
           <Entry icon="love" label={t('mine_liked')} count={liked?.trackCount} onPress={() => { if (liked) openPlaylist(liked) }} />
-          <Entry icon="music_time" label={t('nav_history')} count={historyCount} onPress={() => { navigations.pushPlayHistoryScreen(commonState.componentIds.home!) }} />
+          <Entry ionIcon="time-sharp" label={t('nav_history')} count={historyCount} onPress={() => { navigations.pushPlayHistoryScreen(commonState.componentIds.home!) }} />
           <Entry icon="download-2" label={t('nav_download')} count={tasks.length} onPress={() => { navigations.pushDownloadScreen(commonState.componentIds.home!) }} />
-          <Entry icon="sd-card" label={t('mine_local_songs')} count={localCount} onPress={() => { navigations.pushLocalSongsScreen(commonState.componentIds.home!) }} />
+          <Entry ionIcon="folder-sharp" label={t('mine_local_songs')} count={localCount} onPress={() => { navigations.pushLocalSongsScreen(commonState.componentIds.home!) }} />
         </View>
 
         {renderSection(t('mine_created_playlists'), created)}

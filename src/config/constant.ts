@@ -124,6 +124,9 @@ export const storageDataPrefix = {
   // 「我喜欢」的全量歌曲。获取要翻好几页，缓存下来供心形状态和歌单页直接读，
   // 只有手动下拉刷新才重新拉
   qqMusicLikedSongs: '@qq_music_liked_songs',
+  // 「我喜欢」那份缓存被本地改过（红心/取消红心）、还没跟服务端核对过的标记。
+  // 下次打开「我喜欢」时据此重拉一次，见 core/qqMusicFavorite 的 markLiked
+  qqMusicLikedSongsStale: '@qq_music_liked_stale',
   // 各个歌单的歌曲，按歌单 id 存。只留最近打开的几个（见 core/qqMusicPlaylistSongsCache）
   qqMusicPlaylistSongs: '@qq_music_playlist_songs',
   qqMusicRecommendPlaylists: '@qq_music_recommend_playlists',

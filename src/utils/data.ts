@@ -40,6 +40,7 @@ const qqMusicPlaylistsKey = storageDataPrefix.qqMusicPlaylists
 const qqMusicDailyRecommendKey = storageDataPrefix.qqMusicDailyRecommend
 const qqMusicDailyPlaylistKey = storageDataPrefix.qqMusicDailyPlaylist
 const qqMusicLikedSongsKey = storageDataPrefix.qqMusicLikedSongs
+const qqMusicLikedSongsStaleKey = storageDataPrefix.qqMusicLikedSongsStale
 const qqMusicPlaylistSongsKey = storageDataPrefix.qqMusicPlaylistSongs
 const qqMusicDailyPositionKey = storageDataPrefix.qqMusicDailyPosition
 const qqMusicRecommendPlaylistsKey = storageDataPrefix.qqMusicRecommendPlaylists
@@ -519,6 +520,10 @@ export const removeQQMusicPlaylistSongsCache = async() => removeData(qqMusicPlay
 export const getQQMusicLikedSongsCache = async() => await getData<LX.Music.MusicInfoOnline[]>(qqMusicLikedSongsKey) ?? []
 export const saveQQMusicLikedSongsCache = async(list: LX.Music.MusicInfoOnline[]) => saveData(qqMusicLikedSongsKey, list)
 export const removeQQMusicLikedSongsCache = async() => removeData(qqMusicLikedSongsKey)
+/** 「我喜欢」缓存被本地改过、还没跟服务端核对过。true 时下次打开那个歌单会先重拉 */
+export const getQQMusicLikedSongsStale = async() => await getData<boolean>(qqMusicLikedSongsStaleKey) ?? false
+export const saveQQMusicLikedSongsStale = async(stale: boolean) => saveData(qqMusicLikedSongsStaleKey, stale)
+export const removeQQMusicLikedSongsStale = async() => removeData(qqMusicLikedSongsStaleKey)
 export const getQQMusicDailyPlaylistCache = async() => await getData<LX.Music.MusicInfoOnline[]>(qqMusicDailyPlaylistKey) ?? []
 export const saveQQMusicDailyPlaylistCache = async(list: LX.Music.MusicInfoOnline[]) => saveData(qqMusicDailyPlaylistKey, list)
 export const removeQQMusicDailyPlaylistCache = async() => removeData(qqMusicDailyPlaylistKey)
