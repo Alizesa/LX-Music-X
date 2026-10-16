@@ -284,12 +284,14 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
 /**
  * 获取在线音乐URL
  */
-export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource }: {
+export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, useAccountUrl = true }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality?: LX.Quality
   isRefresh: boolean
   allowToggleSource: boolean
   onToggleSource: (musicInfo?: LX.Music.MusicInfoOnline) => void
+  /** 是否允许走 QQ 账号直取。下载那边按设置可以关掉，改成只走音源；播放始终开着 */
+  useAccountUrl?: boolean
 }): Promise<{
   url: string
   musicInfo: LX.Music.MusicInfoOnline
@@ -306,7 +308,9 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   // 用户 API 脚本 —— 没配脚本时也能播 QQ 的免费歌曲。
   // 免费可听的歌这里就能拿到完整音源；VIP 歌只会拿到试听重定向，函数返回 null，
   // 流程继续往下走音源。本地优先已经在 core/music/index.ts 里做过了。
-  if (musicInfo.source == 'tx') {
+  // useAccountUrl 为 false 时整段跳过（下载里选了「走音源」），
+  // 于是不管拿不拿得到都会落到下面音源那条路，不会再回头试账号。
+  if (musicInfo.source == 'tx' && useAccountUrl) {
     try {
       const byAccount = await getQQMusicUrlByAccount(musicInfo, accountQuality, accountQuality)
       if (byAccount) return { musicInfo, url: byAccount.url, quality: byAccount.quality, isFromCache: false }

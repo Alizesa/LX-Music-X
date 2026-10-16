@@ -408,6 +408,14 @@ declare global {
       'download.quality': LX.Quality
 
       /**
+       * 下载从哪条链路取地址。
+       * 'source' 音源（默认）：直接按配置的自定义源取，不再走 QQ 账号直取 ——
+       * 非会员账号那边只有标准音质，留档留的是音源那份。
+       * 'account' QQ 账号直取。播放不受这个设置影响，始终账号优先。
+       */
+      'download.urlSource': 'source' | 'account'
+
+      /**
        * 是否启用同步
        */
       'sync.enable': boolean

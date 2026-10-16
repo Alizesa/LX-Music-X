@@ -88,6 +88,9 @@ const defaultSetting: LX.AppSetting = {
   'download.fileName': '歌名 - 歌手',
   // 独立于 player.playQuality：后者默认 128k，而下载是留档行为
   'download.quality': '320k',
+  // 下载从哪条链取地址：'source' = 音源（默认，留档用音源那份），'account' = QQ 账号直取。
+  // 播放不受它影响，始终账号优先
+  'download.urlSource': 'source',
 
   'sync.enable': false,
 

@@ -274,7 +274,14 @@ const processQueue = async() => {
         if (task.status != 'waiting') continue
         try {
           await updateTask(task.id, { status: 'resolving', error: undefined }, true)
-          const url = await getMusicUrl({ musicInfo: task.musicInfo, quality: task.quality, isRefresh: true })
+          const url = await getMusicUrl({
+            musicInfo: task.musicInfo,
+            quality: task.quality,
+            isRefresh: true,
+            // 下载按设置选链路：'account' 走 QQ 账号直取，'source'（默认）只走音源。
+            // 播放不受这个设置影响，那边始终账号优先
+            useAccountUrl: settingState.setting['download.urlSource'] === 'account',
+          })
           const currentTask = tasks.find(item => item.id == task.id)
           if (currentTask?.status != 'resolving') continue
           const nativeId = await enqueueDownload({
