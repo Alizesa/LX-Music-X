@@ -359,21 +359,10 @@ const normalizePlaylist = (raw: any, subscribed: boolean): LX.QQMusic.PlaylistIn
   if (id == null || !name) return null
   const decodedName = decodeName(String(name))
   if (!liked && isHiddenPlaylistName(decodedName)) return null
-  // 【临时诊断】把原始响应里所有和编号有关的字段摊出来，确认 dirid 的实际字段名。定位完删
-  const rawRecord = (raw ?? {}) as Record<string, unknown>
-  const debugRaw = Object.keys(rawRecord)
-    .filter(key => /dir|tid|diss|^id$|id$/i.test(key))
-    .map(key => {
-      const value = rawRecord[key]
-      return `${key}=${typeof value == 'object' ? String(JSON.stringify(value)).slice(0, 40) : String(value)}`
-    })
-    .join(' ')
-
   return {
     id: String(id),
     // 写接口（加歌/移歌）要的是目录编号，不是公开的 disstid，这里原样留着
     dirId: dirid > 0 ? dirid : undefined,
-    debugRaw,
     name: decodedName,
     cover: raw?.diss_cover ?? raw?.logo ?? raw?.imgurl ?? raw?.picurl ?? raw?.cover?.medium_url ?? raw?.cover_url_medium,
     description: decodeName(String(raw?.desc ?? raw?.introduction ?? '')).replace(/<br>/g, '\n'),

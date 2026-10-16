@@ -222,7 +222,7 @@ export const setQQMusicTrackInPlaylist = async(
 
   // **读回验证**：这个接口会「返回成功但什么都没改」（服务端把「条目不存在」当成幂等成功），
   // 光看返回码会把 no-op 当成成功报给用户。参考实现也是写完读回来验一遍的。
-  await assertPlaylistMember(cookie, target.id, target.dirId, songId, songType, add)
+  await assertPlaylistMember(cookie, target.id, target.dirId, songId, add)
   return 'ok'
 }
 
@@ -232,7 +232,6 @@ const assertPlaylistMember = async(
   playlistId: string,
   dirId: number | undefined,
   songId: number,
-  songType: number,
   shouldExist: boolean,
 ) => {
   let songs: LX.Music.MusicInfoOnline[]
@@ -244,19 +243,7 @@ const assertPlaylistMember = async(
     return
   }
   const exists = songs.some(song => song.source == 'tx' && Number(song.meta.id) === songId)
-  if (exists !== shouldExist) {
-    // 服务端把「条目不存在」当成静默成功 —— 说明它按 (songId, songType) 匹配不到那条记录。
-    // 所以提示里要把两个身份都摊出来：id 对上了就得看 songType 对不对。
-    // （临时诊断片段，定位完删）
-    const entry = songs.find(song => song.source == 'tx' && Number(song.meta.id) === songId)
-    const entryType = entry && entry.source == 'tx' ? entry.meta.songType : undefined
-    throw new Error(
-      `${global.i18n.t('qq_playlist_write_no_effect')}` +
-      ` (${shouldExist ? '要加' : '要删'} id=${songId} type=${songType}` +
-      ` / 歌单里 id=${entry ? String(songId) : '未找到'}` +
-      ` type=${entryType ?? '未读到'})`,
-    )
-  }
+  if (exists !== shouldExist) throw new Error(global.i18n.t('qq_playlist_write_no_effect'))
 }
 
 /**

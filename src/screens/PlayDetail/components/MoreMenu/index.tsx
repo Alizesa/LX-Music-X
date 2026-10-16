@@ -127,8 +127,6 @@ export default forwardRef<MoreMenuType>((_, ref) => {
               <View style={styles.info}>
                 <Text numberOfLines={1}>{item.name}</Text>
                 <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{t('mine_song_count', { num: item.trackCount ?? 0 })}</Text>
-                {/* 【临时诊断】把接口返回的编号类字段摊出来，确认 dirid 的真实字段名。定位完删 */}
-                <Text size={8} color={theme['c-font-label']}>{`dirId=${item.dirId ?? '无'} ${item.debugRaw ?? ''}`}</Text>
               </View>
             </TouchableOpacity>
           ))
