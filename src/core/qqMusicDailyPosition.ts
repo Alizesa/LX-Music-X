@@ -1,4 +1,6 @@
 import { getQQMusicDailyPosition, removeQQMusicDailyPosition, saveQQMusicDailyPosition } from '@/utils/data'
+import { setTempList } from '@/core/list'
+import { playList } from '@/core/player/player'
 import { isPlayQueueFromList } from '@/core/player/playQueue'
 import listState from '@/store/list/state'
 import playerState from '@/store/player/state'
@@ -62,4 +64,17 @@ export const resolveQQMusicDailyIndex = async(songs: LX.Music.MusicInfoOnline[])
     return 0
   }
   return Math.max(songs.findIndex(song => song.id == saved.songId), 0)
+}
+
+/**
+ * 从记下的位置开始播一批每日推荐：先定位，再把这批灌进临时列表（顺带打上来源标记，
+ * 位置记忆靠它认队列），最后起播。
+ *
+ * 首页卡片上的播放钮和每日推荐页里的「播放」都走这里，两处行为不会走散。
+ */
+export const playQQMusicDailyPlaylist = async(songs: LX.Music.MusicInfoOnline[]) => {
+  if (!songs.length) return
+  const startIndex = await resolveQQMusicDailyIndex(songs)
+  await setTempList(QQ_DAILY_PLAYLIST_ID, [...songs])
+  void playList(LIST_IDS.TEMP, startIndex)
 }

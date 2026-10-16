@@ -21,7 +21,7 @@ import {
 } from '@/core/qqMusic'
 import { continueRecommendQueue, initQQMusicRecommendAutoRefresh, startRecommendQueue } from '@/core/qqMusicRecommend'
 import { dropRecommendSession } from '@/core/qqMusicRecommendSession'
-import { QQ_DAILY_PLAYLIST_ID, resolveQQMusicDailyIndex } from '@/core/qqMusicDailyPosition'
+import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist } from '@/core/qqMusicDailyPosition'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
 import {
@@ -43,21 +43,36 @@ const DAILY_LIST_ID = QQ_DAILY_PLAYLIST_ID
 const H_PADDING = 14
 const CARD_GAP = 10
 
-/** 卡片右下角的小圆钮（每日推荐是播放、猜你喜欢是刷新）。压在封面上，半透明黑底保证白图标可读 */
-const CardAction = ({ icon, onPress, disabled }: {
+/**
+ * 小圆钮（每日推荐是播放、猜你喜欢和推荐歌单是刷新）。
+ * overlay：压在封面/头图上，用半透明黑底 + 白图标；不给就落在页面里，跟着主题色走、不加底色。
+ */
+const IconAction = ({ icon, onPress, disabled, overlay }: {
   icon: ComponentProps<typeof IconIonicons>['name']
   onPress: () => void
   disabled?: boolean
-}) => (
-  <TouchableOpacity
-    style={{ ...styles.cardAction, opacity: disabled ? 0.5 : 1 }}
-    activeOpacity={0.7}
-    disabled={disabled}
-    onPress={onPress}
-  >
-    <IconIonicons name={icon} size={scaleSizeW(17)} color="#fff" />
-  </TouchableOpacity>
-)
+  overlay?: boolean
+}) => {
+  const theme = useTheme()
+  return (
+    <TouchableOpacity
+      style={{
+        ...styles.iconAction,
+        ...(overlay ? styles.iconActionOverlay : null),
+        opacity: disabled ? 0.5 : 1,
+      }}
+      activeOpacity={0.7}
+      disabled={disabled}
+      onPress={onPress}
+    >
+      <IconIonicons
+        name={icon}
+        size={scaleSizeW(overlay ? 17 : 18)}
+        color={overlay ? '#fff' : theme['c-font-label']}
+      />
+    </TouchableOpacity>
+  )
+}
 
 /**
  * 方形推荐卡。封面铺满，底部压一层暗色保证文字可读（没有渐变库，用纯色代替）。
@@ -98,10 +113,11 @@ const SquareCard = ({ title, subtitle, cover, onPress, disabled, action }: {
 
 // 首页：个性化推荐。上排两张方形卡（每日推荐 / 猜你喜欢），
 // 下面是推荐歌单横向滚动和基于最近播放的相似推荐。
-// 进页面只读本地缓存、不发请求；下拉刷新才联网 —— 猜你喜欢除外，它卡上自带刷新按钮，
-// 下拉刷新不碰它（不然用户在听的那批会被顺手换掉）。
-// 两张卡右下角各有一个圆钮：每日推荐是播放、猜你喜欢是刷新；卡片本身的点击分别是
-// 「展开那 30 首」和「播放」。
+// 进页面只读本地缓存、不发请求；下拉刷新才联网，而且只管「每日推荐」这一块 ——
+// 猜你喜欢和推荐歌单各自带刷新钮（卡片右下角 / 板块标题右侧），下拉不碰它们，
+// 免得把用户正在听、正在看的那一批顺手换掉。
+// 两张卡的点击分别是「进每日推荐歌单页（头图 + 那 30 首）」和「播放」，
+// 卡上的圆钮才是播放 / 刷新。
 export default () => {
   const t = useI18n()
   const theme = useTheme()
@@ -115,10 +131,10 @@ export default () => {
   const refreshingRef = useRef(false)
   const nextFromRef = useRef(0)
   const [playing, setPlaying] = useState(false)
-  // 每日推荐那 30 首是否展开（点卡片展开，播放走右下角的按钮）
-  const [dailyExpanded, setDailyExpanded] = useState(false)
   const [refreshingGuess, setRefreshingGuess] = useState(false)
   const refreshingGuessRef = useRef(false)
+  const [refreshingPlaylists, setRefreshingPlaylists] = useState(false)
+  const refreshingPlaylistsRef = useRef(false)
 
   const loggedIn = !!cookie
 
@@ -174,32 +190,44 @@ export default () => {
     refreshingRef.current = true
     setRefreshing(true)
     try {
-      // 猜你喜欢不在这一批里：它有自己的刷新按钮（refreshGuess），下拉刷新不该顺手换掉一批
-      // 用户正在听的推荐。用 allSettled：任一块失败不该把已经拿到的其它块一起丢掉
-      const [dailyResult, playlistResult] = await Promise.allSettled([
-        getQQMusicDailyPlaylist(cookie),
-        getQQMusicRecommendedPlaylists(cookie, nextFromRef.current),
-      ])
-      if (dailyResult.status == 'fulfilled') {
-        setDaily(dailyResult.value)
-        await saveQQMusicDailyPlaylistCache(dailyResult.value)
-      }
-      if (playlistResult.status == 'fulfilled') {
-        setPlaylists(playlistResult.value.list)
-        // 取尽后回到开头，这样能一直「一批批」换下去而不是停在最后一批
-        nextFromRef.current = playlistResult.value.hasMore ? playlistResult.value.nextFrom : 0
-        await saveQQMusicRecommendPlaylistsCache({ list: playlistResult.value.list, nextFrom: nextFromRef.current })
-      }
-      void loadSimilar(cookie)
-      const failure = [dailyResult, playlistResult].find(result => result.status == 'rejected')
-      if (failure?.status == 'rejected') {
-        toast(failure.reason instanceof Error ? failure.reason.message : t('qq_load_failed'), 'long')
-      }
+      // 下拉刷新只管「每日推荐」这一块：猜你喜欢和推荐歌单都各自带了刷新钮，
+      // 下拉不该顺手换掉用户正在看/正在听的那一批。
+      const songs = await getQQMusicDailyPlaylist(cookie)
+      setDaily(songs)
+      await saveQQMusicDailyPlaylistCache(songs)
+    } catch (error: unknown) {
+      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
       refreshingRef.current = false
       setRefreshing(false)
     }
+    // 相似推荐是顺带算的，跟着下拉一起更新；它自己失败是静默的
+    void loadSimilar(cookie)
   }, [cookie, loadSimilar, loggedIn, t])
+
+  // 推荐歌单标题右侧那个刷新钮。每点一次换一批：游标往下走，取尽后回到开头
+  const refreshPlaylists = useCallback(async() => {
+    if (!loggedIn) {
+      loginRef.current?.show()
+      return
+    }
+    // 同 refresh：setRefreshingPlaylists 要到下次渲染才生效，光靠 disabled 挡不住这个窗口内的第二次触发
+    if (refreshingPlaylistsRef.current) return
+    refreshingPlaylistsRef.current = true
+    setRefreshingPlaylists(true)
+    try {
+      const result = await getQQMusicRecommendedPlaylists(cookie, nextFromRef.current)
+      setPlaylists(result.list)
+      // 取尽后回到开头，这样能一直「一批批」换下去而不是停在最后一批
+      nextFromRef.current = result.hasMore ? result.nextFrom : 0
+      await saveQQMusicRecommendPlaylistsCache({ list: result.list, nextFrom: nextFromRef.current })
+    } catch (error: unknown) {
+      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+    } finally {
+      refreshingPlaylistsRef.current = false
+      setRefreshingPlaylists(false)
+    }
+  }, [cookie, loggedIn, t])
 
   // 猜你喜欢右下角那个刷新按钮。要换的一批就是重新拉一次推荐，并把上次那批的续播存档作废
   const refreshGuess = useCallback(async() => {
@@ -234,19 +262,23 @@ export default () => {
       return
     }
     // 接着上次那首放（见 core/qqMusicDailyPosition）。列表换了/歌没了会自动回到开头
-    const startIndex = await resolveQQMusicDailyIndex(daily)
-    await setTempList(DAILY_LIST_ID, [...daily])
-    void playList(LIST_IDS.TEMP, startIndex)
+    await playQQMusicDailyPlaylist(daily)
   }, [daily])
 
-  // 卡片本身只展开/收起那 30 首，播放交给右下角的按钮
-  const toggleDaily = useCallback(() => {
+  // 卡片本身进歌单页（头图 + 那 30 首），播放交给右下角的按钮
+  const openDaily = useCallback(() => {
     if (!daily.length) {
       loginRef.current?.show()
       return
     }
-    setDailyExpanded(expanded => !expanded)
-  }, [daily.length])
+    navigations.pushQQPlaylistScreen(commonState.componentIds.home!, {
+      id: DAILY_LIST_ID,
+      name: t('qq_daily_recommend'),
+      daily: true,
+      cover: daily[0]?.meta.picUrl,
+      subtitle: t('mine_song_count', { num: daily.length }),
+    })
+  }, [daily, t])
 
   // 猜你喜欢走电台续播：播到快结束自动续下一批
   const playGuess = useCallback(async() => {
@@ -280,7 +312,15 @@ export default () => {
   }, [])
 
   const openPlaylist = (info: Playlist) => {
-    navigations.pushQQPlaylistScreen(commonState.componentIds.home!, { id: info.id, name: info.name, liked: info.liked })
+    navigations.pushQQPlaylistScreen(commonState.componentIds.home!, {
+      id: info.id,
+      name: info.name,
+      liked: info.liked,
+      // 头图的封面和副标题这边手上就有，顺手带过去，省得歌单页再去猜
+      cover: info.cover,
+      // 作者缺失（空串也算）时退回曲目数
+      subtitle: info.author ? info.author : info.trackCount ? t('mine_song_count', { num: info.trackCount }) : undefined,
+    })
   }
 
   const similarTitle = similar.title || t('home_similar_title', { name: similar.seedName })
@@ -306,60 +346,42 @@ export default () => {
             title={t('qq_daily_recommend')}
             subtitle={t('mine_song_count', { num: daily.length })}
             cover={daily[0]?.meta.picUrl}
-            onPress={toggleDaily}
-            action={<CardAction icon="play" onPress={() => { void playDaily() }} />}
+            onPress={openDaily}
+            action={<IconAction overlay icon="play" onPress={() => { void playDaily() }} />}
           />
           <SquareCard
             title={t('qq_guess_you_like')}
             cover={guess[0]?.meta.picUrl}
             onPress={() => { void playGuess() }}
             disabled={playing}
-            action={<CardAction icon="refresh" onPress={() => { void refreshGuess() }} disabled={refreshingGuess} />}
+            action={<IconAction overlay icon="refresh" onPress={() => { void refreshGuess() }} disabled={refreshingGuess} />}
           />
         </View>
 
         {
-          // 展开的那 30 首。行样式跟下面的「相似推荐」一致，点哪首就从哪首开始放
-          dailyExpanded && daily.length > 0
-            ? <View style={styles.dailyList}>
-                {
-                  daily.map((song, index) => (
-                    <TouchableOpacity
-                      key={`${song.id}-${index}`}
-                      style={{ ...styles.songRow, borderBottomColor: theme['c-border-background'] }}
-                      activeOpacity={0.7}
-                      onPress={() => { void playSongs(DAILY_LIST_ID, daily, index) }}
-                    >
-                      {song.meta.picUrl
-                        ? <Image url={song.meta.picUrl} style={styles.songPic} />
-                        : <View style={{ ...styles.songPic, backgroundColor: theme['c-primary-background'] }} />}
-                      <View style={styles.songInfo}>
-                        <Text numberOfLines={1}>{song.name}</Text>
-                        <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{song.singer}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))
-                }
-              </View>
-            : null
-        }
-
-        {
-          playlists.length
+          // 标题和刷新钮登录后一直在：列表空的时候也得留着入口，否则没法手动重拉
+          loggedIn
             ? <>
-                <Text style={styles.sectionTitle} size={15}>{t('qq_recommend_playlists')}</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
-                  {
-                    playlists.map(item => (
-                      <TouchableOpacity key={item.id} style={styles.playlistCard} activeOpacity={0.8} onPress={() => { openPlaylist(item) }}>
-                        {item.cover
-                          ? <Image url={item.cover} style={styles.playlistCover} />
-                          : <View style={{ ...styles.playlistCover, backgroundColor: theme['c-primary-background'] }} />}
-                        <Text style={styles.playlistName} size={12} numberOfLines={2}>{item.name}</Text>
-                      </TouchableOpacity>
-                    ))
-                  }
-                </ScrollView>
+                <View style={styles.sectionHeader}>
+                  <Text size={15}>{t('qq_recommend_playlists')}</Text>
+                  <IconAction icon="refresh" onPress={() => { void refreshPlaylists() }} disabled={refreshingPlaylists} />
+                </View>
+                {
+                  playlists.length
+                    ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
+                        {
+                          playlists.map(item => (
+                            <TouchableOpacity key={item.id} style={styles.playlistCard} activeOpacity={0.8} onPress={() => { openPlaylist(item) }}>
+                              {item.cover
+                                ? <Image url={item.cover} style={styles.playlistCover} />
+                                : <View style={{ ...styles.playlistCover, backgroundColor: theme['c-primary-background'] }} />}
+                              <Text style={styles.playlistName} size={12} numberOfLines={2}>{item.name}</Text>
+                            </TouchableOpacity>
+                          ))
+                        }
+                      </ScrollView>
+                    : null
+                }
               </>
             : null
         }
@@ -403,14 +425,16 @@ const styles = createStyle({
   loginCard: { marginTop: 12, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 8, alignItems: 'center' },
   loginHint: { marginTop: 4 },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
-  dailyList: { marginTop: 4 },
+  // 板块标题和右上角的刷新钮同一行
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 20, paddingBottom: 10 },
+  iconAction: { width: scaleSizeW(30), height: scaleSizeW(30), borderRadius: scaleSizeW(15), justifyContent: 'center', alignItems: 'center' },
+  iconActionOverlay: { backgroundColor: 'rgba(0,0,0,0.4)' },
   card: { borderRadius: 12, overflow: 'hidden', justifyContent: 'flex-end' },
   cardBg: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 },
   cardOverlay: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.3)' },
   // 文字和右下角的动作钮并排贴底。文字自己 flex:1，右内边距给按钮让位
   cardFooter: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', padding: 10 },
   cardText: { flex: 1, paddingRight: 8 },
-  cardAction: { width: scaleSizeW(30), height: scaleSizeW(30), borderRadius: scaleSizeW(15), backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
   sectionTitle: { paddingTop: 20, paddingBottom: 10 },
   hList: { paddingRight: 8 },
   playlistCard: { width: scaleSizeW(104), marginRight: 10 },

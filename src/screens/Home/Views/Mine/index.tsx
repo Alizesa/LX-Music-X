@@ -150,7 +150,15 @@ export default () => {
   }
 
   const openPlaylist = (info: LX.QQMusic.PlaylistInfo) => {
-    navigations.pushQQPlaylistScreen(commonState.componentIds.home!, { id: info.id, name: info.name, liked: info.liked })
+    navigations.pushQQPlaylistScreen(commonState.componentIds.home!, {
+      id: info.id,
+      name: info.name,
+      liked: info.liked,
+      // 歌单页的头图要用封面和一行副标题，这边手上的就是这一份
+      cover: info.cover,
+      // 作者缺失（空串也算）时退回曲目数
+      subtitle: info.author ? info.author : info.trackCount ? t('mine_song_count', { num: info.trackCount }) : undefined,
+    })
   }
 
   // 头像按顺序试：接口给的地址 → QQ 头像服务。前一个加载失败就换下一个，
