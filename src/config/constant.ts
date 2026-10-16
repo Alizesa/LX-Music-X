@@ -116,6 +116,9 @@ export const storageDataPrefix = {
   // 注意与上面的区分：qqMusicDailyRecommend 存的是「猜你喜欢」电台的结果
   // (get_radio_track)，这里存的才是真正的每日推荐歌单 (CgiGetDiss dirid=202)
   qqMusicDailyPlaylist: '@qq_music_daily_playlist',
+  // 每日推荐播到哪了。只记歌 id：恢复时按 id 在当前列表里找位置，
+  // 歌单换了/歌没了自然就退回开头
+  qqMusicDailyPosition: '@qq_music_daily_position',
   // 「我喜欢」的全量歌曲。获取要翻好几页，缓存下来供心形状态和歌单页直接读，
   // 只有手动下拉刷新才重新拉
   qqMusicLikedSongs: '@qq_music_liked_songs',

@@ -20,6 +20,7 @@ import {
 } from '@/core/qqMusic'
 import { continueRecommendQueue, initQQMusicRecommendAutoRefresh, startRecommendQueue } from '@/core/qqMusicRecommend'
 import { dropRecommendSession } from '@/core/qqMusicRecommendSession'
+import { QQ_DAILY_PLAYLIST_ID, resolveQQMusicDailyIndex } from '@/core/qqMusicDailyPosition'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
 import {
@@ -36,7 +37,8 @@ import { useI18n } from '@/lang'
 type Songs = LX.Music.MusicInfoOnline[]
 type Playlist = LX.QQMusic.PlaylistInfo
 
-const DAILY_LIST_ID = 'qq_daily_playlist'
+// 每日推荐的临时列表 id。位置记忆和历史标记都按它认队列，所以放在 core 里统一导出
+const DAILY_LIST_ID = QQ_DAILY_PLAYLIST_ID
 const H_PADDING = 14
 const CARD_GAP = 10
 
@@ -178,8 +180,10 @@ export default () => {
       loginRef.current?.show()
       return
     }
+    // 接着上次那首放（见 core/qqMusicDailyPosition）。列表换了/歌没了会自动回到开头
+    const startIndex = await resolveQQMusicDailyIndex(daily)
     await setTempList(DAILY_LIST_ID, [...daily])
-    void playList(LIST_IDS.TEMP, 0)
+    void playList(LIST_IDS.TEMP, startIndex)
   }, [daily])
 
   // 猜你喜欢走电台续播：播到快结束自动续下一批
