@@ -32,10 +32,11 @@ export default ({ componentId }: { componentId: string }) => {
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.playHistory, componentId)
-    const loadLocal = () => { void getPlayHistory().then(setLocal) }
-    loadLocal()
-    global.app_event.on('playHistoryUpdate', loadLocal)
-    return () => { global.app_event.off('playHistoryUpdate', loadLocal) }
+    void getPlayHistory().then(setLocal)
+    // 事件里已经带着最新的整份历史，别再回头读一次存储
+    const handleUpdate = (history: LX.Player.PlayHistoryItem[]) => { setLocal(history) }
+    global.app_event.on('playHistoryUpdate', handleUpdate)
+    return () => { global.app_event.off('playHistoryUpdate', handleUpdate) }
   }, [componentId])
 
   const refresh = useCallback(async() => {

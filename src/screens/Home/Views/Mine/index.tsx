@@ -134,10 +134,11 @@ export default () => {
   }, [loadPlaylists])
 
   useEffect(() => {
-    const load = () => { void getPlayHistory().then(list => { setHistoryCount(list.length) }) }
-    load()
-    global.app_event.on('playHistoryUpdate', load)
-    return () => { global.app_event.off('playHistoryUpdate', load) }
+    void getPlayHistory().then(list => { setHistoryCount(list.length) })
+    // 事件里已经带着最新的整份历史，别再回头读一次存储
+    const handleUpdate = (history: LX.Player.PlayHistoryItem[]) => { setHistoryCount(history.length) }
+    global.app_event.on('playHistoryUpdate', handleUpdate)
+    return () => { global.app_event.off('playHistoryUpdate', handleUpdate) }
   }, [])
 
   // 本地歌曲就是 LIST_IDS.LOCAL 那个列表（下载完成的歌也写在这里）。

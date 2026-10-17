@@ -486,9 +486,28 @@ export const saveDownloadPath = async(path: LX.Download.DownloadDirectory) => sa
 export const getPlayQueue = async() => await getData<LX.Player.PlayQueueItem[]>(playQueueKey) ?? []
 export const savePlayQueue = async(queue: LX.Player.PlayQueueItem[]) => saveData(playQueueKey, queue)
 
-export const getPlayHistory = async() => await getData<LX.Player.PlayHistoryItem[]>(playHistoryKey) ?? []
-export const savePlayHistory = async(history: LX.Player.PlayHistoryItem[]) => saveData(playHistoryKey, history)
-export const clearPlayHistory = async() => removeData(playHistoryKey)
+// 播放历史在内存里留一份：每次切歌都要更新它，而整份（最多 300 首、几百 KB）的
+// JSON 解析 + 序列化不该每首歌都做一遍。读取以内存为准，落盘节流到 1 秒一次
+// （节流函数的实现会带着最后一次参数触发，所以不会丢最终状态）。
+// 所有读写都走下面这三个函数，没有别处直接碰这个 key。
+let playHistoryCache: LX.Player.PlayHistoryItem[] | null = null
+const savePlayHistoryThrottled = throttle((history: LX.Player.PlayHistoryItem[]) => {
+  void saveData(playHistoryKey, history)
+}, 1000)
+export const getPlayHistory = async() => {
+  // eslint-disable-next-line require-atomic-updates
+  playHistoryCache ??= await getData<LX.Player.PlayHistoryItem[]>(playHistoryKey) ?? []
+  return playHistoryCache
+}
+export const savePlayHistory = async(history: LX.Player.PlayHistoryItem[]) => {
+  playHistoryCache = history
+  savePlayHistoryThrottled(history)
+}
+export const clearPlayHistory = async() => {
+  playHistoryCache = []
+  // 清空是用户主动操作，立即生效，不等节流
+  await removeData(playHistoryKey)
+}
 
 export const getQQMusicCookie = async() => {
   const cookie = await getSecureItem(qqMusicCookieKey)
