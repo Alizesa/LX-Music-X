@@ -109,23 +109,28 @@ export default () => {
   }, [])
 
   useEffect(() => {
-    void getQQMusicSession().then(session => {
-      setCookie(session.cookie)
-      setUser(session.user)
-      void loadPlaylists(session.cookie)
-    })
-    const handleAccountUpdate = (nextUser: LX.QQMusic.UserInfo | null) => {
-      setUser(nextUser)
-      // 退出登录（含票据失效被自动清理）时把上一个账号的歌单撤掉
-      if (!nextUser) setPlaylists([])
-      // 登录/换号时也要跟着加载：挂载时可能还没登录，缓存是空的
+    // 读当前会话再决定加载哪个号的歌单。登录/换号、以及别处收藏了歌单时都调它
+    const syncFromSession = (nextUser?: LX.QQMusic.UserInfo | null) => {
+      if (nextUser !== undefined) setUser(nextUser)
       void getQQMusicSession().then(session => {
         setCookie(session.cookie)
         void loadPlaylists(session.cookie)
       })
     }
+    syncFromSession()
+    const handleAccountUpdate = (nextUser: LX.QQMusic.UserInfo | null) => {
+      // 退出登录（含票据失效被自动清理）时把上一个账号的歌单撤掉
+      if (!nextUser) setPlaylists([])
+      syncFromSession(nextUser)
+    }
+    // 别处（歌单页头图）收藏/取消收藏了歌单：缓存已就地更新，这里重读一遍就能立刻反映
+    const handlePlaylistsUpdate = () => { syncFromSession() }
     global.app_event.on('qqMusicAccountUpdated', handleAccountUpdate)
-    return () => { global.app_event.off('qqMusicAccountUpdated', handleAccountUpdate) }
+    global.app_event.on('qqMusicPlaylistsUpdated', handlePlaylistsUpdate)
+    return () => {
+      global.app_event.off('qqMusicAccountUpdated', handleAccountUpdate)
+      global.app_event.off('qqMusicPlaylistsUpdated', handlePlaylistsUpdate)
+    }
   }, [loadPlaylists])
 
   useEffect(() => {

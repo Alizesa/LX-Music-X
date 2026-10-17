@@ -161,6 +161,12 @@ export class AppEvent extends Event {
     this.emit('qqMusicLikedUpdated')
   }
 
+  // 「我的歌单」那份缓存被就地改过（收藏/取消收藏一个歌单）。
+  // 常驻挂载的「我的」页据此重读一遍，不然要等重新进页面或下拉刷新才更新
+  qqMusicPlaylistsUpdated() {
+    this.emit('qqMusicPlaylistsUpdated')
+  }
+
   // 列表里的音乐信息改变事件
   musicInfoUpdate(musicInfo: LX.Music.MusicInfo) {
     this.emit('musicInfoUpdate', musicInfo)

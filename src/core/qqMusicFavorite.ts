@@ -392,6 +392,8 @@ export const toggleQQMusicPlaylistCollected = async(
         })
       }
       await saveQQMusicPlaylistsCache(next)
+      // 通知常驻页面（「我的」页）重读一遍，不用等重新进页面
+      global.app_event.qqMusicPlaylistsUpdated()
       return true
     }
     // 走到 unsupported 就是没登录（数字 id 上面已经挡过了）
