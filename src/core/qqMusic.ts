@@ -803,7 +803,9 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
     if (!rawList.length) break
     const before = songs.length
     for (const raw of rawList) {
-      const info = rawSongToOldInfo(raw)
+      // songlist 槽位的条目外面包了一层 { track: {...} }（参考实现也是这么拆的）；
+      // 老的 radio 槽位直接就是歌曲对象。两种都认
+      const info = rawSongToOldInfo(raw?.track ?? raw)
       if (!info || seen.has(info.songmid)) continue
       seen.add(info.songmid)
       songs.push(toNewMusicInfo(info) as LX.Music.MusicInfoOnline)

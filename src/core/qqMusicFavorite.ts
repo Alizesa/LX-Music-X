@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { filterVisiblePlaylists, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicTrackIdentity, postAuthedMusicu } from './qqMusic'
-import { getQQMusicLikedSongsCache, getQQMusicLikedSongsStale, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, removeQQMusicLikedSongsStale, removeQQMusicPlaylistsCache, saveQQMusicLikedSongsCache, saveQQMusicLikedSongsStale, saveQQMusicPlaylistsCache } from '@/utils/data'
+import { getQQMusicLikedSongsCache, getQQMusicLikedSongsStale, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, removeQQMusicLikedSongsStale, saveQQMusicLikedSongsCache, saveQQMusicLikedSongsStale, saveQQMusicPlaylistsCache } from '@/utils/data'
 import { clearPlaylistSongsCache, dropCachedPlaylistSongs } from './qqMusicPlaylistSongsCache'
 import { toast } from '@/utils/tools'
 
@@ -364,18 +364,37 @@ export const setQQMusicPlaylistCollected = async(
  * 返回是否成功；失败时提示已经发出去了。
  */
 export const toggleQQMusicPlaylistCollected = async(
-  playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'>,
+  playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'> & Partial<Pick<LX.QQMusic.PlaylistInfo, 'cover' | 'trackCount'>>,
   collected: boolean,
 ): Promise<boolean> => {
+  // 没有数字 id 的歌单压根没发收藏（本地就能判出来），别跟「没登录」共用一条提示
+  if (!Number.isFinite(Number(playlist.id)) || Number(playlist.id) <= 0) {
+    toast(global.i18n.t('qq_playlist_collect_unsupported'), 'long')
+    return false
+  }
   try {
     const result = await setQQMusicPlaylistCollected(playlist, collected)
     if (result == 'ok') {
       toast(global.i18n.t(collected ? 'qq_playlist_faved' : 'qq_playlist_unfaved', { name: playlist.name }))
-      // 「我的」页那两个歌单分区读的是这份缓存，作废掉，下次进页面会重新取
-      await removeQQMusicPlaylistsCache()
+      // 就地更新「我的歌单」缓存：收藏的加进去、取消的拿掉。
+      // 不能整份作废 —— 空缓存会被别处当成「这个号真的没有歌单」：添加歌单的选择器会显示
+      // 「还没有自建歌单」，推荐流里查收藏状态也查不到，我的页还得等下次重新进才恢复
+      const cached = await getQQMusicPlaylistsCache()
+      const next = cached.filter(item => item.id != playlist.id)
+      if (collected) {
+        next.push({
+          id: playlist.id,
+          name: playlist.name,
+          cover: playlist.cover,
+          trackCount: playlist.trackCount,
+          subscribed: true,
+          liked: false,
+        })
+      }
+      await saveQQMusicPlaylistsCache(next)
       return true
     }
-    // unsupported：没登录，或这个歌单没有数字 id
+    // 走到 unsupported 就是没登录（数字 id 上面已经挡过了）
     toast(global.i18n.t('qq_not_logged_in'), 'long')
   } catch (error: unknown) {
     toast(error instanceof Error ? error.message : global.i18n.t('qq_playlist_write_failed'), 'long')

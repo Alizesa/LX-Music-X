@@ -15,7 +15,7 @@ import { getListMusics } from '@/core/list'
 import { LIST_IDS } from '@/config/constant'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
-import { getPlayHistory, getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
+import { getPlayHistory, getQQMusicPlaylistsCache, hasQQMusicPlaylistsCache, saveQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
 import { useI18n } from '@/lang'
 
 const AVATAR_SIZE = 56
@@ -88,37 +88,45 @@ export default () => {
 
   const loggedIn = !!cookie && !!user
 
+  // 歌单：读本地缓存，只有「从没拉过」（缓存键都没写过）才联网拉一次。
+  // 不能用「列表空不空」判断 —— 空列表也是有效结果，否则没有歌单的号每次进页面都发请求
+  const loadPlaylists = useCallback(async(activeCookie: string) => {
+    if (!activeCookie) {
+      setPlaylists([])
+      return
+    }
+    if (await hasQQMusicPlaylistsCache()) {
+      setPlaylists(filterVisiblePlaylists(await getQQMusicPlaylistsCache()))
+      return
+    }
+    try {
+      const fresh = await getQQMusicPlaylists(activeCookie)
+      await saveQQMusicPlaylistsCache(fresh)
+      setPlaylists(filterVisiblePlaylists(fresh))
+    } catch (error) {
+      console.warn('[QQMusic] 拉取歌单失败:', error instanceof Error ? error.message : error)
+    }
+  }, [])
+
   useEffect(() => {
     void getQQMusicSession().then(session => {
       setCookie(session.cookie)
       setUser(session.user)
-      // 歌单直接读本地缓存，进页面不发网络请求
-      if (!session.cookie) return
-      const activeCookie = session.cookie
-      void getQQMusicPlaylistsCache().then(async cached => {
-        const list = filterVisiblePlaylists(cached)
-        setPlaylists(list)
-        // 缓存还没铺（新装、刚登录，或刚收藏/取消收藏过歌单把缓存作废了）：自己拉一次，
-        // 别让「我的」页空着等用户下拉
-        if (list.length) return
-        try {
-          const fresh = await getQQMusicPlaylists(activeCookie)
-          await saveQQMusicPlaylistsCache(fresh)
-          setPlaylists(filterVisiblePlaylists(fresh))
-        } catch (error) {
-          console.warn('[QQMusic] 拉取歌单失败:', error instanceof Error ? error.message : error)
-        }
-      })
+      void loadPlaylists(session.cookie)
     })
     const handleAccountUpdate = (nextUser: LX.QQMusic.UserInfo | null) => {
       setUser(nextUser)
       // 退出登录（含票据失效被自动清理）时把上一个账号的歌单撤掉
       if (!nextUser) setPlaylists([])
-      void getQQMusicSession().then(session => { setCookie(session.cookie) })
+      // 登录/换号时也要跟着加载：挂载时可能还没登录，缓存是空的
+      void getQQMusicSession().then(session => {
+        setCookie(session.cookie)
+        void loadPlaylists(session.cookie)
+      })
     }
     global.app_event.on('qqMusicAccountUpdated', handleAccountUpdate)
     return () => { global.app_event.off('qqMusicAccountUpdated', handleAccountUpdate) }
-  }, [])
+  }, [loadPlaylists])
 
   useEffect(() => {
     const load = () => { void getPlayHistory().then(list => { setHistoryCount(list.length) }) }

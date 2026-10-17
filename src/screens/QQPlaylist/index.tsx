@@ -127,8 +127,15 @@ export default ({ componentId, info }: Props) => {
     const next = !collected
     setCollecting(true)
     try {
-      // 提示和歌单缓存作废都在里面做掉了
-      if (await toggleQQMusicPlaylistCollected(info, next)) setCollected(next)
+      // 带上封面和当前这首数：收藏后「我的」页那条不会显示「共 0 首」。
+      // 提示和缓存更新都在里面做掉了
+      const playlist = {
+        id: info.id,
+        name: info.name,
+        cover: info.cover ?? undefined,
+        trackCount: songsRef.current.length,
+      }
+      if (await toggleQQMusicPlaylistCollected(playlist, next)) setCollected(next)
     } finally {
       setCollecting(false)
     }

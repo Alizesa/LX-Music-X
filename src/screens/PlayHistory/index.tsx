@@ -14,11 +14,6 @@ import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
 
-interface Row {
-  key: string
-  item: LX.Player.PlayHistoryItem
-}
-
 const formatDate = (timestamp: number) => {
   if (!timestamp) return ''
   const date = new Date(timestamp)
@@ -52,21 +47,19 @@ export default ({ componentId }: { componentId: string }) => {
     }
   }, [])
 
-  const rows: Row[] = local.map((item, index) => ({ kind: 'item' as const, key: `l-${item.musicInfo.id}-${item.playedAt}-${index}`, item }))
-
   return (
     <PageContent>
       <StatusBar />
       <SimpleHeader componentId={componentId} title={t('nav_history')} />
       <FlatList
         style={styles.list}
-        data={rows}
-        keyExtractor={row => row.key}
+        data={local}
+        keyExtractor={(item, index) => `${item.musicInfo.id}-${item.playedAt}-${index}`}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh() }} colors={[theme['c-primary']]} />}
         ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{t('setting_play_history_empty')}</Text>}
-        renderItem={({ item: row }) => {
+        renderItem={({ item }) => {
           // 播放历史里的条目可能是「下载列表」那种旧结构，取真实歌曲信息时要拆一层
-          const info = 'metadata' in row.item.musicInfo ? row.item.musicInfo.metadata.musicInfo : row.item.musicInfo
+          const info = 'metadata' in item.musicInfo ? item.musicInfo.metadata.musicInfo : item.musicInfo
           return (
             <TouchableOpacity
               style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}
@@ -79,7 +72,7 @@ export default ({ componentId }: { componentId: string }) => {
               <View style={styles.info}>
                 <Text numberOfLines={1}>{info.name}</Text>
                 <Text numberOfLines={1} size={12} color={theme['c-font-label']}>{info.singer}</Text>
-                <Text size={11} color={theme['c-font-label']}>{formatDate(row.item.playedAt)}</Text>
+                <Text size={11} color={theme['c-font-label']}>{formatDate(item.playedAt)}</Text>
               </View>
             </TouchableOpacity>
           )

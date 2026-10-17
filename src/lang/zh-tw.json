@@ -112,6 +112,7 @@
   "qq_playlist_write_no_effect": "伺服器回報成功，但歌單並沒有變化",
   "qq_playlist_write_unsupported": "只能操作自己建立的歌單",
   "qq_playlist_write_empty": "還沒有自建歌單",
+  "qq_playlist_collect_unsupported": "這個歌單不支援收藏",
   "qq_playlist_faved": "已收藏「{name}」",
   "qq_playlist_unfaved": "已取消收藏「{name}」",
   "qq_like_added": "已加入我喜歡",

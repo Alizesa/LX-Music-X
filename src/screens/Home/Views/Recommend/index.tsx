@@ -187,15 +187,27 @@ export default () => {
       // 用户刚好在下拉刷新时别凑热闹
       if (refreshingRef.current || refreshingGuessRef.current) return
       const failures: string[] = []
+      // 占住手动刷新那两道闸：自动刷新自己在发请求的这段时间里，
+      // 用户再下拉/点刷新钮也应该被挡住，否则同一批会请求两遍
       if (dailyDay != today) {
-        await fetchDaily().catch(error => {
-          failures.push(`每日推荐: ${error instanceof Error ? error.message : error}`)
-        })
+        refreshingRef.current = true
+        try {
+          await fetchDaily()
+        } catch (error) {
+          failures.push(`每日推荐: ${error instanceof Error ? error.message : String(error)}`)
+        } finally {
+          refreshingRef.current = false
+        }
       }
       if (guessDay != today) {
-        await fetchGuess().catch(error => {
-          failures.push(`猜你喜欢: ${error instanceof Error ? error.message : error}`)
-        })
+        refreshingGuessRef.current = true
+        try {
+          await fetchGuess()
+        } catch (error) {
+          failures.push(`猜你喜欢: ${error instanceof Error ? error.message : String(error)}`)
+        } finally {
+          refreshingGuessRef.current = false
+        }
       }
       if (failures.length) console.warn('[QQMusic] 跨天自动刷新失败，先用旧内容:', failures.join('; '))
     }
@@ -318,13 +330,9 @@ export default () => {
     setPlaying(true)
     try {
       if (await continueRecommendQueue(guess)) return
-      let songs = guess
-      if (!songs.length) {
-        songs = await getQQMusicDailyRecommendations(cookie)
-        if (!songs.length) throw new Error(t('qq_load_failed'))
-        setGuess(songs)
-        await saveQQMusicDailyRecommendCache(songs)
-      }
+      // 抓不到一批（比如启动时的自动刷新失败了）：走同一条拉取路径，
+      // 这样「今天刷过了」也会记上，下次冷启动不会再为同一批多请求一次
+      const songs = guess.length ? guess : await fetchGuess()
       await setTempList(QQ_DAILY_RECOMMEND_ID, songs)
       initQQMusicRecommendAutoRefresh()
       await startRecommendQueue(songs, 0)
@@ -333,7 +341,7 @@ export default () => {
     } finally {
       setPlaying(false)
     }
-  }, [cookie, guess, loggedIn, t])
+  }, [fetchGuess, guess, loggedIn, t])
 
   const playSongs = useCallback(async(listId: string, songs: Songs, index: number) => {
     await setTempList(listId, [...songs])

@@ -513,6 +513,8 @@ export const saveQQMusicUser = async(user: LX.QQMusic.UserInfo | null) => user ?
 // 歌单与每日推荐都缓存到本地：进页面直接显示、点击即播，不产生网络请求，
 // 只有用户手动刷新时才重新拉取。因此缓存里没有时间戳，也就没有过期逻辑。
 export const getQQMusicPlaylistsCache = async() => await getData<LX.QQMusic.PlaylistInfo[]>(qqMusicPlaylistsKey) ?? []
+/** 缓存键有没有写过。空数组也算写过 —— 用它区分「没拉过」和「拉过但这号真没有歌单」 */
+export const hasQQMusicPlaylistsCache = async() => (await getData<LX.QQMusic.PlaylistInfo[]>(qqMusicPlaylistsKey)) != null
 export const saveQQMusicPlaylistsCache = async(list: LX.QQMusic.PlaylistInfo[]) => saveData(qqMusicPlaylistsKey, list)
 export const removeQQMusicPlaylistsCache = async() => removeData(qqMusicPlaylistsKey)
 export const getQQMusicDailyPosition = async() => await getData<{ songId: string, savedAt: number }>(qqMusicDailyPositionKey) ?? null
@@ -538,11 +540,17 @@ export const removeQQMusicDailyRecommendCache = async() => removeData(qqMusicDai
 /** 每日推荐/猜你喜欢那两份缓存最后一次刷新是哪天（本地日期字符串）。没刷过就是 undefined */
 export const getQQMusicRefreshDay = async(kind: QQMusicRefreshKind) =>
   (await getData<Record<string, string>>(qqMusicRefreshDayKey))?.[kind]
+// 「哪天刷过」是一整条记录，两份缓存可能同时写入（比如下拉刷新和自动刷新撞上）。
+// 串行化，避免读-改-写互相覆盖（同 core/player/playHistory 的 writeQueue）
+let refreshDayQueue = Promise.resolve()
 /** 记下「这份缓存是今天刷的」。内容拉成功之后调用 */
 export const saveQQMusicRefreshDay = async(kind: QQMusicRefreshKind) => {
-  const days = (await getData<Record<string, string>>(qqMusicRefreshDayKey)) ?? {}
-  days[kind] = new Date().toDateString()
-  await saveData(qqMusicRefreshDayKey, days)
+  refreshDayQueue = refreshDayQueue.catch(() => {}).then(async() => {
+    const days = (await getData<Record<string, string>>(qqMusicRefreshDayKey)) ?? {}
+    days[kind] = new Date().toDateString()
+    await saveData(qqMusicRefreshDayKey, days)
+  })
+  await refreshDayQueue
 }
 export const removeQQMusicRefreshDay = async() => removeData(qqMusicRefreshDayKey)
 export const getQQMusicRecommendPlaylistsCache = async() => await getData<LX.QQMusic.RecommendPlaylistCache>(qqMusicRecommendPlaylistsKey) ?? null

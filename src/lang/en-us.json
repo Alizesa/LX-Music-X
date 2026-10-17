@@ -112,6 +112,7 @@
   "qq_playlist_write_no_effect": "The server reported success, but the playlist did not change",
   "qq_playlist_write_unsupported": "Only playlists you created can be changed",
   "qq_playlist_write_empty": "No playlists created yet",
+  "qq_playlist_collect_unsupported": "This playlist can't be saved",
   "qq_playlist_faved": "Saved \"{name}\"",
   "qq_playlist_unfaved": "Removed \"{name}\" from saved",
   "qq_like_added": "Added to Liked",
