@@ -14,6 +14,9 @@ const LIST_LOAD_LIMIT = 30
 // 没有上限的话，搜过/开过多少个歌单，就有多少份完整歌曲信息常驻到进程结束。
 const DETAIL_CACHE_MAX = 8
 const DETAIL_CACHE_MAX_SONGS = 3000
+// 歌单广场列表页（slist__）是小块卡片数据，不参与详情淘汰；
+// 仍给一个上限防御，避免分类/分页浏览长期累积
+const SLIST_CACHE_MAX = 50
 // 正在加载的详情不参与淘汰：getListDetailLimit 的 then 里要校验 listCache 是否
 // 还是缓存里的那一个，被淘汰掉会直接返回 undefined。
 const loadingDetailKeys = new Set<string>()
@@ -33,6 +36,25 @@ const countCachedSongs = (value: CacheValue | undefined) => {
     total += Array.isArray(page) ? page.length : page.data.list.length
   }
   return total
+}
+
+const pruneSListCache = () => {
+  let count = 0
+  for (const key of cache.keys()) {
+    if (key.startsWith('slist__')) count++
+  }
+  while (count > SLIST_CACHE_MAX) {
+    let oldest: string | undefined
+    for (const key of cache.keys()) {
+      if (key.startsWith('slist__')) {
+        oldest = key
+        break
+      }
+    }
+    if (oldest == null) break
+    cache.delete(oldest)
+    count--
+  }
 }
 
 const pruneDetailCache = () => {
@@ -121,11 +143,15 @@ export const getList = async(source: LX.OnlineSource, tabId: string, sortId: str
   let listCache = cache.get(pageKey) as ListInfo
   if (listCache) {
     if (isRefresh) cache.delete(pageKey)
-    else return listCache
+    else {
+      touchCache(pageKey)
+      return listCache
+    }
   }
 
   return musicSdk[source]?.songList.getList(sortId, tabId, page).then((result: ListInfo) => {
     cache.set(pageKey, result)
+    pruneSListCache()
     return result
     // if (pageKey != listInfo.key) return
     // setList(result, tabId, sortId, page)
@@ -278,16 +304,15 @@ export const getListDetailAll = async(source: LX.OnlineSource, id: string, isRef
     if (pageCache) return pageCache.data
     return getListDetailLimit(source, id, page)
   }
-  return loadData(1).then(async result => {
-    if (result.total <= result.limit) return result.list
+  const first = await loadData(1)
+  if (first.total <= first.limit) return deduplicationList(first.list)
 
-    let maxPage = Math.ceil(result.total / result.limit)
-    const loadDetail = async(loadPage = 2): Promise<LX.Music.MusicInfoOnline[]> => {
-      return loadPage == maxPage
-        ? loadData(loadPage).then(result => result.list)
-        // eslint-disable-next-line @typescript-eslint/promise-function-async
-        : loadData(loadPage).then(result1 => loadDetail(++loadPage).then(result2 => [...result1.list, ...result2]))
-    }
-    return loadDetail().then(result2 => [...result.list, ...result2])
-  }).then(list => deduplicationList(list))
+  // 迭代追加，避免递归 [...result1, ...result2] 在大歌单上做 O(n²) 的引用拷贝
+  const all: LX.Music.MusicInfoOnline[] = [...first.list]
+  const maxPage = Math.ceil(first.total / first.limit)
+  for (let page = 2; page <= maxPage; page++) {
+    const data = await loadData(page)
+    all.push(...data.list)
+  }
+  return deduplicationList(all)
 }

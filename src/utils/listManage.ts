@@ -11,9 +11,59 @@ import {
 import { arrPush, arrPushByPosition, arrUnshift } from '@/utils/common'
 import { syncLocalMatchIndexWithList } from '@/utils/localMatchIndex'
 import { LIST_IDS } from '@/config/constant'
+import playerState from '@/store/player/state'
 
 export const userLists: LX.List.UserListInfo[] = []
 export const allMusicList = new Map<string, LX.Music.MusicInfo[]>()
+
+// 用户列表缓存也是整份歌曲数组。没有上限时，备份导出/歌单同步碰过的列表会一直留着；
+// 这里按最近访问淘汰（LOCAL/TEMP/当前播放列表不参与）。
+const USER_LIST_CACHE_MAX = 5
+const USER_LIST_CACHE_MAX_SONGS = 3000
+// Map 保持插入顺序：访问时删了再塞，淘汰从头部拿最久没用的
+const listAccessOrder = new Map<string, true>()
+let listCachePruneTimer: ReturnType<typeof setTimeout> | null = null
+
+const isListCacheProtected = (id: string) =>
+  id === LIST_IDS.LOCAL ||
+  id === LIST_IDS.TEMP ||
+  id === playerState.playInfo.playerListId ||
+  id === playerState.playMusicInfo.listId
+
+const touchListCache = (id: string) => {
+  if (!allMusicList.has(id)) return
+  listAccessOrder.delete(id)
+  listAccessOrder.set(id, true)
+}
+
+const pruneListCache = () => {
+  // 只统计可淘汰的列表；保护的列表不触发淘汰，也不被淘汰
+  const ids = [...listAccessOrder.keys()].filter(id => allMusicList.has(id) && !isListCacheProtected(id))
+  if (!ids.length) return
+  let count = ids.length
+  let totalSongs = ids.reduce((sum, id) => sum + (allMusicList.get(id)?.length ?? 0), 0)
+  if (count <= USER_LIST_CACHE_MAX && totalSongs <= USER_LIST_CACHE_MAX_SONGS) return
+
+  // 最近访问的那个留着，否则一个超大列表会刚加载完就被自己挤掉
+  const newest = ids[ids.length - 1]
+  for (const id of ids) {
+    if (count <= USER_LIST_CACHE_MAX && totalSongs <= USER_LIST_CACHE_MAX_SONGS) break
+    if (id === newest) continue
+    totalSongs -= allMusicList.get(id)?.length ?? 0
+    allMusicList.delete(id)
+    listAccessOrder.delete(id)
+    count--
+  }
+}
+
+// 延迟一点再淘汰：避免在某个列表的增删改还没走完时就把它的缓存删掉
+const schedulePruneListCache = () => {
+  if (listCachePruneTimer) return
+  listCachePruneTimer = setTimeout(() => {
+    listCachePruneTimer = null
+    pruneListCache()
+  }, 3000)
+}
 
 export const setUserLists = (lists: LX.List.UserListInfo[]) => {
   userLists.splice(0, userLists.length, ...lists)
@@ -22,10 +72,13 @@ export const setUserLists = (lists: LX.List.UserListInfo[]) => {
 
 export const setMusicList = (listId: string, musicList: LX.Music.MusicInfo[]): LX.Music.MusicInfo[] => {
   allMusicList.set(listId, musicList)
+  touchListCache(listId)
+  if (!isListCacheProtected(listId)) schedulePruneListCache()
   return musicList
 }
 export const removeMusicList = (id: string) => {
   allMusicList.delete(id)
+  listAccessOrder.delete(id)
 }
 
 
@@ -214,7 +267,10 @@ const loadingListPromises = new Map<string, Promise<LX.Music.MusicInfo[]>>()
 export const getListMusics = async(listId: string): Promise<LX.Music.MusicInfo[]> => {
   if (!listId) return []
   const cached = allMusicList.get(listId)
-  if (cached) return cached
+  if (cached) {
+    touchListCache(listId)
+    return cached
+  }
 
   let promise = loadingListPromises.get(listId)
   if (!promise) {
