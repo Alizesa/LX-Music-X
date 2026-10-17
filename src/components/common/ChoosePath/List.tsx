@@ -18,7 +18,7 @@ const parentDirInfo = new Map<string, string>()
 const caches = new Map<string, PathItem[]>()
 
 const handleReadDir = async(path: string, dirOnly: boolean, filter?: string[], isRefresh = false) => {
-  let filterRxp = filter?.length ? new RegExp(`\\.(${filter.join('|')})$`, 'i') : null
+  const filterRxp = filter?.length ? new RegExp(`\\.(${filter.join('|')})$`, 'i') : null
   const cacheKey = `${path}_${dirOnly ? 'true' : 'false'}_${filter ? filter.toString() : 'null'}`
   if (!isRefresh && caches.has(cacheKey)) return caches.get(cacheKey)!
   return readDir(path).then(paths => {
@@ -67,6 +67,13 @@ const handleReadDir = async(path: string, dirOnly: boolean, filter?: string[], i
   })
 }
 
+// 目录内容是按次浏览用的，不跨会话保留：用户在文件选择器里翻过的每个目录
+// （可能有成千上万个文件）没有理由一直占着内存。关闭选择器时清掉
+const clearPathCache = () => {
+  parentDirInfo.clear()
+  caches.clear()
+}
+
 interface ReadOptions {
   title: string
   dirOnly: boolean
@@ -112,6 +119,7 @@ export default forwardRef<ListType, ListProps>(({
     },
     hide() {
       modalRef.current?.setVisible(false)
+      clearPathCache()
     },
   }))
 
@@ -119,6 +127,7 @@ export default forwardRef<ListType, ListProps>(({
     isUnmountedRef.current = false
     return () => {
       isUnmountedRef.current = true
+      clearPathCache()
     }
   }, [])
 
@@ -167,6 +176,7 @@ export default forwardRef<ListType, ListProps>(({
 
   const handleHide = () => {
     modalRef.current?.setVisible(false)
+    clearPathCache()
     onHide()
   }
 

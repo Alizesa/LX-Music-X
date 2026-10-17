@@ -219,6 +219,9 @@ const handleNativeUpdate = (state: NativeDownloadState) => {
   if (!state.taskId) return
   const task = tasks.find(item => item.id == state.taskId)
   if (!task) return
+  // 不在下载中就丢掉速度采样：暂停/出错后恢复时不该拿上一次的旧采样算速度，
+  // 任务结束后也没必要一直留着这个 Map 条目
+  if (state.status != 'run') speedSamples.delete(task.id)
   if (state.status == 'completed') {
     void finalizeTask(task, state)
     return
@@ -462,6 +465,7 @@ export const removeTask = async(id: string, deleteFile = false) => {
   if (index < 0) return
   const task = tasks[index]
   tasks.splice(index, 1)
+  speedSamples.delete(id)
   await removeNativeDownload(task.nativeId, task.id, task.status != 'completed').catch(() => {})
   if (deleteFile && task.filePath) {
     await unlink(task.filePath).catch(() => {})
@@ -481,6 +485,7 @@ export const removeTasks = async(ids: string[], deleteFile = false) => {
   const targets = tasks.filter(task => idSet.has(task.id))
   if (!targets.length) return
   tasks.splice(0, tasks.length, ...tasks.filter(task => !idSet.has(task.id)))
+  targets.forEach(task => { speedSamples.delete(task.id) })
   await Promise.all(targets.map(async task =>
     removeNativeDownload(task.nativeId, task.id, task.status != 'completed').catch(() => {}),
   ))
