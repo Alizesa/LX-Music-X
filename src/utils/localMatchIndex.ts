@@ -218,6 +218,9 @@ export const rebuildLocalMatchIndexFromList = async(list: LX.Music.MusicInfo[]):
   const index = buildLocalMatchIndex(list, current ?? undefined)
   current = index
   try {
+    // 自己再标一次 dirty：调用方通常在写列表前标过，这里保证「索引写一半失败」
+    // 在下次启动时也一定会重建
+    await markLocalMatchIndexDirty()
     await saveLocalMatchIndex(index)
     await clearLocalMatchIndexDirty()
   } catch (error) {
@@ -251,8 +254,11 @@ export const syncLocalMatchIndexWithList = async(list: LX.Music.MusicInfo[]): Pr
   }
   current = next
   try {
+    await markLocalMatchIndexDirty()
     await saveLocalMatchIndex(next)
+    await clearLocalMatchIndexDirty()
   } catch (error) {
+    // 留 dirty：下次启动从 @list__local 重建
     log.warn('[LocalMatchIndex] sync save failed: ' + (error instanceof Error ? error.message : String(error)))
   }
   return next

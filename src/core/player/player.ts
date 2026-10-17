@@ -31,6 +31,7 @@ import { setQQMusicTrackLiked } from '@/core/qqMusicFavorite'
 import { addDislikeInfo } from '@/core/dislikeList'
 import { clearPlayQueue, getPlayQueue, insertPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
 import { parkRecommendQueue } from '@/core/qqMusicRecommendSession'
+import { releaseLocalList, retainLocalList } from '@/core/localList'
 
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
@@ -286,9 +287,16 @@ const handlePlay = async() => {
  * @param id 歌曲id
  */
 export const playListById = async(listId: string, id: string) => {
-  const index = getList(listId).findIndex(musicInfo => musicInfo.id == id)
-  if (index < 0) return
-  await playList(listId, index)
+  // LOCAL 是延迟加载的：先确保整表在内存里，否则 getList 会拿到空数组
+  const isLocal = listId === LIST_IDS.LOCAL
+  if (isLocal) await retainLocalList('player:playListById')
+  try {
+    const index = getList(listId).findIndex(musicInfo => musicInfo.id == id)
+    if (index < 0) return
+    await playList(listId, index)
+  } finally {
+    if (isLocal) releaseLocalList('player:playListById')
+  }
 }
 
 /**
@@ -297,21 +305,29 @@ export const playListById = async(listId: string, id: string) => {
  * @param index 播放的歌曲位置
  */
 export const playList = async(listId: string, index: number) => {
-  const prevListId = playerState.playInfo.playerListId
-  if (listId != LIST_IDS.PLAY_QUEUE) {
-    // 队列只有一个槽位，replace 会把当前的「每日推荐」队列（含自动续上的批次）整个丢掉，
-    // 所以换队列前先存档，回「每日推荐」时能接着播。判断只看队列自己的来源标记：
-    // 调用方进来之前已经 setTempList 把临时列表标记改成新列表了。
-    await parkRecommendQueue()
-    await replacePlayQueue(listId, getList(listId))
+  // LOCAL 是延迟加载的：从本地列表起播前必须先把整表读进来。
+  // 建完队列后 isPlayQueueFromList(LOCAL) 会把列表钉住，这里只管操作期间的占用
+  const isLocal = listId === LIST_IDS.LOCAL
+  if (isLocal) await retainLocalList('player:playList')
+  try {
+    const prevListId = playerState.playInfo.playerListId
+    if (listId != LIST_IDS.PLAY_QUEUE) {
+      // 队列只有一个槽位，replace 会把当前的「每日推荐」队列（含自动续上的批次）整个丢掉，
+      // 所以换队列前先存档，回「每日推荐」时能接着播。判断只看队列自己的来源标记：
+      // 调用方进来之前已经 setTempList 把临时列表标记改成新列表了。
+      await parkRecommendQueue()
+      await replacePlayQueue(listId, getList(listId))
+    }
+    const item = getPlayQueue()[index]
+    if (!item) return
+    setPlayListId(LIST_IDS.PLAY_QUEUE)
+    setPlayMusicInfo(LIST_IDS.PLAY_QUEUE, item.musicInfo)
+    if (settingState.setting['player.isAutoCleanPlayedList'] || prevListId != LIST_IDS.PLAY_QUEUE) clearPlayedList()
+    clearTempPlayeList()
+    await handlePlay()
+  } finally {
+    if (isLocal) releaseLocalList('player:playList')
   }
-  const item = getPlayQueue()[index]
-  if (!item) return
-  setPlayListId(LIST_IDS.PLAY_QUEUE)
-  setPlayMusicInfo(LIST_IDS.PLAY_QUEUE, item.musicInfo)
-  if (settingState.setting['player.isAutoCleanPlayedList'] || prevListId != LIST_IDS.PLAY_QUEUE) clearPlayedList()
-  clearTempPlayeList()
-  await handlePlay()
 }
 
 export const removeQueueMusic = async(index: number) => {

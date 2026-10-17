@@ -11,8 +11,7 @@ import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo } from '@/core/qqMusic'
 import { refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
-import { getListMusics } from '@/core/list'
-import { LIST_IDS } from '@/config/constant'
+import { getLocalMusicCount } from '@/utils/localMatchIndex'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
 import { getPlayHistory, getQQMusicPlaylistsCache, hasQQMusicPlaylistsCache, saveQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
@@ -145,17 +144,24 @@ export default () => {
     return () => { global.app_event.off('playHistoryUpdate', handleUpdate) }
   }, [])
 
-  // 本地歌曲就是 LIST_IDS.LOCAL 那个列表（下载完成的歌也写在这里）。
-  // 导入/删除会走列表事件，跟着更新一下数量
+  // 本地歌曲数量直接读匹配索引里的 listCount，避免为了计数加载整份 LOCAL 列表
   useEffect(() => {
     // 用 async 声明：列表事件的监听签名要求返回 Promise<void>
-    const load = async() => { setLocalCount((await getListMusics(LIST_IDS.LOCAL)).length) }
+    const load = async() => { setLocalCount(await getLocalMusicCount()) }
     void load()
     global.list_event.on('list_music_add', load)
     global.list_event.on('list_music_remove', load)
+    global.list_event.on('list_music_clear', load)
+    global.list_event.on('list_music_update', load)
+    global.list_event.on('list_music_overwrite', load)
+    global.list_event.on('list_data_overwrite', load)
     return () => {
       global.list_event.off('list_music_add', load)
       global.list_event.off('list_music_remove', load)
+      global.list_event.off('list_music_clear', load)
+      global.list_event.off('list_music_update', load)
+      global.list_event.off('list_music_overwrite', load)
+      global.list_event.off('list_data_overwrite', load)
     }
   }, [])
 

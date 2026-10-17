@@ -1,5 +1,5 @@
 import { filterMusicList, toNewMusicInfo } from '@/utils'
-import { LIST_IDS, storageDataPrefix, storageDataPrefixOld } from '@/config/constant'
+import { storageDataPrefix, storageDataPrefixOld } from '@/config/constant'
 import { getAllKeys, getData, getDataMultiple, removeData, saveData } from '@/plugins/storage'
 import { allMusicList, listDataOverwrite, userLists } from '@/utils/listManage'
 import { saveListMusics, saveUserList } from '@/utils/data'
@@ -119,7 +119,9 @@ export const migrateListData = async() => {
   }
   listDataOverwrite(listDataAll)
   await saveUserList(userLists)
-  const allListIds = [LIST_IDS.LOCAL, ...userLists.map(l => l.id)]
+  // 只迁移用户列表。LOCAL 由本机管理，且现在可能没有加载（延迟加载），
+  // 把它放进这里会把 undefined 写成空列表
+  const allListIds = userLists.map(l => l.id)
   await saveListMusics([...allListIds.map(id => ({ id, musics: allMusicList.get(id) as LX.List.ListMusics }))])
   await removeData(storageDataPrefixOld.listSort)
 

@@ -4,13 +4,20 @@ import listState from '@/store/list/state'
 import settingState from '@/store/setting/state'
 import { fixNewMusicInfoQuality } from '@/utils'
 import { saveTempListMeta } from '@/utils/data'
+import { withLocalList } from '@/core/localList'
+
+// LOCAL 是延迟加载的：变更期间用 lease 占住，避免操作中途被释放。
+// load=false：具体要不要加载由 list_event 内部决定，这里只防释放
+const withLocalGuard = async<T>(isLocal: boolean, reason: string, fn: () => Promise<T>): Promise<T> => {
+  return isLocal ? withLocalList(reason, fn, false) : fn()
+}
 
 /**
  * 覆盖全部列表数据
  * @param data
  */
 export const overwriteListFull = async(data: LX.List.ListActionDataOverwrite) => {
-  await global.list_event.list_data_overwrite(data)
+  await withLocalGuard(true, 'list:overwriteFull', async() => { await global.list_event.list_data_overwrite(data) })
 }
 
 
@@ -47,49 +54,65 @@ export const updateUserListPosition = async(position: number, ids: string[]) => 
  * 批量添加歌曲到列表
  */
 export const addListMusics = async(id: string, musicInfos: LX.Music.MusicInfo[], addMusicLocationType: LX.AddMusicLocationType) => {
-  await global.list_event.list_music_add(id, musicInfos, addMusicLocationType)
+  await withLocalGuard(id === LIST_IDS.LOCAL, 'list:addMusics', async() => {
+    await global.list_event.list_music_add(id, musicInfos, addMusicLocationType)
+  })
 }
 
 /**
  * 跨列表批量移动歌曲
  */
 export const moveListMusics = async(fromId: string, toId: string, musicInfos: LX.Music.MusicInfo[], addMusicLocationType: LX.AddMusicLocationType) => {
-  await global.list_event.list_music_move(fromId, toId, musicInfos, addMusicLocationType)
+  const isLocal = fromId === LIST_IDS.LOCAL || toId === LIST_IDS.LOCAL
+  await withLocalGuard(isLocal, 'list:moveMusics', async() => {
+    await global.list_event.list_music_move(fromId, toId, musicInfos, addMusicLocationType)
+  })
 }
 
 /**
  * 批量删除列表内歌曲
  */
 export const removeListMusics = async(listId: string, ids: string[]) => {
-  await global.list_event.list_music_remove(listId, ids)
+  await withLocalGuard(listId === LIST_IDS.LOCAL, 'list:removeMusics', async() => {
+    await global.list_event.list_music_remove(listId, ids)
+  })
 }
 
 /**
  * 批量更新列表内歌曲
  */
 export const updateListMusics = async(infos: Array<{ id: string, musicInfo: LX.Music.MusicInfo }>) => {
-  await global.list_event.list_music_update(infos)
+  const isLocal = infos.some(info => info.id === LIST_IDS.LOCAL)
+  await withLocalGuard(isLocal, 'list:updateMusics', async() => {
+    await global.list_event.list_music_update(infos)
+  })
 }
 
 /**
  * 批量移动列表内歌曲的位置
  */
 export const updateListMusicPosition = async(listId: string, position: number, ids: string[]) => {
-  await global.list_event.list_music_update_position(listId, position, ids)
+  await withLocalGuard(listId === LIST_IDS.LOCAL, 'list:updatePosition', async() => {
+    await global.list_event.list_music_update_position(listId, position, ids)
+  })
 }
 
 /**
  * 覆盖列表内的歌曲
  */
 export const overwriteListMusics = async(listId: string, musicInfos: LX.Music.MusicInfo[]) => {
-  await global.list_event.list_music_overwrite(listId, musicInfos)
+  await withLocalGuard(listId === LIST_IDS.LOCAL, 'list:overwriteMusics', async() => {
+    await global.list_event.list_music_overwrite(listId, musicInfos)
+  })
 }
 
 /**
  * 覆盖列表内的歌曲
  */
 export const clearListMusics = async(ids: string[]) => {
-  await global.list_event.list_music_clear(ids)
+  await withLocalGuard(ids.includes(LIST_IDS.LOCAL), 'list:clearMusics', async() => {
+    await global.list_event.list_music_clear(ids)
+  })
 }
 
 /**

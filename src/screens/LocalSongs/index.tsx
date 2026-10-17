@@ -9,6 +9,7 @@ import Image from '@/components/common/Image'
 import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS, LIST_IDS } from '@/config/constant'
 import { addListMusics, getListMusics } from '@/core/list'
+import { releaseLocalList, retainLocalList } from '@/core/localList'
 import { addTempPlayList } from '@/core/player/tempPlayList'
 import { scanAudioFiles, readMetadata } from '@/utils/localMediaMetadata'
 import { selectManagedFolder } from '@/utils/fs'
@@ -37,8 +38,10 @@ export default ({ componentId }: { componentId: string }) => {
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.localSongs, componentId)
-    void load()
-  }, [componentId, load])
+    // 页面打开期间持有完整列表；离开后交给 core/localList 判断是否释放
+    void retainLocalList('screen:localSongs').then(list => { setList(list as LX.Music.MusicInfoLocal[]) })
+    return () => { releaseLocalList('screen:localSongs') }
+  }, [componentId])
 
   const importSongs = useCallback(async() => {
     if (importing) return

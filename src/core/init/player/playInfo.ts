@@ -1,7 +1,9 @@
 import { getPlayInfo } from '@/utils/data'
+import { LIST_IDS } from '@/config/constant'
 import { playList, play } from '@/core/player/player'
 import { getList } from '@/core/player/playInfo'
 import { initPlayQueue } from '@/core/player/playQueue'
+import { releaseLocalList, retainLocalList } from '@/core/localList'
 
 
 export default async(setting: LX.AppSetting) => {
@@ -17,13 +19,20 @@ export default async(setting: LX.AppSetting) => {
   // initPlayQueue 是幂等的，dataInit 里那次调用会变成空操作。
   await initPlayQueue()
 
-  const list = getList(info.listId)
-  if (!list[info.index]) return
-  global.lx.restorePlayInfo = info
+  // 旧数据里 listId 可能是 LOCAL；现在完整列表延迟加载，getList 前必须先读进来
+  const isLocal = info.listId === LIST_IDS.LOCAL
+  if (isLocal) await retainLocalList('player:restore')
+  try {
+    const list = getList(info.listId)
+    if (!list[info.index]) return
+    global.lx.restorePlayInfo = info
 
-  await playList(info.listId, info.index)
+    await playList(info.listId, info.index)
 
-  if (setting['player.startupAutoPlay']) setTimeout(play)
+    if (setting['player.startupAutoPlay']) setTimeout(play)
+  } finally {
+    if (isLocal) releaseLocalList('player:restore')
+  }
 
 
   // if (!info.list || !info.list[info.index]) {

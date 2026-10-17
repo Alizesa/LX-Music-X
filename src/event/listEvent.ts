@@ -85,11 +85,16 @@ export class ListEvent extends Event {
     // await checkUpdateList(changedIds)
     const removedList = oldIds.filter(id => !allMusicList.has(id))
     if (removedList.length) await removeListMusics(removedList)
-    const allListIds = [LIST_IDS.LOCAL, ...userLists.map(l => l.id)]
+    // LOCAL 只在「已加载」或「本次显式提供了 localList」时才写：
+    // 延迟加载下，没加载不等于空列表，不能拿它覆盖存储
+    const includesLocal = allMusicList.has(LIST_IDS.LOCAL)
+    const allListIds = includesLocal
+      ? [LIST_IDS.LOCAL, ...userLists.map(l => l.id)]
+      : userLists.map(l => l.id)
     if (changedIds.includes(LIST_IDS.TEMP)) allListIds.push(LIST_IDS.TEMP)
-    await markLocalMatchIndexDirty()
+    if (includesLocal) await markLocalMatchIndexDirty()
     await saveListMusics([...allListIds.map(id => ({ id, musics: allMusicList.get(id) as LX.List.ListMusics }))])
-    await rebuildLocalMatchIndexFromList(allMusicList.get(LIST_IDS.LOCAL) ?? [])
+    if (includesLocal) await rebuildLocalMatchIndexFromList(allMusicList.get(LIST_IDS.LOCAL)!)
 
     global.app_event.myListMusicUpdate(changedIds)
     this.emit('list_data_overwrite', listData, isRemote)

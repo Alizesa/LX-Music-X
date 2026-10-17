@@ -120,9 +120,12 @@ export const listDataOverwrite = ({ localList, userList, tempList }: MakeOptiona
 
   // Older backups and sync payloads do not contain localList. Keep local files
   // managed on this device unless the sender explicitly provides the list.
-  const nextLocalList = localList ?? allMusicList.get(LIST_IDS.LOCAL) ?? []
-  setMusicList(LIST_IDS.LOCAL, nextLocalList)
-  updatedListIds.push(LIST_IDS.LOCAL)
+  // 注意：LOCAL 现在是延迟加载的，「没加载」不能当成「空列表」写盘。
+  // 只有显式传入（包括空数组）才替换；否则保持现状，未加载就完全不碰。
+  if (Array.isArray(localList)) {
+    setMusicList(LIST_IDS.LOCAL, localList)
+    updatedListIds.push(LIST_IDS.LOCAL)
+  }
 
   if (tempList && allMusicList.has(LIST_IDS.TEMP)) {
     setMusicList(LIST_IDS.TEMP, tempList)

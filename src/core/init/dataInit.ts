@@ -1,11 +1,11 @@
 // import { getPlayInfo } from '@/utils/data'
 // import { log } from '@/utils/log'
 import { init as musicSdkInit } from '@/utils/musicSdk'
-import { getListMusics, getUserLists, setUserList, setTempListMeta } from '@/core/list'
-import { LIST_IDS } from '@/config/constant'
+import { getUserLists, setUserList, setTempListMeta } from '@/core/list'
 import { setNavActiveId } from '../common'
 import { getTempListMeta, getViewPrevState } from '@/utils/data'
-import { ensureLocalMatchIndex } from '@/utils/localMatchIndex'
+import { ensureLocalMatchIndex, getCurrentLocalMatchIndex } from '@/utils/localMatchIndex'
+import { initLocalListLifecycle } from '@/core/localList'
 import { bootLog } from '@/utils/bootLog'
 import { getDislikeInfo, setDislikeInfo } from '@/core/dislikeList'
 import { unlink } from '@/utils/fs'
@@ -32,8 +32,10 @@ export default async(appSetting: LX.AppSetting) => {
   bootLog('User list init...')
   setUserList(await getUserLists()) // 获取用户列表
   setDislikeInfo(await getDislikeInfo()) // 获取不喜欢列表
-  await ensureLocalMatchIndex() // 本地匹配索引（无索引时从 @list__local 构建一次）
-  await getListMusics(LIST_IDS.LOCAL)
+  // 只加载本地匹配索引；完整 LOCAL 列表由 core/localList 按需加载、用完释放
+  await ensureLocalMatchIndex()
+  initLocalListLifecycle()
+  bootLog(`Local match index: ${getCurrentLocalMatchIndex()?.rows.length ?? 0} rows.`)
   const { initPlayQueue } = await import('@/core/player/playQueue')
   await initPlayQueue()
   const { getTasks } = await import('@/core/download')

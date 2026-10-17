@@ -490,13 +490,14 @@ export const removeTasks = async(ids: string[], deleteFile = false) => {
     removeNativeDownload(task.nativeId, task.id, task.status != 'completed').catch(() => {}),
   ))
   if (deleteFile) {
+    const filePaths: string[] = []
     await Promise.all(targets.map(async task => {
       if (!task.filePath) return
       await unlink(task.filePath).catch(() => {})
-      // 也要吞掉：这里若抛出，下面的 persistNow/notify 就不会执行，
-      // 而 tasks 已经 splice 过了，内存与存储会对不上、界面上还留着已删的行
-      await removeListMusics(LIST_IDS.LOCAL, [task.filePath]).catch(() => {})
+      filePaths.push(task.filePath)
     }))
+    // 合并成一次：逐条删会让 LOCAL 整表保存 + 匹配索引重建 N 次
+    if (filePaths.length) await removeListMusics(LIST_IDS.LOCAL, filePaths).catch(() => {})
   }
   await persistNow()
   notify()
