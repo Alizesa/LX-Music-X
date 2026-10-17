@@ -748,11 +748,22 @@ export const getQQMusicRecommendedPlaylists = async(cookie: string, from = 0): P
   }
 }
 
+/**
+ * "猜你喜欢"（电台连续推荐）。
+ *
+ * 请求**整体对齐参考实现那条**（这个接口在那边是线上验证过的）：槽位 songlist、
+ * 精简 comm（ct=19 / cv=0 + authst）、浏览器 UA。和这边别处用的 App 信封不是一套 ——
+ * 这里刻意只对这一个调用用参考实现的那套，别顺手把全局 helper 改了。
+ * 解析同时认 songlist / radio 两个槽位，将来服务端或封装换了也不至于空列表。
+ */
 export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.Music.MusicInfoOnline[]> => {
   const cookies = parseQQMusicCookie(cookie)
   const uin = readUin(cookies)
-  if (!uin) throw new Error(global.i18n.t('qq_cookie_invalid'))
-  const comm = buildAuthComm(cookies)
+  const authst = readMusicKey(cookies)
+  // 这条电台要带票据才是个性化的（参考实现没票据直接拦在本地）
+  if (!uin || !authst) throw new Error(global.i18n.t('qq_cookie_invalid'))
+  // 参考实现用的最简 comm：ct=19 / cv=0。别用 buildAuthComm 那套 App 信封
+  const comm = { uin, format: 'json', ct: 19, cv: 0, authst }
   const seen = new Set<string>()
   const songs: LX.Music.MusicInfoOnline[] = []
   let staleRounds = 0
@@ -767,7 +778,7 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
         method: 'post',
         body: {
           comm,
-          radio: {
+          songlist: {
             module: 'music.radioProxy.MbTrackRadioSvr',
             method: 'get_radio_track',
             param: {
@@ -779,13 +790,16 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
             },
           },
         },
+        // 参考实现这条用的是浏览器 UA（和它自己的 App 通道分开）
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
       })
     } catch (error) {
       // 票据失效由 request() 抛出并已就地清理会话；已经取到歌就当作本批到此为止
       if (!songs.length) throw error
       break
     }
-    const rawList = pickArray(body?.radio?.data, ['tracks', 'track', 'songList', 'vec_song'])
+    const data = body?.songlist?.data ?? body?.radio?.data
+    const rawList = pickArray(data, ['tracks', 'track', 'track_list', 'songList', 'vec_song'])
     if (!rawList.length) break
     const before = songs.length
     for (const raw of rawList) {
