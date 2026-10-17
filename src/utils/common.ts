@@ -90,17 +90,27 @@ export const parseUrlParams = (str: string): Record<string, string> => {
  * @param delay 延迟
  * @returns
  */
-export function throttle<Args extends any[]>(fn: (...args: Args) => void | Promise<void>, delay = 100) {
+type Throttled<Args extends any[]> = ((...args: Args) => void) & {
+  /** 丢掉还没触发的那一次 */
+  cancel: () => void
+}
+export function throttle<Args extends any[]>(fn: (...args: Args) => void | Promise<void>, delay = 100): Throttled<Args> {
   let timer: NodeJS.Timeout | null = null
   let _args: Args
-  return (...args: Args) => {
+  const throttled = ((...args: Args) => {
     _args = args
     if (timer) return
     timer = setTimeout(() => {
       timer = null
       void fn(..._args)
     }, delay)
+  }) as Throttled<Args>
+  throttled.cancel = () => {
+    if (!timer) return
+    clearTimeout(timer)
+    timer = null
   }
+  return throttled
 }
 
 /**

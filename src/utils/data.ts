@@ -504,6 +504,9 @@ export const savePlayHistory = async(history: LX.Player.PlayHistoryItem[]) => {
   savePlayHistoryThrottled(history)
 }
 export const clearPlayHistory = async() => {
+  // 先撤掉节流里还没触发的那次写盘：否则它会在 1 秒后用旧数组把整份历史写回来，
+  // 用户清空后重启又「复活」了
+  savePlayHistoryThrottled.cancel()
   playHistoryCache = []
   // 清空是用户主动操作，立即生效，不等节流
   await removeData(playHistoryKey)

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { FlatList, RefreshControl, TouchableOpacity, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { FlatList, TouchableOpacity, View } from 'react-native'
 import PageContent from '@/components/PageContent'
 import StatusBar from '@/components/common/StatusBar'
 import SimpleHeader from '@/components/SimpleHeader'
@@ -28,7 +28,6 @@ export default ({ componentId }: { componentId: string }) => {
   const t = useI18n()
   const theme = useTheme()
   const [local, setLocal] = useState<LX.Player.PlayHistoryItem[]>([])
-  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.playHistory, componentId)
@@ -39,15 +38,6 @@ export default ({ componentId }: { componentId: string }) => {
     return () => { global.app_event.off('playHistoryUpdate', handleUpdate) }
   }, [componentId])
 
-  const refresh = useCallback(async() => {
-    setRefreshing(true)
-    try {
-      setLocal(await getPlayHistory())
-    } finally {
-      setRefreshing(false)
-    }
-  }, [])
-
   return (
     <PageContent>
       <StatusBar />
@@ -56,7 +46,6 @@ export default ({ componentId }: { componentId: string }) => {
         style={styles.list}
         data={local}
         keyExtractor={(item, index) => `${item.musicInfo.id}-${item.playedAt}-${index}`}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh() }} colors={[theme['c-primary']]} />}
         ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{t('setting_play_history_empty')}</Text>}
         renderItem={({ item }) => {
           // 播放历史里的条目可能是「下载列表」那种旧结构，取真实歌曲信息时要拆一层
