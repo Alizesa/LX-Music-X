@@ -48,7 +48,9 @@ const RECOMMEND_MAX_TRIES = 6
 // 返回一堆通用曲目且 code 仍是 0 —— 表现就是"推荐的不是我的风格"。
 // 传了它之后个人化受票据门控，票据不被接受会明确返回 code 1000。
 const GUESS_RECOMMEND_ID = 99
-const RECOMMEND_PAGE_SIZE = 5
+// 一次向电台要多少首。要满一份（= RECOMMEND_TARGET），一轮就够；
+// 服务端要是只回一部分，下面的循环会接着补齐（参考实现一次也是要满 20）
+const RECOMMEND_PAGE_SIZE = 20
 const PLAYLIST_PAGE_SIZE = 200
 // 推荐歌单每批取多少。MusicOne 打这个接口用的就是 8，跟它保持一致；
 // 这个值同时当「这批是不是满页」的判据用（响应里没有 HasMore 时靠它推还有没有下一批）
@@ -754,8 +756,9 @@ export const getQQMusicDailyRecommendations = async(cookie: string): Promise<LX.
   const seen = new Set<string>()
   const songs: LX.Music.MusicInfoOnline[] = []
   let staleRounds = 0
-  // 上游单次只回约 5 首，需要多次调用并按 songmid 去重凑够一份推荐列表。
-  // 电台每次调用应给一批新的，若连续两轮没有新歌说明上游改成了固定列表，
+  // 一次要 num=RECOMMEND_PAGE_SIZE 首，够一轮就攒满一份。服务端要是只给一部分，
+  // 就继续调用、按 songmid 去重补够 —— 循环只在"没给满"时才有意义。
+  // 电台每次调用可能给一批新的；若连续两轮没有新歌，说明上游改成了固定列表，
   // 就此打住，免得白跑满次数。
   for (let i = 0; i < RECOMMEND_MAX_TRIES && songs.length < RECOMMEND_TARGET; i++) {
     let body: any
