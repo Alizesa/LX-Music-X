@@ -44,7 +44,7 @@ export const getMusicUrl = async({
     return getLocalMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource })
   } else {
     if (!isRefresh) {
-      const localMusicInfo = findLocalMusicInfo(musicInfo)
+      const localMusicInfo = await findLocalMusicInfo(musicInfo)
       if (localMusicInfo) {
         const localPath = await getLocalFilePath(localMusicInfo)
         if (localPath) return localPath
@@ -71,7 +71,7 @@ export const getPicPath = async({
     return getLocalPicUrl({ musicInfo, isRefresh, listId, onToggleSource })
   } else {
     if (!isRefresh) {
-      const localMusicInfo = findLocalMusicInfo(musicInfo)
+      const localMusicInfo = await findLocalMusicInfo(musicInfo)
       if (localMusicInfo) return getLocalPicUrl({ musicInfo: localMusicInfo, isRefresh: false, listId: LIST_IDS.LOCAL, onToggleSource })
     }
     return getOnlinePicUrl({ musicInfo, isRefresh, listId, onToggleSource })
@@ -93,7 +93,7 @@ export const getLyricInfo = async({
     return getLocalLyricInfo({ musicInfo, isRefresh, onToggleSource })
   } else {
     if (!isRefresh) {
-      const localMusicInfo = findLocalMusicInfo(musicInfo)
+      const localMusicInfo = await findLocalMusicInfo(musicInfo)
       if (localMusicInfo) return getLocalLyricInfo({ musicInfo: localMusicInfo, isRefresh: false, onToggleSource })
     }
     return getOnlineLyricInfo({ musicInfo, isRefresh, onToggleSource })

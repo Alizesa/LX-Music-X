@@ -9,6 +9,7 @@ import {
   removeListUpdateInfo,
 } from '@/utils/data'
 import { arrPush, arrPushByPosition, arrUnshift } from '@/utils/common'
+import { syncLocalMatchIndexWithList } from '@/utils/localMatchIndex'
 import { LIST_IDS } from '@/config/constant'
 
 export const userLists: LX.List.UserListInfo[] = []
@@ -207,7 +208,10 @@ export const getListMusics = async(listId: string): Promise<LX.Music.MusicInfo[]
   if (!listId) return []
   if (allMusicList.has(listId)) return allMusicList.get(listId)!
   const list = await getListMusicsFromStore(listId)
-  return setMusicList(listId, list)
+  setMusicList(listId, list)
+  // 完整列表才是数据源：加载时校对/重建匹配索引，并把索引里较新的封面覆盖回来
+  if (listId === LIST_IDS.LOCAL) await syncLocalMatchIndexWithList(list)
+  return list
 }
 
 export const listMusicOverwrite = async(listId: string, musicInfos: LX.Music.MusicInfo[]): Promise<string[]> => {

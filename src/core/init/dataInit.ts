@@ -5,6 +5,7 @@ import { getListMusics, getUserLists, setUserList, setTempListMeta } from '@/cor
 import { LIST_IDS } from '@/config/constant'
 import { setNavActiveId } from '../common'
 import { getTempListMeta, getViewPrevState } from '@/utils/data'
+import { ensureLocalMatchIndex } from '@/utils/localMatchIndex'
 import { bootLog } from '@/utils/bootLog'
 import { getDislikeInfo, setDislikeInfo } from '@/core/dislikeList'
 import { unlink } from '@/utils/fs'
@@ -31,6 +32,7 @@ export default async(appSetting: LX.AppSetting) => {
   bootLog('User list init...')
   setUserList(await getUserLists()) // 获取用户列表
   setDislikeInfo(await getDislikeInfo()) // 获取不喜欢列表
+  await ensureLocalMatchIndex() // 本地匹配索引（无索引时从 @list__local 构建一次）
   await getListMusics(LIST_IDS.LOCAL)
   const { initPlayQueue } = await import('@/core/player/playQueue')
   await initPlayQueue()

@@ -90,6 +90,9 @@ export const storageDataPrefix = {
   playQueue: '@play_queue',
   tempListMeta: '@temp_list_meta',
   playHistory: '@play_history',
+  // 本地音乐的精简匹配索引（派生缓存，可随时从 @list__local 重建）
+  localMatchIndex: '@local_match_index',
+  localMatchIndexDirty: '@local_match_index_dirty',
   notificationTipEnable: '@notification_tip_enable',
   ignoringBatteryOptimizationTipEnable: '@ignoring_battery_optimization_tip_enable',
 

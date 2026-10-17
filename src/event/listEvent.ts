@@ -1,6 +1,7 @@
 import Event from './Event'
 
-import { saveUserList, removeListMusics, saveListMusics } from '@/utils/data'
+import { getListMusics as getListMusicsFromStore, saveUserList, removeListMusics, saveListMusics } from '@/utils/data'
+import { markLocalMatchIndexDirty, rebuildLocalMatchIndexFromList } from '@/utils/localMatchIndex'
 import {
   userLists,
   userListCreate,
@@ -27,7 +28,15 @@ const updateUserList = async(userLists: LX.List.UserListInfo[]) => {
 
 export const checkUpdateList = async(changedIds: string[]) => {
   if (!changedIds.length) return
+  const includesLocal = changedIds.includes(LIST_IDS.LOCAL)
+  // 先标 dirty：列表写成功、索引没写就崩溃时，下次启动会重建
+  if (includesLocal) await markLocalMatchIndexDirty()
   await saveListMusics(changedIds.map(id => ({ id, musics: allMusicList.get(id) as LX.List.ListMusics })))
+  if (includesLocal) {
+    // 延迟加载阶段 LOCAL 可能不在内存里，防御性地从存储读一次再建
+    const list = allMusicList.get(LIST_IDS.LOCAL) ?? await getListMusicsFromStore(LIST_IDS.LOCAL)
+    await rebuildLocalMatchIndexFromList(list)
+  }
   global.app_event.myListMusicUpdate(changedIds)
 }
 
@@ -78,7 +87,9 @@ export class ListEvent extends Event {
     if (removedList.length) await removeListMusics(removedList)
     const allListIds = [LIST_IDS.LOCAL, ...userLists.map(l => l.id)]
     if (changedIds.includes(LIST_IDS.TEMP)) allListIds.push(LIST_IDS.TEMP)
+    await markLocalMatchIndexDirty()
     await saveListMusics([...allListIds.map(id => ({ id, musics: allMusicList.get(id) as LX.List.ListMusics }))])
+    await rebuildLocalMatchIndexFromList(allMusicList.get(LIST_IDS.LOCAL) ?? [])
 
     global.app_event.myListMusicUpdate(changedIds)
     this.emit('list_data_overwrite', listData, isRemote)
