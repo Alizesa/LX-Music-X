@@ -330,6 +330,8 @@ export const getListMusics = async(listId: string): Promise<LX.Music.MusicInfo[]
  * @param listData 列表数据
  */
 export const saveListMusics = async(listData: Array<{ id: string, musics: LX.Music.MusicInfo[] }>) => {
+  // 空数组没有可写的内容；调用方在没有任何列表可保存时会传进来
+  if (!listData.length) return
   if (listData.length > 1) {
     await saveDataMultiple(listData.map(list => ([listPrefix + list.id, list.musics])))
   } else {
@@ -343,6 +345,7 @@ export const saveListMusics = async(listData: Array<{ id: string, musics: LX.Mus
  * @param ids
  */
 export const removeListMusics = async(ids: string[]): Promise<void> => {
+  if (!ids.length) return
   if (ids.length > 1) {
     await removeDataMultiple(ids.map(id => {
       // delete global.lx.listScrollPosition[id]

@@ -39,7 +39,11 @@ export default ({ componentId }: { componentId: string }) => {
   useEffect(() => {
     setComponentId(COMPONENT_IDS.localSongs, componentId)
     // 页面打开期间持有完整列表；离开后交给 core/localList 判断是否释放
-    void retainLocalList('screen:localSongs').then(list => { setList(list as LX.Music.MusicInfoLocal[]) })
+    void retainLocalList('screen:localSongs').then(list => {
+      setList(list as LX.Music.MusicInfoLocal[])
+    }).catch(error => {
+      console.warn('[LocalSongs] load local list failed:', error instanceof Error ? error.message : error)
+    })
     return () => { releaseLocalList('screen:localSongs') }
   }, [componentId])
 

@@ -163,10 +163,14 @@ export const saveLocalMatchIndex = async(index: LocalMatchIndex) => {
 }
 
 /** 封面这类小改动合并写盘，避免连续加载多张封面时反复序列化整份索引 */
-export const scheduleSaveLocalMatchIndex = (index: LocalMatchIndex) => {
+export const scheduleSaveLocalMatchIndex = () => {
   if (saveTimer) return
   saveTimer = setTimeout(() => {
     saveTimer = null
+    // 写触发时的 current，而不是注册时的对象：期间可能已经 rebuild/sync 出更新的索引，
+    // 按旧对象写会把新索引覆盖掉
+    const index = current
+    if (!index) return
     void saveLocalMatchIndex(index).catch(error => {
       log.warn('[LocalMatchIndex] save failed: ' + (error instanceof Error ? error.message : String(error)))
     })
@@ -283,7 +287,7 @@ export const patchLocalMatchIndexRow = (
   const rowIndex = index.byId.get(id)
   if (rowIndex == null) return false
   if (patch.picUrl !== undefined) index.rows[rowIndex][6] = patch.picUrl
-  scheduleSaveLocalMatchIndex(index)
+  scheduleSaveLocalMatchIndex()
   return true
 }
 

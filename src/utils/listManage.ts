@@ -207,14 +207,29 @@ export const getListMusicSync = (id: string | null) => {
  * 获取列表内的歌曲
  * @param listId
  */
+// 同一列表的并发加载共用一个 Promise。LOCAL 延迟加载后，两首下载几乎同时完成时
+// 会并发调用 getListMusics(LOCAL)；各读各的旧快照再各自覆盖内存/存储会丢掉其中一首
+const loadingListPromises = new Map<string, Promise<LX.Music.MusicInfo[]>>()
+
 export const getListMusics = async(listId: string): Promise<LX.Music.MusicInfo[]> => {
   if (!listId) return []
-  if (allMusicList.has(listId)) return allMusicList.get(listId)!
-  const list = await getListMusicsFromStore(listId)
-  setMusicList(listId, list)
-  // 完整列表才是数据源：加载时校对/重建匹配索引，并把索引里较新的封面覆盖回来
-  if (listId === LIST_IDS.LOCAL) await syncLocalMatchIndexWithList(list)
-  return list
+  const cached = allMusicList.get(listId)
+  if (cached) return cached
+
+  let promise = loadingListPromises.get(listId)
+  if (!promise) {
+    promise = (async() => {
+      const list = await getListMusicsFromStore(listId)
+      setMusicList(listId, list)
+      // 完整列表才是数据源：加载时校对/重建匹配索引，并把索引里较新的封面覆盖回来
+      if (listId === LIST_IDS.LOCAL) await syncLocalMatchIndexWithList(list)
+      return list
+    })().finally(() => {
+      loadingListPromises.delete(listId)
+    })
+    loadingListPromises.set(listId, promise)
+  }
+  return promise
 }
 
 export const listMusicOverwrite = async(listId: string, musicInfos: LX.Music.MusicInfo[]): Promise<string[]> => {

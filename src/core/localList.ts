@@ -1,7 +1,6 @@
 import { LIST_IDS } from '@/config/constant'
 import { allMusicList, getListMusics } from '@/utils/listManage'
 import { ensureLocalMatchIndex, getCurrentLocalMatchIndex, patchLocalMatchIndexRow } from '@/utils/localMatchIndex'
-import { isPlayQueueFromList } from '@/core/player/playQueue'
 import playerState from '@/store/player/state'
 
 /**
@@ -19,12 +18,14 @@ const RELEASE_DELAY = 3000
 let initialized = false
 
 export const isLocalListInUse = () => {
+  // 旧数据/非队列链路仍可能直接以 LOCAL 作为当前列表
   if (playerState.playInfo.playerListId === LIST_IDS.LOCAL) return true
   if (playerState.playMusicInfo.listId === LIST_IDS.LOCAL) return true
-  // 从本地列表建的播放队列：切歌要靠同步 getList(LOCAL) 取列表
-  if (isPlayQueueFromList(LIST_IDS.LOCAL)) return true
   // 启动恢复还没走完时也不能释放
   if (global.lx.restorePlayInfo?.listId === LIST_IDS.LOCAL) return true
+  // 注意：不要因为播放队列的 sourceListId 是 LOCAL 就钉住。
+  // 队列里的歌已经持有自己的对象，切歌走 getList(PLAY_QUEUE)，
+  // 不需要同步读整份 LOCAL；钉住会让「播过本地」变成整场常驻。
   return false
 }
 
@@ -46,7 +47,13 @@ export const maybeRelease = () => {
 export const retainLocalList = async(reason: string, load = true): Promise<LX.Music.MusicInfo[]> => {
   holds.set(reason, (holds.get(reason) ?? 0) + 1)
   if (!load) return allMusicList.get(LIST_IDS.LOCAL) ?? []
-  return getListMusics(LIST_IDS.LOCAL)
+  try {
+    return await getListMusics(LIST_IDS.LOCAL)
+  } catch (error) {
+    // 加载失败要回滚占用，否则这个 reason 永远配不上 release，整表再也释放不了
+    releaseLocalList(reason)
+    throw error
+  }
 }
 
 export const releaseLocalList = (reason: string) => {
@@ -73,7 +80,7 @@ export const withLocalList = async<T>(
 export const initLocalListLifecycle = () => {
   if (initialized) return
   initialized = true
-  // 从 LOCAL 队列切走后没有后续本地操作，也要能把整表释放掉
+  // 队列变化时再检查一次释放条件：播放状态变了，可能要放掉整表
   global.app_event.on('playQueueUpdate', () => { maybeRelease() })
 }
 
@@ -87,11 +94,11 @@ export const patchLocalMusicMeta = async(filePath: string, patch: { picUrl?: str
   const index = getCurrentLocalMatchIndex() ?? await ensureLocalMatchIndex()
   if (index) patchLocalMatchIndexRow(index, filePath, patch)
 
+  // 已加载时同步改内存里的条目，界面立即拿到新封面。
+  // 不触发 list_music_update：那会把整份 LOCAL 写盘并全量重建索引，
+  // 为一个封面字段不值得；持久化由索引的延迟写负责，下次加载时 overlay 回来
   const list = allMusicList.get(LIST_IDS.LOCAL)
-  if (!list) return
+  if (!list || patch.picUrl === undefined) return
   const item = list.find(item => item.id === filePath)
-  if (!item) return
-  if (patch.picUrl !== undefined) item.meta.picUrl = patch.picUrl
-  // 传列表里的真实条目，保留 toggleMusicInfo 等索引里没有的字段
-  await global.list_event.list_music_update([{ id: LIST_IDS.LOCAL, musicInfo: item }])
+  if (item) item.meta.picUrl = patch.picUrl
 }
