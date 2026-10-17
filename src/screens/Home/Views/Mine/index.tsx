@@ -114,6 +114,9 @@ export default () => {
       if (nextUser !== undefined) setUser(nextUser)
       void getQQMusicSession().then(session => {
         setCookie(session.cookie)
+        // 冷启动挂载时没有 nextUser，账号资料只能从会话里拿。
+        // 漏了这句就是「cookie 有、user 空」，界面按未登录画
+        if (nextUser === undefined) setUser(session.user)
         void loadPlaylists(session.cookie)
       })
     }
