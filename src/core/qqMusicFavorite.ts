@@ -47,8 +47,15 @@ let fetchPromise: Promise<void> | null = null
 const likedHolds = new Map<string, number>()
 const RELEASE_DELAY = 3000
 let releaseTimer: ReturnType<typeof setTimeout> | null = null
-// 数组已释放时，红心的持久缓存更新走串行队列，避免读-改-写互相覆盖
+// 数组已释放时，红心的持久缓存更新走串行队列，避免读-改-写互相覆盖。
+// 所有对 @qq_music_liked_songs 的写/删都排进这个队列，换号时才能在旧写之后清理
 let likedCacheQueue: Promise<void> = Promise.resolve()
+// 账号/会话版本：换号、退出时递增。在途的请求/读改写看到版本变化就放弃，
+// 防止旧账号的数据在清理之后又写回公共缓存
+let likedSessionVersion = 0
+const logLikedCacheError = (error: unknown) => {
+  console.warn('[QQMusic] 更新我喜欢缓存失败:', error instanceof Error ? error.message : error)
+}
 
 const setLikedSongs = (songs: LX.Music.MusicInfoOnline[] | null) => {
   likedSongs = songs
@@ -96,9 +103,20 @@ export const releaseQQMusicLikedSongs = (reason: string) => {
  */
 export const ensureQQMusicLikedIds = async(): Promise<void> => {
   if (likedIds) return
+  const version = likedSessionVersion
+  // 等换号清理/在途写落定再读，否则可能读到刚被清掉的旧账号缓存
+  await likedCacheQueue.catch(() => {})
+  if (version !== likedSessionVersion || likedIds != null) return
   const cached = await getQQMusicLikedSongsCache()
+  // 读盘期间换号/清理过：这次读到的可能是旧账号数据，丢弃
+  if (version !== likedSessionVersion) return
   // 读盘期间可能已经被页面/刷新加载好了
-  if (likedIds != null || cached.length === 0) return
+  if (likedIds != null) return
+  if (cached.length === 0) {
+    // 空缓存也记为「已加载」，否则每个红心组件都会重复读一次存储
+    likedIds = new Set()
+    return
+  }
   setLikedIds(new Set(cached.map(song => song.id)))
 }
 
@@ -111,26 +129,45 @@ export const getQQMusicLikedSongs = () => likedSongs
 /** 只读本地缓存（内存 → 存储），不联网。 */
 export const loadQQMusicLikedSongsCache = async(): Promise<LX.Music.MusicInfoOnline[]> => {
   if (likedSongs) return likedSongs
+  const version = likedSessionVersion
+  // 同上：先等清理/在途写完成，避免读到旧账号的缓存
+  await likedCacheQueue.catch(() => {})
+  if (version !== likedSessionVersion) return []
   const cached = await getQQMusicLikedSongsCache()
+  // 读盘期间换号/清理过：不要拿旧账号的数组填进内存
+  if (version !== likedSessionVersion) return []
   if (cached.length) setLikedSongs(cached)
   return cached
 }
 
 const doFetch = async() => {
+  const version = likedSessionVersion
   try {
     const { cookie } = await getQQMusicSession()
+    if (version !== likedSessionVersion) return
     if (!cookie) {
       cancelScheduledRelease()
       setLikedSongs(null)
-      await removeQQMusicLikedSongsCache()
-      await removeQQMusicLikedSongsStale()
+      likedCacheQueue = likedCacheQueue.catch(() => {}).then(async() => {
+        if (version !== likedSessionVersion) return
+        await removeQQMusicLikedSongsCache()
+        await removeQQMusicLikedSongsStale()
+      })
+      await likedCacheQueue
       return
     }
     const songs = await getQQMusicPlaylistSongs(cookie, LIKED_DIRID)
+    // 拉取期间换号了：这份是旧账号的数据，丢弃
+    if (version !== likedSessionVersion) return
     setLikedSongs(songs)
-    await saveQQMusicLikedSongsCache(songs)
-    // 这份就是服务端的，之前标脏的可以清了
-    await saveQQMusicLikedSongsStale(false)
+    likedCacheQueue = likedCacheQueue.catch(() => {}).then(async() => {
+      if (version !== likedSessionVersion) return
+      await saveQQMusicLikedSongsCache(songs)
+      if (version !== likedSessionVersion) return
+      // 这份就是服务端的，之前标脏的可以清了
+      await saveQQMusicLikedSongsStale(false)
+    })
+    await likedCacheQueue
     // 没有页面占用时（例如「我的」页下拉刷新触发的），整个数组不需要常驻
     maybeReleaseLikedSongs()
   } catch (error) {
@@ -142,7 +179,15 @@ const doFetch = async() => {
 
 /** 联网拉一次「我喜欢」并落盘。并发调用共用同一次请求。 */
 export const refreshQQMusicLikedSongs = async(): Promise<void> => {
-  fetchPromise ??= doFetch().finally(() => { fetchPromise = null })
+  if (!fetchPromise) {
+    // finally 里按身份清理：换号时 clear 会把 fetchPromise 置空并允许新请求，
+    // 旧请求结束时不能把新请求的 promise 清掉
+    let tracked: Promise<void>
+    tracked = doFetch().finally(() => {
+      if (fetchPromise === tracked) fetchPromise = null
+    })
+    fetchPromise = tracked
+  }
   await fetchPromise
 }
 
@@ -157,13 +202,22 @@ const applyLiked = (songs: LX.Music.MusicInfoOnline[], musicInfo: LX.Music.Music
   ? (songs.some(song => song.id == musicInfo.id) ? songs : [musicInfo as LX.Music.MusicInfoOnline, ...songs])
   : songs.filter(song => song.id != musicInfo.id)
 
-const markLiked = async(musicInfo: LX.Music.MusicInfo, liked: boolean) => {
+const markLiked = async(musicInfo: LX.Music.MusicInfo, liked: boolean, version: number) => {
+  // 发起写入时的账号已经切走了：这次结果属于旧账号，不要碰新账号的缓存
+  if (version !== likedSessionVersion) return
+
   // 页面开着：整份数组在内存里，直接本地增删
   if (likedSongs) {
     const next = applyLiked(likedSongs, musicInfo, liked)
     setLikedSongs(next)
-    void saveQQMusicLikedSongsCache(next)
-    void saveQQMusicLikedSongsStale(true)
+    // 写操作也进队列：换号清理排在它后面，不会被旧账号的写回写
+    likedCacheQueue = likedCacheQueue.catch(() => {}).then(async() => {
+      if (version !== likedSessionVersion) return
+      await saveQQMusicLikedSongsCache(next)
+      if (version !== likedSessionVersion) return
+      await saveQQMusicLikedSongsStale(true)
+    })
+    void likedCacheQueue.catch(logLikedCacheError)
     return
   }
 
@@ -171,20 +225,24 @@ const markLiked = async(musicInfo: LX.Music.MusicInfo, liked: boolean) => {
   // 否则从 [] 开始增删会把持久缓存覆盖成一首/空数组。
   try {
     await ensureQQMusicLikedIds()
+    if (version !== likedSessionVersion) return
     const ids = new Set(likedIds ?? [])
     if (liked) ids.add(musicInfo.id)
     else ids.delete(musicInfo.id)
     setLikedIds(ids)
-    // 先标脏：即使下面的读改写失败，下次打开「我喜欢」也会从服务端重拉
-    void saveQQMusicLikedSongsStale(true)
-    // 串行读改写，避免快速连点时互相覆盖
+    // 串行读改写，避免快速连点/换号时互相覆盖
     likedCacheQueue = likedCacheQueue.catch(() => {}).then(async() => {
+      if (version !== likedSessionVersion) return
+      // 先标脏：即使下面的读改写失败，下次打开「我喜欢」也会从服务端重拉
+      await saveQQMusicLikedSongsStale(true)
+      if (version !== likedSessionVersion) return
       const songs = await getQQMusicLikedSongsCache()
+      if (version !== likedSessionVersion) return
       await saveQQMusicLikedSongsCache(applyLiked(songs, musicInfo, liked))
     })
     await likedCacheQueue
   } catch (error) {
-    console.warn('[QQMusic] 更新我喜欢缓存失败:', error instanceof Error ? error.message : error)
+    logLikedCacheError(error)
   }
 }
 
@@ -193,10 +251,20 @@ export const isQQMusicLikedSongsStale = async() => await getQQMusicLikedSongsSta
 
 /** 换号/退出时清掉，否则新号会看到上一个号的收藏状态 */
 export const clearQQMusicLikedSongs = () => {
+  likedSessionVersion++
+  const version = likedSessionVersion
   cancelScheduledRelease()
+  // 允许新账号重新发起请求；旧请求结束时按身份清理，不会误清新请求
+  fetchPromise = null
   setLikedSongs(null)
-  void removeQQMusicLikedSongsCache()
-  void removeQQMusicLikedSongsStale()
+  // 排到在途写之后：等旧账号排队的读写跑完再删，避免旧数据在清理后回写
+  likedCacheQueue = likedCacheQueue.catch(() => {}).then(async() => {
+    // 期间又切了一次账号：让最新一次清理负责
+    if (version !== likedSessionVersion) return
+    await removeQQMusicLikedSongsCache()
+    await removeQQMusicLikedSongsStale()
+  })
+  void likedCacheQueue.catch(logLikedCacheError)
 }
 
 /**
@@ -219,6 +287,8 @@ export const initQQMusicFavorite = () => {
  */
 export const setQQMusicTrackLiked = async(musicInfo: LX.Music.MusicInfo, liked: boolean): Promise<FavoriteResult> => {
   if (musicInfo.source != 'tx') return 'unsupported'
+  // 在发请求前记下账号版本：请求期间换号的话，回来只更新服务端，不再写本地缓存
+  const version = likedSessionVersion
   const { cookie } = await getQQMusicSession()
   if (!cookie) return 'unsupported'
 
@@ -261,7 +331,7 @@ export const setQQMusicTrackLiked = async(musicInfo: LX.Music.MusicInfo, liked: 
 
   // 不做读回验证：那要把整个「我喜欢」拉回来核对（几百首、好几个请求），代价太大。
   // 这个分支有意压低对音源的请求量，写入失败时用户自己就能看出来。
-  await markLiked(musicInfo, liked)
+  await markLiked(musicInfo, liked, version)
   return 'ok'
 }
 
