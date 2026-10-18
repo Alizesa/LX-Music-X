@@ -18,7 +18,7 @@ export const allMusicList = new Map<string, LX.Music.MusicInfo[]>()
 
 // 用户列表缓存也是整份歌曲数组。没有上限时，备份导出/歌单同步碰过的列表会一直留着；
 // 这里按最近访问淘汰（LOCAL/TEMP/当前播放列表不参与）。
-const USER_LIST_CACHE_MAX = 5
+const USER_LIST_CACHE_MAX = 2
 const USER_LIST_CACHE_MAX_SONGS = 3000
 // Map 保持插入顺序：访问时删了再塞，淘汰从头部拿最久没用的
 const listAccessOrder = new Map<string, true>()
