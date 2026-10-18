@@ -15,7 +15,7 @@ import { COMPONENT_IDS, LIST_IDS } from '@/config/constant'
 import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { getQQMusicDailyPlaylist, getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
-import { getQQMusicLikedSongs, isQQMusicLikedSongsStale, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs, toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
+import { getQQMusicLikedSongs, isQQMusicLikedSongsStale, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs, releaseQQMusicLikedSongs, retainQQMusicLikedSongs, toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
 import { cachePlaylistSongs, getCachedPlaylistSongs } from '@/core/qqMusicPlaylistSongsCache'
 import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist } from '@/core/qqMusicDailyPosition'
 import { getQQMusicDailyPlaylistCache, getQQMusicPlaylistsCache, saveQQMusicDailyPlaylistCache, saveQQMusicRefreshDay } from '@/utils/data'
@@ -199,11 +199,17 @@ export default ({ componentId, info }: Props) => {
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.qqPlaylist, componentId)
+    // 「我喜欢」的完整数组只在页面打开期间占内存；返回/卸载后释放，心形走 id 集合
+    if (info.liked) retainQQMusicLikedSongs('screen:qqLiked')
     // 守卫要同步置位：依赖变化重跑时，上一次的请求可能还没回来
-    if (loadedRef.current) return
-    loadedRef.current = true
-    void load(false)
-  }, [componentId, load])
+    if (!loadedRef.current) {
+      loadedRef.current = true
+      void load(false)
+    }
+    return () => {
+      if (info.liked) releaseQQMusicLikedSongs('screen:qqLiked')
+    }
+  }, [componentId, load, info.liked])
 
   // 点某一首就从那首开始放。每日推荐要打自己的临时列表 id，位置记忆靠它认队列
   // （见 core/qqMusicDailyPosition），别的歌单沿用各自的 id
