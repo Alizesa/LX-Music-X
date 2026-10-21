@@ -72,6 +72,8 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
     nextProps.activeLine != nextProps.lineNum
 })
 const wait = async() => new Promise(resolve => setTimeout(resolve, 100))
+// 首屏只渲染一屏附近；不要按当前播放行数增长，否则从后面播起会一次性挂几百行
+const INITIAL_LYRIC_LINES = 30
 
 export default () => {
   const lyricLines = useLrcSet()
@@ -236,6 +238,15 @@ export default () => {
   }, [isShowLyricProgressSetting])
 
   const handleScrollToIndexFailed: FlatListType['onScrollToIndexFailed'] = (info) => {
+    // 目标行还没进入渲染窗口：先按平均行高滚到它前一点，把它带进窗口，
+    // 再走正常的测量/居中逻辑
+    const offset = Math.max(
+      0,
+      listLayoutInfoRef.current.spaceHeight + info.averageItemLength * (info.index - INITIAL_LYRIC_LINES),
+    )
+    try {
+      flatListRef.current?.scrollToOffset({ offset, animated: false })
+    } catch {}
     void wait().then(() => {
       handleScrollToActive(info.index)
     })
@@ -281,7 +292,7 @@ export default () => {
         onScrollBeginDrag={handleScrollBeginDrag}
         onScrollEndDrag={onScrollEndDrag}
         fadingEdgeLength={100}
-        initialNumToRender={Math.max(line + 10, 10)}
+        initialNumToRender={INITIAL_LYRIC_LINES}
         onScrollToIndexFailed={handleScrollToIndexFailed}
         onScroll={handleScroll}
       />

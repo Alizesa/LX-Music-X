@@ -1,6 +1,91 @@
 import { deduplicationList, toNewMusicInfo } from '@/utils'
 import state, { createSingerRecord, type AlbumItem, type PageInfo, type SingerInfo, type SingerRecord } from './state'
 
+// 歌手/专辑详情是按 mid 缓存的，没有上限时浏览得越多留得越多。
+// 按最近访问淘汰，当前打开页面 retain 住的记录不参与。
+const SINGER_CACHE_MAX = 8
+const ALBUM_CACHE_MAX = 8
+const SONG_CACHE_MAX = 2000
+const singerHolds = new Map<string, number>()
+const albumHolds = new Map<string, number>()
+const singerOrder = new Map<string, true>()
+const albumOrder = new Map<string, true>()
+let pruneTimer: ReturnType<typeof setTimeout> | null = null
+
+const touchSinger = (mid: string) => {
+  singerOrder.delete(mid)
+  singerOrder.set(mid, true)
+}
+const touchAlbum = (mid: string) => {
+  albumOrder.delete(mid)
+  albumOrder.set(mid, true)
+}
+
+const pruneSingerCache = () => {
+  const ids = [...singerOrder.keys()].filter(mid => state.singers[mid] != null)
+  if (!ids.length) return
+  let count = ids.length
+  let totalSongs = ids.reduce((sum, mid) => sum + state.singers[mid].songs.list.length, 0)
+  if (count <= SINGER_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) return
+  const newest = ids[ids.length - 1]
+  for (const mid of ids) {
+    if (count <= SINGER_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) break
+    if (mid === newest || (singerHolds.get(mid) ?? 0) > 0) continue
+    totalSongs -= state.singers[mid].songs.list.length
+    delete state.singers[mid]
+    singerOrder.delete(mid)
+    count--
+  }
+}
+
+const pruneAlbumCache = () => {
+  const ids = [...albumOrder.keys()].filter(mid => state.albumSongs[mid] != null)
+  if (!ids.length) return
+  let count = ids.length
+  let totalSongs = ids.reduce((sum, mid) => sum + state.albumSongs[mid].list.length, 0)
+  if (count <= ALBUM_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) return
+  const newest = ids[ids.length - 1]
+  for (const mid of ids) {
+    if (count <= ALBUM_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) break
+    if (mid === newest || (albumHolds.get(mid) ?? 0) > 0) continue
+    totalSongs -= state.albumSongs[mid].list.length
+    delete state.albumSongs[mid]
+    albumOrder.delete(mid)
+    count--
+  }
+}
+
+// 延迟淘汰：避免页面刚拿到记录、还没渲染完就被别的访问挤掉
+const schedulePrune = () => {
+  if (pruneTimer) return
+  pruneTimer = setTimeout(() => {
+    pruneTimer = null
+    pruneSingerCache()
+    pruneAlbumCache()
+  }, 3000)
+}
+
+export const retainSingerRecord = (mid: string) => {
+  singerHolds.set(mid, (singerHolds.get(mid) ?? 0) + 1)
+}
+export const releaseSingerRecord = (mid: string) => {
+  const count = singerHolds.get(mid)
+  if (count == null) return
+  if (count > 1) singerHolds.set(mid, count - 1)
+  else singerHolds.delete(mid)
+  schedulePrune()
+}
+export const retainAlbumRecord = (mid: string) => {
+  albumHolds.set(mid, (albumHolds.get(mid) ?? 0) + 1)
+}
+export const releaseAlbumRecord = (mid: string) => {
+  const count = albumHolds.get(mid)
+  if (count == null) return
+  if (count > 1) albumHolds.set(mid, count - 1)
+  else albumHolds.delete(mid)
+  schedulePrune()
+}
+
 export interface SongsResult {
   list: LX.Music.MusicInfoOnline[]
   total: number
@@ -18,7 +103,14 @@ export interface AlbumsResult {
 }
 
 const getRecord = (mid: string, name = ''): SingerRecord => {
-  return state.singers[mid] ?? (state.singers[mid] = createSingerRecord(mid, name))
+  const record = state.singers[mid]
+  if (record) {
+    touchSinger(mid)
+    return record
+  }
+  touchSinger(mid)
+  schedulePrune()
+  return (state.singers[mid] = createSingerRecord(mid, name))
 }
 
 /** 翻页时接口偶尔把同一条重复给回来，按 id/mid 去一下重 */
@@ -80,18 +172,24 @@ export default {
     return record.albums
   },
   setAlbumSongs(mid: string, result: SongsResult, page: number) {
-    const info = state.albumSongs[mid] ?? (state.albumSongs[mid] = {
-      list: [],
-      total: 0,
-      page: 0,
-      maxPage: 1,
-      limit: result.limit,
-    })
+    let info = state.albumSongs[mid]
+    if (!info) {
+      info = state.albumSongs[mid] = {
+        list: [],
+        total: 0,
+        page: 0,
+        maxPage: 1,
+        limit: result.limit,
+      }
+      schedulePrune()
+    }
+    touchAlbum(mid)
     setPageInfo(info, mapSongs(result), page, deduplicationList)
 
     return info
   },
   clearAlbumSongs(mid: string) {
     delete state.albumSongs[mid]
+    albumOrder.delete(mid)
   },
 }

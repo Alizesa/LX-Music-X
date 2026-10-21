@@ -1,8 +1,12 @@
 import { getPlayQueue as getSavedPlayQueue, savePlayQueue } from '@/utils/data'
 import { LIST_IDS } from '@/config/constant'
+import playerState from '@/store/player/state'
+import playerActions from '@/store/player/action'
 
 const queue: LX.Player.PlayQueueItem[] = []
 let initialized = false
+// 推荐续播会无限追加，保留最近一段即可；普通列表建队列不受这个上限影响
+const MAX_PLAY_QUEUE = 500
 
 const commit = async() => {
   await savePlayQueue(queue)
@@ -61,6 +65,19 @@ export const appendPlayQueue = async(sourceListId: string, list: LX.Player.PlayM
       musicInfo,
     })
   })
+  // 只裁当前播放位置之前的旧歌；当前这首和后面的不能动
+  const currentIndex = playerState.playInfo.playerPlayIndex
+  const removeCount = Math.min(
+    queue.length - MAX_PLAY_QUEUE,
+    currentIndex >= 0 ? currentIndex : 0,
+  )
+  if (removeCount > 0) {
+    queue.splice(0, removeCount)
+    playerActions.updatePlayIndex(
+      Math.max(0, playerState.playInfo.playIndex - removeCount),
+      Math.max(0, currentIndex - removeCount),
+    )
+  }
   await commit()
 }
 

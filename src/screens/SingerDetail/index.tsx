@@ -14,6 +14,7 @@ import { createStyle } from '@/utils/tools'
 import { scaleSizeH } from '@/utils/pixelRatio'
 import { BorderWidths } from '@/theme'
 import { type SingerDetailParams, type SingerInfo } from '@/store/singer/state'
+import { releaseSingerRecord, retainSingerRecord } from '@/store/singer/action'
 import Header from './Header'
 import SingerSongs from './SingerSongs'
 import SingerAlbums from './SingerAlbums'
@@ -35,6 +36,12 @@ export default ({ componentId, info }: { componentId: string, info: SingerDetail
   useEffect(() => {
     setComponentId(COMPONENT_IDS.singerDetail, componentId)
   }, [componentId])
+
+  // 页面打开期间保住这位歌手的记录，离开后交给 LRU 决定是否淘汰
+  useEffect(() => {
+    retainSingerRecord(info.mid)
+    return () => { releaseSingerRecord(info.mid) }
+  }, [info.mid])
 
   const toggleTab = useCallback((id: TabId) => {
     setActiveId(id)

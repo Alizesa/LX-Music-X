@@ -39,7 +39,9 @@ const persistNow = async() => {
 
 const schedulePersist = () => {
   if (persistTimer) return
-  persistTimer = setTimeout(() => { void persistNow() }, 1000)
+  // 下载中进度每秒变一次，没必要每秒把整份任务数组序列化一遍；
+  // 合并到 3 秒，进程被杀最多丢几秒进度
+  persistTimer = setTimeout(() => { void persistNow() }, 3000)
 }
 
 const extensionForQuality = (quality: LX.Quality): LX.Download.FileExt => {
@@ -417,19 +419,23 @@ export const addTask = async(musicInfo: LX.Music.MusicInfoOnline, quality: LX.Qu
   return id
 }
 
-export const pauseTask = async(id: string) => {
+const pauseTaskInternal = async(id: string, persist: boolean) => {
   await init()
   const task = tasks.find(item => item.id == id)
   if (!task || task.status == 'completed' || task.status == 'pause') return
   const nativeId = task.nativeId
   task.status = 'pause'
   task.progress.speed = ''
-  await persistNow()
-  notify()
+  if (persist) {
+    await persistNow()
+    notify()
+  }
   if (nativeId) await pauseNativeDownload(nativeId)
 }
 
-export const retryTask = async(id: string) => {
+export const pauseTask = async(id: string) => pauseTaskInternal(id, true)
+
+const retryTaskInternal = async(id: string, persist: boolean, process: boolean) => {
   await init()
   const task = tasks.find(item => item.id == id)
   if (!task || task.status == 'completed') return
@@ -444,19 +450,35 @@ export const retryTask = async(id: string) => {
   task.status = 'waiting'
   task.error = undefined
   task.progress.speed = ''
-  await persistNow()
-  notify()
-  void processQueue()
+  if (persist) {
+    await persistNow()
+    notify()
+  }
+  if (process) void processQueue()
 }
+
+export const retryTask = async(id: string) => retryTaskInternal(id, true, true)
 
 export const pauseAllTasks = async() => {
   await init()
-  await Promise.all(tasks.filter(task => task.status != 'completed').map(async task => pauseTask(task.id)))
+  try {
+    await Promise.all(tasks.filter(task => task.status != 'completed').map(async task => pauseTaskInternal(task.id, false)))
+  } finally {
+    // 批量操作只落盘/通知一次，避免 N 个任务各写一遍整份数组
+    await persistNow()
+    notify()
+  }
 }
 
 export const resumeAllTasks = async() => {
   await init()
-  await Promise.all(tasks.filter(task => task.status == 'pause' || task.status == 'error').map(async task => retryTask(task.id)))
+  try {
+    await Promise.all(tasks.filter(task => task.status == 'pause' || task.status == 'error').map(async task => retryTaskInternal(task.id, false, false)))
+  } finally {
+    await persistNow()
+    notify()
+    void processQueue()
+  }
 }
 
 export const removeTask = async(id: string, deleteFile = false) => {
