@@ -39,7 +39,7 @@ export const setPic = (datas: {
  */
 
 
-export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, onToggleSource = () => {}, urlSourceOrder }: {
+export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, onToggleSource = () => {}, urlSourceOrder, onCancel }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality?: LX.Quality
   isRefresh: boolean
@@ -47,6 +47,7 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
   /** 两条链的先后，见 core/music/utils.ts。不传按播放设置走 */
   urlSourceOrder?: LX.Music.UrlSourceOrder
+  onCancel?: (cancel: () => void) => void
 }): Promise<string> => {
   // if (!musicInfo._types[type]) {
   //   // 兼容旧版酷我源搜索列表过滤128k音质的bug
@@ -58,7 +59,7 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   const cachedUrl = await getStoreMusicUrl(musicInfo, targetQuality)
   if (cachedUrl && !isRefresh) return cachedUrl
 
-  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder }).then(({ url, quality: targetQuality, musicInfo: targetMusicInfo, isFromCache }) => {
+  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel }).then(({ url, quality: targetQuality, musicInfo: targetMusicInfo, isFromCache }) => {
     if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, targetQuality, url)
     void saveMusicUrl(musicInfo, targetQuality, url)
     return url

@@ -11,19 +11,40 @@ const preloadMusicInfo = {
   preProgress: 0,
   info: null as LX.Player.PlayMusicInfo | null,
 }
+// 切歌/暂停时递增；旧预加载在任意 await 返回后都要检查，不能写状态或继续发请求
+let preloadGeneration = 0
+let preloadCancel: (() => void) | null = null
+
 const resetPreloadInfo = () => {
+  preloadGeneration++
+  preloadCancel?.()
+  preloadCancel = null
   preloadMusicInfo.preProgress = 0
   preloadMusicInfo.info = null
   preloadMusicInfo.isLoading = false
 }
+const setPreloadCancel = (generation: number, cancel: () => void) => {
+  if (generation !== preloadGeneration) {
+    cancel()
+    return
+  }
+  preloadCancel?.()
+  preloadCancel = cancel
+}
 const preloadNextMusicUrl = async(curTime: number) => {
   if (preloadMusicInfo.isLoading || curTime - preloadMusicInfo.preProgress < 3) return
   preloadMusicInfo.isLoading = true
+  const generation = preloadGeneration
   console.log('preload next music url')
   const info = await getNextPlayMusicInfo()
+  if (generation !== preloadGeneration) return
   if (info) {
     preloadMusicInfo.info = info
-    const url = await getMusicUrl({ musicInfo: info.musicInfo }).catch(() => '')
+    const url = await getMusicUrl({
+      musicInfo: info.musicInfo,
+      onCancel: cancel => { setPreloadCancel(generation, cancel) },
+    }).catch(() => '')
+    if (generation !== preloadGeneration) return
     // 已下载 / 已导入的歌曲返回的是本地 URI（下载走 SAF，是 content://），不是可请求的
     // 地址。把它交给 fetch，RN 会构造 status 为 0 的 Response 并抛 RangeError；而那个
     // 异常是在 XHR 的回调里抛出的，不会变成 promise rejection，下面的 catch 接不住，
@@ -32,13 +53,18 @@ const preloadNextMusicUrl = async(curTime: number) => {
     if (url && isUrl(url)) {
       console.log('preload url', url)
       const [cached, available] = await Promise.all([isCached(url), checkUrl(url).then(() => true).catch(() => false)])
+      if (generation !== preloadGeneration) return
       if (!cached && !available) {
-        const url = await getMusicUrl({ musicInfo: info.musicInfo, isRefresh: true }).catch(() => '')
+        const url = await getMusicUrl({
+          musicInfo: info.musicInfo,
+          isRefresh: true,
+          onCancel: cancel => { setPreloadCancel(generation, cancel) },
+        }).catch(() => '')
         console.log('preload url refresh', url)
       }
     }
   }
-  preloadMusicInfo.isLoading = false
+  if (generation === preloadGeneration) preloadMusicInfo.isLoading = false
 }
 
 export default () => {
@@ -55,7 +81,7 @@ export default () => {
     if (!keys.includes('player.togglePlayMethod')) return
     if (!preloadMusicInfo.info || preloadMusicInfo.info.isTempPlay) return
     resetRandomNextMusicInfo()
-    preloadMusicInfo.info = null
+    resetPreloadInfo()
     preloadMusicInfo.preProgress = playerState.progress.nowPlayTime
   }
 

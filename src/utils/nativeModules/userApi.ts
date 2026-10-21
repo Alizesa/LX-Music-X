@@ -29,6 +29,8 @@ export interface SendResponseParams {
 export interface SendActions {
   request: LX.UserApi.UserApiRequestParams
   response: SendResponseParams
+  /** App → 脚本：取消一个在途请求，值是 requestKey */
+  cancelRequest: string
 }
 export const sendAction = <T extends keyof SendActions>(action: T, data: SendActions[T]) => {
   UserApiModule.sendAction(action, JSON.stringify(data))

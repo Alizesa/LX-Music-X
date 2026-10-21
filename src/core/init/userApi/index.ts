@@ -5,6 +5,7 @@ import BackgroundTimer from 'react-native-background-timer'
 import { fetchData } from './request'
 import { getUserApiList } from '@/utils/data'
 import { confirmDialog, openUrl, tipDialog } from '@/utils/tools'
+import { requestMsg } from '@/utils/message'
 
 
 export default async(setting: LX.AppSetting) => {
@@ -16,6 +17,15 @@ export default async(setting: LX.AppSetting) => {
     if (!target) return
     scriptRequestMap.delete(requestKey)
     target.abort()
+  }
+  /** App → 脚本的请求取消：清超时、通知脚本抑制迟到响应，并让调用方立刻 reject */
+  const cancelUserApiRequest = (requestKey: string) => {
+    const target = userApiRequestMap.get(requestKey)
+    if (!target) return
+    userApiRequestMap.delete(requestKey)
+    BackgroundTimer.clearTimeout(target.timeout)
+    sendAction('cancelRequest', requestKey)
+    target.reject(new Error(requestMsg.cancelRequest))
   }
   const sendScriptRequest = (requestKey: string, url: string, options: RequestParams['options']) => {
     let req = fetchData(url, options)
@@ -43,7 +53,7 @@ export default async(setting: LX.AppSetting) => {
       if (!target) return
       userApiRequestMap.delete(data.requestKey)
       BackgroundTimer.clearTimeout(target.timeout)
-      target.reject(new Error('request failed'))
+      target.reject(new Error(requestMsg.cancelRequest))
     }
     const requestPromise = new Promise<ResponseParams['result']>((resolve, reject) => {
       userApiRequestMap.set(data.requestKey, {
@@ -89,7 +99,7 @@ export default async(setting: LX.AppSetting) => {
                   const requestKey = `request__${Math.random().toString().substring(2)}`
                   return {
                     canceleFn() {
-                      // userApiRequestCancel(requestKey)
+                      cancelUserApiRequest(requestKey)
                     },
                     promise: sendUserApiRequest({
                       requestKey,
@@ -117,7 +127,7 @@ export default async(setting: LX.AppSetting) => {
                   const requestKey = `request__${Math.random().toString().substring(2)}`
                   return {
                     canceleFn() {
-                      // userApiRequestCancel(requestKey)
+                      cancelUserApiRequest(requestKey)
                     },
                     promise: sendUserApiRequest({
                       requestKey,
@@ -145,7 +155,7 @@ export default async(setting: LX.AppSetting) => {
                   const requestKey = `request__${Math.random().toString().substring(2)}`
                   return {
                     canceleFn() {
-                      // userApiRequestCancel(requestKey)
+                      cancelUserApiRequest(requestKey)
                     },
                     promise: sendUserApiRequest({
                       requestKey,

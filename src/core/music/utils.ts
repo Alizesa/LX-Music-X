@@ -235,12 +235,13 @@ export const getPlayQuality = (highQuality: LX.Quality, musicInfo: LX.Music.Musi
   return type
 }
 
-export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggleSource, isRefresh, retryedSource = [] }: {
+export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggleSource, isRefresh, retryedSource = [], onCancel }: {
   musicInfos: LX.Music.MusicInfoOnline[]
   quality?: LX.Quality
   onToggleSource: (musicInfo?: LX.Music.MusicInfoOnline) => void
   isRefresh: boolean
   retryedSource?: LX.OnlineSource[]
+  onCancel?: (cancel: () => void) => void
 }): Promise<{
   url: string
   musicInfo: LX.Music.MusicInfoOnline
@@ -270,7 +271,12 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
 
   let reqPromise
   try {
-    reqPromise = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), itemQuality).promise
+    const request = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), itemQuality)
+    if (onCancel) {
+      const cancel = request.canceleFn ?? request.cancelHttp
+      if (typeof cancel == 'function') onCancel(cancel as () => void)
+    }
+    reqPromise = request.promise
   } catch (err: any) {
     reqPromise = Promise.reject(err)
   }
@@ -280,21 +286,23 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
     return { musicInfo, url, quality: type, isFromCache: false }
     // eslint-disable-next-line @typescript-eslint/promise-function-async
   }).catch((err: any) => {
-    if (err.message == requestMsg.tooManyRequests) throw err
+    // 取消不是失败，不要继续换下一个源
+    if (err.message == requestMsg.cancelRequest || err.message == requestMsg.tooManyRequests) throw err
     console.log(err)
-    return getOnlineOtherSourceMusicUrl({ musicInfos, quality, onToggleSource, isRefresh, retryedSource })
+    return getOnlineOtherSourceMusicUrl({ musicInfos, quality, onToggleSource, isRefresh, retryedSource, onCancel })
   })
 }
 
 /**
  * 获取在线音乐URL
  */
-export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder }: {
+export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality?: LX.Quality
   isRefresh: boolean
   allowToggleSource: boolean
   onToggleSource: (musicInfo?: LX.Music.MusicInfoOnline) => void
+  onCancel?: (cancel: () => void) => void
   /**
    * 两条链的先后：
    * - 'accountFirst' 账号优先，拿不到再走音源（播放的默认）
@@ -338,7 +346,12 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
 
     let reqPromise
     try {
-      reqPromise = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), targetQuality).promise
+      const request = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), targetQuality)
+      if (onCancel) {
+        const cancel = request.canceleFn ?? request.cancelHttp
+        if (typeof cancel == 'function') onCancel(cancel as () => void)
+      }
+      reqPromise = request.promise
     } catch (err: any) {
       reqPromise = Promise.reject(err)
     }
@@ -346,7 +359,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
       return { musicInfo, url, quality: type, isFromCache: false }
     }).catch(async(err: any) => {
       console.log(err)
-      if (!allowToggleSource || err.message == requestMsg.tooManyRequests) throw err
+      if (err.message == requestMsg.cancelRequest || !allowToggleSource || err.message == requestMsg.tooManyRequests) throw err
       onToggleSource()
       // eslint-disable-next-line @typescript-eslint/promise-function-async
       return getOtherSource(musicInfo).then(otherSource => {
@@ -358,6 +371,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
             quality,
             isRefresh,
             retryedSource: [musicInfo.source],
+            onCancel,
           })
         }
         throw err

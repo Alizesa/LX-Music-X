@@ -180,6 +180,8 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
   }
 
   const requestQueue = new Map()
+  // App 侧取消的请求：抑制迟到响应，避免已经取消的请求再回调一次
+  const cancelledRequests = new Set()
   let isInitedApi = false
   let isShowedUpdateAlert = false
 
@@ -216,6 +218,7 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
 
   const handleRequest = ({ requestKey, data }) => {
     // console.log(data)
+    if (cancelledRequests.delete(requestKey)) return
     if (!events.request) return nativeCall(NATIVE_EVENTS_NAMES.response, { requestKey, status: false, errorMessage: 'Request event is not defined' })
     try {
       events.request.call(globalThis.lx, { source: data.source, action: data.action, info: data.info }).then(response => {
@@ -248,13 +251,16 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
             }
             break
         }
+        if (cancelledRequests.delete(requestKey)) return
         nativeCall(NATIVE_EVENTS_NAMES.response, { requestKey, status: true, result })
       }).catch(err => {
         // console.log('handleRequest err', err)
+        if (cancelledRequests.delete(requestKey)) return
         nativeCall(NATIVE_EVENTS_NAMES.response, { requestKey, status: false, errorMessage: err.message })
       })
     } catch (err) {
       // console.log('handleRequest call err', err)
+      if (cancelledRequests.delete(requestKey)) return
       nativeCall(NATIVE_EVENTS_NAMES.response, { requestKey, status: false, errorMessage: err.message })
     }
   }
@@ -273,6 +279,14 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
         return
       case 'response':
         handleNativeResponse(data)
+        return
+      case 'cancelRequest':
+        // 只登记；handleRequest 的入口/响应点会消费并抑制迟到结果
+        cancelledRequests.add(data)
+        if (cancelledRequests.size > 100) {
+          const first = cancelledRequests.values().next().value
+          if (first != null) cancelledRequests.delete(first)
+        }
         return
     }
     return 'Unknown action: ' + action

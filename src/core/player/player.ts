@@ -98,8 +98,15 @@ const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, i
     }
   })
 }
+let musicUrlGeneration = 0
+let cancelMusicUrl: (() => void) | null = null
+
 const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, isRetryed = false): Promise<string | null> => {
   // this.musicInfo.url = await getMusicPlayUrl(targetSong, type)
+  // 切歌/重试时取消上一次仍在途的取链；旧请求返回后仍由 diffCurrentMusicInfo 丢弃结果
+  const generation = ++musicUrlGeneration
+  cancelMusicUrl?.()
+  cancelMusicUrl = null
   setStatusText(global.i18n.t('player__getting_url'))
   addLoadTimeout()
 
@@ -110,10 +117,14 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
   const isLocalSource = !('progress' in musicInfo) && musicInfo.source == 'local'
   const toggleMusicInfo = isLocalSource ? undefined : ('progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo).meta.toggleMusicInfo
 
+  const setCancel = (cancel: () => void) => {
+    if (generation === musicUrlGeneration) cancelMusicUrl = cancel
+  }
   return (toggleMusicInfo ? getMusicUrl({
     musicInfo: toggleMusicInfo,
     isRefresh,
     allowToggleSource: false,
+    onCancel: setCancel,
   }) : Promise.reject(new Error('not found'))).catch(async() => {
     return getMusicUrl({
       musicInfo,
@@ -122,6 +133,7 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
         if (diffCurrentMusicInfo(musicInfo)) return
         setStatusText(global.i18n.t('toggle_source_try'))
       },
+      onCancel: setCancel,
     })
   }).then(url => {
     if (global.lx.isPlayedStop || diffCurrentMusicInfo(musicInfo)) return null
@@ -145,6 +157,8 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
     }
 
     throw err
+  }).finally(() => {
+    if (generation === musicUrlGeneration) cancelMusicUrl = null
   })
 }
 
