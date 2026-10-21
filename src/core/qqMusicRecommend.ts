@@ -3,7 +3,7 @@ import { getQQMusicDailyRecommendations, getQQMusicSession } from '@/core/qqMusi
 import listState from '@/store/list/state'
 import playerState from '@/store/player/state'
 import { LIST_IDS, QQ_DAILY_RECOMMEND_ID, QQ_DAILY_RECOMMEND_QUEUE_SOURCE } from '@/config/constant'
-import { getRecommendSession, isRecommendQueue } from '@/core/qqMusicRecommendSession'
+import { dropRecommendSession, getRecommendSession, isRecommendQueue } from '@/core/qqMusicRecommendSession'
 import { play, playList } from '@/core/player/player'
 import { clearPlayedList } from '@/core/player/playedList'
 
@@ -144,6 +144,8 @@ export const continueRecommendQueue = async(currentSongs: LX.Player.PlayMusic[])
   const session = await getRecommendSession()
   if (!session) return false
   await startRecommendQueue(session.songs, session.index)
+  // 已经恢复成播放队列，存档的内存/磁盘副本可以放掉
+  await dropRecommendSession()
   return true
 }
 

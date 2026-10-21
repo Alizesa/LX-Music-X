@@ -29,7 +29,9 @@ const initial = async({ volume, playRate, cacheSize, isHandleAudioFocus, isEnabl
   await migratePlayerCache()
   await TrackPlayer.setupPlayer({
     maxCacheSize: cacheSize * 1024,
-    maxBuffer: 1000,
+    // RNTP 的单位是秒；1000 秒（约 16 分钟）的前向缓冲没有必要，
+    // 默认 minBuffer 50 秒，这里取 60 秒，兼顾弱网和内存
+    maxBuffer: 60,
     waitForBuffer: true,
     handleAudioFocus: isHandleAudioFocus,
     audioOffload: isEnableAudioOffload,

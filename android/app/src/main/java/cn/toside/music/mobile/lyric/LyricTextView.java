@@ -4,7 +4,6 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.util.Log;
 import android.view.Gravity;
 import android.widget.TextView;
 
@@ -26,7 +25,8 @@ public class LyricTextView extends TextView {
   private final Runnable mStartScrollRunnable;
   private final Runnable invalidateRunnable;
   public static final int startScrollDelay = 1500;
-  public static final int invalidateDelay = 10;
+  // 约 60fps；原来 10ms 是 100fps 的重绘，收益很小但更耗电
+  public static final int invalidateDelay = 16;
 
   public LyricTextView(Context context) {
     super(context);
@@ -44,7 +44,9 @@ public class LyricTextView extends TextView {
 
   @Override
   protected void onDetachedFromWindow() {
+    isStop = true;
     removeCallbacks(mStartScrollRunnable);
+    removeCallbacks(invalidateRunnable);
     super.onDetachedFromWindow();
   }
 
@@ -118,7 +120,6 @@ public class LyricTextView extends TextView {
   protected void onDraw(Canvas canvas) {
     float mSpeed = speed;
     if (text != null) {
-      Log.d("Lyric", "getHeight: " + getHeight() + " y: " + y);
       canvas.drawText(text, getDrawX(), y, mPaint);
       if (getText().length() >= 20) {
         mSpeed += mSpeed;

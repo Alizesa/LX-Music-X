@@ -193,10 +193,11 @@ export const handleImportList = (path: string) => {
 
 
 const exportAllList = async(path: string) => {
-  const data = JSON.parse(JSON.stringify({
+  // handleSaveFile 内部会 stringify 一次，这里不再做无意义的深拷贝
+  const data = {
     type: 'playList_v2',
     data: await getAllLists(),
-  }))
+  }
 
   try {
     await handleSaveFile(path + '/lx_list.lxmc', data)

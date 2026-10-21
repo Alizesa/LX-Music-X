@@ -16,6 +16,8 @@ import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 public class QuickJS {
@@ -25,6 +27,7 @@ public class QuickJS {
   private boolean isInited = false;
   private QuickJSContext jsContext = null;
   final Handler timeoutHandler = new Handler();
+  private final Map<Long, Runnable> timeoutRunnables = new HashMap<>();
   private boolean inited = false;
 
   public QuickJS(ReactApplicationContext context, Handler eventHandler) {
@@ -123,9 +126,19 @@ public class QuickJS {
       }
     });
     jsContext.getGlobalObject().setProperty("__lx_native_call__set_timeout", args -> {
-      this.timeoutHandler.postDelayed(() -> {
+      long id = ((Number) args[0]).longValue();
+      Runnable runnable = () -> {
+        timeoutRunnables.remove(id);
         callJS("__set_timeout__", args[0]);
-      }, (int) args[1]);
+      };
+      timeoutRunnables.put(id, runnable);
+      timeoutHandler.postDelayed(runnable, (int) args[1]);
+      return null;
+    });
+    jsContext.getGlobalObject().setProperty("__lx_native_call__clear_timeout", args -> {
+      long id = ((Number) args[0]).longValue();
+      Runnable runnable = timeoutRunnables.remove(id);
+      if (runnable != null) timeoutHandler.removeCallbacks(runnable);
       return null;
     });
   }
@@ -134,6 +147,9 @@ public class QuickJS {
     init();
     QuickJSContext quickJSContext = this.jsContext;
     if (quickJSContext != null) quickJSContext.destroy();
+    // 旧上下文的定时器不能留到新上下文里执行
+    timeoutHandler.removeCallbacksAndMessages(null);
+    timeoutRunnables.clear();
     this.jsContext = QuickJSContext.create();
     this.jsContext.setConsole(new Console(this.eventHandler));
     String preloadScript = getPreloadScript();
@@ -214,7 +230,11 @@ public class QuickJS {
   }
 
   public void destroy () {
-    this.jsContext.destroy();
-    this.jsContext = null;
+    timeoutHandler.removeCallbacksAndMessages(null);
+    timeoutRunnables.clear();
+    if (this.jsContext != null) {
+      this.jsContext.destroy();
+      this.jsContext = null;
+    }
   }
 }

@@ -1,19 +1,49 @@
 // import { requestStoragePermission } from '@/utils/common'
-import { temporaryDirectoryPath, existsFile, appendFile, unlink, writeFile, readFile } from '@/utils/fs'
+import { temporaryDirectoryPath, existsFile, appendFile, unlink, writeFile, readFile, stat } from '@/utils/fs'
 
 const logPath = temporaryDirectoryPath + '/error.log'
+// 日志文件上限：超过 1MB 时只保留最后 512KB，避免读取/追加无限增长
+const LOG_MAX_BYTES = 1024 * 1024
+const LOG_KEEP_BYTES = 512 * 1024
+let logBytes = 0
+let rotating = false
+
+const rotateLog = async() => {
+  if (rotating) return
+  rotating = true
+  try {
+    const data = String(await readFile(logPath))
+    const keep = data.slice(-LOG_KEEP_BYTES)
+    await writeFile(logPath, keep)
+    logBytes = keep.length
+  } catch (error) {
+    console.warn('rotate log failed:', error instanceof Error ? error.message : error)
+  } finally {
+    // 单线程下 rotating 只会在进入时同步置位，这里复位是安全的
+    // eslint-disable-next-line require-atomic-updates
+    rotating = false
+  }
+}
 
 const logTools = {
   tempLog: [] as Array<{ time: string, type: 'LOG' | 'WARN' | 'ERROR', text: string }> | null,
   writeLog(msg: string) {
     console.log(msg)
-    void appendFile(logPath, '\n----lx log----\n' + msg)
+    const line = '\n----lx log----\n' + msg
+    void appendFile(logPath, line).then(() => {
+      logBytes += line.length
+      if (logBytes > LOG_MAX_BYTES) void rotateLog()
+    }).catch(() => {})
   },
   async initLogFile() {
     try {
       let isExists = await existsFile(logPath)
       // console.log(isExists)
       if (!isExists) await writeFile(logPath, '')
+      try {
+        logBytes = (await stat(logPath)).size
+        if (logBytes > LOG_MAX_BYTES) await rotateLog()
+      } catch {}
       if (this.tempLog?.length) this.writeLog(this.tempLog.map(m => `${m.time} ${m.type} ${m.text}`).join('\n----lx log----\n'))
       this.tempLog = null
     } catch (err) {
