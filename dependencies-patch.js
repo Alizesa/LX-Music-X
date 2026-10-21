@@ -110,15 +110,17 @@ const patchs = [
 
         // Prevent the media style from being used in older Huawei devices`,
   ],
-  // 6. 通知封面：完成回调里不再把 Target 置空，保留到换图/销毁时统一 clear。
-  // 否则 destroy() 时拿不到在途或刚完成的请求，无法主动取消
+  // 6. 兼容已经打过「保留 Target」补丁的 node_modules：恢复成完成后置空。
+  // 保留 Target 会让下一次换图时 rm.clear 回收上一张位图，而通知 Builder 仍可能
+  // 引用它，Notification.build 缩放时就会抛
+  // "cannot use a recycled source in createBitmap"
   [
     METADATA_MANAGER,
     `                        updateNotification();
-                        artworkTarget = null;
+                        // LX: 保留 Target，换图/销毁时统一 clear
                     }`,
     `                        updateNotification();
-                        // LX: 保留 Target，换图/销毁时统一 clear
+                        artworkTarget = null;
                     }`,
   ],
   // 7. 服务销毁时清掉封面请求和持有的位图，避免旧回调/位图继续存活
