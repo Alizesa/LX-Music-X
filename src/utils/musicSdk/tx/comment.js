@@ -73,6 +73,13 @@ const emojis = {
 
 const songIdMap = new Map()
 const promises = new Map()
+const SONG_ID_CACHE_MAX = 1000
+const setSongIdCache = (songmid, songId) => {
+  songIdMap.set(songmid, songId)
+  if (songIdMap.size <= SONG_ID_CACHE_MAX) return
+  const oldest = songIdMap.keys().next().value
+  if (oldest != null) songIdMap.delete(oldest)
+}
 
 export default {
   _requestObj: null,
@@ -82,11 +89,16 @@ export default {
     if (songIdMap.has(songmid)) return songIdMap.get(songmid)
     if (promises.has(songmid)) return (await promises.get(songmid)).songId
     const promise = getMusicInfo(songmid)
-    promises.set(promise)
-    const info = await promise
-    songIdMap.set(songmid, info.songId)
-    promises.delete(songmid)
-    return info.songId
+    // 键必须是 songmid，不能是 promise 本身（否则查询/删除都永远不命中）
+    promises.set(songmid, promise)
+    try {
+      const info = await promise
+      setSongIdCache(songmid, info.songId)
+      return info.songId
+    } finally {
+      // 只删自己：并发时后一个可能已经覆盖
+      if (promises.get(songmid) === promise) promises.delete(songmid)
+    }
   },
   async getComment(mInfo, page = 1, limit = 20) {
     if (this._requestObj) this._requestObj.cancelHttp()

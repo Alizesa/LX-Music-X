@@ -25,6 +25,7 @@ export default () => {
   let updateTimeout: number | null = null
 
   let isScreenOn = true
+  let isAppActive = AppState.currentState === 'active'
 
   const getCurrentTime = () => {
     let id = playerState.musicInfo.id
@@ -62,11 +63,18 @@ export default () => {
     updateTimeout = null
   }
   const startUpdateTimeout = () => {
-    if (!isScreenOn) return
+    // 暂停/停止时不轮询；调速设置变化也会走到这里
+    if (!isScreenOn || !playerState.isPlay) {
+      clearUpdateTimeout()
+      return
+    }
     clearUpdateTimeout()
+    const rate = Math.max(settingState.setting['player.playbackRate'], 0.1)
+    // 后台仍保留进度保存，但不按前台频率轮询
+    const baseInterval = isAppActive ? 1000 : 5000
     updateTimeout = BackgroundTimer.setInterval(() => {
       getCurrentTime()
-    }, 1000 / settingState.setting['player.playbackRate'])
+    }, baseInterval / rate)
     getCurrentTime()
   }
 
@@ -154,14 +162,21 @@ export default () => {
 
   const handleScreenStateChanged: Parameters<typeof onScreenStateChange>[0] = (state) => {
     isScreenOn = state == 'ON'
-    if (isScreenOn) {
-      if (playerState.isPlay) startUpdateTimeout()
-    } else clearUpdateTimeout()
+    if (isScreenOn && playerState.isPlay) startUpdateTimeout()
+    else clearUpdateTimeout()
   }
 
-  // 修复在某些设备上屏幕状态改变事件未触发导致的进度条未更新的问题
+  // 修复在某些设备上屏幕状态改变事件未触发导致的进度条未更新的问题；
+  // 同时把前后台纳入轮询频率：后台不按 1 秒一次跑
   AppState.addEventListener('change', (state) => {
-    if (state == 'active' && !isScreenOn) handleScreenStateChanged('ON')
+    isAppActive = state == 'active'
+    if (!isAppActive) {
+      if (playerState.isPlay && isScreenOn) startUpdateTimeout()
+      else clearUpdateTimeout()
+      return
+    }
+    if (!isScreenOn) handleScreenStateChanged('ON')
+    else if (playerState.isPlay) startUpdateTimeout()
   })
 
   global.app_event.on('play', handlePlay)

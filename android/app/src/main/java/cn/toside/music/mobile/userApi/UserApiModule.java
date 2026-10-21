@@ -52,15 +52,18 @@ public class UserApiModule extends ReactContextBaseJavaModule {
     if (this.utilsEvent == null) this.utilsEvent = new UtilsEvent(this.reactContext);
     if (this.javaScriptThread != null) destroy();
     Bundle info = Arguments.toBundle(data);
-    this.javaScriptThread = new JavaScriptThread(this.reactContext, info);
-    this.javaScriptThread.prepareHandler(new JsHandler(this.reactContext.getMainLooper(), this.utilsEvent));
-    this.javaScriptThread.getHandler().sendEmptyMessage(HandlerWhat.INIT);
-    this.javaScriptThread.setUncaughtExceptionHandler((thread, ex) -> {
-      Handler jsHandler = javaScriptThread.getHandler();
-      Message message = jsHandler.obtainMessage();
-      message.what = HandlerWhat.LOG;
-      message.obj = new Object[]{"error", "Uncaught exception in JavaScriptThread: " + ex.getMessage()};
-      jsHandler.sendMessage(message);
+    JavaScriptThread thread = this.javaScriptThread = new JavaScriptThread(this.reactContext, info);
+    thread.prepareHandler(new JsHandler(this.reactContext.getMainLooper(), this.utilsEvent));
+    thread.getHandler().sendEmptyMessage(HandlerWhat.INIT);
+    thread.setUncaughtExceptionHandler((t, ex) -> {
+      // 用局部变量，别读字段：destroy 后字段已经是 null
+      Handler jsHandler = thread.getHandler();
+      if (jsHandler != null) {
+        Message message = jsHandler.obtainMessage();
+        message.what = HandlerWhat.LOG;
+        message.obj = new Object[]{"error", "Uncaught exception in JavaScriptThread: " + ex.getMessage()};
+        jsHandler.sendMessage(message);
+      }
       Log.e("JavaScriptThread", "Uncaught exception in JavaScriptThread: " + ex.getMessage());
     });
     Log.d("UserApi", "Module Thread id: " + Thread.currentThread().getId());
@@ -82,8 +85,15 @@ public class UserApiModule extends ReactContextBaseJavaModule {
   public void destroy() {
     JavaScriptThread javaScriptThread = this.javaScriptThread;
     if (javaScriptThread == null) return;
-    javaScriptThread.getHandler().sendEmptyMessage(HandlerWhat.DESTROY);
-    javaScriptThread.stopThread();
+    // 先摘掉引用拒绝新请求，再让脚本线程自己销毁上下文并退出。
+    // 不能在这里直接 quit()：DESTROY 可能还没被消费，QuickJS 上下文就漏了
     this.javaScriptThread = null;
+    javaScriptThread.getHandler().sendEmptyMessage(HandlerWhat.DESTROY);
+  }
+
+  @Override
+  public void invalidate() {
+    destroy();
+    super.invalidate();
   }
 }

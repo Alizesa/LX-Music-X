@@ -126,6 +126,14 @@ export function useBufferProgress() {
       clearInterval(interval)
       interval = null
     }
+    // 统一入口：先清旧的，避免 PlaybackState 回调和 getState 各建一个；
+    // 卸载后不再启动，避免初始化查询晚回来留下无人清理的定时器
+    const startItv = () => {
+      if (isUnmounted) return
+      clearItv()
+      interval = setInterval(updateBuffer, 1000)
+      void updateBuffer()
+    }
     const updateBuffer = async() => {
       const buffered = await (duration ? TrackPlayer.getBufferedPosition() : Promise.all([TrackPlayer.getBufferedPosition(), TrackPlayer.getDuration()]).then(([buffered, _duration]) => {
         duration = _duration
@@ -143,6 +151,7 @@ export function useBufferProgress() {
       switch (data.state) {
         case State.None:
           // console.log('state', 'None')
+          clearItv()
           setProgress(0)
           break
         // case State.Ready:
@@ -151,18 +160,18 @@ export function useBufferProgress() {
         // case State.Stopped:
         //   console.log('state', 'Stopped')
         //   break
-        // case State.Paused:
-        //   console.log('state', 'Paused')
-        //   break
+        case State.Paused:
+        case State.Stopped:
+          // 不在缓冲中了，停止 1 秒轮询；恢复播放/再次缓冲会重新启动
+          clearItv()
+          break
         // case State.Playing:
         //   console.log('state', 'Playing')
         //   break
         case State.Buffering:
           // console.log('state', 'Buffering')
-          clearItv()
           duration = 0
-          interval = setInterval(updateBuffer, 1000)
-          void updateBuffer()
+          startItv()
           break
         // case State.Connecting:
         //   console.log('state', 'Connecting')
@@ -175,7 +184,7 @@ export function useBufferProgress() {
 
     void updateBuffer()
     void TrackPlayer.getState().then((state) => {
-      if (state == State.Buffering) interval = setInterval(updateBuffer, 1000)
+      if (state == State.Buffering) startItv()
     })
     return () => {
       isUnmounted = true

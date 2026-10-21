@@ -82,8 +82,14 @@ export const getRecommendSession = async(): Promise<LX.QQMusic.RecommendSession 
     return null
   }
   if (loaded) return null
-  loading ??= readSession()
-  return loading
+  if (!loading) loading = readSession()
+  const promise = loading
+  try {
+    return await promise
+  } finally {
+    // 已完成的 Promise 会一直持有读到的存档；并发调用方拿到的仍是同一个 promise
+    if (loading === promise) loading = null
+  }
 }
 
 /** 丢掉存档。手动点「刷新」拿到新一批推荐时用，跨天由 getRecommendSession 自己处理 */

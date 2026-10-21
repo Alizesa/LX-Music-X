@@ -110,6 +110,41 @@ const patchs = [
 
         // Prevent the media style from being used in older Huawei devices`,
   ],
+  // 6. 通知封面：完成回调里不再把 Target 置空，保留到换图/销毁时统一 clear。
+  // 否则 destroy() 时拿不到在途或刚完成的请求，无法主动取消
+  [
+    METADATA_MANAGER,
+    `                        updateNotification();
+                        artworkTarget = null;
+                    }`,
+    `                        updateNotification();
+                        // LX: 保留 Target，换图/销毁时统一 clear
+                    }`,
+  ],
+  // 7. 服务销毁时清掉封面请求和持有的位图，避免旧回调/位图继续存活
+  [
+    METADATA_MANAGER,
+    `    public void destroy() {
+        service.stopForeground(true);
+
+        session.setActive(false);
+        session.release();
+    }`,
+    `    public void destroy() {
+        // LX: 清掉在途的封面请求与持有的位图，避免回调打到已销毁的 service
+        if(artworkTarget != null) {
+            Glide.with(service.getApplicationContext()).clear(artworkTarget);
+            artworkTarget = null;
+        }
+        prevArtResource = null;
+        prevArtwork = null;
+
+        service.stopForeground(true);
+
+        session.setActive(false);
+        session.release();
+    }`,
+  ],
 ]
 
 // 换行统一成 LF：Windows 上检出的文件可能是 CRLF，而这里比的是整段代码
