@@ -3,9 +3,11 @@ package cn.toside.music.mobile.utils;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
+import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.res.Configuration;
 import android.graphics.Rect;
 import android.net.Uri;
 import android.net.wifi.WifiInfo;
@@ -32,10 +34,11 @@ import java.io.File;
 import java.util.Locale;
 import java.util.Objects;
 
-public class UtilsModule extends ReactContextBaseJavaModule {
+public class UtilsModule extends ReactContextBaseJavaModule implements ComponentCallbacks2 {
   private final ReactApplicationContext reactContext;
 
   private int listenerCount = 0;
+  private boolean trimRegistered = false;
 
   UtilsEvent utilsEvent;
 
@@ -50,6 +53,40 @@ public class UtilsModule extends ReactContextBaseJavaModule {
   public String getName() {
     return "UtilsModule";
   }
+
+  @Override
+  public void initialize() {
+    super.initialize();
+    if (trimRegistered) return;
+    reactContext.registerComponentCallbacks(this);
+    trimRegistered = true;
+  }
+
+  @Override
+  public void invalidate() {
+    if (trimRegistered) {
+      try {
+        reactContext.unregisterComponentCallbacks(this);
+      } catch (Exception ignored) {}
+      trimRegistered = false;
+    }
+    super.invalidate();
+  }
+
+  @Override
+  public void onTrimMemory(int level) {
+    // 只把信号交给 JS 判断；这里不做等级过滤，避免以后调整还要改原生
+    if (!reactContext.hasActiveReactInstance()) return;
+    WritableMap params = Arguments.createMap();
+    params.putInt("level", level);
+    utilsEvent.sendEvent(utilsEvent.MEMORY_PRESSURE, params);
+  }
+
+  @Override
+  public void onLowMemory() {}
+
+  @Override
+  public void onConfigurationChanged(Configuration newConfig) {}
 
   @ReactMethod
   public void addListener(String eventName) {

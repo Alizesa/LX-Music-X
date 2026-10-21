@@ -11,6 +11,7 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 public class UtilsEvent {
   final String SCREEN_STATE = "screen-state";
   final String SCREEN_SIZE_CHANGED = "screen-size-changed";
+  final String MEMORY_PRESSURE = "memory-pressure";
 
   private final ReactApplicationContext reactContext;
   UtilsEvent(ReactApplicationContext reactContext) { this.reactContext = reactContext; }

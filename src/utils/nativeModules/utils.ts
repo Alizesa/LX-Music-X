@@ -52,6 +52,19 @@ export const getSystemLocales = async(): Promise<string> => {
   return UtilsModule.getSystemLocales()
 }
 
+/** Android onTrimMemory 的内存压力信号；level 见 ComponentCallbacks2 */
+export const onMemoryPressure = (handler: (level: number) => void): () => void => {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  const eventEmitter = new NativeEventEmitter(UtilsModule)
+  const eventListener = eventEmitter.addListener('memory-pressure', event => {
+    handler(event.level as number)
+  })
+
+  return () => {
+    eventListener.remove()
+  }
+}
+
 export const onScreenStateChange = (handler: (state: 'ON' | 'OFF') => void): () => void => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   const eventEmitter = new NativeEventEmitter(UtilsModule)

@@ -1,4 +1,5 @@
 import { AppState } from 'react-native'
+import { onMemoryPressure } from '@/utils/nativeModules/utils'
 import { releaseIdleListCaches } from '@/utils/listManage'
 import { releaseIdleSonglistCaches } from '@/core/songlist'
 import { releaseIdleSingerCaches } from '@/store/singer/action'
@@ -24,6 +25,11 @@ export const initCacheLifecycle = () => {
   initialized = true
   AppState.addEventListener('change', state => {
     if (state === 'background') releaseIdleCaches()
+  })
+  onMemoryPressure(level => {
+    // 前台 moderate/low 不动，避免正在看的页面重拉；
+    // RUNNING_CRITICAL(15) 和所有后台级别（>=20）才释放
+    if (level === 15 || level >= 20) releaseIdleCaches()
   })
   global.app_event.on('playQueueUpdate', () => { releaseIdleListCaches() })
 }
