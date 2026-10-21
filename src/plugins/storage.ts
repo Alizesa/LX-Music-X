@@ -57,6 +57,19 @@ export const saveData = async(key: string, value: any) => {
   }
 }
 
+/**
+ * 小值直写：不做分片，也不走 remove→set。
+ * 仅用于确定不会超过 500k 的小对象（例如歌单歌曲索引），单 key setItem 是原子的。
+ */
+export const saveDataDirect = async(key: string, value: any) => {
+  try {
+    await AsyncStorage.setItem(key, JSON.stringify(value))
+  } catch (e: any) {
+    log.error('storage error[saveDataDirect]:', key, e.message)
+    throw e
+  }
+}
+
 export const getData = async<T = unknown>(key: string): Promise<T | null> => {
   let value: string | null
   try {

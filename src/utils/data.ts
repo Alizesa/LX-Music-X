@@ -1,4 +1,4 @@
-import { getData, saveData, getAllKeys, removeDataMultiple, saveDataMultiple, removeData, getDataMultiple } from '@/plugins/storage'
+import { getData, saveData, saveDataDirect, getAllKeys, removeDataMultiple, saveDataMultiple, removeData, getDataMultiple } from '@/plugins/storage'
 import { DEFAULT_SETTING, storageDataPrefix, type NAV_ID_Type } from '@/config/constant'
 import { throttle } from './common'
 import { getSecureItem, removeSecureItem, setSecureItem } from './nativeModules/secureStorage'
@@ -46,6 +46,8 @@ const qqMusicRefreshDayKey = storageDataPrefix.qqMusicRefreshDay
 /** 两份会跨天自动刷新的缓存：每日推荐 / 猜你喜欢 */
 export type QQMusicRefreshKind = 'playlist' | 'recommend'
 const qqMusicPlaylistSongsKey = storageDataPrefix.qqMusicPlaylistSongs
+const qqMusicPlaylistSongsIndexKey = storageDataPrefix.qqMusicPlaylistSongsIndex
+const qqMusicPlaylistSongsItemPrefix = storageDataPrefix.qqMusicPlaylistSongsItem
 const qqMusicDailyPositionKey = storageDataPrefix.qqMusicDailyPosition
 const qqMusicRecommendPlaylistsKey = storageDataPrefix.qqMusicRecommendPlaylists
 const qqMusicRecommendSessionKey = storageDataPrefix.qqMusicRecommendSession
@@ -545,9 +547,42 @@ export const removeQQMusicPlaylistsCache = async() => removeData(qqMusicPlaylist
 export const getQQMusicDailyPosition = async() => await getData<{ songId: string, savedAt: number }>(qqMusicDailyPositionKey) ?? null
 export const saveQQMusicDailyPosition = async(position: { songId: string, savedAt: number }) => saveData(qqMusicDailyPositionKey, position)
 export const removeQQMusicDailyPosition = async() => removeData(qqMusicDailyPositionKey)
+/** @deprecated 旧版单 key，仅用于迁移读取/删除 */
 export const getQQMusicPlaylistSongsCache = async() => await getData<Record<string, { songs: LX.Music.MusicInfoOnline[], savedAt: number }>>(qqMusicPlaylistSongsKey) ?? {}
+/** @deprecated 旧版单 key，仅用于迁移读取/删除 */
 export const saveQQMusicPlaylistSongsCache = async(cache: Record<string, { songs: LX.Music.MusicInfoOnline[], savedAt: number }>) => saveData(qqMusicPlaylistSongsKey, cache)
+/** @deprecated 旧版单 key，仅用于迁移读取/删除 */
 export const removeQQMusicPlaylistSongsCache = async() => removeData(qqMusicPlaylistSongsKey)
+
+// 歌单歌曲缓存：轻量索引 + 每个歌单独立 key。索引很小，用原子直写
+export type QQMusicPlaylistSongsIndex = Record<string, { savedAt: number, count: number }>
+export interface QQMusicPlaylistSongsItem {
+  savedAt: number
+  songs: LX.Music.MusicInfoOnline[]
+}
+
+export const getQQMusicPlaylistSongsIndex = async() =>
+  await getData<QQMusicPlaylistSongsIndex>(qqMusicPlaylistSongsIndexKey)
+export const saveQQMusicPlaylistSongsIndex = async(index: QQMusicPlaylistSongsIndex) =>
+  saveDataDirect(qqMusicPlaylistSongsIndexKey, index)
+export const removeQQMusicPlaylistSongsIndex = async() => removeData(qqMusicPlaylistSongsIndexKey)
+export const getQQMusicPlaylistSongsItemKey = (id: string) => qqMusicPlaylistSongsItemPrefix + id
+export const getQQMusicPlaylistSongsItemPrefix = () => qqMusicPlaylistSongsItemPrefix
+export const getQQMusicPlaylistSongsItem = async(id: string) =>
+  await getData<QQMusicPlaylistSongsItem>(getQQMusicPlaylistSongsItemKey(id))
+export const saveQQMusicPlaylistSongsItem = async(id: string, item: QQMusicPlaylistSongsItem) =>
+  saveData(getQQMusicPlaylistSongsItemKey(id), item)
+export const removeQQMusicPlaylistSongsItem = async(id: string) =>
+  removeData(getQQMusicPlaylistSongsItemKey(id))
+export const getQQMusicPlaylistSongsItemKeys = async() =>
+  (await getAllKeys()).filter(key => key.startsWith(qqMusicPlaylistSongsItemPrefix))
+/** 删除索引和旧 key；用于换号/清空，尽量放在一次 multiRemove 里 */
+export const removeQQMusicPlaylistSongsIndexAndLegacy = async() =>
+  removeDataMultiple([qqMusicPlaylistSongsIndexKey, qqMusicPlaylistSongsKey])
+export const removeQQMusicPlaylistSongsItems = async(keys?: string[]) => {
+  const target = keys ?? await getQQMusicPlaylistSongsItemKeys()
+  if (target.length) await removeDataMultiple(target)
+}
 export const getQQMusicLikedSongsCache = async() => await getData<LX.Music.MusicInfoOnline[]>(qqMusicLikedSongsKey) ?? []
 export const saveQQMusicLikedSongsCache = async(list: LX.Music.MusicInfoOnline[]) => saveData(qqMusicLikedSongsKey, list)
 export const removeQQMusicLikedSongsCache = async() => removeData(qqMusicLikedSongsKey)

@@ -133,8 +133,11 @@ export const storageDataPrefix = {
   // 每日推荐 / 猜你喜欢那两份缓存「最后一次刷新是哪天」。进首页时不是今天就自动刷一次，
   // 见 Home/Views/Recommend 里那段跨天检查
   qqMusicRefreshDay: '@qq_music_refresh_day',
-  // 各个歌单的歌曲，按歌单 id 存。只留最近打开的几个（见 core/qqMusicPlaylistSongsCache）
+  // 旧版：所有歌单歌曲放在一个对象里，仅保留用于迁移读取
   qqMusicPlaylistSongs: '@qq_music_playlist_songs',
+  // 新版：轻量索引（最多 6 个歌单）+ 每个歌单独立 key
+  qqMusicPlaylistSongsIndex: '@qq_music_playlist_songs_index',
+  qqMusicPlaylistSongsItem: '@qq_music_playlist_songs__',
   qqMusicRecommendPlaylists: '@qq_music_recommend_playlists',
   qqMusicRecommendSession: '@qq_music_recommend_session',
 } as const

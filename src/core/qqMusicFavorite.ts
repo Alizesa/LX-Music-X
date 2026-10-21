@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { filterVisiblePlaylists, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicTrackIdentity, postAuthedMusicu } from './qqMusic'
 import { getQQMusicLikedSongsCache, getQQMusicLikedSongsStale, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, removeQQMusicLikedSongsStale, saveQQMusicLikedSongsCache, saveQQMusicLikedSongsStale, saveQQMusicPlaylistsCache } from '@/utils/data'
-import { clearPlaylistSongsCache, dropCachedPlaylistSongs } from './qqMusicPlaylistSongsCache'
+import { clearPlaylistSongsCache, dropCachedPlaylistSongs, getPlaylistSongsCacheVersion } from './qqMusicPlaylistSongsCache'
 import { toast } from '@/utils/tools'
 
 // 「我喜欢」是 dirid=201 的虚拟歌单
@@ -453,11 +453,13 @@ export const changeQQMusicPlaylistMembership = async(
   add: boolean,
 ): Promise<boolean> => {
   try {
+    // 写接口期间可能换号；带回发起时的版本，切号后不做旧账号的缓存操作
+    const cacheVersion = getPlaylistSongsCacheVersion()
     const result = await setQQMusicTrackInPlaylist(musicInfo, playlist, add)
     if (result == 'ok') {
       toast(global.i18n.t(add ? 'qq_playlist_added' : 'qq_playlist_removed', { name: playlist.name }))
       // 歌单内容变了，缓存作废，下次进歌单页会重新取
-      void dropCachedPlaylistSongs(playlist.id)
+      void dropCachedPlaylistSongs(playlist.id, cacheVersion)
       return true
     }
     // 写失败是抛错出来的（带服务端返回码），走下面的 catch

@@ -13,6 +13,7 @@ import {
 } from '@/utils/data'
 import { toNewMusicInfo, decodeName } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
+import { clearPlaylistSongsCache } from './qqMusicPlaylistSongsCache'
 import CookieManager from '@react-native-cookies/cookies'
 
 const QQ_MUSICU_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
@@ -445,6 +446,8 @@ const clearQQMusicDataCache = async() => {
   await removeQQMusicDailyPlaylistCache()
   await removeQQMusicDailyRecommendCache()
   await removeQQMusicRecommendPlaylistsCache()
+  // 歌单歌曲缓存也要等清完再切会话，否则旧账号的在途写可能落在新账号
+  await clearPlaylistSongsCache()
   // 「哪天刷过」的记账也清掉：换号后新号的缓存是空的，别让旧号那天的记录挡住自动刷新
   await removeQQMusicRefreshDay()
 }

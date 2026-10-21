@@ -16,7 +16,7 @@ import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { getQQMusicDailyPlaylist, getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
 import { getQQMusicLikedSongs, isQQMusicLikedSongsStale, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs, releaseQQMusicLikedSongs, retainQQMusicLikedSongs, toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
-import { cachePlaylistSongs, getCachedPlaylistSongs } from '@/core/qqMusicPlaylistSongsCache'
+import { cachePlaylistSongs, getCachedPlaylistSongs, getPlaylistSongsCacheVersion } from '@/core/qqMusicPlaylistSongsCache'
 import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist } from '@/core/qqMusicDailyPosition'
 import { getQQMusicDailyPlaylistCache, getQQMusicPlaylistsCache, saveQQMusicDailyPlaylistCache, saveQQMusicRefreshDay } from '@/utils/data'
 import { createStyle, toast } from '@/utils/tools'
@@ -183,8 +183,10 @@ export default ({ componentId, info }: Props) => {
         } else {
           const { cookie } = await getQQMusicSession()
           if (!cookie) throw new Error(t('qq_not_logged_in'))
+          // 拿到当前账号后再记版本：请求期间换号的话，结果不再写回新账号的缓存
+          const cacheVersion = getPlaylistSongsCacheVersion()
           songs = await getQQMusicPlaylistSongs(cookie, info.id)
-          void cachePlaylistSongs(info.id, songs)
+          void cachePlaylistSongs(info.id, songs, cacheVersion)
         }
       }
       songsRef.current = songs
