@@ -125,7 +125,10 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
     isRefresh,
     allowToggleSource: false,
     onCancel: setCancel,
-  }) : Promise.reject(new Error('not found'))).catch(async() => {
+  }) : Promise.reject(new Error('not found'))).catch(async err => {
+    // 取消（切歌/重试）不是「换源失败」：否则会为同一首旧歌再打一次
+    // 无法取消的请求，结果随后也会被 diffCurrentMusicInfo 丢掉
+    if (err?.message == requestMsg.cancelRequest || generation !== musicUrlGeneration) throw err
     return getMusicUrl({
       musicInfo,
       isRefresh,

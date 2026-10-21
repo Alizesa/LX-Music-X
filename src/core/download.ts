@@ -312,8 +312,11 @@ const processQueue = async() => {
   try {
     do {
       reprocess = false
-      for (const task of tasks) {
-        if (task.status != 'waiting') continue
+      // 先快照 id：循环里的 await 期间可能完成/归档别的任务，
+      // 直接遍历 tasks 会被 splice 打乱迭代器、跳过下一项
+      for (const id of tasks.map(task => task.id)) {
+        const task = tasks.find(item => item.id == id)
+        if (!task || task.status != 'waiting') continue
         try {
           await updateTask(task.id, { status: 'resolving', error: undefined }, true)
           const url = await getMusicUrl({
@@ -416,7 +419,13 @@ const init = async() => {
       if (!task.directoryUri && directory) task.directoryUri = directory.uri
     }
     onDownloadUpdate(handleNativeUpdate)
-    for (const task of tasks) await reconcileTask(task)
+    // 快照 id：reconcile 里归档任务会把它从 tasks 中移除，
+    // 直接遍历原数组会让下一项被跳过
+    for (const id of tasks.map(task => task.id)) {
+      const task = tasks.find(item => item.id == id)
+      if (!task) continue
+      await reconcileTask(task)
+    }
     // 初始落盘不阻塞启动：存储卡住时也只是任务状态晚一点写回，不能把初始化拖死
     void persistNow().catch(error => {
       console.warn('[Download] 初始落盘失败:', error instanceof Error ? error.message : error)

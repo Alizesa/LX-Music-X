@@ -177,6 +177,11 @@ const startBufferTracking = () => {
         bufferDuration = 0
         startBufferInterval()
         break
+      case State.Playing:
+        // 暂停/停止时轮询被停掉了，恢复播放后要重新启动；
+        // 已经缓冲满的话没必要再轮询
+        if (!bufferInterval && (bufferDuration === 0 || bufferPreBuffered < bufferDuration)) startBufferInterval()
+        break
     }
   })
   void updateBuffer()

@@ -115,7 +115,14 @@ export const removeData = async(key: string) => {
       }
       return
     } else if (partKeyArrPrefixRxp.test(value)) {
-      let partKeys = JSON.parse(value.replace(partKeyArrPrefixRxp, '')) as string[]
+      let partKeys: string[] = []
+      try {
+        const parsed: unknown = JSON.parse(value.replace(partKeyArrPrefixRxp, ''))
+        if (Array.isArray(parsed)) partKeys = parsed.filter((item): item is string => typeof item === 'string')
+      } catch (e: any) {
+        // 引用本身损坏（例如写入途中被杀）：分片 key 已无从得知，只删主 key
+        log.error('storage error[removeData parse]:', key, e.message)
+      }
       partKeys.push(key)
       try {
         await AsyncStorage.multiRemove(partKeys)
@@ -212,7 +219,15 @@ export const removeDataMultiple = async(keys: string[]) => {
       if (partKeyPrefixRxp.test(value)) {
         allKeys.push(...value.replace(partKeyPrefixRxp, '').split(keySplit))
       } else if (partKeyArrPrefixRxp.test(value)) {
-        allKeys.push(...JSON.parse(value.replace(partKeyArrPrefixRxp, '')) as string[])
+        try {
+          const parsed: unknown = JSON.parse(value.replace(partKeyArrPrefixRxp, ''))
+          if (Array.isArray(parsed)) {
+            allKeys.push(...parsed.filter((item): item is string => typeof item === 'string'))
+          }
+        } catch (e: any) {
+          // 坏引用：主 key 已在上面加入 allKeys，分片 key 无从得知，跳过
+          log.error('storage error[removeDataMultiple parse]:', key, e.message)
+        }
       }
     }
   }

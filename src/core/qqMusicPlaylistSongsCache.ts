@@ -103,7 +103,7 @@ const migrate = async() => {
     legacy = await getQQMusicPlaylistSongsCache()
   } catch (error) {
     warn('read legacy cache failed', error)
-    return
+    throw error
   }
   const entries = Object.entries(legacy).filter(([, value]) => Array.isArray(value?.songs))
   if (!entries.length) {
@@ -117,7 +117,7 @@ const migrate = async() => {
     index = (await getQQMusicPlaylistSongsIndex()) ?? {}
   } catch (error) {
     warn('read index for migration failed', error)
-    return
+    throw error
   }
   entries.sort((a, b) => b[1].savedAt - a[1].savedAt)
   for (const [id, entry] of entries.slice(0, MAX_ENTRIES)) {
@@ -128,9 +128,9 @@ const migrate = async() => {
       await saveQQMusicPlaylistSongsItem(id, { savedAt: entry.savedAt, songs: entry.songs })
       index[id] = { savedAt: entry.savedAt, count: entry.songs.length }
     } catch (error) {
-      // 不删旧 key，下次打开还会重试
+      // 不删旧 key；reject 让 ensureMigrated 清掉缓存，本次调用退回旧 key，下次重试
       warn('write migrated item failed', error)
-      return
+      throw error
     }
   }
   if (version !== cacheGeneration) return
@@ -138,7 +138,7 @@ const migrate = async() => {
     await saveQQMusicPlaylistSongsIndex(trimIndex(index))
   } catch (error) {
     warn('write migrated index failed', error)
-    return
+    throw error
   }
   if (version !== cacheGeneration) return
   await removeQQMusicPlaylistSongsCache().catch(error => { warn('remove legacy failed', error) })
@@ -177,11 +177,13 @@ export const getCachedPlaylistSongs = async(id: string): Promise<LX.Music.MusicI
   const entry = index?.[id]
   if (!entry) return null
 
-  let item: QQMusicPlaylistSongsItem | null = null
+  let item: QQMusicPlaylistSongsItem | null
   try {
     item = await getQQMusicPlaylistSongsItem(id)
   } catch (error) {
+    // 读失败 ≠ 数据不存在：别修索引，下次还能从磁盘读到
     warn('read item failed', error)
+    return null
   }
   if (version !== cacheGeneration) return null
   if (!item || !Array.isArray(item.songs)) {
