@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import state from './state'
-import { getTasks } from '@/core/download'
+import { getDownloadList } from '@/core/download'
 
 export const useDownloadTasks = () => {
   const [tasks, setTasks] = useState(state.tasks)
   useEffect(() => {
     let mounted = true
     const refresh = () => {
-      void getTasks().then(items => {
+      void getDownloadList().then(items => {
         if (!mounted) return
         state.tasks = [...items]
         setTasks(state.tasks)

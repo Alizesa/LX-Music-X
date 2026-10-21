@@ -16,7 +16,7 @@ const formatBytes = (value: number) => {
   return `${Math.round(value / 1024)} KB`
 }
 
-const statusText = (task: LX.Download.DownloadTask) => {
+const statusText = (task: LX.Download.DownloadListItem) => {
   switch (task.status) {
     case 'completed': return global.i18n.t('download_status_completed')
     case 'error': return task.error ?? global.i18n.t('download_status_failed')
@@ -25,15 +25,18 @@ const statusText = (task: LX.Download.DownloadTask) => {
     case 'finalizing': return global.i18n.t('download_status_finalizing')
     case 'waiting': return global.i18n.t('download_status_waiting')
     default: {
-      const progress = Math.round(task.progress.progress * 100)
-      const size = task.progress.total ? `${formatBytes(task.progress.downloaded)} / ${formatBytes(task.progress.total)}` : formatBytes(task.progress.downloaded)
-      return `${progress}%${size ? ` · ${size}` : ''}${task.progress.speed ? ` · ${task.progress.speed}` : ''}`
+      const progress = task.progress
+      const percent = Math.round((progress?.progress ?? 0) * 100)
+      const downloaded = progress?.downloaded ?? 0
+      const total = progress?.total ?? 0
+      const size = total ? `${formatBytes(downloaded)} / ${formatBytes(total)}` : formatBytes(downloaded)
+      return `${percent}%${size ? ` · ${size}` : ''}${progress?.speed ? ` · ${progress.speed}` : ''}`
     }
   }
 }
 
 const DownloadItem = ({ task, isSelected, isMultiSelect, onPress, onLongPress, onToggle }: {
-  task: LX.Download.DownloadTask
+  task: LX.Download.DownloadListItem
   isSelected: boolean
   isMultiSelect: boolean
   onPress: () => void
@@ -46,8 +49,8 @@ const DownloadItem = ({ task, isSelected, isMultiSelect, onPress, onLongPress, o
   return (
     <View style={{ ...styles.item, borderBottomColor: theme['c-border-background'], backgroundColor: isSelected ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)' }}>
       <TouchableOpacity style={styles.itemBody} activeOpacity={0.7} onPress={onPress} onLongPress={onLongPress}>
-        <Text numberOfLines={1}>{task.musicInfo.name}</Text>
-        <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{task.musicInfo.singer} · {task.quality}</Text>
+        <Text numberOfLines={1}>{task.name}</Text>
+        <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{task.singer} · {task.quality}</Text>
         <Text size={12} color={task.status == 'error' ? theme['c-600'] : theme['c-font-label']} numberOfLines={1}>{statusText(task)}</Text>
       </TouchableOpacity>
       {canToggle && !isMultiSelect ? <TouchableOpacity style={styles.action} onPress={onToggle}><Icon name={toggleIcon} color={theme['c-button-font']} /></TouchableOpacity> : null}
@@ -137,7 +140,7 @@ export default () => {
     )
   }
 
-  const handleToggle = (task: LX.Download.DownloadTask) => {
+  const handleToggle = (task: LX.Download.DownloadListItem) => {
     if (task.status == 'run' || task.status == 'waiting' || task.status == 'resolving') void pauseTask(task.id)
     else {
       void retryTask(task.id).catch((error: unknown) => {

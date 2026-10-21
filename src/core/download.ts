@@ -5,7 +5,18 @@ import { LIST_IDS } from '@/config/constant'
 import settingState from '@/store/setting/state'
 import { filterFileName } from '@/utils'
 import { buildLyrics } from '@/utils/lrcTools'
-import { getDownloadPath, getDownloadTasks, saveDownloadPath, saveDownloadTasks } from '@/utils/data'
+import {
+  getDownloadActiveTasks,
+  getDownloadHistory as getDownloadHistoryFromStore,
+  getDownloadPath,
+  getDownloadTasks,
+  getDownloadTasksMigrated,
+  removeDownloadTasks,
+  saveDownloadActiveTasks,
+  saveDownloadHistory,
+  saveDownloadPath,
+  saveDownloadTasksMigrated,
+} from '@/utils/data'
 import { downloadFile, extname, privateStorageDirectoryPath, temporaryDirectoryPath, unlink } from '@/utils/fs'
 import { writeLyric, writeMetadata, writePic } from '@/utils/localMediaMetadata'
 import {
@@ -20,12 +31,17 @@ import { toMD5 } from '@/utils/tools'
 import { sizeFormate } from '@/utils/common'
 
 const tasks: LX.Download.DownloadTask[] = []
+// 已完成任务只保留展示/删除/查重需要的轻量字段；完整 musicInfo 已在 LOCAL 的 toggleMusicInfo 里
+const history: LX.Download.DownloadHistoryItem[] = []
+let historyIds = new Set<string>()
 const speedSamples = new Map<string, { bytes: number, time: number }>()
 let initPromise: Promise<void> | null = null
 let processing = false
 // 处理过程中又来了新的 waiting 任务，需要在本轮结束后再扫一遍
 let reprocess = false
 let persistTimer: ReturnType<typeof setTimeout> | null = null
+let activePersistQueue: Promise<void> = Promise.resolve()
+let historyPersistQueue: Promise<void> = Promise.resolve()
 
 const notify = () => { global.app_event.downloadListUpdate() }
 
@@ -34,7 +50,17 @@ const persistNow = async() => {
     clearTimeout(persistTimer)
     persistTimer = null
   }
-  await saveDownloadTasks(tasks)
+  activePersistQueue = activePersistQueue.catch(() => {}).then(async() => {
+    await saveDownloadActiveTasks(tasks)
+  })
+  await activePersistQueue
+}
+
+const persistHistoryNow = async() => {
+  historyPersistQueue = historyPersistQueue.catch(() => {}).then(async() => {
+    await saveDownloadHistory(history)
+  })
+  await historyPersistQueue
 }
 
 const schedulePersist = () => {
@@ -206,15 +232,26 @@ const finalizeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
   // 不检查的话会给一个刚被删掉的文件补一条本地记录，留下播不了的条目。
   if (!tasks.some(item => item.id === task.id)) return
   await addListMusics(LIST_IDS.LOCAL, [localInfo], 'bottom')
-  await updateTask(task.id, {
-    status: 'completed',
-    progress: {
-      progress: 1,
-      downloaded: state.downloaded || task.progress.downloaded,
-      total: state.total || task.progress.total,
-      speed: '',
-    },
-  }, true)
+  // 完成即归档：活跃数组只留未完成任务，历史只留轻量记录
+  const index = tasks.findIndex(item => item.id === task.id)
+  if (index < 0) return
+  const completed = tasks[index]
+  completed.status = 'completed'
+  completed.progress = {
+    progress: 1,
+    downloaded: state.downloaded || completed.progress.downloaded,
+    total: state.total || completed.progress.total,
+    speed: '',
+  }
+  tasks.splice(index, 1)
+  history.unshift(toHistoryItem(completed))
+  historyIds.add(completed.id)
+  try {
+    await Promise.all([persistNow(), persistHistoryNow()])
+  } catch (error) {
+    console.warn('[Download] 保存完成历史失败:', error instanceof Error ? error.message : error)
+  }
+  notify()
 }
 
 const handleNativeUpdate = (state: NativeDownloadState) => {
@@ -310,10 +347,54 @@ const processQueue = async() => {
   }
 }
 
+const toHistoryItem = (task: LX.Download.DownloadTask): LX.Download.DownloadHistoryItem => ({
+  id: task.id,
+  name: task.musicInfo.name,
+  singer: task.musicInfo.singer,
+  quality: task.quality,
+  filePath: task.filePath,
+  createdAt: task.createdAt,
+})
+
+const setHistory = (list: LX.Download.DownloadHistoryItem[]) => {
+  history.splice(0, history.length, ...list)
+  historyIds = new Set(list.map(item => item.id))
+}
+
+/** 启动加载：优先把旧单 key 拆成活跃/历史；失败保留旧 key，下次重试 */
+const loadDownloadStorage = async() => {
+  const migrated = await getDownloadTasksMigrated()
+  if (!migrated) {
+    const legacy = await getDownloadTasks()
+    if (legacy.length) {
+      const active = legacy.filter(task => task.status !== 'completed')
+      const hist = legacy.filter(task => task.status === 'completed').map(toHistoryItem)
+      tasks.splice(0, tasks.length, ...active)
+      setHistory(hist)
+      try {
+        await saveDownloadActiveTasks(active)
+        await saveDownloadHistory(hist)
+        // 标记写在新 key 之后：即使旧 key 没删掉，下次也以新 key 为准
+        await saveDownloadTasksMigrated()
+        await removeDownloadTasks()
+      } catch (error) {
+        // 旧 key 是完整数据，留着下次重试；本次继续用内存里的拆分
+        console.warn('[Download] 下载任务迁移失败，保留旧数据:', error instanceof Error ? error.message : error)
+      }
+      return
+    }
+  } else {
+    // 迁移标记在：以新 key 为准；旧 key 可能是上次删除失败留下的，清掉
+    await removeDownloadTasks().catch(() => {})
+  }
+  tasks.splice(0, tasks.length, ...(await getDownloadActiveTasks()))
+  setHistory(await getDownloadHistoryFromStore())
+}
+
 const init = async() => {
   if (initPromise) return initPromise
   initPromise = (async() => {
-    tasks.splice(0, tasks.length, ...(await getDownloadTasks()))
+    await loadDownloadStorage()
     const directory = await getDownloadPath()
     for (const task of tasks) {
       if (!task.directoryUri && directory) task.directoryUri = directory.uri
@@ -331,6 +412,37 @@ export const getTasks = async() => {
   return tasks
 }
 
+export const getDownloadHistory = async() => {
+  await init()
+  return history
+}
+
+/** 下载页展示用：活跃 + 已完成历史，按创建时间倒序（新任务在前） */
+export const getDownloadList = async(): Promise<LX.Download.DownloadListItem[]> => {
+  await init()
+  const activeItems: LX.Download.DownloadListItem[] = tasks.map(task => ({
+    id: task.id,
+    status: task.status,
+    quality: task.quality,
+    name: task.musicInfo.name,
+    singer: task.musicInfo.singer,
+    filePath: task.filePath,
+    createdAt: task.createdAt,
+    error: task.error,
+    progress: task.progress,
+  }))
+  const historyItems: LX.Download.DownloadListItem[] = history.map(item => ({
+    id: item.id,
+    status: 'completed',
+    quality: item.quality,
+    name: item.name,
+    singer: item.singer,
+    filePath: item.filePath,
+    createdAt: item.createdAt,
+  }))
+  return [...activeItems, ...historyItems].sort((a, b) => b.createdAt - a.createdAt)
+}
+
 /**
  * 批量添加下载任务。逐首调用 addTask 的代价是每首都要读一次下载目录、
  * O(n) 扫两遍查重、把整份任务列表落盘一次、再发一次 downloadListUpdate：
@@ -341,8 +453,9 @@ export const addTasks = async(musicInfos: LX.Music.MusicInfoOnline[], quality: L
   await init()
   const directory = await getDownloadPath()
   if (!directory) throw new Error(global.i18n.t('download_path_required'))
-  // 查重只在内存里做一次：已存在的（非 error）跳过，error 的先摘掉再按新任务加回去
-  const existing = new Set<string>()
+  // 查重只在内存里做一次：已完成历史 + 活跃（非 error）都算已存在，
+  // error 的先摘掉再按新任务加回去
+  const existing = new Set<string>(historyIds)
   for (const task of tasks) {
     if (task.status == 'error') continue
     existing.add(task.id)
@@ -396,7 +509,7 @@ export const addTask = async(musicInfo: LX.Music.MusicInfoOnline, quality: LX.Qu
   const targetQuality = getPlayQuality(quality, musicInfo)
   const fileName = buildFileName(musicInfo, targetQuality)
   const id = toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`)
-  if (tasks.some(task => task.id == id && task.status != 'error')) return id
+  if (historyIds.has(id) || tasks.some(task => task.id == id && task.status != 'error')) return id
   // 走到这里说明是老任务失败了在重下（或第一次下），清掉残留的中转文件，
   // 免得接着上次的旧数据续传出一个大小不对的文件
   await clearPartialFile(id)
@@ -482,55 +595,50 @@ export const resumeAllTasks = async() => {
 }
 
 export const removeTask = async(id: string, deleteFile = false) => {
-  await init()
-  const index = tasks.findIndex(item => item.id == id)
-  if (index < 0) return
-  const task = tasks[index]
-  tasks.splice(index, 1)
-  speedSamples.delete(id)
-  await removeNativeDownload(task.nativeId, task.id, task.status != 'completed').catch(() => {})
-  if (deleteFile && task.filePath) {
-    await unlink(task.filePath).catch(() => {})
-    await removeListMusics(LIST_IDS.LOCAL, [task.filePath])
-  }
-  await persistNow()
-  notify()
+  await removeTasks([id], deleteFile)
 }
 
 /**
  * 批量移除任务。与循环调用 removeTask 的区别是只落盘一次、只通知一次，
- * 批量删除时不会产生 N 次写存储与重渲染。
+ * 批量删除时不会产生 N 次写存储与重渲染。活跃和历史同时查。
  */
 export const removeTasks = async(ids: string[], deleteFile = false) => {
   await init()
   const idSet = new Set(ids)
-  const targets = tasks.filter(task => idSet.has(task.id))
-  if (!targets.length) return
+  const activeTargets = tasks.filter(task => idSet.has(task.id))
+  const historyTargets = history.filter(item => idSet.has(item.id))
+  if (!activeTargets.length && !historyTargets.length) return
   tasks.splice(0, tasks.length, ...tasks.filter(task => !idSet.has(task.id)))
-  targets.forEach(task => { speedSamples.delete(task.id) })
-  await Promise.all(targets.map(async task =>
+  history.splice(0, history.length, ...history.filter(item => !idSet.has(item.id)))
+  for (const item of historyTargets) historyIds.delete(item.id)
+  activeTargets.forEach(task => { speedSamples.delete(task.id) })
+  await Promise.all(activeTargets.map(async task =>
     removeNativeDownload(task.nativeId, task.id, task.status != 'completed').catch(() => {}),
   ))
   if (deleteFile) {
     const filePaths: string[] = []
-    await Promise.all(targets.map(async task => {
-      if (!task.filePath) return
-      await unlink(task.filePath).catch(() => {})
-      filePaths.push(task.filePath)
-    }))
+    for (const task of activeTargets) if (task.filePath) filePaths.push(task.filePath)
+    for (const item of historyTargets) if (item.filePath) filePaths.push(item.filePath)
+    await Promise.all(filePaths.map(async path => { await unlink(path).catch(() => {}) }))
     // 合并成一次：逐条删会让 LOCAL 整表保存 + 匹配索引重建 N 次
     if (filePaths.length) await removeListMusics(LIST_IDS.LOCAL, filePaths).catch(() => {})
   }
-  await persistNow()
+  try {
+    await Promise.all([persistNow(), persistHistoryNow()])
+  } catch (error) {
+    console.warn('[Download] 保存删除结果失败:', error instanceof Error ? error.message : error)
+  }
   notify()
 }
 
 export const removeTasksByFilePaths = async(paths: string[]) => {
   await init()
   const pathSet = new Set(paths)
-  const ids = tasks.filter(task => task.filePath && pathSet.has(task.filePath)).map(task => task.id)
-  // 走批量版：循环 removeTask 会逐个落盘 + 逐个通知，正是这个函数要避免的开销
-  await removeTasks(ids)
+  const ids = [
+    ...tasks.filter(task => task.filePath && pathSet.has(task.filePath)).map(task => task.id),
+    ...history.filter(item => item.filePath && pathSet.has(item.filePath)).map(item => item.id),
+  ]
+  if (ids.length) await removeTasks(ids)
 }
 
 export const setDownloadDirectory = async(directory: LX.Download.DownloadDirectory) => {

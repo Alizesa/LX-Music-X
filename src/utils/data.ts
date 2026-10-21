@@ -30,6 +30,9 @@ const userApiPrefix = storageDataPrefix.userApi
 const openStoragePathPrefix = storageDataPrefix.openStoragePath
 const selectedManagedFolderPrefix = storageDataPrefix.selectedManagedFolder
 const downloadTasksKey = storageDataPrefix.downloadTasks
+const downloadTasksActiveKey = storageDataPrefix.downloadTasksActive
+const downloadTasksHistoryKey = storageDataPrefix.downloadTasksHistory
+const downloadTasksMigratedKey = storageDataPrefix.downloadTasksMigrated
 const downloadPathKey = storageDataPrefix.downloadPath
 const playQueueKey = storageDataPrefix.playQueue
 const tempListMetaKey = storageDataPrefix.tempListMeta
@@ -472,13 +475,38 @@ export const getSelectedManagedFolder = async() => {
   return selectedManagedFolder
 }
 
+/** @deprecated 旧版单 key，仅用于迁移读取/删除 */
 export const getDownloadTasks = async(): Promise<LX.Download.DownloadTask[]> => {
   return await getData<LX.Download.DownloadTask[]>(downloadTasksKey) ?? []
 }
 
+/** @deprecated 旧版单 key，仅用于迁移读取/删除 */
 export const saveDownloadTasks = async(tasks: LX.Download.DownloadTask[]) => {
   await saveData(downloadTasksKey, tasks)
 }
+
+/** @deprecated 旧版单 key，仅用于迁移读取/删除 */
+export const removeDownloadTasks = async() => removeData(downloadTasksKey)
+
+export const getDownloadActiveTasks = async(): Promise<LX.Download.DownloadTask[]> => {
+  return await getData<LX.Download.DownloadTask[]>(downloadTasksActiveKey) ?? []
+}
+
+export const saveDownloadActiveTasks = async(tasks: LX.Download.DownloadTask[]) => {
+  await saveData(downloadTasksActiveKey, tasks)
+}
+
+export const getDownloadHistory = async(): Promise<LX.Download.DownloadHistoryItem[]> => {
+  return await getData<LX.Download.DownloadHistoryItem[]>(downloadTasksHistoryKey) ?? []
+}
+
+export const saveDownloadHistory = async(history: LX.Download.DownloadHistoryItem[]) => {
+  await saveData(downloadTasksHistoryKey, history)
+}
+
+export const getDownloadTasksMigrated = async() =>
+  (await getData<boolean>(downloadTasksMigratedKey)) === true
+export const saveDownloadTasksMigrated = async() => saveDataDirect(downloadTasksMigratedKey, true)
 
 export const getDownloadPath = async(): Promise<LX.Download.DownloadDirectory | null> => {
   const value = await getData<LX.Download.DownloadDirectory | string>(downloadPathKey)

@@ -79,6 +79,30 @@ declare namespace LX {
       createdAt: number
     }
 
+    /** 已完成任务的轻量记录：只保留展示、删除文件、查重需要的字段 */
+    interface DownloadHistoryItem {
+      id: string
+      name: string
+      singer: string
+      quality: LX.Quality
+      filePath?: string
+      createdAt: number
+    }
+
+    /** 下载页展示用的合并视图（活跃任务 + 已完成历史） */
+    interface DownloadListItem {
+      id: string
+      status: DownloadTaskStatus
+      quality: LX.Quality
+      name: string
+      singer: string
+      filePath?: string
+      createdAt: number
+      error?: string
+      /** 只有活跃任务有 */
+      progress?: ProgressInfo
+    }
+
     interface DownloadDirectory {
       uri: string
       name: string

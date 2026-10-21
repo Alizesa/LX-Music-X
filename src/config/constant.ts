@@ -85,7 +85,13 @@ export const storageDataPrefix = {
 
   openStoragePath: '@open_storage_path',
   selectedManagedFolder: '@selected_managed_folder',
+  // 旧版：活跃 + 已完成历史同一个数组，仅保留用于迁移
   downloadTasks: '@download_tasks',
+  downloadTasksActive: '@download_tasks_active',
+  downloadTasksHistory: '@download_tasks_history',
+  // 旧单 key 已成功拆分到新 key 的标记。写在新 key 之后、删旧 key 之前，
+  // 防止「旧 key 没删掉」时下次启动又拿旧数据覆盖新下载
+  downloadTasksMigrated: '@download_tasks_migrated',
   downloadPath: '@download_path',
   playQueue: '@play_queue',
   tempListMeta: '@temp_list_meta',
