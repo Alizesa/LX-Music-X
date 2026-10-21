@@ -214,8 +214,8 @@ const finalizeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
   await writeEmbeddedMetadata(task)
   const localInfo: LX.Music.MusicInfoLocal = {
     id: state.filePath,
-    name: task.musicInfo.name,
-    singer: task.musicInfo.singer,
+    name: task.musicInfo?.name ?? '',
+    singer: task.musicInfo?.singer ?? '',
     source: 'local',
     interval: task.musicInfo.interval ?? null,
     meta: {
@@ -349,8 +349,9 @@ const processQueue = async() => {
 
 const toHistoryItem = (task: LX.Download.DownloadTask): LX.Download.DownloadHistoryItem => ({
   id: task.id,
-  name: task.musicInfo.name,
-  singer: task.musicInfo.singer,
+  // 旧/损坏数据可能缺 musicInfo，不能让一条坏记录阻断启动
+  name: task.musicInfo?.name ?? '',
+  singer: task.musicInfo?.singer ?? '',
   quality: task.quality,
   filePath: task.filePath,
   createdAt: task.createdAt,
@@ -363,12 +364,12 @@ const setHistory = (list: LX.Download.DownloadHistoryItem[]) => {
 
 /** 启动加载：优先把旧单 key 拆成活跃/历史；失败保留旧 key，下次重试 */
 const loadDownloadStorage = async() => {
-  const migrated = await getDownloadTasksMigrated()
+  const migrated = await getDownloadTasksMigrated().catch(() => false)
   if (!migrated) {
-    const legacy = await getDownloadTasks()
-    if (legacy.length) {
-      const active = legacy.filter(task => task.status !== 'completed')
-      const hist = legacy.filter(task => task.status === 'completed').map(toHistoryItem)
+    const legacy = await getDownloadTasks().catch(() => [])
+    if (Array.isArray(legacy) && legacy.length) {
+      const active = legacy.filter(task => task?.status !== 'completed')
+      const hist = legacy.filter(task => task?.status === 'completed').map(toHistoryItem)
       tasks.splice(0, tasks.length, ...active)
       setHistory(hist)
       try {
@@ -387,21 +388,39 @@ const loadDownloadStorage = async() => {
     // 迁移标记在：以新 key 为准；旧 key 可能是上次删除失败留下的，清掉
     await removeDownloadTasks().catch(() => {})
   }
-  tasks.splice(0, tasks.length, ...(await getDownloadActiveTasks()))
-  setHistory(await getDownloadHistoryFromStore())
+  try {
+    tasks.splice(0, tasks.length, ...(await getDownloadActiveTasks()))
+  } catch (error) {
+    console.warn('[Download] 读取活跃任务失败:', error instanceof Error ? error.message : error)
+    tasks.splice(0, tasks.length)
+  }
+  try {
+    setHistory(await getDownloadHistoryFromStore())
+  } catch (error) {
+    console.warn('[Download] 读取下载历史失败:', error instanceof Error ? error.message : error)
+    setHistory([])
+  }
 }
 
 const init = async() => {
   if (initPromise) return initPromise
   initPromise = (async() => {
-    await loadDownloadStorage()
+    try {
+      await loadDownloadStorage()
+    } catch (error) {
+      // 存储损坏时不能让初始化一直失败/白屏，按空列表继续
+      console.warn('[Download] 加载下载任务失败:', error instanceof Error ? error.message : error)
+    }
     const directory = await getDownloadPath()
     for (const task of tasks) {
       if (!task.directoryUri && directory) task.directoryUri = directory.uri
     }
     onDownloadUpdate(handleNativeUpdate)
     for (const task of tasks) await reconcileTask(task)
-    await persistNow()
+    // 初始落盘不阻塞启动：存储卡住时也只是任务状态晚一点写回，不能把初始化拖死
+    void persistNow().catch(error => {
+      console.warn('[Download] 初始落盘失败:', error instanceof Error ? error.message : error)
+    })
     void processQueue()
   })()
   return initPromise
@@ -424,8 +443,8 @@ export const getDownloadList = async(): Promise<LX.Download.DownloadListItem[]> 
     id: task.id,
     status: task.status,
     quality: task.quality,
-    name: task.musicInfo.name,
-    singer: task.musicInfo.singer,
+    name: task.musicInfo?.name ?? '',
+    singer: task.musicInfo?.singer ?? '',
     filePath: task.filePath,
     createdAt: task.createdAt,
     error: task.error,

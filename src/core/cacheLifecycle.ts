@@ -29,7 +29,13 @@ export const initCacheLifecycle = () => {
   onMemoryPressure(level => {
     // 前台 moderate/low 不动，避免正在看的页面重拉；
     // RUNNING_CRITICAL(15) 和所有后台级别（>=20）才释放
-    if (level === 15 || level >= 20) releaseIdleCaches()
+    if (level !== 15 && level < 20) return
+    try {
+      releaseIdleCaches()
+    } catch (error) {
+      // 释放失败不能把异常抛回原生事件通道
+      console.warn('[Cache] memory pressure release failed:', error instanceof Error ? error.message : error)
+    }
   })
   global.app_event.on('playQueueUpdate', () => { releaseIdleListCaches() })
 }

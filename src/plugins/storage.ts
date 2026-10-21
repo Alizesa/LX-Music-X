@@ -79,10 +79,18 @@ export const getData = async<T = unknown>(key: string): Promise<T | null> => {
     log.error('storage error[getData]:', key, e.message)
     throw e
   }
-  if (value && (partKeyPrefixRxp.test(value) || partKeyArrPrefixRxp.test(value))) {
-    return handleGetData<T>(value)
-  } else if (value == null) return value
-  return JSON.parse(value)
+  if (value == null) return null
+  try {
+    if (partKeyPrefixRxp.test(value) || partKeyArrPrefixRxp.test(value)) {
+      return await handleGetData<T>(value)
+    }
+    return JSON.parse(value)
+  } catch (e: any) {
+    // 进程在写入途中被杀可能留下半截 JSON/分片；按「没有数据」处理，
+    // 避免一个坏 key 把整个初始化卡死或抛错
+    log.error('storage error[getData parse]:', key, e.message)
+    return null
+  }
 }
 
 export const removeData = async(key: string) => {
@@ -153,13 +161,24 @@ export const getDataMultiple = async<T extends readonly string[]>(keys: T) => {
     log.error('storage error[getDataMultiple]:', e.message)
     throw e
   }
-  const promises: Array<Promise<ReadonlyArray<[unknown | null]>>> = []
+  const promises: Array<Promise<unknown>> = []
   for (const [, value] of datas) {
-    if (value && (partKeyPrefixRxp.test(value) || partKeyArrPrefixRxp.test(value))) {
-      promises.push(handleGetData(value))
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      promises.push(Promise.resolve(value ? JSON.parse(value) : value))
+    if (value == null || value === '') {
+      promises.push(Promise.resolve(value))
+      continue
+    }
+    if (partKeyPrefixRxp.test(value) || partKeyArrPrefixRxp.test(value)) {
+      promises.push(handleGetData(value).catch((error: any) => {
+        log.error('storage error[getDataMultiple parse]:', error.message)
+        return null
+      }))
+      continue
+    }
+    try {
+      promises.push(Promise.resolve(JSON.parse(value)))
+    } catch (e: any) {
+      log.error('storage error[getDataMultiple parse]:', e.message)
+      promises.push(Promise.resolve(null))
     }
   }
   return Promise.all(promises).then(values => {

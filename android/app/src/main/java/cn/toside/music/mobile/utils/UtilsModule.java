@@ -13,6 +13,7 @@ import android.net.Uri;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.Window;
 import android.view.WindowManager;
@@ -39,6 +40,7 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
 
   private int listenerCount = 0;
   private boolean trimRegistered = false;
+  private long lastTrimEventAt = 0;
 
   UtilsEvent utilsEvent;
 
@@ -75,8 +77,13 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
 
   @Override
   public void onTrimMemory(int level) {
-    // 只把信号交给 JS 判断；这里不做等级过滤，避免以后调整还要改原生
+    // 前台 moderate/low 不处理；后台级别才值得清闲置缓存
+    if (level < 15) return;
     if (!reactContext.hasActiveReactInstance()) return;
+    // 系统在后台可能高频回调，限制事件频率，避免 JS 线程被刷屏
+    long now = SystemClock.elapsedRealtime();
+    if (now - lastTrimEventAt < 5000) return;
+    lastTrimEventAt = now;
     WritableMap params = Arguments.createMap();
     params.putInt("level", level);
     utilsEvent.sendEvent(utilsEvent.MEMORY_PRESSURE, params);
