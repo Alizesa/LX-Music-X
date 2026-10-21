@@ -12,6 +12,7 @@ import { arrPush, arrPushByPosition, arrUnshift } from '@/utils/common'
 import { syncLocalMatchIndexWithList } from '@/utils/localMatchIndex'
 import { LIST_IDS } from '@/config/constant'
 import playerState from '@/store/player/state'
+import { isPlayQueueFromList } from '@/core/player/playQueue'
 
 export const userLists: LX.List.UserListInfo[] = []
 export const allMusicList = new Map<string, LX.Music.MusicInfo[]>()
@@ -24,9 +25,15 @@ const USER_LIST_CACHE_MAX_SONGS = 3000
 const listAccessOrder = new Map<string, true>()
 let listCachePruneTimer: ReturnType<typeof setTimeout> | null = null
 
+// TEMP 只在「当前队列由它建立」或「启动恢复指向它」时保护；
+// 切走队列后它和普通列表一样可以被释放（已落盘，需要时重新读）
+const isTempInUse = () =>
+  isPlayQueueFromList(LIST_IDS.TEMP) ||
+  global.lx.restorePlayInfo?.listId === LIST_IDS.TEMP
+
 const isListCacheProtected = (id: string) =>
   id === LIST_IDS.LOCAL ||
-  id === LIST_IDS.TEMP ||
+  (id === LIST_IDS.TEMP && isTempInUse()) ||
   id === playerState.playInfo.playerListId ||
   id === playerState.playMusicInfo.listId
 
@@ -63,6 +70,19 @@ const schedulePruneListCache = () => {
     listCachePruneTimer = null
     pruneListCache()
   }, 3000)
+}
+
+/** 不在使用时释放 TEMP 整表（已落盘，下次用到会重新读） */
+export const releaseTempListCache = () => {
+  if (isTempInUse() || !allMusicList.has(LIST_IDS.TEMP)) return
+  allMusicList.delete(LIST_IDS.TEMP)
+  listAccessOrder.delete(LIST_IDS.TEMP)
+}
+
+/** 后台/设置页清理入口：TEMP 条件释放 + 用户列表按上限 prune */
+export const releaseIdleListCaches = () => {
+  releaseTempListCache()
+  pruneListCache()
 }
 
 export const setUserLists = (lists: LX.List.UserListInfo[]) => {

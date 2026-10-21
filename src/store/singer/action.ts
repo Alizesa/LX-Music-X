@@ -21,16 +21,16 @@ const touchAlbum = (mid: string) => {
   albumOrder.set(mid, true)
 }
 
-const pruneSingerCache = () => {
+const pruneSingerCache = (force = false) => {
   const ids = [...singerOrder.keys()].filter(mid => state.singers[mid] != null)
   if (!ids.length) return
   let count = ids.length
   let totalSongs = ids.reduce((sum, mid) => sum + state.singers[mid].songs.list.length, 0)
-  if (count <= SINGER_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) return
+  if (!force && count <= SINGER_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) return
   const newest = ids[ids.length - 1]
   for (const mid of ids) {
-    if (count <= SINGER_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) break
-    if (mid === newest || (singerHolds.get(mid) ?? 0) > 0) continue
+    if (!force && count <= SINGER_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) break
+    if ((!force && mid === newest) || (singerHolds.get(mid) ?? 0) > 0) continue
     totalSongs -= state.singers[mid].songs.list.length
     delete state.singers[mid]
     singerOrder.delete(mid)
@@ -38,16 +38,16 @@ const pruneSingerCache = () => {
   }
 }
 
-const pruneAlbumCache = () => {
+const pruneAlbumCache = (force = false) => {
   const ids = [...albumOrder.keys()].filter(mid => state.albumSongs[mid] != null)
   if (!ids.length) return
   let count = ids.length
   let totalSongs = ids.reduce((sum, mid) => sum + state.albumSongs[mid].list.length, 0)
-  if (count <= ALBUM_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) return
+  if (!force && count <= ALBUM_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) return
   const newest = ids[ids.length - 1]
   for (const mid of ids) {
-    if (count <= ALBUM_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) break
-    if (mid === newest || (albumHolds.get(mid) ?? 0) > 0) continue
+    if (!force && count <= ALBUM_CACHE_MAX && totalSongs <= SONG_CACHE_MAX) break
+    if ((!force && mid === newest) || (albumHolds.get(mid) ?? 0) > 0) continue
     totalSongs -= state.albumSongs[mid].list.length
     delete state.albumSongs[mid]
     albumOrder.delete(mid)
@@ -63,6 +63,12 @@ const schedulePrune = () => {
     pruneSingerCache()
     pruneAlbumCache()
   }, 3000)
+}
+
+/** 后台/设置页清理：强制淘汰所有没有被页面 hold 的记录 */
+export const releaseIdleSingerCaches = () => {
+  pruneSingerCache(true)
+  pruneAlbumCache(true)
 }
 
 export const retainSingerRecord = (mid: string) => {

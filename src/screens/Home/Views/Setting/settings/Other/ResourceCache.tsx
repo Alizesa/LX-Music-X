@@ -12,6 +12,7 @@ import { sizeFormate } from '@/utils'
 import { useI18n } from '@/lang'
 import Text from '@/components/common/Text'
 import { clearMusicUrl } from '@/utils/data'
+import { releaseIdleCaches } from '@/core/cacheLifecycle'
 
 export default memo(() => {
   const t = useI18n()
@@ -36,6 +37,8 @@ export default memo(() => {
     }).then(confirm => {
       if (!confirm) return
       setCleaning(true)
+      // 同时释放可重建的闲置 JS 缓存（正在播放/显示的由各自的保护条件跳过）
+      releaseIdleCaches()
       void Promise.all([
         clearAppCache(),
         clearCache(),

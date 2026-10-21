@@ -6,6 +6,7 @@ import { setNavActiveId } from '../common'
 import { getTempListMeta, getViewPrevState } from '@/utils/data'
 import { ensureLocalMatchIndex, getCurrentLocalMatchIndex } from '@/utils/localMatchIndex'
 import { initLocalListLifecycle } from '@/core/localList'
+import { initCacheLifecycle } from '@/core/cacheLifecycle'
 import { bootLog } from '@/utils/bootLog'
 import { getDislikeInfo, setDislikeInfo } from '@/core/dislikeList'
 import { unlink } from '@/utils/fs'
@@ -35,6 +36,7 @@ export default async(appSetting: LX.AppSetting) => {
   // 只加载本地匹配索引；完整 LOCAL 列表由 core/localList 按需加载、用完释放
   await ensureLocalMatchIndex()
   initLocalListLifecycle()
+  initCacheLifecycle()
   bootLog(`Local match index: ${getCurrentLocalMatchIndex()?.rows.length ?? 0} rows.`)
   const { initPlayQueue } = await import('@/core/player/playQueue')
   await initPlayQueue()

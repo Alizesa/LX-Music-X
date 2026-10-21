@@ -20,6 +20,16 @@ const SLIST_CACHE_MAX = 50
 // 正在加载的详情不参与淘汰：getListDetailLimit 的 then 里要校验 listCache 是否
 // 还是缓存里的那一个，被淘汰掉会直接返回 undefined。
 const loadingDetailKeys = new Set<string>()
+// 当前正在显示的详情页；后台统一释放时也要跳过
+const retainedDetailKeys = new Set<string>()
+const detailKey = (source: LX.OnlineSource, id: string) => `sdetail__${source}__${id}`
+
+export const retainSonglistDetail = (source: LX.OnlineSource, id: string) => {
+  retainedDetailKeys.add(detailKey(source, id))
+}
+export const releaseSonglistDetail = (source: LX.OnlineSource, id: string) => {
+  retainedDetailKeys.delete(detailKey(source, id))
+}
 
 // Map 保持插入顺序：删了再塞就排到末尾，淘汰时从头部拿最久没用的
 const touchCache = (key: string) => {
@@ -36,6 +46,14 @@ const countCachedSongs = (value: CacheValue | undefined) => {
     total += Array.isArray(page) ? page.length : page.data.list.length
   }
   return total
+}
+
+/** 后台/设置页清理：释放所有非加载中、非当前展示的歌单缓存 */
+export const releaseIdleSonglistCaches = () => {
+  for (const key of [...cache.keys()]) {
+    if (loadingDetailKeys.has(key) || retainedDetailKeys.has(key)) continue
+    cache.delete(key)
+  }
 }
 
 const pruneSListCache = () => {
@@ -73,7 +91,7 @@ const pruneDetailCache = () => {
   let count = detailKeys.length
   for (const key of detailKeys) {
     if (count <= DETAIL_CACHE_MAX && totalSongs <= DETAIL_CACHE_MAX_SONGS) break
-    if (key === newestKey || loadingDetailKeys.has(key)) continue
+    if (key === newestKey || loadingDetailKeys.has(key) || retainedDetailKeys.has(key)) continue
     totalSongs -= countCachedSongs(cache.get(key))
     cache.delete(key)
     count--
