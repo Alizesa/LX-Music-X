@@ -571,8 +571,6 @@ export const saveQQMusicDeviceId = async(id: string) => saveDataDirect(qqMusicDe
 // 歌单与每日推荐都缓存到本地：进页面直接显示、点击即播，不产生网络请求，
 // 只有用户手动刷新时才重新拉取。因此缓存里没有时间戳，也就没有过期逻辑。
 export const getQQMusicPlaylistsCache = async() => await getData<LX.QQMusic.PlaylistInfo[]>(qqMusicPlaylistsKey) ?? []
-/** 缓存键有没有写过。空数组也算写过 —— 用它区分「没拉过」和「拉过但这号真没有歌单」 */
-export const hasQQMusicPlaylistsCache = async() => (await getData<LX.QQMusic.PlaylistInfo[]>(qqMusicPlaylistsKey)) != null
 export const saveQQMusicPlaylistsCache = async(list: LX.QQMusic.PlaylistInfo[]) => saveData(qqMusicPlaylistsKey, list)
 export const removeQQMusicPlaylistsCache = async() => removeData(qqMusicPlaylistsKey)
 export const getQQMusicDailyPosition = async() => await getData<{ songId: string, savedAt: number }>(qqMusicDailyPositionKey) ?? null

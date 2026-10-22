@@ -76,6 +76,22 @@ const PLAYLIST_PAGE_SIZE = 200
 // 这个值同时当「这批是不是满页」的判据用（响应里没有 HasMore 时靠它推还有没有下一批）
 const RECOMMEND_PLAYLIST_PAGE_SIZE = 8
 
+// 续期成功后重放请求时，App 信封的 authst 写在 body.comm 里；只换 Cookie 头
+// 服务端仍会按旧票据拒绝，所以这里把 comm 里的身份字段一起换成新值。
+// 不新增字段，保持原来的信封形状（buildAuthComm / 网页 comm / 精简 comm 都可能走这里）。
+const updateCommCredential = (comm: unknown, cookie: string) => {
+  if (!comm || typeof comm != 'object' || Array.isArray(comm)) return null
+  const current = comm as Record<string, unknown>
+  const cookies = parseQQMusicCookie(cookie)
+  const uin = readUin(cookies)
+  const authst = readMusicKey(cookies)
+  const next = { ...current }
+  if ('uin' in next && uin) next.uin = uin
+  if ('qq' in next && uin) next.qq = uin
+  if ('authst' in next && authst) next.authst = authst
+  return next
+}
+
 const request = async(url: string, cookie: string, options: Record<string, any> = {}, autoCleanExpired = true): Promise<any> => {
   const result = await httpFetch(url, {
     ...options,
@@ -103,8 +119,21 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
     // 续期失败才按原来的逻辑清会话、通知界面重新登录。
     const refreshed = await refreshQQMusicCookie(cookie, true)
     if (refreshed && refreshed !== cookie) {
-      const retried: any = await request(url, refreshed, options, false)
+      let retryOptions = options
+      const requestBody = options.body
+      if (url == QQ_MUSICU_URL && requestBody && typeof requestBody == 'object' && !Array.isArray(requestBody)) {
+        const comm = updateCommCredential((requestBody as Record<string, unknown>).comm, refreshed)
+        if (comm) retryOptions = { ...options, body: { ...requestBody, comm } }
+      }
+      const retried: any = await request(url, refreshed, retryOptions, false)
       if (!hasExpiredSession(retried)) return retried
+    }
+    // 会话可能已经被用户换号/退出：别拿旧请求的过期去清掉新账号的会话
+    const current = await getQQMusicCookie().catch(() => null)
+    const currentUin = current ? readUin(parseQQMusicCookie(current)) : ''
+    const requestUin = readUin(parseQQMusicCookie(cookie))
+    if (!current || (currentUin && requestUin && currentUin !== requestUin)) {
+      throw new QQMusicSessionExpiredError()
     }
     handleExpiredSession()
     throw new QQMusicSessionExpiredError()
@@ -114,6 +143,17 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
 
 // 同一次过期可能有一屏接口同时在飞，续期只做一次，大家共用结果。
 let refreshPromise: Promise<string | null> | null = null
+// 主动续期失败后先退避一分钟：断网时不能每次读会话都打一次 15s 超时的请求
+let refreshRetryAt = 0
+// 登录/退出会递增。在途续期回来发现代次变了，就不能再写回旧账号的票据
+let sessionGeneration = 0
+// Cookie 写入串行化：续期、登录、退出可能同时落盘，保证最后的写入顺序就是调用顺序
+let credentialWriteQueue: Promise<void> = Promise.resolve()
+const queueCredentialWrite = async<T>(write: () => Promise<T>): Promise<T> => {
+  const next = credentialWriteQueue.catch(() => {}).then(write)
+  credentialWriteQueue = next.then(() => {}, () => {})
+  return next
+}
 
 /**
  * 续期/校验票据。
@@ -124,20 +164,43 @@ let refreshPromise: Promise<string | null> | null = null
 const refreshQQMusicCookie = async(cookie: string, force: boolean): Promise<string | null> => {
   if (!isQQMusicCookie(cookie)) return null
   if (!hasQQMusicRefreshCredential(cookie)) return force ? null : cookie
+
+  // 别的请求可能已经续过票：以存储里的新票据为准。
+  // 继续用调用方手里的旧 Cookie 再换一次，refresh_token 可能已经轮换，反而会失败。
+  const stored = await getQQMusicCookie().catch(() => null)
+  if (!stored) return null
+  if (stored !== cookie) {
+    const storedUin = readUin(parseQQMusicCookie(stored))
+    const cookieUin = readUin(parseQQMusicCookie(cookie))
+    if (storedUin && cookieUin && storedUin !== cookieUin) return null
+    if (!shouldRefreshQQMusicCookie(stored)) return stored
+    cookie = stored
+  }
+
   if (!force && !shouldRefreshQQMusicCookie(cookie)) return cookie
+  if (!force && Date.now() < refreshRetryAt) return cookie
   if (!refreshPromise) {
+    const generation = sessionGeneration
     refreshPromise = requestQQMusicCredentialRefresh(cookie)
       .then(async refreshed => {
         if (!refreshed || !isQQMusicCookie(refreshed)) return null
         const cookies = parseQQMusicCookie(refreshed)
         cookies.uin = normalizeUin(cookies.uin) || readUin(cookies)
         const normalizedCookie = serializeQQMusicCookie(cookies)
-        await saveQQMusicCookie(normalizedCookie)
+        // 真正落盘时再校验一次代次：登录/退出可能发生在请求返回之后
+        const saved = await queueCredentialWrite(async() => {
+          if (generation !== sessionGeneration) return false
+          await saveQQMusicCookie(normalizedCookie)
+          return true
+        })
+        if (!saved) return null
+        refreshRetryAt = 0
         // 新票据生效，允许之后再因为过期而自动清理
         expiredHandled = false
         return normalizedCookie
       })
       .catch(error => {
+        if (!force) refreshRetryAt = Date.now() + 60_000
         console.warn('[QQMusic] 登录续期失败:', error instanceof Error ? error.message : error)
         return null
       })
@@ -348,6 +411,11 @@ const HIDDEN_PLAYLIST_NAME_PREFIXES = ['QZone背景音乐', '本地上传']
 const isHiddenPlaylistName = (name: string) =>
   HIDDEN_PLAYLIST_NAME_PREFIXES.some(prefix => name.startsWith(prefix))
 
+// 服务端有时会返回标题为「我喜欢」但没有 dirid=201 的快捷条目。
+// 那种条目走通用歌单详情取不到歌，按 MusicOne 的做法按名字过滤掉。
+const LIKED_SHORTCUT_NAMES = new Set(['我喜欢', '我喜欢的音乐'])
+const isLikedShortcutName = (name: string) => LIKED_SHORTCUT_NAMES.has(name.replace(/\s+/g, ''))
+
 const isRealPlaylistId = (id: unknown) => id != null && id !== '' && Number(id) !== 0
 
 /**
@@ -421,10 +489,13 @@ export const isLikedPlaylist = (info: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'like
 export const getQQMusicSession = async() => {
   const user = await getQQMusicUser() ?? null
   const storedCookie = await getQQMusicCookie() ?? ''
-  // 临近过期就顺手续一次；失败仍返回旧票据，让具体请求去触发兜底/退出
-  const cookie = storedCookie ? await refreshQQMusicCookie(storedCookie, false) ?? storedCookie : ''
+  // 临近过期就在后台续一次：这是取链/进页面的热路径，不能卡在一个最长 15s 的请求上。
+  // 旧票据在窗口内仍然有效，真过期了 request() 还有一次强制续期兜底。
+  if (storedCookie && hasQQMusicRefreshCredential(storedCookie) && shouldRefreshQQMusicCookie(storedCookie)) {
+    void refreshQQMusicCookie(storedCookie, false).catch(() => {})
+  }
   return {
-    cookie,
+    cookie: storedCookie,
     // 头像在读取时再归一化一遍：地址归一化是后加的，早先存下来的 user 里可能还是
     // 协议相对地址，不改的话得重新登录才会好
     user: user ? { ...user, avatar: normalizeAvatarUrl(user.avatar) || user.avatar } : null,
@@ -445,7 +516,9 @@ export const saveQQMusicSession = async(cookie: string) => {
   // 换了账号就把上一个号的歌单/推荐缓存清掉，否则新号会先看到旧号的数据
   const prevUser = await getQQMusicUser()
   if (prevUser?.uin && prevUser.uin !== (user.uin || uin)) await clearQQMusicDataCache()
-  await saveQQMusicCookie(normalizedCookie)
+  // 新会话生效：先递增代次，让在途续期不能把旧账号的票据写回来
+  sessionGeneration++
+  await queueCredentialWrite(async() => { await saveQQMusicCookie(normalizedCookie) })
   await saveQQMusicUser(user)
   // 新会话生效，允许之后再因为过期而自动清理
   expiredHandled = false
@@ -464,8 +537,10 @@ const clearQQMusicDataCache = async() => {
 }
 
 export const clearQQMusicSession = async() => {
+  // 先递增代次：在途续期回来后看到代次变了会直接放弃写回
+  sessionGeneration++
   await clearQQMusicDataCache()
-  await removeQQMusicCookie()
+  await queueCredentialWrite(async() => { await removeQQMusicCookie() })
   await saveQQMusicUser(null)
   try {
     await Promise.all(QQ_COOKIE_URLS.map(async url => {
@@ -700,7 +775,9 @@ export const getQQMusicPlaylists = async(cookie: string): Promise<LX.QQMusic.Pla
     ...createdList.map((raw: any) => normalizePlaylist(raw, false)),
     ...collectedList.map((raw: any) => normalizePlaylist(raw, true)),
   ].filter((item): item is LX.QQMusic.PlaylistInfo => {
-    if (!item?.id || !item.name || seen.has(item.id)) return false
+    if (!item?.id || !item.name) return false
+    if (!item.liked && isLikedShortcutName(item.name)) return false
+    if (seen.has(item.id)) return false
     seen.add(item.id)
     return true
   })

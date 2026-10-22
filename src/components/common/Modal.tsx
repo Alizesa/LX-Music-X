@@ -99,8 +99,10 @@ export default forwardRef<ModalType, ModalProps>(({
               </View>
             </TouchableWithoutFeedback>
           // bgHide=false 时不要包 Touchable：它会抢走子级（尤其是 WebView）的拖动手势，
-          // 登录页/滑块验证这类需要连续触摸的页面会出现拖不动
-          : <View style={{ flex: 1, paddingTop: statusBarPadding ? statusBarHeight : 0, backgroundColor: bgColor }}>
+          // 登录页/滑块验证这类需要连续触摸的页面会出现拖不动。
+          // 这里也不加 statusBarPadding：旧实现里 Touchable 的 style 不会传给子级，
+          // 这个 padding 实际从未生效，现在补上会让已有弹窗整体下移。
+          : <View style={{ flex: 1, backgroundColor: bgColor }}>
               {memoChildren}
             </View>
       }

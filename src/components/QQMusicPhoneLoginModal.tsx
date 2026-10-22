@@ -89,9 +89,15 @@ const SecurityView = ({ url, seed, onDone, onCancel }: {
   const statusBarHeight = useStatusbarHeight()
   const currentUrlRef = useRef(url)
   const doneRef = useRef(false)
+  // 种子 Cookie 写完再加载验证页：否则页面可能先于 Cookie 初始化完成，
+  // 认不出当前会话，滑块做完了也无法通过
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    void seedCookies(url, seed)
+    let active = true
+    setReady(false)
+    void seedCookies(url, seed).finally(() => { if (active) setReady(true) })
+    return () => { active = false }
   }, [url, seed])
 
   const complete = useCallback(() => {
@@ -101,8 +107,8 @@ const SecurityView = ({ url, seed, onDone, onCancel }: {
   }, [onDone, seed, url])
 
   const handleShouldStartLoad = (request: WebViewNavigation) => {
-    // 验证完成后 QQ 页面可能用 qqmusic://...closeWebView 通知宿主关闭
-    if (/^qqmusic:\/\/qq\.com\/.*close(webview|WebView)/i.test(request.url)) {
+    // 验证完成后 QQ 页面可能用 qqmusic://qq.com/.../closeWebView 或 finishWebView 通知宿主
+    if (/^qqmusic:\/\/qq\.com\//i.test(request.url) && /(?:close|finish)webview/i.test(request.url)) {
       complete()
       return false
     }
@@ -116,28 +122,32 @@ const SecurityView = ({ url, seed, onDone, onCancel }: {
           <Icon name="chevron-left" size={24} color={theme['c-font']} />
         </TouchableOpacity>
         <Text style={{ flex: 1 }} size={18}>{global.i18n.t('qq_security_verification')}</Text>
-        <TouchableOpacity onPress={complete} style={{ paddingHorizontal: 14 }}>
+        <TouchableOpacity onPress={complete} disabled={!ready} style={{ paddingHorizontal: 14, opacity: ready ? 1 : 0.3 }}>
           <Text color={theme['c-primary-font']}>{global.i18n.t('confirm')}</Text>
         </TouchableOpacity>
       </View>
       <Text size={12} color={theme['c-font-label']} style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
         {global.i18n.t('qq_security_hint')}
       </Text>
-      <WebViewComponent
-        source={{ uri: url }}
-        style={{ flex: 1 }}
-        userAgent={`${QQ_USER_AGENT} QQMUSIC/140200`}
-        originWhitelist={['*']}
-        javaScriptEnabled
-        domStorageEnabled
-        useWideViewPort
-        loadWithOverviewMode
-        setSupportMultipleWindows={false}
-        thirdPartyCookiesEnabled
-        sharedCookiesEnabled
-        onShouldStartLoadWithRequest={handleShouldStartLoad}
-        onNavigationStateChange={(state: WebViewNavigation) => { currentUrlRef.current = state.url }}
-      />
+      {
+        ready
+          ? <WebViewComponent
+              source={{ uri: url }}
+              style={{ flex: 1 }}
+              userAgent={`${QQ_USER_AGENT} QQMUSIC/140200`}
+              originWhitelist={['*']}
+              javaScriptEnabled
+              domStorageEnabled
+              useWideViewPort
+              loadWithOverviewMode
+              setSupportMultipleWindows={false}
+              thirdPartyCookiesEnabled
+              sharedCookiesEnabled
+              onShouldStartLoadWithRequest={handleShouldStartLoad}
+              onNavigationStateChange={(state: WebViewNavigation) => { currentUrlRef.current = state.url }}
+            />
+          : <View style={{ flex: 1 }} />
+      }
     </View>
   )
 }
