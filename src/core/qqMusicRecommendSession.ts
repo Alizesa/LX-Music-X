@@ -1,4 +1,4 @@
-import { getPlayQueueMusic, isPlayQueueFromList } from '@/core/player/playQueue'
+import { getPlayQueueMusic, getPlayQueueSourceFirstMusicId, isPlayQueueFromList } from '@/core/player/playQueue'
 import playerState from '@/store/player/state'
 import { getQQMusicRecommendSession, removeQQMusicRecommendSession, saveQQMusicRecommendSession } from '@/utils/data'
 import { QQ_DAILY_RECOMMEND_QUEUE_SOURCE } from '@/config/constant'
@@ -53,6 +53,7 @@ export const parkRecommendQueue = async() => {
   if (!songs.length) return
   session = {
     songs,
+    sourceFirstMusicId: getPlayQueueSourceFirstMusicId(),
     index: Math.max(0, playerState.playInfo.playerPlayIndex),
     savedAt: Date.now(),
   }

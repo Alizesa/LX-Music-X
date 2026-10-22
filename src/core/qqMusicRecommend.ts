@@ -1,4 +1,4 @@
-import { appendPlayQueue, getPlayQueue, replacePlayQueue, restampPlayQueue } from '@/core/player/playQueue'
+import { appendPlayQueue, getPlayQueue, getPlayQueueSessionId, getPlayQueueSourceFirstMusicId, replacePlayQueue, restampPlayQueue } from '@/core/player/playQueue'
 import { getQQMusicDailyRecommendations, getQQMusicSession } from '@/core/qqMusic'
 import listState from '@/store/list/state'
 import playerState from '@/store/player/state'
@@ -23,7 +23,7 @@ let refreshing = false
 let failedRounds = 0
 // 退避到什么时候为止，0 表示不限制
 let nextTryAt = 0
-// 队列首项的 queueId。队列被 replace 后会变，用来判断是否换了一次播放会话
+// 建队列时的标识；裁剪历史不会被误认成新会话，也不会重置失败退避
 let sessionKey = ''
 
 const currentIndexInQueue = (musicInfoId: string) => getPlayQueue()
@@ -81,8 +81,7 @@ const refresh = async() => {
 }
 
 const handlePlayMusicInfoChanged = (playMusicInfo: CurrentPlayMusicInfo) => {
-  const queue = getPlayQueue()
-  const nextSessionKey = queue[0]?.queueId ?? ''
+  const nextSessionKey = getPlayQueueSessionId()
   // 换了一次播放会话就重置计数，重新给它机会
   if (nextSessionKey !== sessionKey) {
     sessionKey = nextSessionKey
@@ -108,13 +107,13 @@ export const initQQMusicRecommendAutoRefresh = () => {
  * 用一批推荐重建播放队列，并从 index 开始播。
  * 队列打的是推荐专属来源标记，续播和存档都靠它认。
  */
-export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0) => {
+export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0, sourceFirstMusicId = songs[0]?.id) => {
   if (!songs.length) return
   // 随机模式下 playNext 会先走已播列表，而那份记录不区分列表（队列播放的 listId 都是
   // play_queue），换一批新队列后可能先蹦出一首上一个列表的歌。重启恢复时它本来就是空的，
   // 这里也清掉，两条路径保持一致。
   clearPlayedList()
-  await replacePlayQueue(QQ_DAILY_RECOMMEND_QUEUE_SOURCE, songs)
+  await replacePlayQueue(QQ_DAILY_RECOMMEND_QUEUE_SOURCE, songs, sourceFirstMusicId)
   await playList(LIST_IDS.PLAY_QUEUE, Math.max(0, Math.min(index, songs.length - 1)))
 }
 
@@ -128,9 +127,9 @@ export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0
  */
 export const continueRecommendQueue = async(currentSongs: LX.Player.PlayMusic[]): Promise<boolean> => {
   if (isRecommendQueue()) {
-    // 队列首项就是建队列时的第一首，和当前这批对得上才算同一批。
+    // 比较建队列时的首曲，当前队首可能已因裁剪/删除/排序发生变化。
     // 点过「刷新」之后存档已经丢了，这时应该换新的一批，而不是继续放旧的。
-    const queueFirstId = getPlayQueue()[0]?.musicInfo.id
+    const queueFirstId = getPlayQueueSourceFirstMusicId()
     if (!currentSongs.length || queueFirstId == currentSongs[0]?.id) {
       if (!playerState.isPlay) {
         // 暂停着就接着放；已经停掉（playMusicInfo 被清了）就按上次的位置重新起播
@@ -143,7 +142,7 @@ export const continueRecommendQueue = async(currentSongs: LX.Player.PlayMusic[])
   }
   const session = await getRecommendSession()
   if (!session) return false
-  await startRecommendQueue(session.songs, session.index)
+  await startRecommendQueue(session.songs, session.index, session.sourceFirstMusicId)
   // 已经恢复成播放队列，存档的内存/磁盘副本可以放掉
   await dropRecommendSession()
   return true

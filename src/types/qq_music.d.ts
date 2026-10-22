@@ -53,6 +53,8 @@ declare namespace LX {
     interface RecommendSession {
       /** 推荐队列，含播放过程中自动续上的那几批 */
       songs: LX.Player.PlayMusic[]
+      /** 建队列时的首曲，裁剪历史后仍用于识别原来的推荐批次 */
+      sourceFirstMusicId?: string
       /** 切走时正在播的那首在队列里的位置 */
       index: number
       /** 存档时间，用来判断是否跨天（跨天就不再续，推荐内容本来就该换新） */

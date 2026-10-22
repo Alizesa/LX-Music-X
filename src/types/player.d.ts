@@ -27,6 +27,9 @@ declare global {
         queueId: string
         sourceListId: string
         musicInfo: PlayMusic
+        /** 队首携带队列元信息，裁剪/排序后转移到新队首；旧数据没有这两个字段 */
+        sessionId?: string
+        sourceFirstMusicId?: string
       }
 
       interface PlayHistoryItem {

@@ -24,22 +24,33 @@ const buildData = (key: string, value: any, datas: Array<[string, string]>) => {
   datas.push([key, partKeyArrPrefix + JSON.stringify(partKeys)])
 }
 
+const parseData = <T>(value: string): T | null => {
+  try {
+    return JSON.parse(value)
+  } catch (e: any) {
+    // 仅 JSON 损坏按缺失处理；存储读取失败必须继续抛出，避免空列表覆盖原数据
+    log.error('storage error[parseData]:', e.message)
+    return null
+  }
+}
+
 // 1.4.0 之前的数据分片存储方式，存在key的内容与分隔符冲突的问题
 // 1.4.0 开始改用数组存储，不再使用分隔符的方式
-const handleGetDataOld = async<T>(partKeys: string): Promise<T> => {
+const handleGetDataOld = async<T>(partKeys: string): Promise<T | null> => {
   const keys = partKeys.replace(partKeyPrefixRxp, '').split(keySplit)
 
   return AsyncStorage.multiGet(keys).then(datas => {
-    return JSON.parse(datas.map(data => data[1]).join(''))
+    return parseData<T>(datas.map(data => data[1]).join(''))
   })
 }
 
-const handleGetData = async<T>(partKeys: string): Promise<T> => {
+const handleGetData = async<T>(partKeys: string): Promise<T | null> => {
   if (partKeys.startsWith(partKeyPrefix)) return handleGetDataOld<T>(partKeys)
 
-  const keys = JSON.parse(partKeys.replace(partKeyArrPrefixRxp, '')) as string[]
+  const keys = parseData<unknown>(partKeys.replace(partKeyArrPrefixRxp, ''))
+  if (!Array.isArray(keys) || !keys.every((key): key is string => typeof key === 'string')) return null
   return AsyncStorage.multiGet(keys).then(datas => {
-    return JSON.parse(datas.map(data => data[1]).join(''))
+    return parseData<T>(datas.map(data => data[1]).join(''))
   })
 }
 
@@ -80,17 +91,10 @@ export const getData = async<T = unknown>(key: string): Promise<T | null> => {
     throw e
   }
   if (value == null) return null
-  try {
-    if (partKeyPrefixRxp.test(value) || partKeyArrPrefixRxp.test(value)) {
-      return await handleGetData<T>(value)
-    }
-    return JSON.parse(value)
-  } catch (e: any) {
-    // 进程在写入途中被杀可能留下半截 JSON/分片；按「没有数据」处理，
-    // 避免一个坏 key 把整个初始化卡死或抛错
-    log.error('storage error[getData parse]:', key, e.message)
-    return null
+  if (partKeyPrefixRxp.test(value) || partKeyArrPrefixRxp.test(value)) {
+    return handleGetData<T>(value)
   }
+  return parseData<T>(value)
 }
 
 export const removeData = async(key: string) => {
@@ -175,18 +179,10 @@ export const getDataMultiple = async<T extends readonly string[]>(keys: T) => {
       continue
     }
     if (partKeyPrefixRxp.test(value) || partKeyArrPrefixRxp.test(value)) {
-      promises.push(handleGetData(value).catch((error: any) => {
-        log.error('storage error[getDataMultiple parse]:', error.message)
-        return null
-      }))
+      promises.push(handleGetData(value))
       continue
     }
-    try {
-      promises.push(Promise.resolve(JSON.parse(value)))
-    } catch (e: any) {
-      log.error('storage error[getDataMultiple parse]:', e.message)
-      promises.push(Promise.resolve(null))
-    }
+    promises.push(Promise.resolve(parseData(value)))
   }
   return Promise.all(promises).then(values => {
     return datas.map(([key], index) => ([key, values[index]])) as { [K in keyof T]: [T[K], unknown] }

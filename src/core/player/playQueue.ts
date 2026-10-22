@@ -5,10 +5,21 @@ import playerActions from '@/store/player/action'
 
 const queue: LX.Player.PlayQueueItem[] = []
 let initialized = false
+let sessionId = ''
+let sourceFirstMusicId: string | undefined
 // 推荐续播会无限追加，保留最近一段即可；普通列表建队列不受这个上限影响
 const MAX_PLAY_QUEUE = 500
 
 const commit = async() => {
+  const first = queue[0]
+  if (first) {
+    // 元信息随队列落盘，不能随当前队首被裁剪、删除或移动而改变
+    first.sessionId = sessionId ||= first.queueId
+    first.sourceFirstMusicId = sourceFirstMusicId ??= first.musicInfo.id
+  } else {
+    sessionId = ''
+    sourceFirstMusicId = undefined
+  }
   await savePlayQueue(queue)
   global.app_event.playQueueUpdate([...queue])
 }
@@ -17,10 +28,14 @@ export const initPlayQueue = async() => {
   if (initialized) return
   initialized = true
   queue.splice(0, queue.length, ...(await getSavedPlayQueue()))
+  sessionId = queue[0]?.sessionId ?? queue[0]?.queueId ?? ''
+  sourceFirstMusicId = queue[0]?.sourceFirstMusicId ?? queue[0]?.musicInfo.id
 }
 
 export const getPlayQueue = () => queue
 export const getPlayQueueMusic = () => queue.map(item => item.musicInfo)
+export const getPlayQueueSessionId = () => sessionId
+export const getPlayQueueSourceFirstMusicId = () => sourceFirstMusicId
 
 /**
  * 当前队列是不是由某个列表建出来的。
@@ -40,13 +55,15 @@ export const restampPlayQueue = async(sourceListId: string) => {
   if (changed) await commit()
 }
 
-export const replacePlayQueue = async(sourceListId: string, list: LX.Player.PlayMusic[]) => {
+export const replacePlayQueue = async(sourceListId: string, list: LX.Player.PlayMusic[], firstMusicId = list[0]?.id) => {
   const seed = Date.now().toString(36)
   queue.splice(0, queue.length, ...list.map((musicInfo, index) => ({
     queueId: `${seed}_${index}_${musicInfo.id}`,
     sourceListId,
     musicInfo,
   })))
+  sessionId = queue[0]?.queueId ?? ''
+  sourceFirstMusicId = firstMusicId
   await commit()
 }
 

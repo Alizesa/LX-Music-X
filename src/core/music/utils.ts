@@ -388,6 +388,8 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   try {
     return await bySourceUrl()
   } catch (error) {
+    // 用户已取消整次取链，不能再把取消当作音源失败去请求账号链接
+    if (error instanceof Error && error.message === requestMsg.cancelRequest) throw error
     // 音源优先时它拿不到才回落账号，别让播放直接失败（下载的 'sourceOnly' 不走这一步）
     if (order === 'sourceFirst') {
       const byAccount = await byAccountUrl()
