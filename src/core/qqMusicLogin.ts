@@ -16,6 +16,7 @@ import {
   readUin,
   serializeQQMusicCookie,
 } from './qqMusicCookie'
+import { PROFILE_AVATAR_KEYS, PROFILE_NICK_KEYS, findProfileField } from './qqMusicProfile'
 
 const MUSIC_U_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
 const LOGIN_BLOCK = 'phoneLogin'
@@ -286,8 +287,9 @@ export const loginQQMusicByPhone = async(phone: string, code: string, cookieSeed
   }, { login: true, cookie: cookieSeed })
   return {
     cookie: buildCredentialCookie(result.cookie, result.data),
-    nickname: firstText(result.data, ['nick', 'nickname', 'nickName', 'name']) || undefined,
-    avatar: firstText(result.data, ['avatar', 'avatarUrl', 'head', 'headPic', 'headurl']) || undefined,
+    // 回包层级各账号不完全一致，按字段名递归找（先明确昵称字段，最后才用 name）
+    nickname: findProfileField(result.data, PROFILE_NICK_KEYS) || findProfileField(result.data, ['name']) || undefined,
+    avatar: findProfileField(result.data, PROFILE_AVATAR_KEYS) || undefined,
   }
 }
 

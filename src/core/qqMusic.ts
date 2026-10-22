@@ -31,6 +31,7 @@ import {
   requestQQMusicCredentialRefresh,
   shouldRefreshQQMusicCookie,
 } from './qqMusicLogin'
+import { PROFILE_AVATAR_KEYS, PROFILE_NICK_KEYS, findProfileField } from './qqMusicProfile'
 
 export {
   QQ_APP_USER_AGENT,
@@ -754,8 +755,10 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
     } catch (error) {
       if (error instanceof QQMusicSessionExpiredError) throw error
       console.warn('[QQMusic] profile request failed:', error instanceof Error ? error.message : error)
+      // 网络层就失败了，换 Referer 再打一次只会再等一个超时；直接转 App 接口
+      break
     }
-    if (!body) continue
+    if (!body) break
     const data = body?.data ?? {}
     // 有些账号/接口变体不给 creator 这一层，资料直接平铺在 data 上
     const creator = data.creator ?? data.user ?? data.profile ?? data
@@ -770,6 +773,34 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
       uin: normalizeUin(creator.uin),
     }
     break
+  }
+  // 网页资料接口拿不到昵称时，再用 App 信封的 GetLoginUserInfo 试一次。
+  // 手机号登录拿到的本来就是 App 票据，这条通常才是能认出账号的通道。
+  if (!profile) {
+    try {
+      const body = await postAuthedMusicu(cookie, {
+        userInfo: {
+          module: 'music.UserInfo.userInfoServer',
+          method: 'GetLoginUserInfo',
+          param: {},
+        },
+      })
+      const block = body?.userInfo
+      if (block && Number(block.code ?? 0) === 0) {
+        const data = block.data ?? block
+        const nickname = findProfileField(data, PROFILE_NICK_KEYS) || findProfileField(data, ['name'])
+        if (nickname) {
+          profile = {
+            nickname,
+            avatar: findProfileField(data, PROFILE_AVATAR_KEYS),
+            uin: normalizeUin(findProfileField(data, ['uin', 'musicid', 'musicId'])),
+          }
+        }
+      }
+    } catch (error) {
+      if (error instanceof QQMusicSessionExpiredError) throw error
+      console.warn('[QQMusic] GetLoginUserInfo failed:', error instanceof Error ? error.message : error)
+    }
   }
   if (!profile) {
     return {
