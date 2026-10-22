@@ -24,33 +24,52 @@ const buildData = (key: string, value: any, datas: Array<[string, string]>) => {
   datas.push([key, partKeyArrPrefix + JSON.stringify(partKeys)])
 }
 
-const parseData = <T>(value: string): T | null => {
+const parseData = <T>(value: string, key?: string): T | null => {
   try {
     return JSON.parse(value)
   } catch (e: any) {
     // 仅 JSON 损坏按缺失处理；存储读取失败必须继续抛出，避免空列表覆盖原数据
-    log.error('storage error[parseData]:', e.message)
+    log.error('storage error[parseData]:', key ?? '', e.message)
     return null
   }
 }
 
+// 读失败会向上抛（避免空列表覆盖原数据），但 SQLite 锁/IO 抖动往往是瞬时的：
+// 先短暂重试几次，别让一次抖动直接把初始化打挂
+const READ_RETRY_TIMES = 2
+const READ_RETRY_DELAY = 100
+const readWithRetry = async<T>(read: () => Promise<T>): Promise<T> => {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= READ_RETRY_TIMES; attempt++) {
+    try {
+      return await read()
+    } catch (error) {
+      lastError = error
+      if (attempt < READ_RETRY_TIMES) {
+        await new Promise<void>(resolve => { setTimeout(resolve, READ_RETRY_DELAY * (attempt + 1)) })
+      }
+    }
+  }
+  throw lastError
+}
+
 // 1.4.0 之前的数据分片存储方式，存在key的内容与分隔符冲突的问题
 // 1.4.0 开始改用数组存储，不再使用分隔符的方式
-const handleGetDataOld = async<T>(partKeys: string): Promise<T | null> => {
+const handleGetDataOld = async<T>(partKeys: string, key: string): Promise<T | null> => {
   const keys = partKeys.replace(partKeyPrefixRxp, '').split(keySplit)
 
-  return AsyncStorage.multiGet(keys).then(datas => {
-    return parseData<T>(datas.map(data => data[1]).join(''))
+  return readWithRetry(async() => AsyncStorage.multiGet(keys)).then(datas => {
+    return parseData<T>(datas.map(data => data[1]).join(''), key)
   })
 }
 
-const handleGetData = async<T>(partKeys: string): Promise<T | null> => {
-  if (partKeys.startsWith(partKeyPrefix)) return handleGetDataOld<T>(partKeys)
+const handleGetData = async<T>(partKeys: string, key: string): Promise<T | null> => {
+  if (partKeys.startsWith(partKeyPrefix)) return handleGetDataOld<T>(partKeys, key)
 
-  const keys = parseData<unknown>(partKeys.replace(partKeyArrPrefixRxp, ''))
+  const keys = parseData<unknown>(partKeys.replace(partKeyArrPrefixRxp, ''), key)
   if (!Array.isArray(keys) || !keys.every((key): key is string => typeof key === 'string')) return null
-  return AsyncStorage.multiGet(keys).then(datas => {
-    return parseData<T>(datas.map(data => data[1]).join(''))
+  return readWithRetry(async() => AsyncStorage.multiGet(keys)).then(datas => {
+    return parseData<T>(datas.map(data => data[1]).join(''), key)
   })
 }
 
@@ -84,7 +103,7 @@ export const saveDataDirect = async(key: string, value: any) => {
 export const getData = async<T = unknown>(key: string): Promise<T | null> => {
   let value: string | null
   try {
-    value = await AsyncStorage.getItem(key)
+    value = await readWithRetry(async() => AsyncStorage.getItem(key))
   } catch (e: any) {
     // error reading value
     log.error('storage error[getData]:', key, e.message)
@@ -92,9 +111,9 @@ export const getData = async<T = unknown>(key: string): Promise<T | null> => {
   }
   if (value == null) return null
   if (partKeyPrefixRxp.test(value) || partKeyArrPrefixRxp.test(value)) {
-    return handleGetData<T>(value)
+    return handleGetData<T>(value, key)
   }
-  return parseData<T>(value)
+  return parseData<T>(value, key)
 }
 
 export const removeData = async(key: string) => {
@@ -166,23 +185,23 @@ export const getDataMultiple = async<T extends readonly string[]>(keys: T) => {
   type RawData = { [K in keyof T]: [T[K], string | null] }
   let datas: RawData
   try {
-    datas = await AsyncStorage.multiGet(keys) as RawData
+    datas = await readWithRetry(async() => AsyncStorage.multiGet(keys)) as RawData
   } catch (e: any) {
     // read error
     log.error('storage error[getDataMultiple]:', e.message)
     throw e
   }
   const promises: Array<Promise<unknown>> = []
-  for (const [, value] of datas) {
+  for (const [key, value] of datas) {
     if (value == null || value === '') {
       promises.push(Promise.resolve(value))
       continue
     }
     if (partKeyPrefixRxp.test(value) || partKeyArrPrefixRxp.test(value)) {
-      promises.push(handleGetData(value))
+      promises.push(handleGetData(value, key))
       continue
     }
-    promises.push(Promise.resolve(parseData(value)))
+    promises.push(Promise.resolve(parseData(value, key)))
   }
   return Promise.all(promises).then(values => {
     return datas.map(([key], index) => ([key, values[index]])) as { [K in keyof T]: [T[K], unknown] }

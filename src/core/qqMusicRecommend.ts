@@ -49,14 +49,20 @@ const failRound = () => {
 const refresh = async() => {
   if (refreshing) return
   refreshing = true
+  // 两次网络往返期间用户可能切走队列。记下发起时的建队标识：
+  // 回来发现已经不是同一条推荐队列，就不能再往新队列里追加推荐歌
+  const sessionId = getPlayQueueSessionId()
+  const isStillRecommendQueue = () => sessionId === getPlayQueueSessionId() && isRecommendQueue()
   try {
     const { cookie } = await getQQMusicSession()
+    if (!isStillRecommendQueue()) return
     if (!cookie) {
       // 没登录或登录态失效：先退避，等用户重新登录后自然会续上
       failRound()
       return
     }
     const songs = await getQQMusicDailyRecommendations(cookie)
+    if (!isStillRecommendQueue()) return
     // 推荐接口会重复给已经在列的歌曲，按整个队列去重，避免同一首歌反复入列
     const existing = new Set(getPlayQueue().map(item => item.musicInfo.id))
     const toAppend = songs.filter(song => !existing.has(song.id))

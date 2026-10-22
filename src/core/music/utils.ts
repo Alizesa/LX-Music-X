@@ -8,7 +8,7 @@ import {
 import { langS2T, toNewMusicInfo, toOldMusicInfo } from '@/utils'
 import { assertApiSupport } from '@/utils/tools'
 import settingState from '@/store/setting/state'
-import { requestMsg } from '@/utils/message'
+import { isRequestCancelled, requestMsg } from '@/utils/message'
 import BackgroundTimer from 'react-native-background-timer'
 import { apis } from '@/utils/musicSdk/api-source'
 import { getQQMusicUrlByAccount } from '@/core/qqMusicUrl'
@@ -287,7 +287,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
     // eslint-disable-next-line @typescript-eslint/promise-function-async
   }).catch((err: any) => {
     // 取消不是失败，不要继续换下一个源
-    if (err.message == requestMsg.cancelRequest || err.message == requestMsg.tooManyRequests) throw err
+    if (isRequestCancelled(err) || err.message == requestMsg.tooManyRequests) throw err
     console.log(err)
     return getOnlineOtherSourceMusicUrl({ musicInfos, quality, onToggleSource, isRefresh, retryedSource, onCancel })
   })
@@ -359,7 +359,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
       return { musicInfo, url, quality: type, isFromCache: false }
     }).catch(async(err: any) => {
       console.log(err)
-      if (err.message == requestMsg.cancelRequest || !allowToggleSource || err.message == requestMsg.tooManyRequests) throw err
+      if (isRequestCancelled(err) || !allowToggleSource || err.message == requestMsg.tooManyRequests) throw err
       onToggleSource()
       // eslint-disable-next-line @typescript-eslint/promise-function-async
       return getOtherSource(musicInfo).then(otherSource => {
@@ -389,7 +389,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
     return await bySourceUrl()
   } catch (error) {
     // 用户已取消整次取链，不能再把取消当作音源失败去请求账号链接
-    if (error instanceof Error && error.message === requestMsg.cancelRequest) throw error
+    if (isRequestCancelled(error)) throw error
     // 音源优先时它拿不到才回落账号，别让播放直接失败（下载的 'sourceOnly' 不走这一步）
     if (order === 'sourceFirst') {
       const byAccount = await byAccountUrl()

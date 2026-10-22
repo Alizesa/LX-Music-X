@@ -7,3 +7,7 @@ export const requestMsg = {
   cancelRequest: '取消http请求',
   tooManyRequests: '服务器繁忙',
 } as const
+
+/** 取链被主动取消（不是失败）。各源可能 reject Error 或普通对象，统一按 message 判断 */
+export const isRequestCancelled = (error: unknown): boolean =>
+  (error as { message?: unknown } | null | undefined)?.message === requestMsg.cancelRequest

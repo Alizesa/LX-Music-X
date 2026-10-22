@@ -21,7 +21,7 @@ import {
   removeTempPlayList,
 } from '@/core/player/tempPlayList'
 import { getMusicUrl, getPicPath, getLyricInfo } from '@/core/music'
-import { requestMsg } from '@/utils/message'
+import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { getRandom } from '@/utils/common'
 import { filterList } from './utils'
 import BackgroundTimer from 'react-native-background-timer'
@@ -128,7 +128,7 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
   }) : Promise.reject(new Error('not found'))).catch(async err => {
     // 取消（切歌/重试）不是「换源失败」：否则会为同一首旧歌再打一次
     // 无法取消的请求，结果随后也会被 diffCurrentMusicInfo 丢掉
-    if (err?.message == requestMsg.cancelRequest || generation !== musicUrlGeneration) throw err
+    if (isRequestCancelled(err) || generation !== musicUrlGeneration) throw err
     return getMusicUrl({
       musicInfo,
       isRefresh,
@@ -146,7 +146,7 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
     // console.log('err', err.message)
     if (global.lx.isPlayedStop ||
       diffCurrentMusicInfo(musicInfo) ||
-      err.message == requestMsg.cancelRequest) return null
+      isRequestCancelled(err)) return null
 
     if (err.message == requestMsg.tooManyRequests) return delayRetry(musicInfo, isRefresh)
 
