@@ -5,12 +5,13 @@ import { Icon, IconIonicons } from '@/components/common/Icon'
 import Image from '@/components/common/Image'
 import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMusicLoginModal'
 import QQMusicPhoneLoginModal, { type QQMusicPhoneLoginModalType } from '@/components/QQMusicPhoneLoginModal'
+import QQPlaylistEditModal, { type QQPlaylistEditModalType } from '@/components/QQPlaylistEditModal'
 import { useTheme } from '@/store/theme/hook'
 import { useDownloadTasks } from '@/store/download/hook'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo } from '@/core/qqMusic'
-import { refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
+import { deleteQQMusicPlaylist, refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
 import { isQQMusicFallbackAvatar, isQQMusicFallbackNickname } from '@/core/qqMusicProfile'
 import { getLocalMusicCount } from '@/utils/localMatchIndex'
 import { navigations } from '@/navigation'
@@ -47,24 +48,32 @@ const Entry = ({ icon, ionIcon, ionSize, label, count, onPress }: {
   )
 }
 
-const PlaylistRow = ({ item, onPress }: {
+const PlaylistRow = ({ item, onPress, onMore }: {
   item: LX.QQMusic.PlaylistInfo
   onPress: () => void
+  onMore?: () => void
 }) => {
   const theme = useTheme()
   const t = useI18n()
   return (
-    <TouchableOpacity style={{ ...styles.row, borderBottomColor: theme['c-border-background'] }} activeOpacity={0.7} onPress={onPress}>
-      {item.cover
-        ? <Image url={item.cover} style={styles.cover} />
-        : <View style={{ ...styles.cover, backgroundColor: theme['c-primary-background'] }} />}
-      <View style={styles.rowInfo}>
-        <Text numberOfLines={1}>{item.name}</Text>
-        <Text size={12} color={theme['c-font-label']} numberOfLines={1}>
-          {t('mine_song_count', { num: item.trackCount ?? 0 })}
-        </Text>
-      </View>
-    </TouchableOpacity>
+    <View style={{ ...styles.row, borderBottomColor: theme['c-border-background'] }}>
+      <TouchableOpacity style={styles.rowMain} activeOpacity={0.7} onPress={onPress}>
+        {item.cover
+          ? <Image url={item.cover} style={styles.cover} />
+          : <View style={{ ...styles.cover, backgroundColor: theme['c-primary-background'] }} />}
+        <View style={styles.rowInfo}>
+          <Text numberOfLines={1}>{item.name}</Text>
+          <Text size={12} color={theme['c-font-label']} numberOfLines={1}>
+            {t('mine_song_count', { num: item.trackCount ?? 0 })}
+          </Text>
+        </View>
+      </TouchableOpacity>
+      {onMore
+        ? <TouchableOpacity style={styles.rowMore} onPress={onMore}>
+            <IconIonicons name="ellipsis-horizontal" size={18} color={theme['c-font-label']} />
+          </TouchableOpacity>
+        : null}
+    </View>
   )
 }
 
@@ -75,6 +84,7 @@ export default () => {
   const t = useI18n()
   const loginRef = useRef<QQMusicLoginModalType>(null)
   const phoneLoginRef = useRef<QQMusicPhoneLoginModalType>(null)
+  const playlistEditRef = useRef<QQPlaylistEditModalType>(null)
   const [cookie, setCookie] = useState('')
   const [user, setUser] = useState<LX.QQMusic.UserInfo | null>(null)
   const [playlists, setPlaylists] = useState<LX.QQMusic.PlaylistInfo[]>([])
@@ -110,6 +120,19 @@ export default () => {
       console.warn('[QQMusic] 拉取歌单失败:', error instanceof Error ? error.message : error)
     }
   }, [])
+
+  // 新建/重命名/删除后强制重拉一次并写回缓存，不走「缓存里有 liked 就直接用」的短路
+  const reloadPlaylists = useCallback(async() => {
+    try {
+      const { cookie: activeCookie } = await getQQMusicSession()
+      if (!activeCookie) return
+      const fresh = await getQQMusicPlaylists(activeCookie)
+      await saveQQMusicPlaylistsCache(fresh)
+      setPlaylists(filterVisiblePlaylists(fresh))
+    } catch (error: unknown) {
+      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+    }
+  }, [t])
 
   useEffect(() => {
     // 读当前会话再决定加载哪个号的歌单。登录/换号、以及别处收藏了歌单时都调它
@@ -215,6 +238,34 @@ export default () => {
     })
   }
 
+  const showPlaylistActions = (playlist: LX.QQMusic.PlaylistInfo) => {
+    const confirmDelete = () => {
+      Alert.alert(t('qq_playlist_delete_title'), t('qq_playlist_delete_message', { name: playlist.name }), [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('qq_playlist_delete'),
+          style: 'destructive',
+          onPress: () => {
+            void deleteQQMusicPlaylist(playlist).then(() => {
+              toast(t('qq_playlist_delete_success'))
+              void reloadPlaylists()
+            }).catch((error: unknown) => {
+              toast(error instanceof Error ? error.message : t('qq_playlist_edit_failed'), 'long')
+            })
+          },
+        },
+      ])
+    }
+    Alert.alert(playlist.name, undefined, [
+      {
+        text: t('qq_playlist_rename'),
+        onPress: () => playlistEditRef.current?.show({ mode: 'rename', playlist, onDone: () => { void reloadPlaylists() } }),
+      },
+      { text: t('qq_playlist_delete'), style: 'destructive', onPress: confirmDelete },
+      { text: t('cancel'), style: 'cancel' },
+    ])
+  }
+
   // 头像按顺序试：接口给的地址 → QQ 头像服务。前一个加载失败就换下一个，
   // 全都失败才退回纯色占位（比 LX 占位图好看，也说明确实没辙了）
   const avatarCandidates = useMemo(() => {
@@ -254,12 +305,29 @@ export default () => {
   const created = playlists.filter(item => !item.liked && !item.subscribed)
   const collected = playlists.filter(item => item.subscribed)
 
-  const renderSection = (title: string, list: LX.QQMusic.PlaylistInfo[]) => (
+  const renderSection = (title: string, list: LX.QQMusic.PlaylistInfo[], options?: {
+    onCreate?: () => void
+    onMore?: (item: LX.QQMusic.PlaylistInfo) => void
+  }) => (
     <>
-      <Text style={styles.sectionTitle} size={15}>{`${title} ${list.length}`}</Text>
+      <View style={styles.sectionHeader}>
+        <Text size={15}>{`${title} ${list.length}`}</Text>
+        {options?.onCreate
+          ? <TouchableOpacity style={styles.sectionAction} onPress={options.onCreate}>
+              <IconIonicons name="add" size={20} color={theme['c-primary-font']} />
+            </TouchableOpacity>
+          : null}
+      </View>
       {
         list.length
-          ? list.map(item => <PlaylistRow key={item.id} item={item} onPress={() => { openPlaylist(item) }} />)
+          ? list.map(item => (
+              <PlaylistRow
+                key={item.id}
+                item={item}
+                onPress={() => { openPlaylist(item) }}
+                onMore={options?.onMore ? () => options.onMore?.(item) : undefined}
+              />
+          ))
           : <Text style={styles.empty} size={13} color={theme['c-font-label']}>{loggedIn ? t('qq_load_hint') : t('qq_login_hint')}</Text>
       }
     </>
@@ -299,12 +367,18 @@ export default () => {
           <Entry ionIcon="folder-sharp" label={t('mine_local_songs')} count={localCount} onPress={() => { navigations.pushLocalSongsScreen(commonState.componentIds.home!) }} />
         </View>
 
-        {renderSection(t('mine_created_playlists'), created)}
+        {renderSection(t('mine_created_playlists'), created, loggedIn
+          ? {
+              onCreate: () => playlistEditRef.current?.show({ mode: 'create', onDone: () => { void reloadPlaylists() } }),
+              onMore: showPlaylistActions,
+            }
+          : undefined)}
         {renderSection(t('mine_collected_playlists'), collected)}
       </ScrollView>
 
       <QQMusicLoginModal ref={loginRef} onLoggedIn={nextUser => { setUser(nextUser); void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />
       <QQMusicPhoneLoginModal ref={phoneLoginRef} onLoggedIn={nextUser => { setUser(nextUser); void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />
+      <QQPlaylistEditModal ref={playlistEditRef} />
     </View>
   )
 }
@@ -320,8 +394,11 @@ const styles = createStyle({
   entries: { flexDirection: 'row', paddingVertical: 8 },
   entry: { flex: 1, alignItems: 'center', paddingVertical: 8 },
   entryLabel: { marginTop: 6 },
-  sectionTitle: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 8 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 18, paddingBottom: 8 },
+  sectionAction: { padding: 4 },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1 },
+  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  rowMore: { padding: 8, marginLeft: 4 },
   cover: { width: 48, height: 48, borderRadius: 4 },
   rowInfo: { flex: 1, paddingLeft: 12 },
   empty: { paddingHorizontal: 16, paddingVertical: 14 },

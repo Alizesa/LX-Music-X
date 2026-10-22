@@ -417,6 +417,88 @@ export const setQQMusicTrackInPlaylist = async(
   return 'ok'
 }
 
+/**
+ * 歌单级的增删改。协议照 MusicOne 的 PlaylistBaseWrite：
+ * AddPlaylist / EditPlaylist / DelPlaylist，参数带 bFmtUtf8。
+ * 只允许操作当前账号自建的歌单；写入前重新拉一次列表拿最新的 dirId 并校验归属。
+ */
+const resolveOwnedQQMusicPlaylist = async(
+  cookie: string,
+  playlist: Pick<LX.QQMusic.PlaylistInfo, 'id'>,
+) => {
+  const fresh = await getQQMusicPlaylists(cookie)
+  const target = fresh.find(item => !item.subscribed && !item.liked && item.id == playlist.id)
+  if (!target) throw new Error(global.i18n.t('qq_playlist_not_owned'))
+  // 写接口要的是目录编号 dirid，不是公开的 disstid；缺了只能让用户刷新重试
+  if (!target.dirId) throw new Error(global.i18n.t('qq_playlist_missing_dir'))
+  return target
+}
+
+const writeQQMusicPlaylistBase = async(
+  cookie: string,
+  method: 'AddPlaylist' | 'EditPlaylist' | 'DelPlaylist',
+  param: Record<string, unknown>,
+) => {
+  const body = await postAuthedMusicu(cookie, {
+    req_0: {
+      module: 'music.musicasset.PlaylistBaseWrite',
+      method,
+      param: { bFmtUtf8: true, ...param },
+    },
+  }, { 'User-Agent': QQ_PLAYLIST_WRITE_USER_AGENT })
+  const result = body?.req_0
+  const code = Number(result?.code ?? -1)
+  if (LOGIN_ERROR_CODES.has(code)) throw new Error(global.i18n.t('qq_session_expired'))
+  // 和 MusicOne 一样：外层 code 和业务块里的 retCode 都为 0 才算成功
+  const retCode = Number(result?.data?.retCode ?? -1)
+  if (code !== 0 || retCode !== 0) {
+    const reason = String(result?.data?.reason ?? result?.message ?? body?.message ?? '').trim()
+    throw new Error(reason || `${global.i18n.t('qq_playlist_edit_failed')} (code=${code} retCode=${retCode})`)
+  }
+}
+
+/** 新建歌单。成功后由调用方刷新「我的歌单」列表/缓存 */
+export const createQQMusicPlaylist = async(name: string) => {
+  const title = name.trim()
+  if (!title) throw new Error(global.i18n.t('qq_playlist_name_required'))
+  const { cookie } = await getQQMusicSession()
+  if (!cookie) throw new Error(global.i18n.t('qq_not_logged_in'))
+  await writeQQMusicPlaylistBase(cookie, 'AddPlaylist', { dirName: title, dirShow: 1 })
+}
+
+/** 重命名自建歌单 */
+export const renameQQMusicPlaylist = async(
+  playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'>,
+  name: string,
+) => {
+  const title = name.trim()
+  if (!title) throw new Error(global.i18n.t('qq_playlist_name_required'))
+  const { cookie } = await getQQMusicSession()
+  if (!cookie) throw new Error(global.i18n.t('qq_not_logged_in'))
+  const target = await resolveOwnedQQMusicPlaylist(cookie, playlist)
+  await writeQQMusicPlaylistBase(cookie, 'EditPlaylist', {
+    dirId: target.dirId,
+    mask: 1,
+    dirNewName: title,
+  })
+}
+
+/** 删除自建歌单。删除后顺手丢掉该歌单的歌曲缓存 */
+export const deleteQQMusicPlaylist = async(
+  playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'>,
+) => {
+  const { cookie } = await getQQMusicSession()
+  if (!cookie) throw new Error(global.i18n.t('qq_not_logged_in'))
+  const target = await resolveOwnedQQMusicPlaylist(cookie, playlist)
+  await writeQQMusicPlaylistBase(cookie, 'DelPlaylist', {
+    dirId: target.dirId,
+    dirName: target.name,
+  })
+  await dropCachedPlaylistSongs(playlist.id).catch(error => {
+    console.warn('[QQMusic] 删除歌单后清理歌曲缓存失败:', error instanceof Error ? error.message : error)
+  })
+}
+
 /** 能往里写歌的那批：自己创建的歌单。收藏来的写不了 */
 const writablePlaylists = (list: LX.QQMusic.PlaylistInfo[]) =>
   filterVisiblePlaylists(list).filter(item => !item.subscribed && !item.liked)
