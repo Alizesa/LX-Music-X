@@ -4,7 +4,7 @@ import Text from '@/components/common/Text'
 import { Icon, IconIonicons } from '@/components/common/Icon'
 import Image from '@/components/common/Image'
 import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMusicLoginModal'
-import QQMusicCookieModal, { type QQMusicCookieModalType } from '@/components/QQMusicCookieModal'
+import QQMusicPhoneLoginModal, { type QQMusicPhoneLoginModalType } from '@/components/QQMusicPhoneLoginModal'
 import { useTheme } from '@/store/theme/hook'
 import { useDownloadTasks } from '@/store/download/hook'
 import { createStyle, toast } from '@/utils/tools'
@@ -73,7 +73,7 @@ export default () => {
   const theme = useTheme()
   const t = useI18n()
   const loginRef = useRef<QQMusicLoginModalType>(null)
-  const cookieLoginRef = useRef<QQMusicCookieModalType>(null)
+  const phoneLoginRef = useRef<QQMusicPhoneLoginModalType>(null)
   const [cookie, setCookie] = useState('')
   const [user, setUser] = useState<LX.QQMusic.UserInfo | null>(null)
   const [playlists, setPlaylists] = useState<LX.QQMusic.PlaylistInfo[]>([])
@@ -276,7 +276,7 @@ export default () => {
           {
             loggedIn
               ? <TouchableOpacity style={styles.userAction} onPress={logout}><Icon name="exit" size={20} color={theme['c-font-label']} /></TouchableOpacity>
-              : <TouchableOpacity style={styles.userAction} onPress={() => cookieLoginRef.current?.show()}><Text size={13} color={theme['c-primary-font']}>{t('qq_cookie_login')}</Text></TouchableOpacity>
+              : <TouchableOpacity style={styles.userAction} onPress={() => phoneLoginRef.current?.show()}><Text size={13} color={theme['c-primary-font']}>{t('qq_phone_login')}</Text></TouchableOpacity>
           }
         </View>
 
@@ -292,7 +292,7 @@ export default () => {
       </ScrollView>
 
       <QQMusicLoginModal ref={loginRef} onLoggedIn={nextUser => { setUser(nextUser); void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />
-      <QQMusicCookieModal ref={cookieLoginRef} onLoggedIn={nextUser => { setUser(nextUser); void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />
+      <QQMusicPhoneLoginModal ref={phoneLoginRef} onLoggedIn={nextUser => { setUser(nextUser); void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />
     </View>
   )
 }

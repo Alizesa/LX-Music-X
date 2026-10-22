@@ -122,6 +122,8 @@ export const storageDataPrefix = {
   userApi: '@user_api__',
   qqMusicCookie: '@qq_music_cookie',
   qqMusicUser: '@qq_music_user',
+  // 手机号登录用的稳定设备标识。换号/退出登录都不清，清了对服务端来说就是一台新设备
+  qqMusicDeviceId: '@qq_music_device_id',
   qqMusicPlaylists: '@qq_music_playlists',
   qqMusicDailyRecommend: '@qq_music_daily_recommend',
   // 注意与上面的区分：qqMusicDailyRecommend 存的是「猜你喜欢」电台的结果

@@ -15,6 +15,31 @@ import { toNewMusicInfo, decodeName } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
 import { clearPlaylistSongsCache } from './qqMusicPlaylistSongsCache'
 import CookieManager from '@react-native-cookies/cookies'
+import {
+  QQ_APP_USER_AGENT,
+  QQ_USER_AGENT,
+  getQQMusicUin,
+  isQQMusicCookie,
+  normalizeUin,
+  parseQQMusicCookie,
+  readMusicKey,
+  readUin,
+  serializeQQMusicCookie,
+} from './qqMusicCookie'
+import {
+  hasQQMusicRefreshCredential,
+  requestQQMusicCredentialRefresh,
+  shouldRefreshQQMusicCookie,
+} from './qqMusicLogin'
+
+export {
+  QQ_APP_USER_AGENT,
+  QQ_USER_AGENT,
+  getQQMusicAuthKey,
+  getQQMusicUin,
+  isQQMusicCookie,
+  parseQQMusicCookie,
+} from './qqMusicCookie'
 
 const QQ_MUSICU_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
 // 用 c6 这个主机：c.y.qq.com 是老站点，资料接口在它上面拿不到头像
@@ -34,14 +59,8 @@ const QQ_REFERER = 'https://y.qq.com/'
 const QQ_PROFILE_REFERER = 'https://y.qq.com/portal/profile.html'
 const QQ_COOKIE_URLS = ['https://y.qq.com/', 'https://qq.com/', 'https://c.y.qq.com/', 'https://u.y.qq.com/']
 
-// 这个 UA 只给登录用的 WebView：y.qq.com 的登录页要靠浏览器 UA 才能正常渲染。
-// 项目默认的 Chrome/69 过于陈旧，这里用较新的版本。
-export const QQ_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+// 页面级接口用的浏览器 UA（WebView 登录已单独用 QQ_USER_AGENT）
 const QQ_WEB_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-
-// 接口请求一律走手机 App 信封，UA 必须和 comm 里的 cv=14090008 对得上；
-// 用浏览器 UA 配 App 版本号的话，服务端会按网页端返回，字段和可用功能都有出入。
-export const QQ_APP_USER_AGENT = 'QQMusic 14090008(android 14)'
 
 const RECOMMEND_TARGET = 20
 const RECOMMEND_MAX_TRIES = 6
@@ -57,59 +76,7 @@ const PLAYLIST_PAGE_SIZE = 200
 // 这个值同时当「这批是不是满页」的判据用（响应里没有 HasMore 时靠它推还有没有下一批）
 const RECOMMEND_PLAYLIST_PAGE_SIZE = 8
 
-export const parseQQMusicCookie = (cookie: string): Record<string, string> => {
-  const result: Record<string, string> = {}
-  for (const part of String(cookie ?? '').split(';')) {
-    const raw = part.trim()
-    if (!raw) continue
-    const index = raw.indexOf('=')
-    if (index <= 0) continue
-    const key = raw.slice(0, index).trim()
-    if (key) result[key] = raw.slice(index + 1).trim()
-  }
-  return result
-}
-
-const serializeQQMusicCookie = (cookies: Record<string, string>) => Object.keys(cookies)
-  .filter(key => cookies[key] != null && cookies[key] !== '')
-  .map(key => `${key}=${cookies[key]}`)
-  .join('; ')
-
-const normalizeUin = (raw: unknown) => {
-  const digits = String(raw ?? '').replace(/\D/g, '')
-  return digits.replace(/^0+/, '') || digits
-}
-
-// 微信登录(login_type=2)时账号标识在 wxuin 上。
-//
-// 注意：**「0」是 QQ 音乐网页登录很常见的占位值**。它不是真账号，但又是 truthy ——
-// 早先按 `||` 链取第一个非空值会直接拿到它，后面的 wxuin / qqmusic_uin 永远没机会。
-// uin 于是变成字面量 0，凡是拿它拼地址的接口全废（qlogo 头像查 nk=0 必然查不到）。
-const readUin = (cookies: Record<string, string>) => {
-  const candidates = Number(cookies.login_type) === 2
-    ? [cookies.wxuin, cookies.uin, cookies.p_uin]
-    : [cookies.uin, cookies.qqmusic_uin, cookies.wxuin, cookies.p_uin]
-  const values = candidates.map(normalizeUin).filter(Boolean)
-  // 有真号就优先用真号；一个都没有时仍退回占位值，
-  // 否则会把一个本来能用的 Cookie 判成未登录
-  return values.find(value => value != '0') ?? values[0] ?? ''
-}
-
-// 只有 qm_keyst / qqmusic_key / music_key 是 QQ 音乐自己的登录票据。
-// skey / p_skey 属于 QQ 互联(.qq.com)，对音乐接口无效 —— 早先把它们当兜底，
-// 会让"其实没登录成功"的 Cookie 通过本地校验，然后在服务端被拒。
-const readMusicKey = (cookies: Record<string, string>) => cookies.qm_keyst || cookies.qqmusic_key || cookies.music_key || ''
-
-export const getQQMusicUin = (cookie: string) => readUin(parseQQMusicCookie(cookie))
-
-export const getQQMusicAuthKey = (cookie: string) => readMusicKey(parseQQMusicCookie(cookie))
-
-export const isQQMusicCookie = (cookie: string) => {
-  const cookies = parseQQMusicCookie(cookie)
-  return !!readUin(cookies) && !!readMusicKey(cookies)
-}
-
-const request = async(url: string, cookie: string, options: Record<string, any> = {}, autoCleanExpired = true) => {
+const request = async(url: string, cookie: string, options: Record<string, any> = {}, autoCleanExpired = true): Promise<any> => {
   const result = await httpFetch(url, {
     ...options,
     headers: {
@@ -132,10 +99,51 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
   // autoCleanExpired=false 用在登录流程：那里失败只代表这次 Cookie 不对，
   // 不能顺手把已经登录的会话清掉（否则用户换个号输错一次就被踢下线）
   if (autoCleanExpired && isQQMusicCookie(cookie) && hasExpiredSession(body)) {
+    // 先试着续期：手机号登录的票据带 refresh_token，续成之后这个请求可以直接重放一次。
+    // 续期失败才按原来的逻辑清会话、通知界面重新登录。
+    const refreshed = await refreshQQMusicCookie(cookie, true)
+    if (refreshed && refreshed !== cookie) {
+      const retried: any = await request(url, refreshed, options, false)
+      if (!hasExpiredSession(retried)) return retried
+    }
     handleExpiredSession()
     throw new QQMusicSessionExpiredError()
   }
   return body
+}
+
+// 同一次过期可能有一屏接口同时在飞，续期只做一次，大家共用结果。
+let refreshPromise: Promise<string | null> | null = null
+
+/**
+ * 续期/校验票据。
+ * - force=false：只在接近过期时续（getQQMusicSession 用，日常没有多余请求）
+ * - force=true：服务端已经拒绝旧票据，无论本地时间都试一次（request 用）
+ * 返回可用 Cookie；续不了返回 null（force=false 时返回原 Cookie，调用方可继续用）。
+ */
+const refreshQQMusicCookie = async(cookie: string, force: boolean): Promise<string | null> => {
+  if (!isQQMusicCookie(cookie)) return null
+  if (!hasQQMusicRefreshCredential(cookie)) return force ? null : cookie
+  if (!force && !shouldRefreshQQMusicCookie(cookie)) return cookie
+  if (!refreshPromise) {
+    refreshPromise = requestQQMusicCredentialRefresh(cookie)
+      .then(async refreshed => {
+        if (!refreshed || !isQQMusicCookie(refreshed)) return null
+        const cookies = parseQQMusicCookie(refreshed)
+        cookies.uin = normalizeUin(cookies.uin) || readUin(cookies)
+        const normalizedCookie = serializeQQMusicCookie(cookies)
+        await saveQQMusicCookie(normalizedCookie)
+        // 新票据生效，允许之后再因为过期而自动清理
+        expiredHandled = false
+        return normalizedCookie
+      })
+      .catch(error => {
+        console.warn('[QQMusic] 登录续期失败:', error instanceof Error ? error.message : error)
+        return null
+      })
+      .finally(() => { refreshPromise = null })
+  }
+  return refreshPromise
 }
 
 
@@ -412,8 +420,11 @@ export const isLikedPlaylist = (info: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'like
 
 export const getQQMusicSession = async() => {
   const user = await getQQMusicUser() ?? null
+  const storedCookie = await getQQMusicCookie() ?? ''
+  // 临近过期就顺手续一次；失败仍返回旧票据，让具体请求去触发兜底/退出
+  const cookie = storedCookie ? await refreshQQMusicCookie(storedCookie, false) ?? storedCookie : ''
   return {
-    cookie: await getQQMusicCookie() ?? '',
+    cookie,
     // 头像在读取时再归一化一遍：地址归一化是后加的，早先存下来的 user 里可能还是
     // 协议相对地址，不改的话得重新登录才会好
     user: user ? { ...user, avatar: normalizeAvatarUrl(user.avatar) || user.avatar } : null,

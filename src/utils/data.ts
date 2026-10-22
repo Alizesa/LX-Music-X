@@ -39,6 +39,7 @@ const tempListMetaKey = storageDataPrefix.tempListMeta
 const playHistoryKey = storageDataPrefix.playHistory
 const qqMusicCookieKey = storageDataPrefix.qqMusicCookie
 const qqMusicUserKey = storageDataPrefix.qqMusicUser
+const qqMusicDeviceIdKey = storageDataPrefix.qqMusicDeviceId
 const qqMusicPlaylistsKey = storageDataPrefix.qqMusicPlaylists
 const qqMusicDailyRecommendKey = storageDataPrefix.qqMusicDailyRecommend
 const qqMusicDailyPlaylistKey = storageDataPrefix.qqMusicDailyPlaylist
@@ -564,6 +565,8 @@ export const removeQQMusicCookie = async() => {
 }
 export const getQQMusicUser = async() => getData<LX.QQMusic.UserInfo>(qqMusicUserKey)
 export const saveQQMusicUser = async(user: LX.QQMusic.UserInfo | null) => user ? saveData(qqMusicUserKey, user) : removeData(qqMusicUserKey)
+export const getQQMusicDeviceId = async() => getData<string>(qqMusicDeviceIdKey)
+export const saveQQMusicDeviceId = async(id: string) => saveDataDirect(qqMusicDeviceIdKey, id)
 
 // 歌单与每日推荐都缓存到本地：进页面直接显示、点击即播，不产生网络请求，
 // 只有用户手动刷新时才重新拉取。因此缓存里没有时间戳，也就没有过期逻辑。
