@@ -91,11 +91,19 @@ export default forwardRef<ModalType, ModalProps>(({
     >
       {/* <StatusBar /> */}
       {/* <View style={{ flex: 1, paddingTop: statusBarPadding ? StatusBar.currentHeight : 0 }}> */}
-      <TouchableWithoutFeedback style={{ flex: 1, paddingTop: statusBarPadding ? statusBarHeight : 0 }} onPress={handleBgClose}>
-        <View style={{ flex: 1, backgroundColor: bgColor }}>
-          {memoChildren}
-        </View>
-      </TouchableWithoutFeedback>
+      {
+        bgHide
+          ? <TouchableWithoutFeedback style={{ flex: 1, paddingTop: statusBarPadding ? statusBarHeight : 0 }} onPress={handleBgClose}>
+              <View style={{ flex: 1, backgroundColor: bgColor }}>
+                {memoChildren}
+              </View>
+            </TouchableWithoutFeedback>
+          // bgHide=false 时不要包 Touchable：它会抢走子级（尤其是 WebView）的拖动手势，
+          // 登录页/滑块验证这类需要连续触摸的页面会出现拖不动
+          : <View style={{ flex: 1, paddingTop: statusBarPadding ? statusBarHeight : 0, backgroundColor: bgColor }}>
+              {memoChildren}
+            </View>
+      }
       {/* </View> */}
     </Modal>
   )

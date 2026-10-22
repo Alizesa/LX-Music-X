@@ -128,6 +128,11 @@ const SecurityView = ({ url, seed, onDone, onCancel }: {
         style={{ flex: 1 }}
         userAgent={`${QQ_USER_AGENT} QQMUSIC/140200`}
         originWhitelist={['*']}
+        javaScriptEnabled
+        domStorageEnabled
+        useWideViewPort
+        loadWithOverviewMode
+        setSupportMultipleWindows={false}
         thirdPartyCookiesEnabled
         sharedCookiesEnabled
         onShouldStartLoadWithRequest={handleShouldStartLoad}
