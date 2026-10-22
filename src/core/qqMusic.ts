@@ -76,6 +76,24 @@ const PLAYLIST_PAGE_SIZE = 200
 // 这个值同时当「这批是不是满页」的判据用（响应里没有 HasMore 时靠它推还有没有下一批）
 const RECOMMEND_PLAYLIST_PAGE_SIZE = 8
 
+// QQ 网页接口认的是「o + 10 位补零」的 uin（MusicOne 的登录凭据也是这个格式）。
+// 手机号登录没有 p_uin/ptui_loginuin 这些网页别名，只写纯数字时资料接口可能认不出账号。
+const formatStoredUin = (raw: unknown, fallback = '') => {
+  const normalized = normalizeUin(raw)
+  // 「0」是网页登录常见的占位值，不能当成真账号；有 fallback 时用它补上
+  const value = normalized && normalized !== '0' ? normalized : fallback
+  return value && value !== '0' ? `o${value.padStart(10, '0')}` : value
+}
+
+// 旧版本存的是纯数字 uin：读会话时顺手迁移成网页格式，不用用户重新登录
+const migrateStoredUin = (cookie: string) => {
+  const cookies = parseQQMusicCookie(cookie)
+  const formatted = formatStoredUin(readUin(cookies))
+  if (!formatted || cookies.uin === formatted) return null
+  cookies.uin = formatted
+  return serializeQQMusicCookie(cookies)
+}
+
 // 续期成功后重放请求时，App 信封的 authst 写在 body.comm 里；只换 Cookie 头
 // 服务端仍会按旧票据拒绝，所以这里把 comm 里的身份字段一起换成新值。
 // 不新增字段，保持原来的信封形状（buildAuthComm / 网页 comm / 精简 comm 都可能走这里）。
@@ -185,7 +203,7 @@ const refreshQQMusicCookie = async(cookie: string, force: boolean): Promise<stri
       .then(async refreshed => {
         if (!refreshed || !isQQMusicCookie(refreshed)) return null
         const cookies = parseQQMusicCookie(refreshed)
-        cookies.uin = normalizeUin(cookies.uin) || readUin(cookies)
+        cookies.uin = formatStoredUin(cookies.uin, readUin(cookies))
         const normalizedCookie = serializeQQMusicCookie(cookies)
         // 真正落盘时再校验一次代次：登录/退出可能发生在请求返回之后
         const saved = await queueCredentialWrite(async() => {
@@ -489,13 +507,24 @@ export const isLikedPlaylist = (info: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'like
 export const getQQMusicSession = async() => {
   const user = await getQQMusicUser() ?? null
   const storedCookie = await getQQMusicCookie() ?? ''
+  // 旧版本把 uin 规范化成了纯数字；这里迁移成网页接口认的 o + 10 位格式，
+  // 让已登录的账号不用重新登录也能拿到资料/昵称
+  const migratedCookie = storedCookie ? migrateStoredUin(storedCookie) : null
+  const cookie = migratedCookie ?? storedCookie
+  if (migratedCookie) {
+    const generation = sessionGeneration
+    void queueCredentialWrite(async() => {
+      if (generation !== sessionGeneration) return
+      await saveQQMusicCookie(migratedCookie)
+    }).catch(() => {})
+  }
   // 临近过期就在后台续一次：这是取链/进页面的热路径，不能卡在一个最长 15s 的请求上。
   // 旧票据在窗口内仍然有效，真过期了 request() 还有一次强制续期兜底。
-  if (storedCookie && hasQQMusicRefreshCredential(storedCookie) && shouldRefreshQQMusicCookie(storedCookie)) {
-    void refreshQQMusicCookie(storedCookie, false).catch(() => {})
+  if (cookie && hasQQMusicRefreshCredential(cookie) && shouldRefreshQQMusicCookie(cookie)) {
+    void refreshQQMusicCookie(cookie, false).catch(() => {})
   }
   return {
-    cookie: storedCookie,
+    cookie,
     // 头像在读取时再归一化一遍：地址归一化是后加的，早先存下来的 user 里可能还是
     // 协议相对地址，不改的话得重新登录才会好
     user: user ? { ...user, avatar: normalizeAvatarUrl(user.avatar) || user.avatar } : null,
@@ -511,10 +540,9 @@ export const saveQQMusicSession = async(cookie: string, seed?: QQMusicUserSeed) 
   const cookies = parseQQMusicCookie(cookie)
   const uin = readUin(cookies)
   if (!uin || !readMusicKey(cookies)) throw new Error(global.i18n.t('qq_cookie_invalid'))
-  // 落库前把 uin 归一化成纯数字，后续请求和展示都依赖它。
-  // 微信登录(login_type=2)时 Cookie 里通常没有 uin，用 wxuin 补上；
-  // 已有 uin 时不能覆盖 —— 它和 wxuin 并不总是同一个值。
-  cookies.uin = normalizeUin(cookies.uin) || uin
+  // 落库前统一 uin 格式。网页接口认 o + 10 位补零（MusicOne 同款）；
+  // 微信登录(login_type=2)时 Cookie 里通常没有 uin，用 wxuin 补上。
+  cookies.uin = formatStoredUin(cookies.uin, uin)
   const normalizedCookie = serializeQQMusicCookie(cookies)
   const user = await getQQMusicUserInfo(normalizedCookie)
   if (!user.uin) user.uin = uin
@@ -688,46 +716,73 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
   // 资料接口只用来取昵称和头像。票据失效由 request() 统一判定，这里必须放行，
   // 否则会被下面的 catch 吞掉、退化成 Cookie 派生的资料，登录时就变成"明明失败了却显示已登录"；
   // 网络异常等其它情况仍然退化为 Cookie 派生的资料，不阻断登录流程。
-  let body: any = null
-  try {
-    const query = new URLSearchParams({
-      g_tk: String(hash33(musicKey, 5381)),
-      format: 'json',
-      inCharset: 'utf-8',
-      outCharset: 'utf-8',
-      notice: '0',
-      cid: '205360838',
-      needNewCode: '0',
-      loginUin: uin,
-      hostUin: '0',
-      userid: uin,
-      reqfrom: '1',
-    }).toString()
-    body = await request(
-      `${QQ_PROFILE_URL}?${query}`,
-      cookie,
-      { headers: { Referer: QQ_PROFILE_REFERER } },
-      // 登录流程：过期只让这次登录失败，不动已有会话
-      false,
-    )
-  } catch (error) {
-    if (error instanceof QQMusicSessionExpiredError) throw error
-    console.warn('[QQMusic] profile request failed:', error instanceof Error ? error.message : error)
+  const query = new URLSearchParams({
+    g_tk: String(hash33(musicKey, 5381)),
+    format: 'json',
+    inCharset: 'utf-8',
+    outCharset: 'utf-8',
+    notice: '0',
+    cid: '205360838',
+    needNewCode: '0',
+    loginUin: uin,
+    hostUin: '0',
+    userid: uin,
+    reqfrom: '1',
+  }).toString()
+  // 同一接口对 Referer/UA 比较敏感：先按本仓库一直用的个人页 Referer 请求，
+  // 拿不到真昵称时再按 MusicOne 的写法（首页 Referer + 通用 Chrome UA）试一次。
+  // 手机号登录的票据没有 p_uin 等网页别名，这一步是资料/昵称的主要兜底。
+  const attempts: Array<{ referer: string, headers: Record<string, string> }> = [
+    { referer: QQ_PROFILE_REFERER, headers: {} },
+    {
+      referer: QQ_REFERER,
+      headers: { 'User-Agent': QQ_WEB_USER_AGENT, Accept: 'application/json, text/plain, */*' },
+    },
+  ]
+  let profile: { nickname: string, avatar: string, uin: string } | null = null
+  let profileAvatar = ''
+  for (const attempt of attempts) {
+    let body: any = null
+    try {
+      body = await request(
+        `${QQ_PROFILE_URL}?${query}`,
+        cookie,
+        { headers: { Referer: attempt.referer, ...attempt.headers } },
+        // 登录流程：过期只让这次登录失败，不动已有会话
+        false,
+      )
+    } catch (error) {
+      if (error instanceof QQMusicSessionExpiredError) throw error
+      console.warn('[QQMusic] profile request failed:', error instanceof Error ? error.message : error)
+    }
+    if (!body) continue
+    const data = body?.data ?? {}
+    // 有些账号/接口变体不给 creator 这一层，资料直接平铺在 data 上
+    const creator = data.creator ?? data.user ?? data.profile ?? data
+    const avatar = creator.headpic || creator.avatar || creator.avatarUrl || creator.logo
+    if (avatar && !profileAvatar) profileAvatar = String(avatar)
+    const nickname = creator.nick || creator.nickname || creator.name || creator.hostname
+    if (!nickname) continue
+    profile = {
+      nickname: String(nickname),
+      avatar: String(avatar ?? ''),
+      // 资料接口有的账号会给 uin: 0（占位），别拿它把 Cookie 里的真号覆盖掉
+      uin: normalizeUin(creator.uin),
+    }
+    break
   }
-  if (!body) return fallback
-  const data = body?.data ?? {}
-  // 有些账号/接口变体不给 creator 这一层，资料直接平铺在 data 上
-  const creator = data.creator ?? data.user ?? data.profile ?? data
-  const nickname = creator.nick || creator.nickname || creator.name || creator.hostname ||
-    cookies.nickname || cookies.nick || fallback.nickname
+  if (!profile) {
+    return {
+      uin,
+      nickname: cookies.nickname || cookies.nick || fallback.nickname,
+      avatar: normalizeAvatarUrl(profileAvatar || cookies.avatar || cookies.avatarUrl || cookies.headpic) || fallback.avatar,
+    }
+  }
   // 头像除了 creator 上那几处，登录 Cookie 里有时也带着一份，兜住它
-  const avatar = creator.headpic || creator.avatar || creator.avatarUrl || creator.logo ||
-    cookies.avatar || cookies.avatarUrl || cookies.headpic
-  // 资料接口有的账号会给 uin: 0（占位），别拿它把 Cookie 里的真号覆盖掉
-  const profileUin = normalizeUin(creator.uin)
+  const avatar = profile.avatar || cookies.avatar || cookies.avatarUrl || cookies.headpic
   return {
-    uin: profileUin && profileUin != '0' ? profileUin : uin,
-    nickname,
+    uin: profile.uin && profile.uin != '0' ? profile.uin : uin,
+    nickname: profile.nickname,
     avatar: normalizeAvatarUrl(avatar) || fallback.avatar,
   }
 }

@@ -236,8 +236,16 @@ export default () => {
     if (user.avatar && !user.avatar.includes('qlogo.cn')) return
     profileRefetchedRef.current = true
     void getQQMusicUserInfo(cookie).then(async nextUser => {
-      setUser(nextUser)
-      await saveQQMusicUser(nextUser)
+      // 资料接口拿不到时会回 QQ <uin> + qlogo；登录回包里的真昵称/头像不能被它覆盖
+      const merged = {
+        ...nextUser,
+        nickname: nextUser.nickname === `QQ ${nextUser.uin}` && user.nickname ? user.nickname : nextUser.nickname,
+        avatar: (!nextUser.avatar || nextUser.avatar.includes('qlogo.cn')) && user.avatar && !user.avatar.includes('qlogo.cn')
+          ? user.avatar
+          : nextUser.avatar,
+      }
+      setUser(merged)
+      await saveQQMusicUser(merged)
     }).catch(() => {})
   }, [cookie, user])
 
