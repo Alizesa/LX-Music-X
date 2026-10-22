@@ -502,7 +502,12 @@ export const getQQMusicSession = async() => {
   }
 }
 
-export const saveQQMusicSession = async(cookie: string) => {
+export interface QQMusicUserSeed {
+  nickname?: string
+  avatar?: string
+}
+
+export const saveQQMusicSession = async(cookie: string, seed?: QQMusicUserSeed) => {
   const cookies = parseQQMusicCookie(cookie)
   const uin = readUin(cookies)
   if (!uin || !readMusicKey(cookies)) throw new Error(global.i18n.t('qq_cookie_invalid'))
@@ -513,6 +518,12 @@ export const saveQQMusicSession = async(cookie: string) => {
   const normalizedCookie = serializeQQMusicCookie(cookies)
   const user = await getQQMusicUserInfo(normalizedCookie)
   if (!user.uin) user.uin = uin
+  // 手机号登录的网页资料接口有时拿不到昵称/头像，登录回包里带了就用它兜底。
+  // 资料接口返回了真昵称/真头像时以资料为准（和 MusicOne 的优先级一致）。
+  if (seed?.nickname && user.nickname === `QQ ${uin}`) user.nickname = seed.nickname
+  if (seed?.avatar && (!user.avatar || user.avatar.includes('qlogo.cn'))) {
+    user.avatar = normalizeAvatarUrl(seed.avatar) || user.avatar
+  }
   // 换了账号就把上一个号的歌单/推荐缓存清掉，否则新号会先看到旧号的数据
   const prevUser = await getQQMusicUser()
   if (prevUser?.uin && prevUser.uin !== (user.uin || uin)) await clearQQMusicDataCache()

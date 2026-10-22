@@ -267,7 +267,14 @@ export const sendQQMusicPhoneCaptcha = async(phone: string, countryCode: string,
   return { message: global.i18n.t('qq_code_sent'), cookie: result.cookie }
 }
 
-export const loginQQMusicByPhone = async(phone: string, code: string, cookieSeed = '') => {
+export interface QQMusicPhoneLoginResult {
+  cookie: string
+  /** 登录回包自带的资料；网页资料接口在手机号票据下不一定取得到 */
+  nickname?: string
+  avatar?: string
+}
+
+export const loginQQMusicByPhone = async(phone: string, code: string, cookieSeed = ''): Promise<QQMusicPhoneLoginResult> => {
   const captcha = String(code ?? '').trim()
   if (captcha.length < 4 || captcha.length > 10 || /\D/.test(captcha)) {
     throw new QQMusicLoginError(global.i18n.t('qq_code_invalid'))
@@ -277,7 +284,11 @@ export const loginQQMusicByPhone = async(phone: string, code: string, cookieSeed
     code: captcha,
     loginMode: 1,
   }, { login: true, cookie: cookieSeed })
-  return buildCredentialCookie(result.cookie, result.data)
+  return {
+    cookie: buildCredentialCookie(result.cookie, result.data),
+    nickname: firstText(result.data, ['nick', 'nickname', 'nickName', 'name']) || undefined,
+    avatar: firstText(result.data, ['avatar', 'avatarUrl', 'head', 'headPic', 'headurl']) || undefined,
+  }
 }
 
 /** 是否带得过续期的字段（网页登录的票据没有 refresh_token，不走这条） */

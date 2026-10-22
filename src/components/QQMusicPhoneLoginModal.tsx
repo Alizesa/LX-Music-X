@@ -221,7 +221,8 @@ export default forwardRef<QQMusicPhoneLoginModalType, { onLoggedIn?: (user: LX.Q
     setLoggingIn(true)
     try {
       const credential = await loginQQMusicByPhone(phoneValue, codeValue, cookieSeed)
-      const user = await saveQQMusicSession(credential)
+      // 登录回包里有昵称/头像就带进去：网页资料接口在手机号票据下可能只回兜底值
+      const user = await saveQQMusicSession(credential.cookie, { nickname: credential.nickname, avatar: credential.avatar })
       global.app_event.qqMusicAccountUpdated(user)
       onLoggedIn?.(user)
       toast(global.i18n.t('qq_login_success'))
