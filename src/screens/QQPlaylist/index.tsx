@@ -241,22 +241,26 @@ export default ({ componentId, info }: Props) => {
         onRefresh={() => { void load(true) }}
         onLoadMore={() => { listRef.current?.setStatus('end') }}
         ListHeaderComponent={
-          <PlaylistHero
-            name={info.name}
-            subtitle={info.subtitle}
-            cover={info.cover}
-            onPlay={playAll}
-            action={canCollect
-              ? <IconAction
-                  overlay
-                  disabled={collecting}
-                  onPress={() => { void toggleCollected() }}
-                >
-                  {/* QQ 音乐那个样子：没收藏是＋，收藏了只剩－ */}
-                  <PlusMinusIcon saved={collected} color="#fff" />
-                </IconAction>
-              : undefined}
-          />
+          // 「我喜欢」是虚拟歌单，没有封面；PlaylistHero 在没有封面时会画一块
+          // 绿色占位。这里直接不渲染头图，保持和旧版一样的纯列表。
+          info.liked
+            ? null
+            : <PlaylistHero
+                name={info.name}
+                subtitle={info.subtitle}
+                cover={info.cover}
+                onPlay={playAll}
+                action={canCollect
+                  ? <IconAction
+                      overlay
+                      disabled={collecting}
+                      onPress={() => { void toggleCollected() }}
+                    >
+                      {/* QQ 音乐那个样子：没收藏是＋，收藏了只剩－ */}
+                      <PlusMinusIcon saved={collected} color="#fff" />
+                    </IconAction>
+                  : undefined}
+              />
         }
       />
       <PlayerBar />
