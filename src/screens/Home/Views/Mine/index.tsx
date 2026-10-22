@@ -11,6 +11,7 @@ import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo } from '@/core/qqMusic'
 import { refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
+import { isQQMusicFallbackAvatar, isQQMusicFallbackNickname } from '@/core/qqMusicProfile'
 import { getLocalMusicCount } from '@/utils/localMatchIndex'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
@@ -239,8 +240,8 @@ export default () => {
       // 资料接口拿不到时会回 QQ <uin> + qlogo；登录回包里的真昵称/头像不能被它覆盖
       const merged = {
         ...nextUser,
-        nickname: nextUser.nickname === `QQ ${nextUser.uin}` && user.nickname ? user.nickname : nextUser.nickname,
-        avatar: (!nextUser.avatar || nextUser.avatar.includes('qlogo.cn')) && user.avatar && !user.avatar.includes('qlogo.cn')
+        nickname: isQQMusicFallbackNickname(nextUser.uin, nextUser.nickname) && user.nickname ? user.nickname : nextUser.nickname,
+        avatar: isQQMusicFallbackAvatar(nextUser.avatar) && user.avatar && !isQQMusicFallbackAvatar(user.avatar)
           ? user.avatar
           : nextUser.avatar,
       }

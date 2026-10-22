@@ -31,7 +31,13 @@ import {
   requestQQMusicCredentialRefresh,
   shouldRefreshQQMusicCookie,
 } from './qqMusicLogin'
-import { PROFILE_AVATAR_KEYS, PROFILE_NICK_KEYS, findProfileField } from './qqMusicProfile'
+import {
+  PROFILE_AVATAR_KEYS,
+  PROFILE_NICK_KEYS,
+  findProfileField,
+  isQQMusicFallbackAvatar,
+  isQQMusicFallbackNickname,
+} from './qqMusicProfile'
 
 export {
   QQ_APP_USER_AGENT,
@@ -89,7 +95,9 @@ const formatStoredUin = (raw: unknown, fallback = '') => {
 // 旧版本存的是纯数字 uin：读会话时顺手迁移成网页格式，不用用户重新登录
 const migrateStoredUin = (cookie: string) => {
   const cookies = parseQQMusicCookie(cookie)
-  const formatted = formatStoredUin(readUin(cookies))
+  // 以现有 uin 为准；只有 uin 缺失/是占位 0 时才退回 readUin
+  // （微信登录的 wxuin 和 uin 不一定是同一个值，不能拿它覆盖已有 uin）
+  const formatted = formatStoredUin(cookies.uin, readUin(cookies))
   if (!formatted || cookies.uin === formatted) return null
   cookies.uin = formatted
   return serializeQQMusicCookie(cookies)
@@ -166,6 +174,8 @@ let refreshPromise: Promise<string | null> | null = null
 let refreshRetryAt = 0
 // 登录/退出会递增。在途续期回来发现代次变了，就不能再写回旧账号的票据
 let sessionGeneration = 0
+// 冷启动时多个页面会同时读会话；uin 迁移只排一次写盘
+let uinMigrationQueued = false
 // Cookie 写入串行化：续期、登录、退出可能同时落盘，保证最后的写入顺序就是调用顺序
 let credentialWriteQueue: Promise<void> = Promise.resolve()
 const queueCredentialWrite = async<T>(write: () => Promise<T>): Promise<T> => {
@@ -512,12 +522,13 @@ export const getQQMusicSession = async() => {
   // 让已登录的账号不用重新登录也能拿到资料/昵称
   const migratedCookie = storedCookie ? migrateStoredUin(storedCookie) : null
   const cookie = migratedCookie ?? storedCookie
-  if (migratedCookie) {
+  if (migratedCookie && !uinMigrationQueued) {
+    uinMigrationQueued = true
     const generation = sessionGeneration
     void queueCredentialWrite(async() => {
       if (generation !== sessionGeneration) return
       await saveQQMusicCookie(migratedCookie)
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => { uinMigrationQueued = false })
   }
   // 临近过期就在后台续一次：这是取链/进页面的热路径，不能卡在一个最长 15s 的请求上。
   // 旧票据在窗口内仍然有效，真过期了 request() 还有一次强制续期兜底。
@@ -549,8 +560,8 @@ export const saveQQMusicSession = async(cookie: string, seed?: QQMusicUserSeed) 
   if (!user.uin) user.uin = uin
   // 手机号登录的网页资料接口有时拿不到昵称/头像，登录回包里带了就用它兜底。
   // 资料接口返回了真昵称/真头像时以资料为准（和 MusicOne 的优先级一致）。
-  if (seed?.nickname && user.nickname === `QQ ${uin}`) user.nickname = seed.nickname
-  if (seed?.avatar && (!user.avatar || user.avatar.includes('qlogo.cn'))) {
+  if (seed?.nickname && isQQMusicFallbackNickname(uin, user.nickname)) user.nickname = seed.nickname
+  if (seed?.avatar && isQQMusicFallbackAvatar(user.avatar)) {
     user.avatar = normalizeAvatarUrl(seed.avatar) || user.avatar
   }
   // 换了账号就把上一个号的歌单/推荐缓存清掉，否则新号会先看到旧号的数据
@@ -748,7 +759,7 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
       body = await request(
         `${QQ_PROFILE_URL}?${query}`,
         cookie,
-        { headers: { Referer: attempt.referer, ...attempt.headers } },
+        { headers: { Referer: attempt.referer, ...attempt.headers }, timeout: 5000 },
         // 登录流程：过期只让这次登录失败，不动已有会话
         false,
       )
@@ -778,13 +789,20 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
   // 手机号登录拿到的本来就是 App 票据，这条通常才是能认出账号的通道。
   if (!profile) {
     try {
-      const body = await postAuthedMusicu(cookie, {
-        userInfo: {
-          module: 'music.UserInfo.userInfoServer',
-          method: 'GetLoginUserInfo',
-          param: {},
+      // 登录流程里 Cookie 还没落库：autoCleanExpired 必须关掉，
+      // 否则资料接口回 1000 会走续期/登出，把刚登录的会话判成过期
+      const body = await request(QQ_MUSICU_URL, cookie, {
+        method: 'post',
+        timeout: 5000,
+        body: {
+          comm: buildAuthComm(cookies),
+          userInfo: {
+            module: 'music.UserInfo.userInfoServer',
+            method: 'GetLoginUserInfo',
+            param: {},
+          },
         },
-      })
+      }, false)
       const block = body?.userInfo
       if (block && Number(block.code ?? 0) === 0) {
         const data = block.data ?? block
@@ -809,8 +827,9 @@ export const getQQMusicUserInfo = async(cookie: string): Promise<LX.QQMusic.User
       avatar: normalizeAvatarUrl(profileAvatar || cookies.avatar || cookies.avatarUrl || cookies.headpic) || fallback.avatar,
     }
   }
-  // 头像除了 creator 上那几处，登录 Cookie 里有时也带着一份，兜住它
-  const avatar = profile.avatar || cookies.avatar || cookies.avatarUrl || cookies.headpic
+  // 头像除了 creator 上那几处，登录 Cookie 里有时也带着一份，兜住它；
+  // 前一次尝试可能只回了头像没回昵称，别把它丢掉
+  const avatar = profile.avatar || profileAvatar || cookies.avatar || cookies.avatarUrl || cookies.headpic
   return {
     uin: profile.uin && profile.uin != '0' ? profile.uin : uin,
     nickname: profile.nickname,
