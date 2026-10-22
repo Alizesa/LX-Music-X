@@ -445,6 +445,10 @@ const isHiddenPlaylistName = (name: string) =>
 const LIKED_SHORTCUT_NAMES = new Set(['我喜欢', '我喜欢的音乐'])
 const isLikedShortcutName = (name: string) => LIKED_SHORTCUT_NAMES.has(name.replace(/\s+/g, ''))
 
+/** 新建/重命名时不能用的名字：会被列表归一化过滤掉，建出来就“消失”了 */
+export const isReservedQQMusicPlaylistName = (name: string) =>
+  isLikedShortcutName(name) || isHiddenPlaylistName(name)
+
 const isRealPlaylistId = (id: unknown) => id != null && id !== '' && Number(id) !== 0
 
 /**
@@ -853,7 +857,10 @@ const readCreatedPlaylists = (body: any): any[] =>
  *
  * 参数取不到东西时退回老参数兜底：老的没有 dirid，但至少歌单列表不会空掉。
  */
-export const getQQMusicPlaylists = async(cookie: string): Promise<LX.QQMusic.PlaylistInfo[]> => {
+export const getQQMusicPlaylists = async(
+  cookie: string,
+  fetchOptions: { requireAll?: boolean } = {},
+): Promise<LX.QQMusic.PlaylistInfo[]> => {
   const cookies = parseQQMusicCookie(cookie)
   const uin = readUin(cookies)
   if (!uin) throw new Error(global.i18n.t('qq_cookie_invalid'))
@@ -879,6 +886,11 @@ export const getQQMusicPlaylists = async(cookie: string): Promise<LX.QQMusic.Pla
       return list
     }),
   ])
+  // 写操作前的校验/写后刷新不能拿残缺列表覆盖缓存：任一接口失败就整体报错
+  if (fetchOptions.requireAll) {
+    if (created.status === 'rejected') throw created.reason
+    if (collected.status === 'rejected') throw collected.reason
+  }
   // 两个接口都失败说明会话确实不可用，明确报错而不是静默返回空列表
   if (created.status === 'rejected' && collected.status === 'rejected') throw created.reason
   if (collected.status === 'rejected') {

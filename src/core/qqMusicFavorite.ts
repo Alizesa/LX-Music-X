@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { filterVisiblePlaylists, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicTrackIdentity, postAuthedMusicu } from './qqMusic'
+import { filterVisiblePlaylists, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicTrackIdentity, getQQMusicUin, isReservedQQMusicPlaylistName, postAuthedMusicu } from './qqMusic'
 import { getQQMusicLikedSongsCache, getQQMusicLikedSongsStale, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, removeQQMusicLikedSongsStale, saveQQMusicLikedSongsCache, saveQQMusicLikedSongsStale, saveQQMusicPlaylistsCache } from '@/utils/data'
 import { clearPlaylistSongsCache, dropCachedPlaylistSongs, getPlaylistSongsCacheVersion } from './qqMusicPlaylistSongsCache'
 import { toast } from '@/utils/tools'
@@ -12,6 +12,24 @@ const WRITE_SOURCE = 'normal'
 const QQ_PLAYLIST_WRITE_USER_AGENT = 'QQMusic 2005000982(android 14)'
 // 这几个返回码表示票据失效
 const LOGIN_ERROR_CODES = new Set([1000, 104400, 104401])
+
+/**
+ * musicu 写接口的通用结果判定：req_0.code 和 data.retCode 都为 0 才算成功。
+ * 收藏那条另有 result / v_failedPlaylistId，单独判；这里给 PlaylistDetailWrite、
+ * PlaylistBaseWrite 共用，避免同样的解析散成几份。
+ */
+const assertMusicuWriteResult = (body: any, fallback: string, context = '') => {
+  const result = body?.req_0
+  const code = Number(result?.code ?? -1)
+  if (LOGIN_ERROR_CODES.has(code)) throw new Error(global.i18n.t('qq_session_expired'))
+  const retCode = Number(result?.data?.retCode ?? -1)
+  if (code !== 0 || retCode !== 0) {
+    const reason = String(result?.data?.reason ?? result?.message ?? body?.message ?? '').trim()
+    // 服务端原因和返回码都带上：只有一句 reason 时没法判断是哪一层拒的
+    const detail = `code=${code} retCode=${retCode}${context ? ` ${context}` : ''}`
+    throw new Error(`${reason || fallback} (${detail})`)
+  }
+}
 
 /**
  * 两个写接口的返回值：'ok' 成功；'unsupported' 表示这次不该走账号（非 QQ 歌、未登录、
@@ -402,14 +420,8 @@ export const setQQMusicTrackInPlaylist = async(
       },
     },
   }, { 'User-Agent': QQ_PLAYLIST_WRITE_USER_AGENT })
-  const result = body?.req_0
-  const code = Number(result?.code ?? -1)
-  if (LOGIN_ERROR_CODES.has(code)) throw new Error(global.i18n.t('qq_session_expired'))
-  const retCode = Number(result?.data?.retCode ?? -1)
-  if (code !== 0 || retCode !== 0) {
-    // 把 dirId 也带出来：写不进去时最容易怀疑的就是它，不带就只能再猜一轮
-    throw new Error(`${global.i18n.t('qq_playlist_write_failed')} (code=${code} retCode=${retCode} dirId=${dirId})`)
-  }
+  // 把 dirId 也带出来：写不进去时最容易怀疑的就是它，不带就只能再猜一轮
+  assertMusicuWriteResult(body, global.i18n.t('qq_playlist_write_failed'), `dirId=${dirId}`)
 
   // **读回验证**：这个接口会「返回成功但什么都没改」（服务端把「条目不存在」当成幂等成功），
   // 光看返回码会把 no-op 当成成功报给用户。参考实现也是写完读回来验一遍的。
@@ -420,18 +432,48 @@ export const setQQMusicTrackInPlaylist = async(
 /**
  * 歌单级的增删改。协议照 MusicOne 的 PlaylistBaseWrite：
  * AddPlaylist / EditPlaylist / DelPlaylist，参数带 bFmtUtf8。
- * 只允许操作当前账号自建的歌单；写入前重新拉一次列表拿最新的 dirId 并校验归属。
+ * 只允许操作当前账号自建的歌单；写入前重新拉一次完整列表拿最新的 dirId 并校验归属。
  */
 const resolveOwnedQQMusicPlaylist = async(
   cookie: string,
   playlist: Pick<LX.QQMusic.PlaylistInfo, 'id'>,
 ) => {
-  const fresh = await getQQMusicPlaylists(cookie)
+  // requireAll：写前校验不能用「只拉到收藏列表」的残缺结果判断归属
+  const fresh = await getQQMusicPlaylists(cookie, { requireAll: true })
   const target = fresh.find(item => !item.subscribed && !item.liked && item.id == playlist.id)
   if (!target) throw new Error(global.i18n.t('qq_playlist_not_owned'))
-  // 写接口要的是目录编号 dirid，不是公开的 disstid；缺了只能让用户刷新重试
   if (!target.dirId) throw new Error(global.i18n.t('qq_playlist_missing_dir'))
-  return target
+  return { target, fresh }
+}
+
+const isSameQQMusicSession = async(cookie: string) => {
+  const expected = getQQMusicUin(cookie)
+  if (!expected) return false
+  const { cookie: current } = await getQQMusicSession()
+  return !!current && getQQMusicUin(current) === expected
+}
+
+const validateQQMusicPlaylistName = (name: string) => {
+  const title = name.trim()
+  if (!title) throw new Error(global.i18n.t('qq_playlist_name_required'))
+  // 这些名字会被 getQQMusicPlaylists 的归一化过滤掉，写进去也会立刻“消失”
+  if (isReservedQQMusicPlaylistName(title)) throw new Error(global.i18n.t('qq_playlist_name_reserved'))
+  return title
+}
+
+/**
+ * 写成功后就地更新「我的歌单」缓存并广播，别让 UI 再整份重拉。
+ * 期间换号/退出就放弃：旧账号的列表不能写回公共缓存。
+ */
+const saveQQMusicPlaylistsAfterEdit = async(cookie: string, next: LX.QQMusic.PlaylistInfo[]) => {
+  try {
+    if (!await isSameQQMusicSession(cookie)) return
+    await saveQQMusicPlaylistsCache(next)
+    global.app_event.qqMusicPlaylistsUpdated()
+  } catch (error) {
+    // 写操作已经成功：缓存更新失败只影响界面刷新时机，不能反过来报操作失败
+    console.warn('[QQMusic] 更新歌单缓存失败:', error instanceof Error ? error.message : error)
+  }
 }
 
 const writeQQMusicPlaylistBase = async(
@@ -446,24 +488,22 @@ const writeQQMusicPlaylistBase = async(
       param: { bFmtUtf8: true, ...param },
     },
   }, { 'User-Agent': QQ_PLAYLIST_WRITE_USER_AGENT })
-  const result = body?.req_0
-  const code = Number(result?.code ?? -1)
-  if (LOGIN_ERROR_CODES.has(code)) throw new Error(global.i18n.t('qq_session_expired'))
-  // 和 MusicOne 一样：外层 code 和业务块里的 retCode 都为 0 才算成功
-  const retCode = Number(result?.data?.retCode ?? -1)
-  if (code !== 0 || retCode !== 0) {
-    const reason = String(result?.data?.reason ?? result?.message ?? body?.message ?? '').trim()
-    throw new Error(reason || `${global.i18n.t('qq_playlist_edit_failed')} (code=${code} retCode=${retCode})`)
-  }
+  assertMusicuWriteResult(body, global.i18n.t('qq_playlist_edit_failed'))
 }
 
-/** 新建歌单。成功后由调用方刷新「我的歌单」列表/缓存 */
+/** 新建歌单。写入成功后重拉一次完整列表（新建没有可靠的本地 id，无法就地插入） */
 export const createQQMusicPlaylist = async(name: string) => {
-  const title = name.trim()
-  if (!title) throw new Error(global.i18n.t('qq_playlist_name_required'))
+  const title = validateQQMusicPlaylistName(name)
   const { cookie } = await getQQMusicSession()
   if (!cookie) throw new Error(global.i18n.t('qq_not_logged_in'))
   await writeQQMusicPlaylistBase(cookie, 'AddPlaylist', { dirName: title, dirShow: 1 })
+  try {
+    const fresh = await getQQMusicPlaylists(cookie, { requireAll: true })
+    await saveQQMusicPlaylistsAfterEdit(cookie, fresh)
+  } catch (error) {
+    // 歌单已经建好了：刷新失败只影响列表什么时候显示，不能让调用方误报失败
+    console.warn('[QQMusic] 新建歌单后刷新列表失败:', error instanceof Error ? error.message : error)
+  }
 }
 
 /** 重命名自建歌单 */
@@ -471,16 +511,17 @@ export const renameQQMusicPlaylist = async(
   playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'>,
   name: string,
 ) => {
-  const title = name.trim()
-  if (!title) throw new Error(global.i18n.t('qq_playlist_name_required'))
+  const title = validateQQMusicPlaylistName(name)
   const { cookie } = await getQQMusicSession()
   if (!cookie) throw new Error(global.i18n.t('qq_not_logged_in'))
-  const target = await resolveOwnedQQMusicPlaylist(cookie, playlist)
+  const { target, fresh } = await resolveOwnedQQMusicPlaylist(cookie, playlist)
   await writeQQMusicPlaylistBase(cookie, 'EditPlaylist', {
     dirId: target.dirId,
     mask: 1,
     dirNewName: title,
   })
+  const next = fresh.map(item => item.id == playlist.id ? { ...item, name: title } : item)
+  await saveQQMusicPlaylistsAfterEdit(cookie, next)
 }
 
 /** 删除自建歌单。删除后顺手丢掉该歌单的歌曲缓存 */
@@ -489,14 +530,15 @@ export const deleteQQMusicPlaylist = async(
 ) => {
   const { cookie } = await getQQMusicSession()
   if (!cookie) throw new Error(global.i18n.t('qq_not_logged_in'))
-  const target = await resolveOwnedQQMusicPlaylist(cookie, playlist)
+  const { target, fresh } = await resolveOwnedQQMusicPlaylist(cookie, playlist)
   await writeQQMusicPlaylistBase(cookie, 'DelPlaylist', {
     dirId: target.dirId,
     dirName: target.name,
   })
-  await dropCachedPlaylistSongs(playlist.id).catch(error => {
-    console.warn('[QQMusic] 删除歌单后清理歌曲缓存失败:', error instanceof Error ? error.message : error)
-  })
+  const next = fresh.filter(item => item.id != playlist.id)
+  await saveQQMusicPlaylistsAfterEdit(cookie, next)
+  // 缓存清理失败不影响删除结果；dropCachedPlaylistSongs 内部已经兜底
+  void dropCachedPlaylistSongs(playlist.id)
 }
 
 /** 能往里写歌的那批：自己创建的歌单。收藏来的写不了 */
@@ -516,7 +558,7 @@ export const loadWritableQQMusicPlaylists = async(): Promise<LX.QQMusic.Playlist
   const { cookie } = await getQQMusicSession()
   if (!cookie) return cached
   try {
-    const fresh = await getQQMusicPlaylists(cookie)
+    const fresh = await getQQMusicPlaylists(cookie, { requireAll: true })
     await saveQQMusicPlaylistsCache(fresh)
     return writablePlaylists(fresh)
   } catch (error) {

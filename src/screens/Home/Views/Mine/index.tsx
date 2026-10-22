@@ -113,26 +113,13 @@ export default () => {
     }
     if (cachedList.length) setPlaylists(cachedList)
     try {
-      const fresh = await getQQMusicPlaylists(activeCookie)
+      const fresh = await getQQMusicPlaylists(activeCookie, { requireAll: true })
       await saveQQMusicPlaylistsCache(fresh)
       setPlaylists(filterVisiblePlaylists(fresh))
     } catch (error) {
       console.warn('[QQMusic] 拉取歌单失败:', error instanceof Error ? error.message : error)
     }
   }, [])
-
-  // 新建/重命名/删除后强制重拉一次并写回缓存，不走「缓存里有 liked 就直接用」的短路
-  const reloadPlaylists = useCallback(async() => {
-    try {
-      const { cookie: activeCookie } = await getQQMusicSession()
-      if (!activeCookie) return
-      const fresh = await getQQMusicPlaylists(activeCookie)
-      await saveQQMusicPlaylistsCache(fresh)
-      setPlaylists(filterVisiblePlaylists(fresh))
-    } catch (error: unknown) {
-      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
-    }
-  }, [t])
 
   useEffect(() => {
     // 读当前会话再决定加载哪个号的歌单。登录/换号、以及别处收藏了歌单时都调它
@@ -202,7 +189,7 @@ export default () => {
     refreshingRef.current = true
     setRefreshing(true)
     try {
-      const list = await getQQMusicPlaylists(cookie)
+      const list = await getQQMusicPlaylists(cookie, { requireAll: true })
       setPlaylists(list)
       await saveQQMusicPlaylistsCache(list)
       // 顺手把「我喜欢」也刷一遍：它平时只读本地缓存（拉全量要翻好几页），
@@ -248,7 +235,6 @@ export default () => {
           onPress: () => {
             void deleteQQMusicPlaylist(playlist).then(() => {
               toast(t('qq_playlist_delete_success'))
-              void reloadPlaylists()
             }).catch((error: unknown) => {
               toast(error instanceof Error ? error.message : t('qq_playlist_edit_failed'), 'long')
             })
@@ -259,7 +245,7 @@ export default () => {
     Alert.alert(playlist.name, undefined, [
       {
         text: t('qq_playlist_rename'),
-        onPress: () => playlistEditRef.current?.show({ mode: 'rename', playlist, onDone: () => { void reloadPlaylists() } }),
+        onPress: () => playlistEditRef.current?.show({ mode: 'rename', playlist }),
       },
       { text: t('qq_playlist_delete'), style: 'destructive', onPress: confirmDelete },
       { text: t('cancel'), style: 'cancel' },
@@ -369,7 +355,7 @@ export default () => {
 
         {renderSection(t('mine_created_playlists'), created, loggedIn
           ? {
-              onCreate: () => playlistEditRef.current?.show({ mode: 'create', onDone: () => { void reloadPlaylists() } }),
+              onCreate: () => playlistEditRef.current?.show({ mode: 'create' }),
               onMore: showPlaylistActions,
             }
           : undefined)}

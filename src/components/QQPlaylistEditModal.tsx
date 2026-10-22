@@ -5,6 +5,7 @@ import Input from '@/components/common/Input'
 import Button from '@/components/common/Button'
 import Text from '@/components/common/Text'
 import { useTheme } from '@/store/theme/hook'
+import { useKeyboard } from '@/utils/hooks'
 import { useI18n } from '@/lang'
 import { createQQMusicPlaylist, renameQQMusicPlaylist } from '@/core/qqMusicFavorite'
 import { createStyle, toast } from '@/utils/tools'
@@ -14,8 +15,8 @@ type EditMode = 'create' | 'rename'
 interface ShowOptions {
   mode: EditMode
   playlist?: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'>
-  /** 写入成功后通知页面刷新列表/缓存 */
-  onDone: () => void
+  /** 写入成功后通知页面（核心层已经更新缓存并广播，一般不需要再重拉） */
+  onDone?: () => void
 }
 
 export interface QQPlaylistEditModalType {
@@ -27,6 +28,7 @@ export default forwardRef<QQPlaylistEditModalType>((_, ref) => {
   const optionsRef = useRef<ShowOptions | null>(null)
   const t = useI18n()
   const theme = useTheme()
+  const { keyboardShown, keyboardHeight } = useKeyboard()
   const [mode, setMode] = useState<EditMode>('create')
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -63,7 +65,7 @@ export default forwardRef<QQPlaylistEditModalType>((_, ref) => {
       }
       toast(t(options.mode == 'create' ? 'qq_playlist_create_success' : 'qq_playlist_rename_success'))
       modalRef.current?.setVisible(false)
-      options.onDone()
+      options.onDone?.()
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_playlist_edit_failed'), 'long')
     } finally {
@@ -73,7 +75,7 @@ export default forwardRef<QQPlaylistEditModalType>((_, ref) => {
 
   return (
     <Modal ref={modalRef} bgColor="rgba(0,0,0,.35)" bgHide={false} keyHide={!busy}>
-      <View style={styles.centered}>
+      <View style={{ ...styles.centered, paddingBottom: keyboardShown ? keyboardHeight : 0 }}>
         <View style={{ ...styles.dialog, backgroundColor: theme['c-content-background'] }}>
           <Text size={16} style={styles.title}>{t(mode == 'create' ? 'qq_playlist_create' : 'qq_playlist_rename')}</Text>
           <Input
