@@ -22,7 +22,6 @@ import { getQQMusicDailyPlaylistCache, getQQMusicPlaylistsCache, saveQQMusicDail
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { useWindowSize } from '@/utils/hooks'
-import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 
 interface Props {
@@ -54,12 +53,8 @@ const PlaylistHero = ({ name, subtitle, cover, onPlay, action }: {
   action?: ReactNode
 }) => {
   const t = useI18n()
-  const theme = useTheme()
   const windowSize = useWindowSize()
   const height = Math.round(windowSize.width * 0.52)
-  // 没有封面（「我喜欢」这类虚拟歌单）时保留同样的头图高度，但背景透明，
-  // 文字/播放钮改用主题色 —— 不再画一块纯色占位
-  const hasCover = !!cover
   // 封面按自己的比例铺满宽度后的高度。头图这么扁，方形封面铺开是放不下的，
   // 超出的部分由容器从下面裁掉 —— 露出来的是封面上半截（歌名/歌手那块），
   // 而不是 cover 居中裁出来的中间那一条
@@ -67,8 +62,10 @@ const PlaylistHero = ({ name, subtitle, cover, onPlay, action }: {
 
   return (
     <View style={{ ...styles.hero, height }}>
+      {/* 没有封面时什么都不铺：保留和其它歌单一样的暗层 + 白字布局，
+          只是背景透出页面本身，不要绿色占位 */}
       {
-        hasCover
+        cover
           ? <ImageBackground
               style={styles.heroBg}
               imageStyle={{ height: coverHeight }}
@@ -82,19 +79,15 @@ const PlaylistHero = ({ name, subtitle, cover, onPlay, action }: {
             />
           : null
       }
-      {/* 没有渐变库，文字可读性用纯色暗层代替（跟首页方形卡一个做法）；没有封面时不需要暗层 */}
-      {hasCover ? <View style={styles.heroOverlay} /> : null}
+      {/* 没有渐变库，文字可读性用纯色暗层代替（跟首页方形卡一个做法） */}
+      <View style={styles.heroOverlay} />
       <View style={styles.heroBody}>
         <View style={styles.heroText}>
-          <Text size={20} color={hasCover ? '#fff' : theme['c-font']} numberOfLines={2}>{name}</Text>
-          {subtitle ? <Text size={12} color={hasCover ? 'rgba(255,255,255,0.85)' : theme['c-font-label']} style={styles.heroSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
-          <TouchableOpacity
-            style={{ ...styles.heroPlay, backgroundColor: hasCover ? 'rgba(255,255,255,0.22)' : theme['c-primary-background'] }}
-            activeOpacity={0.8}
-            onPress={onPlay}
-          >
-            <IconIonicons name="play" size={scaleSizeW(15)} color={hasCover ? '#fff' : theme['c-primary-font']} />
-            <Text size={14} color={hasCover ? '#fff' : theme['c-primary-font']} style={styles.heroPlayText}>{t('play')}</Text>
+          <Text size={20} color="#fff" numberOfLines={2}>{name}</Text>
+          {subtitle ? <Text size={12} color="rgba(255,255,255,0.85)" style={styles.heroSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
+          <TouchableOpacity style={styles.heroPlay} activeOpacity={0.8} onPress={onPlay}>
+            <IconIonicons name="play" size={scaleSizeW(15)} color="#fff" />
+            <Text size={14} color="#fff" style={styles.heroPlayText}>{t('play')}</Text>
           </TouchableOpacity>
         </View>
         {action}
@@ -109,7 +102,6 @@ const PlaylistHero = ({ name, subtitle, cover, onPlay, action }: {
 // 每日推荐更是连歌单 id 都没有 —— 它的列表就是首页那份缓存。
 export default ({ componentId, info }: Props) => {
   const t = useI18n()
-  const theme = useTheme()
   const listRef = useRef<OnlineListType>(null)
   const songsRef = useRef<LX.Music.MusicInfoOnline[]>([])
   const loadedRef = useRef(false)
@@ -258,12 +250,12 @@ export default ({ componentId, info }: Props) => {
             onPlay={playAll}
             action={canCollect
               ? <IconAction
-                  overlay={!!info.cover}
+                  overlay
                   disabled={collecting}
                   onPress={() => { void toggleCollected() }}
                 >
                   {/* QQ 音乐那个样子：没收藏是＋，收藏了只剩－ */}
-                  <PlusMinusIcon saved={collected} color={info.cover ? '#fff' : theme['c-primary-font']} />
+                  <PlusMinusIcon saved={collected} color="#fff" />
                 </IconAction>
               : undefined}
           />
