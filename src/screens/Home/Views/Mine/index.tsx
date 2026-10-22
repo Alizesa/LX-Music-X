@@ -14,7 +14,7 @@ import { refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
 import { getLocalMusicCount } from '@/utils/localMatchIndex'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
-import { getPlayHistory, getQQMusicPlaylistsCache, hasQQMusicPlaylistsCache, saveQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
+import { getPlayHistory, getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
 import { useI18n } from '@/lang'
 
 const AVATAR_SIZE = 56
@@ -87,17 +87,20 @@ export default () => {
 
   const loggedIn = !!cookie && !!user
 
-  // 歌单：读本地缓存，只有「从没拉过」（缓存键都没写过）才联网拉一次。
-  // 不能用「列表空不空」判断 —— 空列表也是有效结果，否则没有歌单的号每次进页面都发请求
+  // 歌单：读本地缓存，正常情况下只有「从没拉过」才联网。
+  // 例外：旧版手机号登录写入的收藏列表可能没有「我喜欢」项，这种缓存要重拉一次，
+  // 否则入口一直点不开（新列表里一定带 liked，见 getQQMusicPlaylists 的兜底）。
   const loadPlaylists = useCallback(async(activeCookie: string) => {
     if (!activeCookie) {
       setPlaylists([])
       return
     }
-    if (await hasQQMusicPlaylistsCache()) {
-      setPlaylists(filterVisiblePlaylists(await getQQMusicPlaylistsCache()))
+    const cachedList = filterVisiblePlaylists(await getQQMusicPlaylistsCache())
+    if (cachedList.some(item => item.liked)) {
+      setPlaylists(cachedList)
       return
     }
+    if (cachedList.length) setPlaylists(cachedList)
     try {
       const fresh = await getQQMusicPlaylists(activeCookie)
       await saveQQMusicPlaylistsCache(fresh)

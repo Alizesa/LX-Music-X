@@ -126,7 +126,29 @@ const firstText = (body: Record<string, any>, names: readonly string[]) => {
   return ''
 }
 
-const readResponseCookie = async(baseCookie: string) => {
+// RN 会把多个 Set-Cookie 用 ", " 拼起来；按「逗号 + name=」切开，避开 Expires 里的逗号。
+// 取每段第一个分号前的内容，就是 name=value。
+const extractSetCookies = (headers: unknown) => {
+  if (!headers || typeof headers != 'object') return ''
+  const map = headers as Record<string, unknown>
+  const raw = map['set-cookie'] ?? map['Set-Cookie']
+  if (!raw) return ''
+  const values = Array.isArray(raw) ? raw : [raw]
+  const pairs: string[] = []
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    for (const part of value.split(/,(?=\s*[A-Za-z0-9_!#$%&'*+.^`|~-]+=)/)) {
+      const pair = part.split(';', 1)[0].trim()
+      const index = pair.indexOf('=')
+      if (index <= 0) continue
+      const name = pair.slice(0, index).trim()
+      if (name) pairs.push(`${name}=${pair.slice(index + 1).trim()}`)
+    }
+  }
+  return pairs.join('; ')
+}
+
+const readResponseCookie = async(baseCookie: string, headers?: unknown) => {
   // 等原生 CookieManager 落盘，再读 fetch 期间响应下发的 Cookie
   await CookieManager.flush().catch(() => {})
   let cookie = baseCookie
@@ -140,7 +162,8 @@ const readResponseCookie = async(baseCookie: string) => {
       cookie = mergeQQMusicCookies(cookie, header)
     } catch {}
   }
-  return cookie
+  // CookieManager 偶尔拿不到跨域 Set-Cookie，直接读响应头兜底
+  return mergeQQMusicCookies(cookie, extractSetCookies(headers))
 }
 
 /** 把 Login 返回的 data 组装成项目现有会话能直接吃的 Cookie（uin + 音乐票据 + 续期字段） */
@@ -161,6 +184,8 @@ const buildCredentialCookie = (baseCookie: string, data: Record<string, any>) =>
   // 和 MusicOne 一致：uin 用 o + 10 位补零，qqmusic_uin 用纯账号
   values.uin = `o${accountId.padStart(10, '0')}`
   values.qqmusic_uin = accountId
+  // 手机号登录是 QQ 身份；网页接口（资料/收藏列表）按这个字段区分 QQ 与微信
+  values.login_type = '1'
   values.qqmusic_key = musicKey
   values.qm_keyst = musicKey
   values.authst = musicKey
@@ -208,7 +233,7 @@ const postPhoneLogin = async(method: string, param: Record<string, unknown>, opt
   if (Number(json.code ?? 0) != 0) throw loginError(json, global.i18n.t('qq_login_failed'))
   const block = json[LOGIN_BLOCK] as Record<string, any> | undefined
   if (!block) throw new QQMusicLoginError(global.i18n.t('qq_login_failed'))
-  const cookie = await readResponseCookie(options.cookie ?? '')
+  const cookie = await readResponseCookie(options.cookie ?? '', result.headers)
   const securityUrl = String(block.data?.securityURL ?? block.data?.securityUrl ?? '')
   if (Number(block.code ?? 0) === 20276 && securityUrl) {
     throw new QQMusicSecurityRequiredError(securityUrl, cookie)

@@ -668,7 +668,9 @@ export const getQQMusicPlaylists = async(cookie: string): Promise<LX.QQMusic.Pla
   if (!uin) throw new Error(global.i18n.t('qq_cookie_invalid'))
   const createdUrl = `${QQ_CREATED_PLAYLIST_URL}?hostuin=${encodeURIComponent(uin)}&sin=0&size=${PLAYLIST_PAGE_SIZE}&format=json&inCharset=utf8&outCharset=utf-8`
   const legacyCreatedUrl = `${QQ_CREATED_PLAYLIST_URL}?hostUin=0&hostuin=${encodeURIComponent(uin)}&sin=0&size=${PLAYLIST_PAGE_SIZE}&g_tk=5381&loginUin=${encodeURIComponent(uin)}&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0`
-  const collectedUrl = `${QQ_COLLECTED_PLAYLIST_URL}?ct=20&cid=205360956&userid=${encodeURIComponent(uin)}&reqtype=3&sin=0&ein=80`
+  // 收藏列表按 MusicOne 的 profileAssetQuery 带全参数：只带 ct/cid/userid/reqtype 时，
+  // 网页登录 Cookie 靠 skey/p_skey 还能认出来，手机号登录只有音乐票据，服务端会当成未登录。
+  const collectedUrl = `${QQ_COLLECTED_PLAYLIST_URL}?format=json&inCharset=utf8&outCharset=utf-8&platform=yqq.json&needNewCode=0&loginUin=${encodeURIComponent(uin)}&hostUin=0&notice=0&g_tk=5381&ct=20&cid=205360956&userid=${encodeURIComponent(uin)}&reqtype=3&sin=0&ein=99`
   const options = { headers: { Referer: QQ_PROFILE_REFERER } }
 
   const createdTask = (async(): Promise<any[]> => {
@@ -679,14 +681,22 @@ export const getQQMusicPlaylists = async(cookie: string): Promise<LX.QQMusic.Pla
 
   const [created, collected] = await Promise.allSettled([
     createdTask,
-    request(collectedUrl, cookie, options).then(body => pickArray(body, ['data.cdlist'])),
+    request(collectedUrl, cookie, options).then(body => {
+      const list = pickArray(body, ['data.cdlist'])
+      // 收藏列表依赖登录态，失败时原来会静默变成空列表；留一条带服务端码的日志方便定位
+      if (!list.length) console.warn('[QQMusic] 收藏歌单为空:', body?.code, body?.subcode, body?.msg ?? body?.message ?? '')
+      return list
+    }),
   ])
   // 两个接口都失败说明会话确实不可用，明确报错而不是静默返回空列表
   if (created.status === 'rejected' && collected.status === 'rejected') throw created.reason
+  if (collected.status === 'rejected') {
+    console.warn('[QQMusic] 收藏歌单请求失败:', collected.reason instanceof Error ? collected.reason.message : collected.reason)
+  }
   const createdList = created.status === 'fulfilled' ? created.value : []
   const collectedList = collected.status === 'fulfilled' ? collected.value : []
   const seen = new Set<string>()
-  return [
+  const list = [
     ...createdList.map((raw: any) => normalizePlaylist(raw, false)),
     ...collectedList.map((raw: any) => normalizePlaylist(raw, true)),
   ].filter((item): item is LX.QQMusic.PlaylistInfo => {
@@ -694,6 +704,20 @@ export const getQQMusicPlaylists = async(cookie: string): Promise<LX.QQMusic.Pla
     seen.add(item.id)
     return true
   })
+  // 「我喜欢」是 dirid=201 的虚拟歌单，正常由收藏列表带回来。手机号登录的响应
+  // 可能不包含它，导致 Mine 页的「我喜欢」入口拿不到 liked 项、点了没反应。
+  // 这里兜底补一个，详情页仍走 CgiGetDiss 的 201 通道，不依赖这个列表项。
+  if (!list.some(item => item.liked)) {
+    list.unshift({
+      id: String(LIKED_PLAYLIST_DIRID),
+      dirId: LIKED_PLAYLIST_DIRID,
+      name: global.i18n.t('mine_liked'),
+      description: '',
+      subscribed: false,
+      liked: true,
+    })
+  }
+  return list
 }
 
 /**
