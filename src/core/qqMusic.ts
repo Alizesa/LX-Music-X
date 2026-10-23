@@ -628,13 +628,56 @@ const HEART_RADAR_TARGET = 30
 const HEART_RADAR_MAX_PAGES = 5
 
 /**
+ * 从「最近播放」的歌单列表里找红心雷达。
+ *
+ * 参考实现（MusicOne 的 QqRecentPlayProtocol）在「我的 → 最近播放」读的也是
+ * `PlayRecentlyRead/GetPlayRecentlyInfo` 的 type=4，`geDanList` 里每一项都是
+ * 最近播放过的歌单。红心雷达在那边会作为一个普通歌单卡片出现，这里按名字把它找出来，
+ * 拿到真实歌单 id 后就能走通用的 CgiGetDiss 取歌。找不到再退回 GetRadarSong。
+ */
+const findRecentHeartRadarPlaylist = async(cookie: string): Promise<{ id: string, dirid?: number } | null> => {
+  const body = await postAuthedMusicu(cookie, {
+    req_0: {
+      module: 'music.musicasset.PlayRecentlyRead',
+      method: 'GetPlayRecentlyInfo',
+      param: { type: 4, updateTime: 0, requestCnt: 500 },
+    },
+  })
+  // 响应层级和参考实现一致：req_0.data.data.geDanList；老一点的封装可能少一层 data
+  const rawList = pickArray(body?.req_0?.data, ['data.geDanList', 'geDanList'])
+  for (const raw of rawList) {
+    const name = decodeName(String(raw?.name ?? '')).replace(/\s+/g, '')
+    if (!name.includes('红心雷达')) continue
+    const id = Number(raw?.id)
+    const dirid = Number(raw?.dirid ?? raw?.dirId ?? 0)
+    if (dirid > 0) return { id: String(id || dirid), dirid }
+    if (id > 0) return { id: String(id) }
+  }
+  return null
+}
+
+/**
  * 红心雷达：按「我喜欢」推歌。和每日推荐一样是一份可以直接播的歌单。
  *
+ * 优先走「最近播放」里的红心雷达歌单（和 MusicOne 的入口同源，曲目就是那份歌单的）；
+ * 账号里还没有这个歌单时退回雷达接口 GetRadarSong —— 后者每页 10 首、翻页会重复，
+ * 所以按 songmid 去重，凑到 30 首或某一页没有新歌就停。
+ *
  * 必须登录：不带票据时服务端也会回歌，但那是通用推荐，不是这个账号的红心结果。
- * 翻页会重复给同一批歌，所以按 songmid 去重，
- * 某一页一首新歌都没有就说明见底了。
  */
 export const getQQMusicHeartRadarSongs = async(cookie: string): Promise<LX.Music.MusicInfoOnline[]> => {
+  const recent = await findRecentHeartRadarPlaylist(cookie).catch(error => {
+    console.warn('[QQMusic] 最近播放里找红心雷达失败:', error instanceof Error ? error.message : error)
+    return null
+  })
+  if (recent) {
+    try {
+      const songs = await getQQMusicPlaylistSongs(cookie, recent.id, recent.dirid)
+      if (songs.length) return songs
+    } catch (error) {
+      console.warn('[QQMusic] 红心雷达歌单取歌失败，改用雷达接口:', error instanceof Error ? error.message : error)
+    }
+  }
   const songs: LX.Music.MusicInfoOnline[] = []
   const seen = new Set<string>()
   for (let page = 1; page <= HEART_RADAR_MAX_PAGES && songs.length < HEART_RADAR_TARGET; page++) {
