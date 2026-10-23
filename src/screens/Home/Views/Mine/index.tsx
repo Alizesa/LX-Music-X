@@ -11,12 +11,12 @@ import { useDownloadTasks } from '@/store/download/hook'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo } from '@/core/qqMusic'
-import { deleteQQMusicPlaylist, refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
+import { deleteQQMusicPlaylist, getQQMusicLikedSongs, refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
 import { isQQMusicFallbackAvatar, isQQMusicFallbackNickname } from '@/core/qqMusicProfile'
 import { getLocalMusicCount } from '@/utils/localMatchIndex'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
-import { getPlayHistory, getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
+import { getPlayHistory, getQQMusicLikedSongsCache, getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
 import { useI18n } from '@/lang'
 
 const AVATAR_SIZE = 56
@@ -107,6 +107,19 @@ export default () => {
       return
     }
     const cachedList = filterVisiblePlaylists(await getQQMusicPlaylistsCache())
+    // 旧缓存里的合成「我喜欢」没有曲目数：用内存或持久缓存补上，
+    // 否则 Mine 入口和歌单页副标题会少一个「共 N 首」
+    const likedItem = cachedList.find(item => item.liked)
+    if (likedItem && likedItem.trackCount == null) {
+      const inMemory = getQQMusicLikedSongs()
+      const likedCount = inMemory
+        ? inMemory.length
+        : (await getQQMusicLikedSongsCache().catch(() => [])).length
+      if (likedCount) {
+        likedItem.trackCount = likedCount
+        void saveQQMusicPlaylistsCache(cachedList).catch(() => {})
+      }
+    }
     if (cachedList.some(item => item.liked)) {
       setPlaylists(cachedList)
       return
@@ -149,6 +162,17 @@ export default () => {
       global.app_event.off('qqMusicPlaylistsUpdated', handlePlaylistsUpdate)
     }
   }, [loadPlaylists])
+
+  // 「我喜欢」歌曲数量变化时同步 Mine 入口/歌单页副标题的曲目数
+  useEffect(() => {
+    const updateLikedCount = () => {
+      const songs = getQQMusicLikedSongs()
+      if (!songs) return
+      setPlaylists(prev => prev.map(item => item.liked ? { ...item, trackCount: songs.length } : item))
+    }
+    global.app_event.on('qqMusicLikedUpdated', updateLikedCount)
+    return () => { global.app_event.off('qqMusicLikedUpdated', updateLikedCount) }
+  }, [])
 
   useEffect(() => {
     void getPlayHistory().then(list => { setHistoryCount(list.length) })
