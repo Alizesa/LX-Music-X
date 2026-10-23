@@ -8,6 +8,7 @@ import {
   removeQQMusicPlaylistsCache,
   removeQQMusicDailyPlaylistCache,
   removeQQMusicDailyRecommendCache,
+  removeQQMusicHeartRadarCache,
   removeQQMusicRecommendPlaylistsCache,
   removeQQMusicRefreshDay,
 } from '@/utils/data'
@@ -584,6 +585,7 @@ const clearQQMusicDataCache = async() => {
   await removeQQMusicPlaylistsCache()
   await removeQQMusicDailyPlaylistCache()
   await removeQQMusicDailyRecommendCache()
+  await removeQQMusicHeartRadarCache()
   await removeQQMusicRecommendPlaylistsCache()
   // 歌单歌曲缓存也要等清完再切会话，否则旧账号的在途写可能落在新账号
   await clearPlaylistSongsCache()
@@ -616,6 +618,50 @@ export const clearQQMusicSession = async() => {
  */
 export const getQQMusicDailyPlaylist = async(cookie: string) => {
   const songs = await fetchPlaylistSongsByDiss(cookie, '', DAILY_RECOMMEND_DIRID)
+  if (!songs.length) throw new Error(global.i18n.t('qq_load_failed'))
+  return songs
+}
+
+// 红心雷达（GetRadarSong）一页固定回 10 首，相邻页之间还会重复。
+// 拼成一份能直接播的歌单要翻几页；去重后凑到 30 首就停，最多翻 5 页。
+const HEART_RADAR_TARGET = 30
+const HEART_RADAR_MAX_PAGES = 5
+
+/**
+ * 红心雷达：按「我喜欢」推歌。和每日推荐一样是一份可以直接播的歌单。
+ *
+ * 必须登录：不带票据时服务端也会回歌，但那是通用推荐，不是这个账号的红心结果。
+ * 翻页会重复给同一批歌，所以按 songmid 去重，
+ * 某一页一首新歌都没有就说明见底了。
+ */
+export const getQQMusicHeartRadarSongs = async(cookie: string): Promise<LX.Music.MusicInfoOnline[]> => {
+  const songs: LX.Music.MusicInfoOnline[] = []
+  const seen = new Set<string>()
+  for (let page = 1; page <= HEART_RADAR_MAX_PAGES && songs.length < HEART_RADAR_TARGET; page++) {
+    const body = await postAuthedMusicu(cookie, {
+      req_0: {
+        module: 'music.recommend.TrackRelationServer',
+        method: 'GetRadarSong',
+        param: { Page: page, ReqType: 0, FavSongs: [], EntranceSongs: [] },
+      },
+    })
+    const data = body?.req_0?.data ?? {}
+    const rawList = pickArray(data, ['VecSongs'])
+    if (!rawList.length) break
+    let added = 0
+    for (const raw of rawList) {
+      // 这个接口的歌曲包在 Track 里（字段名也是大写开头）
+      const info = rawSongToOldInfo(raw?.Track ?? raw)
+      if (!info || seen.has(info.songmid)) continue
+      seen.add(info.songmid)
+      songs.push(toNewMusicInfo(info) as LX.Music.MusicInfoOnline)
+      added++
+      if (songs.length >= HEART_RADAR_TARGET) break
+    }
+    if (!added) break
+    const hasMore = data?.HasMore
+    if (hasMore === false || hasMore === 0) break
+  }
   if (!songs.length) throw new Error(global.i18n.t('qq_load_failed'))
   return songs
 }

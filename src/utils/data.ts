@@ -43,12 +43,13 @@ const qqMusicDeviceIdKey = storageDataPrefix.qqMusicDeviceId
 const qqMusicPlaylistsKey = storageDataPrefix.qqMusicPlaylists
 const qqMusicDailyRecommendKey = storageDataPrefix.qqMusicDailyRecommend
 const qqMusicDailyPlaylistKey = storageDataPrefix.qqMusicDailyPlaylist
+const qqMusicHeartRadarKey = storageDataPrefix.qqMusicHeartRadar
 const qqMusicLikedSongsKey = storageDataPrefix.qqMusicLikedSongs
 const qqMusicLikedSongsStaleKey = storageDataPrefix.qqMusicLikedSongsStale
 const qqMusicRefreshDayKey = storageDataPrefix.qqMusicRefreshDay
 
-/** 两份会跨天自动刷新的缓存：每日推荐 / 猜你喜欢 */
-export type QQMusicRefreshKind = 'playlist' | 'recommend'
+/** 会跨天自动刷新的缓存：每日推荐 / 猜你喜欢 / 红心雷达 */
+export type QQMusicRefreshKind = 'playlist' | 'recommend' | 'radar'
 const qqMusicPlaylistSongsKey = storageDataPrefix.qqMusicPlaylistSongs
 const qqMusicPlaylistSongsIndexKey = storageDataPrefix.qqMusicPlaylistSongsIndex
 const qqMusicPlaylistSongsItemPrefix = storageDataPrefix.qqMusicPlaylistSongsItem
@@ -625,8 +626,11 @@ export const removeQQMusicDailyPlaylistCache = async() => removeData(qqMusicDail
 export const getQQMusicDailyRecommendCache = async() => await getData<LX.Music.MusicInfoOnline[]>(qqMusicDailyRecommendKey) ?? []
 export const saveQQMusicDailyRecommendCache = async(list: LX.Music.MusicInfoOnline[]) => saveData(qqMusicDailyRecommendKey, list)
 export const removeQQMusicDailyRecommendCache = async() => removeData(qqMusicDailyRecommendKey)
+export const getQQMusicHeartRadarCache = async() => await getData<LX.Music.MusicInfoOnline[]>(qqMusicHeartRadarKey) ?? []
+export const saveQQMusicHeartRadarCache = async(list: LX.Music.MusicInfoOnline[]) => saveData(qqMusicHeartRadarKey, list)
+export const removeQQMusicHeartRadarCache = async() => removeData(qqMusicHeartRadarKey)
 
-/** 每日推荐/猜你喜欢那两份缓存最后一次刷新是哪天（本地日期字符串）。没刷过就是 undefined */
+/** 每日推荐/猜你喜欢/红心雷达那几份缓存最后一次刷新是哪天（本地日期字符串）。没刷过就是 undefined */
 export const getQQMusicRefreshDay = async(kind: QQMusicRefreshKind) =>
   (await getData<Record<string, string>>(qqMusicRefreshDayKey))?.[kind]
 // 「哪天刷过」是一整条记录，两份缓存可能同时写入（比如下拉刷新和自动刷新撞上）。
