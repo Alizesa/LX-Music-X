@@ -1,7 +1,6 @@
 import { httpFetch } from '@/utils/request'
 import {
   getQQMusicCookie,
-  getQQMusicLikedSongsCache,
   getQQMusicUser,
   saveQQMusicCookie,
   saveQQMusicUser,
@@ -914,11 +913,8 @@ export const getQQMusicPlaylists = async(
   // 可能不包含它，导致 Mine 页的「我喜欢」入口拿不到 liked 项、点了没反应。
   // 这里兜底补一个，详情页仍走 CgiGetDiss 的 201 通道，不依赖这个列表项。
   if (!list.some(item => item.liked)) {
-    // 收藏列表没带 dirid=201 时补一个；曲目数用「我喜欢」的持久缓存补上，
-    // 否则 Mine 的入口和歌单页副标题会丢掉数量
-    const likedCount = await getQQMusicLikedSongsCache()
-      .then(songs => songs.length)
-      .catch(() => 0)
+    // 收藏列表没带 dirid=201 时补一个。曲目数由界面从「我喜欢」的常驻 id 集合补，
+    // 这里不整份读 liked 歌曲缓存（数据量大，而且这里只是列表兜底）
     list.unshift({
       id: String(LIKED_PLAYLIST_DIRID),
       dirId: LIKED_PLAYLIST_DIRID,
@@ -926,7 +922,6 @@ export const getQQMusicPlaylists = async(
       description: '',
       subscribed: false,
       liked: true,
-      trackCount: likedCount || undefined,
     })
   }
   return list

@@ -75,14 +75,35 @@ const logLikedCacheError = (error: unknown) => {
   console.warn('[QQMusic] 更新我喜欢缓存失败:', error instanceof Error ? error.message : error)
 }
 
+// 「我喜欢」的数量以常驻的 id 集合为准；变化时同步回歌单缓存，
+// 这样 Mine 入口、歌单页副标题和重启后的数字都一致。
+const syncLikedCountToPlaylistCache = async(count: number) => {
+  try {
+    // 本地改过、还没和服务端核对时，缓存可能只是「本地新增的那几首」；
+    // 这时只更新界面上的数字，不把它写进歌单缓存，等下次重拉后再说
+    if (await isQQMusicLikedSongsStale().catch(() => false)) return
+    const cached = await getQQMusicPlaylistsCache()
+    const index = cached.findIndex(item => item.liked)
+    if (index < 0) return
+    if (cached[index].trackCount === count) return
+    cached[index] = { ...cached[index], trackCount: count || undefined }
+    await saveQQMusicPlaylistsCache(cached)
+    global.app_event.qqMusicPlaylistsUpdated()
+  } catch (error) {
+    console.warn('[QQMusic] 同步我喜欢曲目数失败:', error instanceof Error ? error.message : error)
+  }
+}
+
 const setLikedSongs = (songs: LX.Music.MusicInfoOnline[] | null) => {
   likedSongs = songs
   likedIds = songs ? new Set(songs.map(song => song.id)) : null
+  if (likedIds) void syncLikedCountToPlaylistCache(likedIds.size)
   global.app_event.qqMusicLikedUpdated()
 }
 
 const setLikedIds = (ids: Set<string>) => {
   likedIds = ids
+  void syncLikedCountToPlaylistCache(ids.size)
   global.app_event.qqMusicLikedUpdated()
 }
 
@@ -141,6 +162,14 @@ export const ensureQQMusicLikedIds = async(): Promise<void> => {
 export const isQQMusicTrackLiked = (id: string | null | undefined) =>
   id ? likedIds?.has(id) ?? false : false
 
+/** 「我喜欢」的曲目数：常驻 id 集合大小；还没加载过返回 null */
+export const getQQMusicLikedCount = () => likedIds?.size ?? null
+/** 需要数量时先确保 id 集合已从缓存加载（读盘带会话版本保护） */
+export const ensureQQMusicLikedCount = async() => {
+  await ensureQQMusicLikedIds()
+  return likedIds?.size ?? 0
+}
+
 /** 已缓存的「我喜欢」歌曲；还没加载过返回 null。 */
 export const getQQMusicLikedSongs = () => likedSongs
 
@@ -186,6 +215,8 @@ const doFetch = async() => {
       await saveQQMusicLikedSongsStale(false)
     })
     await likedCacheQueue
+    // 服务端数组已落盘、stale 已清，这时数量才是权威的
+    if (likedIds) void syncLikedCountToPlaylistCache(likedIds.size)
     // 没有页面占用时（例如「我的」页下拉刷新触发的），整个数组不需要常驻
     maybeReleaseLikedSongs()
   } catch (error) {
@@ -247,12 +278,12 @@ const markLiked = async(musicInfo: LX.Music.MusicInfo, liked: boolean, version: 
     const ids = new Set(likedIds ?? [])
     if (liked) ids.add(musicInfo.id)
     else ids.delete(musicInfo.id)
+    // 先标脏再更新 id 集合：曲目数同步看到 stale 就不会把可能不完整的数量写进歌单缓存
+    await saveQQMusicLikedSongsStale(true)
+    if (version !== likedSessionVersion) return
     setLikedIds(ids)
     // 串行读改写，避免快速连点/换号时互相覆盖
     likedCacheQueue = likedCacheQueue.catch(() => {}).then(async() => {
-      if (version !== likedSessionVersion) return
-      // 先标脏：即使下面的读改写失败，下次打开「我喜欢」也会从服务端重拉
-      await saveQQMusicLikedSongsStale(true)
       if (version !== likedSessionVersion) return
       const songs = await getQQMusicLikedSongsCache()
       if (version !== likedSessionVersion) return
