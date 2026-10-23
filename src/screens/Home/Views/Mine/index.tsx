@@ -10,13 +10,23 @@ import { useTheme } from '@/store/theme/hook'
 import { useDownloadTasks } from '@/store/download/hook'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
-import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo } from '@/core/qqMusic'
+import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicHeartRadarSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo } from '@/core/qqMusic'
 import { deleteQQMusicPlaylist, ensureQQMusicLikedCount, getQQMusicLikedCount, refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
 import { isQQMusicFallbackAvatar, isQQMusicFallbackNickname } from '@/core/qqMusicProfile'
 import { getLocalMusicCount } from '@/utils/localMatchIndex'
 import { navigations } from '@/navigation'
+import { QQ_HEART_RADAR_PLAYLIST_ID } from '@/config/constant'
 import commonState from '@/store/common/state'
-import { getPlayHistory, getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
+import {
+  getPlayHistory,
+  getQQMusicHeartRadarCache,
+  getQQMusicPlaylistsCache,
+  getQQMusicRefreshDay,
+  saveQQMusicHeartRadarCache,
+  saveQQMusicPlaylistsCache,
+  saveQQMusicRefreshDay,
+  saveQQMusicUser,
+} from '@/utils/data'
 import { useI18n } from '@/lang'
 
 const AVATAR_SIZE = 56
@@ -88,6 +98,8 @@ export default () => {
   const [cookie, setCookie] = useState('')
   const [user, setUser] = useState<LX.QQMusic.UserInfo | null>(null)
   const [playlists, setPlaylists] = useState<LX.QQMusic.PlaylistInfo[]>([])
+  // 红心雷达是一份按天缓存的推荐歌单，这里只留最新的那一批给入口显示曲目数/封面
+  const [radar, setRadar] = useState<LX.Music.MusicInfoOnline[]>([])
   const [historyCount, setHistoryCount] = useState(0)
   const [localCount, setLocalCount] = useState(0)
   // 当前试到第几个头像地址。换了账号要从头再试
@@ -97,6 +109,27 @@ export default () => {
   const tasks = useDownloadTasks()
 
   const loggedIn = !!cookie && !!user
+
+  // 红心雷达：和每日推荐一样按天缓存。进「我的」先读缓存把入口铺上，跨天才联网重拉；
+  // 点进去以后由歌单页自己处理下拉刷新。
+  const syncRadar = useCallback(async(activeCookie: string) => {
+    if (!activeCookie) {
+      setRadar([])
+      return
+    }
+    const cached = await getQQMusicHeartRadarCache()
+    setRadar(cached)
+    if (cached.length && await getQQMusicRefreshDay('radar') == new Date().toDateString()) return
+    try {
+      const songs = await getQQMusicHeartRadarSongs(activeCookie)
+      setRadar(songs)
+      await saveQQMusicHeartRadarCache(songs)
+      await saveQQMusicRefreshDay('radar')
+    } catch (error) {
+      // 拉失败就先用缓存；入口只是推荐位，不值得弹错打扰用户
+      console.warn('[QQMusic] 拉取红心雷达失败:', error instanceof Error ? error.message : error)
+    }
+  }, [])
 
   // 歌单：读本地缓存，正常情况下只有「从没拉过」才联网。
   // 例外：旧版手机号登录写入的收藏列表可能没有「我喜欢」项，这种缓存要重拉一次，
@@ -140,6 +173,7 @@ export default () => {
         // 反过来 cookie 空时不能拿残留的 user 顶上：卡片会显示旧昵称却没登录
         if (nextUser === undefined && session.cookie) setUser(session.user)
         void loadPlaylists(session.cookie)
+        void syncRadar(session.cookie)
       })
     }
     syncFromSession()
@@ -156,7 +190,7 @@ export default () => {
       global.app_event.off('qqMusicAccountUpdated', handleAccountUpdate)
       global.app_event.off('qqMusicPlaylistsUpdated', handlePlaylistsUpdate)
     }
-  }, [loadPlaylists])
+  }, [loadPlaylists, syncRadar])
 
   // 「我喜欢」歌曲数量变化时同步 Mine 入口/歌单页副标题的曲目数
   useEffect(() => {
@@ -247,6 +281,21 @@ export default () => {
       cover: info.cover,
       // 作者缺失（空串也算）时退回曲目数
       subtitle: info.author ? info.author : info.trackCount ? t('mine_song_count', { num: info.trackCount }) : undefined,
+    })
+  }
+
+  // 红心雷达放在「最近播放」旁边；点进去是普通歌单页（没有歌单 id，读首页那份缓存）
+  const openRadar = () => {
+    if (!loggedIn) {
+      loginRef.current?.show()
+      return
+    }
+    navigations.pushQQPlaylistScreen(commonState.componentIds.home!, {
+      id: QQ_HEART_RADAR_PLAYLIST_ID,
+      name: t('qq_heart_radar'),
+      radar: true,
+      cover: radar[0]?.meta.picUrl,
+      subtitle: radar.length ? t('mine_song_count', { num: radar.length }) : undefined,
     })
   }
 
@@ -374,6 +423,7 @@ export default () => {
         <View style={styles.entries}>
           <Entry icon="love" label={t('mine_liked')} count={liked?.trackCount} onPress={() => { if (liked) openPlaylist(liked) }} />
           <Entry ionIcon="time-sharp" ionSize={27} label={t('nav_history')} count={historyCount} onPress={() => { navigations.pushPlayHistoryScreen(commonState.componentIds.home!) }} />
+          <Entry ionIcon="radio-sharp" label={t('qq_heart_radar')} count={radar.length || undefined} onPress={openRadar} />
           <Entry icon="download-2" label={t('nav_download')} count={tasks.length} onPress={() => { navigations.pushDownloadScreen(commonState.componentIds.home!) }} />
           <Entry ionIcon="folder-sharp" label={t('mine_local_songs')} count={localCount} onPress={() => { navigations.pushLocalSongsScreen(commonState.componentIds.home!) }} />
         </View>
