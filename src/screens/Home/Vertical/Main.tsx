@@ -39,6 +39,14 @@ const Main = () => {
     if (global.lx.homePagerIdle != idle) global.lx.homePagerIdle = idle
   }, [])
 
+  // 首页里的横向滚动块触摸时，临时关掉 PagerView 的横滑：
+  // 不关的话 Android 的原生 ViewPager 会先把手势吃掉，结果就是切到「我的」页，
+  // 或者内层横向列表一动不动。触摸结束再按用户设置恢复。
+  const onHorizontalScroll = useCallback((active: boolean) => {
+    const enabled = !active && settingState.setting['common.homePageScroll']
+    pagerViewRef.current?.setScrollEnabled(enabled)
+  }, [])
+
   useEffect(() => {
     const handleUpdate = (id: CommonState['navActiveId']) => {
       const index = viewMap[id]
@@ -52,11 +60,13 @@ const Main = () => {
     }
     global.state_event.on('navActiveIdUpdated', handleUpdate)
     global.state_event.on('configUpdated', handleConfigUpdate)
+    global.app_event.on('homeHorizontalScroll', onHorizontalScroll)
     return () => {
       global.state_event.off('navActiveIdUpdated', handleUpdate)
       global.state_event.off('configUpdated', handleConfigUpdate)
+      global.app_event.off('homeHorizontalScroll', onHorizontalScroll)
     }
-  }, [])
+  }, [onHorizontalScroll])
 
   const component = useMemo(() => (
     <PagerView ref={pagerViewRef}

@@ -43,6 +43,17 @@ import { useI18n } from '@/lang'
 type Songs = LX.Music.MusicInfoOnline[]
 type Playlist = LX.QQMusic.PlaylistInfo
 
+// 横向滑动块要临时关掉外层首页 PagerView 的横滑，否则手势会被它抢走
+const setHomeHorizontalScroll = (active: boolean) => {
+  global.app_event.homeHorizontalScroll(active)
+}
+const horizontalScrollProps = {
+  nestedScrollEnabled: true,
+  onTouchStart: () => { setHomeHorizontalScroll(true) },
+  onTouchEnd: () => { setHomeHorizontalScroll(false) },
+  onTouchCancel: () => { setHomeHorizontalScroll(false) },
+}
+
 // 每日推荐的临时列表 id。位置记忆和历史标记都按它认队列，所以放在 core 里统一导出
 const DAILY_LIST_ID = QQ_DAILY_PLAYLIST_ID
 const H_PADDING = 14
@@ -117,6 +128,9 @@ export default () => {
   const refreshingPlaylistsRef = useRef(false)
 
   const loggedIn = !!cookie
+
+  // 页面卸载时万一还按着横向列表，别把首页 PagerView 一直锁着
+  useEffect(() => () => { setHomeHorizontalScroll(false) }, [])
 
   useEffect(() => {
     void getQQMusicSession().then(session => { setCookie(session.cookie) })
@@ -445,6 +459,7 @@ export default () => {
           showsHorizontalScrollIndicator={false}
           style={styles.cardScroll}
           contentContainerStyle={styles.cardRow}
+          {...horizontalScrollProps}
         >
           <SquareCard
             title={t('qq_daily_recommend')}
@@ -479,7 +494,7 @@ export default () => {
                 </View>
                 {
                   playlists.length
-                    ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
+                    ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList} {...horizontalScrollProps}>
                         {
                           playlists.map(item => (
                             <TouchableOpacity key={item.id} style={styles.playlistCard} activeOpacity={0.8} onPress={() => { openPlaylist(item) }}>

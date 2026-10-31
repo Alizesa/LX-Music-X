@@ -167,6 +167,15 @@ export class AppEvent extends Event {
     this.emit('qqMusicPlaylistsUpdated')
   }
 
+  /**
+   * 首页里的横向滚动块开始/结束触摸。
+   * 触摸期间要临时关掉外层 PagerView 的横滑，否则手势会被它抢走：
+   * 要么切到「我的」页，要么里面的列表根本划不动。
+   */
+  homeHorizontalScroll(active: boolean) {
+    this.emit('homeHorizontalScroll', active)
+  }
+
   // 列表里的音乐信息改变事件
   musicInfoUpdate(musicInfo: LX.Music.MusicInfo) {
     this.emit('musicInfoUpdate', musicInfo)
