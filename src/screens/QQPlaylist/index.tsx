@@ -22,6 +22,7 @@ import {
   getQQMusicDailyPlaylistCache,
   getQQMusicHeartRadarCache,
   getQQMusicPlaylistsCache,
+  getQQMusicRefreshDay,
   saveQQMusicDailyPlaylistCache,
   saveQQMusicHeartRadarCache,
   saveQQMusicRefreshDay,
@@ -158,20 +159,27 @@ export default ({ componentId, info }: Props) => {
       let songs: LX.Music.MusicInfoOnline[]
       const localKind = info.daily === true ? 'daily' : info.radar === true ? 'radar' : null
       if (localKind) {
-        // 每日推荐/红心雷达读首页那份缓存，只有下拉刷新才联网重取（取回来顺手更新缓存，
-        // 首页下次进来读到的就是新的；「今天刷过了」的记账一起写上，
-        // 免得首页再为同一批多拉一次）
+        // 每日推荐/红心雷达读首页那份缓存。「今天刷过了」的记账一起写上，
+        // 免得首页再为同一批多拉一次
         const isDaily = localKind === 'daily'
         const fetchSongs = isDaily ? getQQMusicDailyPlaylist : getQQMusicHeartRadarSongs
         const readCache = isDaily ? getQQMusicDailyPlaylistCache : getQQMusicHeartRadarCache
         const writeCache = isDaily ? saveQQMusicDailyPlaylistCache : saveQQMusicHeartRadarCache
         const refreshKind = isDaily ? 'playlist' : 'radar'
         if (force) {
-          const { cookie } = await getQQMusicSession()
-          if (!cookie) throw new Error(t('qq_not_logged_in'))
-          songs = await fetchSongs(cookie)
-          await writeCache(songs)
-          await saveQQMusicRefreshDay(refreshKind)
+          // 每日推荐/红心雷达都是当天固定的一批：今天已经拉过就直接用缓存，
+          // 下拉刷新也不重新洗牌（否则同一天里红心雷达会换一批歌）
+          const fetchedToday = await getQQMusicRefreshDay(refreshKind) == new Date().toDateString()
+          const cached = fetchedToday ? await readCache() : []
+          if (cached.length) {
+            songs = cached
+          } else {
+            const { cookie } = await getQQMusicSession()
+            if (!cookie) throw new Error(t('qq_not_logged_in'))
+            songs = await fetchSongs(cookie)
+            await writeCache(songs)
+            await saveQQMusicRefreshDay(refreshKind)
+          }
         } else {
           songs = await readCache()
           if (!songs.length) {
