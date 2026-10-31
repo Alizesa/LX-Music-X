@@ -6,6 +6,7 @@ import commonState, { type InitState as CommonState } from '@/store/common/state
 import { createStyle } from '@/utils/tools'
 import PagerView, { type PageScrollStateChangedNativeEvent, type PagerViewOnPageSelectedEvent } from 'react-native-pager-view'
 import { setNavActiveId } from '@/core/common'
+import { setHomePagerScrollHandler } from '@/core/homePagerScroll'
 import settingState from '@/store/setting/state'
 import { type NAV_ID_Type } from '@/config/constant'
 
@@ -47,6 +48,12 @@ const Main = () => {
     pagerViewRef.current?.setScrollEnabled(enabled)
   }, [])
 
+  // 用同步回调注册给横向滚动块，别走 app_event（那条是 setImmediate，太晚）
+  useEffect(() => {
+    setHomePagerScrollHandler(onHorizontalScroll)
+    return () => { setHomePagerScrollHandler(null) }
+  }, [onHorizontalScroll])
+
   useEffect(() => {
     const handleUpdate = (id: CommonState['navActiveId']) => {
       const index = viewMap[id]
@@ -60,13 +67,11 @@ const Main = () => {
     }
     global.state_event.on('navActiveIdUpdated', handleUpdate)
     global.state_event.on('configUpdated', handleConfigUpdate)
-    global.app_event.on('homeHorizontalScroll', onHorizontalScroll)
     return () => {
       global.state_event.off('navActiveIdUpdated', handleUpdate)
       global.state_event.off('configUpdated', handleConfigUpdate)
-      global.app_event.off('homeHorizontalScroll', onHorizontalScroll)
     }
-  }, [onHorizontalScroll])
+  }, [])
 
   const component = useMemo(() => (
     <PagerView ref={pagerViewRef}

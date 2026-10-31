@@ -10,6 +10,7 @@ import { useWindowSize } from '@/utils/hooks'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { LIST_IDS, QQ_DAILY_RECOMMEND_ID, QQ_HEART_RADAR_PLAYLIST_ID } from '@/config/constant'
+import { setHomePagerHorizontalScroll } from '@/core/homePagerScroll'
 import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import {
@@ -43,15 +44,12 @@ import { useI18n } from '@/lang'
 type Songs = LX.Music.MusicInfoOnline[]
 type Playlist = LX.QQMusic.PlaylistInfo
 
-// 横向滑动块要临时关掉外层首页 PagerView 的横滑，否则手势会被它抢走
-const setHomeHorizontalScroll = (active: boolean) => {
-  global.app_event.homeHorizontalScroll(active)
-}
+// 横向滑动块触摸期间同步关掉外层首页 PagerView 的横滑，否则手势会被它抢走
 const horizontalScrollProps = {
   nestedScrollEnabled: true,
-  onTouchStart: () => { setHomeHorizontalScroll(true) },
-  onTouchEnd: () => { setHomeHorizontalScroll(false) },
-  onTouchCancel: () => { setHomeHorizontalScroll(false) },
+  onTouchStart: () => { setHomePagerHorizontalScroll(true) },
+  onTouchEnd: () => { setHomePagerHorizontalScroll(false) },
+  onTouchCancel: () => { setHomePagerHorizontalScroll(false) },
 }
 
 // 每日推荐的临时列表 id。位置记忆和历史标记都按它认队列，所以放在 core 里统一导出
@@ -129,7 +127,11 @@ export default () => {
   const loggedIn = !!cookie
 
   // 页面卸载时万一还按着横向列表，别把首页 PagerView 一直锁着
-  useEffect(() => () => { setHomeHorizontalScroll(false) }, [])
+  useEffect(() => () => { setHomePagerHorizontalScroll(false) }, [])
+  // 「推荐歌单」那块会在退出登录/列表清空时整个卸载，触摸中卸载不会补 onTouchEnd
+  useEffect(() => {
+    if (!loggedIn || !playlists.length) setHomePagerHorizontalScroll(false)
+  }, [loggedIn, playlists.length])
 
   useEffect(() => {
     void getQQMusicSession().then(session => { setCookie(session.cookie) })
@@ -289,9 +291,9 @@ export default () => {
     try {
       // 每次都向个性化音乐流重新要第一页（first_req_time=1），换一批歌单卡；
       // 和 MusicOne 首页刷新一致，不再自己维护 From 游标
-      const result = await getQQMusicRecommendedPlaylists(cookie)
-      setPlaylists(result.list)
-      await saveQQMusicRecommendPlaylistsCache({ list: result.list, nextFrom: 0 })
+      const list = await getQQMusicRecommendedPlaylists(cookie)
+      setPlaylists(list)
+      await saveQQMusicRecommendPlaylistsCache({ list, nextFrom: 0 })
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {

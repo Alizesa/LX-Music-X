@@ -625,15 +625,31 @@ const findRecentHeartRadarPlaylist = async(cookie: string): Promise<{ id: string
   })
   // 响应层级和参考实现一致：req_0.data.data.geDanList；老一点的封装可能少一层 data
   const rawList = pickArray(body?.req_0?.data, ['data.geDanList', 'geDanList'])
+  const candidates: Array<{ id: number, dirid: number, index: number, lastTime: number }> = []
   for (const raw of rawList) {
-    const name = decodeName(String(raw?.name ?? '')).replace(/\s+/g, '')
+    // 繁体的「紅心雷達」也认；名字里带这个词的旧歌单/自建歌单靠下面的排序取最新那张
+    const name = decodeName(String(raw?.name ?? ''))
+      .replace(/\s+/g, '')
+      .replace(/紅/g, '红')
+      .replace(/達/g, '达')
     if (!name.includes('红心雷达')) continue
     const id = Number(raw?.id)
     const dirid = Number(raw?.dirid ?? raw?.dirId ?? 0)
-    if (dirid > 0) return { id: String(id || dirid), dirid }
-    if (id > 0) return { id: String(id) }
+    if (!(id > 0) && !(dirid > 0)) continue
+    candidates.push({
+      id,
+      dirid,
+      // 参考实现按 index 升序、lastTime 降序；同一天有多条时取最新那张
+      index: Number(raw?.index ?? Number.MAX_SAFE_INTEGER),
+      lastTime: Number(raw?.lastTime ?? raw?.last_time ?? 0),
+    })
   }
-  return null
+  candidates.sort((a, b) => a.index - b.index || b.lastTime - a.lastTime)
+  const best = candidates[0]
+  if (!best) return null
+  return best.dirid > 0
+    ? { id: String(best.id || best.dirid), dirid: best.dirid }
+    : { id: String(best.id) }
 }
 
 /**
@@ -958,6 +974,40 @@ export const getQQMusicPlaylists = async(
   return list
 }
 
+// 音乐流的 miscellany/v_user 有时是 JSON 字符串（MusicOne 也专门兜了这种情况）
+const asFeedObject = (value: any): Record<string, any> | null => {
+  if (value && typeof value == 'object' && !Array.isArray(value)) return value
+  if (typeof value == 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return parsed && typeof parsed == 'object' && !Array.isArray(parsed) ? parsed : null
+    } catch {}
+  }
+  return null
+}
+const asFeedArray = (value: any): any[] => {
+  if (Array.isArray(value)) return value
+  if (typeof value == 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {}
+  }
+  return []
+}
+const cleanFeedText = (value: unknown) => {
+  const text = decodeName(String(value ?? ''))
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[>"“”']+$/, '')
+    .trim()
+  // 播放量/收藏数这类统计文案不能当推荐语或创建者
+  if (/^(?:评论|播放|收听|收藏|喜欢)?\s*\d+(?:\.\d+)?\s*(?:万|亿|w|k|m)?\+?\s*(?:评论|播放|收听|收藏|喜欢)?$/i.test(text)) return ''
+  if (text == '为你推荐') return ''
+  return text
+}
+
 /**
  * 从音乐流的卡位里读一张歌单卡。
  *
@@ -980,17 +1030,16 @@ const readFeedPlaylistCard = (card: any): LX.QQMusic.PlaylistInfo | null => {
     (serverType === 0 && FEED_FOLDER_STYLES.has(style) && jumpType === FEED_PLAYLIST_JUMP_TYPE)
   if (!isPlaylist) return null
   const id = Number(card.id)
-  if (!id) return null
-  const misc = card.miscellany ?? {}
+  if (!(id > 0)) return null
+  const misc = asFeedObject(card.miscellany) ?? {}
   // 和 MusicOne 一样：卡面副文案优先用官方推荐语，其次才是 subtitle/创建者
   const recommendation = [misc.p_Template_setTitle, misc.recommendationTitle, misc.rcmd_reason, misc.rec_reason]
-    .map((value: unknown) => decodeName(String(value ?? '')).trim())
+    .map(cleanFeedText)
     .find(Boolean) ?? ''
-  const subtitle = decodeName(String(card.subtitle ?? '')).trim()
+  const subtitle = cleanFeedText(card.subtitle)
   // MusicOne 的卡面副文案顺序：官方推荐语 → 创建者（v_user）→ subtitle → 兜底
-  const users: any[] = Array.isArray(card.v_user) ? card.v_user : []
-  const creator = users
-    .map(user => decodeName(String(user?.nick ?? user?.nickname ?? user?.name ?? '')).trim())
+  const creator = asFeedArray(card.v_user)
+    .map(user => cleanFeedText(user?.nick ?? user?.nickname ?? user?.name))
     .find(Boolean) ?? ''
   return {
     id: String(id),
@@ -1054,7 +1103,10 @@ const readFeedRecommendedPlaylists = async(cookie: string): Promise<LX.QQMusic.P
     if (Number(body?.code ?? 0) !== 0 || Number(block.code ?? 0) !== 0 || Number(data.retcode ?? 0) !== 0) {
       throw new Error(String(block.message ?? block.msg ?? data.msg ?? global.i18n.t('qq_load_failed')))
     }
-    const shelves: any[] = Array.isArray(data.v_shelf) ? data.v_shelf : []
+    // 参考实现同时认 v_shelf / Shelfs 两个键
+    const shelves: any[] = Array.isArray(data.v_shelf)
+      ? data.v_shelf
+      : Array.isArray(data.Shelfs) ? data.Shelfs : []
     if (!shelves.length) break
     const nextShelfIds: string[] = []
     const nextUniqueKeys: string[] = []
@@ -1140,20 +1192,17 @@ const getLegacyRecommendedPlaylists = async(cookie: string): Promise<LX.QQMusic.
  * 所以最多探 3 页；还是抽不到（或请求失败）就退回旧的 PlaylistSquare 推荐栏兜底，
  * 保证这个区块不会因为流里没歌单卡而整体报错。
  */
-export const getQQMusicRecommendedPlaylists = async(cookie: string): Promise<{
-  list: LX.QQMusic.PlaylistInfo[]
-  hasMore: boolean
-  nextFrom: number
-}> => {
+export const getQQMusicRecommendedPlaylists = async(cookie: string): Promise<LX.QQMusic.PlaylistInfo[]> => {
   try {
     const list = await readFeedRecommendedPlaylists(cookie)
-    if (list.length) return { list, hasMore: false, nextFrom: 0 }
+    if (list.length) return list
     console.warn('[QQMusic] 音乐流没有返回歌单卡，改用旧推荐接口')
   } catch (error) {
+    // 票据失效就交给上层走重新登录，不要再拿旧 Cookie 打第二个接口
+    if (error instanceof QQMusicSessionExpiredError) throw error
     console.warn('[QQMusic] 音乐流推荐歌单失败，改用旧推荐接口:', error instanceof Error ? error.message : error)
   }
-  const list = await getLegacyRecommendedPlaylists(cookie)
-  return { list, hasMore: false, nextFrom: 0 }
+  return getLegacyRecommendedPlaylists(cookie)
 }
 
 /**
