@@ -80,9 +80,15 @@ const GUESS_RECOMMEND_ID = 99
 // 服务端要是只回一部分，下面的循环会接着补齐（参考实现一次也是要满 20）
 const RECOMMEND_PAGE_SIZE = 20
 const PLAYLIST_PAGE_SIZE = 200
-// 推荐歌单每批取多少。MusicOne 打这个接口用的就是 8，跟它保持一致；
-// 这个值同时当「这批是不是满页」的判据用（响应里没有 HasMore 时靠它推还有没有下一批）
-const RECOMMEND_PLAYLIST_PAGE_SIZE = 8
+// 首页推荐歌单一次展示多少张。从音乐流里抽歌单卡，8 张足够铺满一屏横滑
+const RECOMMEND_PLAYLIST_LIMIT = 8
+// 音乐流里歌单卡的标识（对齐 MusicOne 的 QqMusicFeedProtocol）
+const FEED_PLAYLIST_JUMP_TYPE = 10014
+const FEED_PLAYLIST_SERVER_TYPE = 500
+const FEED_AI_FOLDER_SUBTYPE = 2001
+const FEED_DAILY_30_STYLE = 7
+const FEED_DAILY_30_SUBTYPE = 510
+const FEED_FOLDER_STYLES = new Set([1, 2, 5, 47, 54, 55, 84, 93, 201, 205, 210, 241, 302])
 
 // QQ 网页接口认的是「o + 10 位补零」的 uin（MusicOne 的登录凭据也是这个格式）。
 // 手机号登录没有 p_uin/ptui_loginuin 这些网页别名，只写纯数字时资料接口可能认不出账号。
@@ -484,26 +490,6 @@ const normalizePlaylist = (raw: any, subscribed: boolean): LX.QQMusic.PlaylistIn
     trackCount: Number(raw?.song_cnt ?? raw?.song_count ?? raw?.songnum ?? raw?.total_song_num ?? 0) || undefined,
     subscribed,
     liked,
-  }
-}
-
-// 推荐流的歌单是嵌套结构（Playlist.basic，封面和作者也是对象），
-// 与「我的歌单」那种扁平字段不同源，需要单独映射
-const normalizeRecommendedPlaylist = (raw: any): LX.QQMusic.PlaylistInfo | null => {
-  const basic = raw?.basic
-  if (!basic) return null
-  const id = basic.tid ?? basic.dirid
-  const name = basic.title
-  if (id == null || !name) return null
-  const cover = basic.cover ?? {}
-  return {
-    id: String(id),
-    name: decodeName(String(name)),
-    cover: cover.medium_url ?? cover.small_url ?? cover.default_url ?? cover.big_url,
-    // 上游的实现也是这么处理的：简介里带 <br>，名称和作者可能带 HTML 实体
-    description: decodeName(String(basic.desc ?? '')).replace(/<br>/g, '\n'),
-    trackCount: Number(basic.song_cnt ?? 0) || undefined,
-    author: decodeName(String(basic.creator?.nick ?? '')) || undefined,
   }
 }
 
@@ -973,69 +959,123 @@ export const getQQMusicPlaylists = async(
 }
 
 /**
- * 推荐歌单。走 music.playlist.PlaylistSquare/GetRecommendFeed —— MusicOne 用的就是这个方法
- * （它的「专属推荐歌单」，登录态才有，参数是扁平的 From/Size），请求形状和 getQQMusicSimilarSongs
- * 一样走 req_0 信封。
+ * 从音乐流的卡位里读一张歌单卡。
  *
- * 早先这里用的是同族的 GetRecommendWhole + IsReqFeed/FeedReq 信封，匿名也能拿到一份通用推荐；
- * 换过来是为了拿登录态下服务端真正给的个性化结果。
- *
- * 歌单本身仍然是 Playlist.basic 那层嵌套（normalizeRecommendedPlaylist 就是按它写的），
- * 只是外层容器换成了 data.List（老方法走 data.FeedRsp.List），两个容器都认，免得形态不同就空列表。
- *
- * From 是偏移量而不是页码。
+ * 对齐 MusicOne 的 QqMusicFeedProtocol：歌单卡的判定是
+ * style=302 / type=500+jumptype=10014 / type=0 的若干 folder style + jumptype=10014。
+ * 每日30首也是 type=500/jumptype=10014，首页另有入口，这里要排掉。
  */
-export const getQQMusicRecommendedPlaylists = async(cookie: string, from = 0): Promise<{
+const readFeedPlaylistCard = (card: any): LX.QQMusic.PlaylistInfo | null => {
+  if (!card || typeof card != 'object') return null
+  const style = Number(card.style ?? -1)
+  const serverType = Number(card.type ?? 0)
+  const serverSubtype = Number(card.subtype ?? 0)
+  const jumpType = Number(card.jumptype ?? 0)
+  const title = decodeName(String(card.title ?? '')).trim()
+  if (style === FEED_DAILY_30_STYLE ||
+    (serverType === FEED_PLAYLIST_SERVER_TYPE && serverSubtype === FEED_DAILY_30_SUBTYPE) ||
+    title.replace(/\s+/g, '') === '每日30首') return null
+  const isPlaylist = style === 302 ||
+    (serverType === FEED_PLAYLIST_SERVER_TYPE && serverSubtype !== FEED_AI_FOLDER_SUBTYPE && jumpType === FEED_PLAYLIST_JUMP_TYPE) ||
+    (serverType === 0 && FEED_FOLDER_STYLES.has(style) && jumpType === FEED_PLAYLIST_JUMP_TYPE)
+  if (!isPlaylist) return null
+  const id = Number(card.id)
+  if (!id) return null
+  const misc = card.miscellany ?? {}
+  // 和 MusicOne 一样：卡面副文案优先用官方推荐语，其次才是 subtitle/创建者
+  const recommendation = [misc.p_Template_setTitle, misc.recommendationTitle, misc.rcmd_reason, misc.rec_reason]
+    .map((value: unknown) => decodeName(String(value ?? '')).trim())
+    .find(Boolean) ?? ''
+  const subtitle = decodeName(String(card.subtitle ?? '')).trim()
+  // MusicOne 的卡面副文案顺序：官方推荐语 → 创建者（v_user）→ subtitle → 兜底
+  const users: any[] = Array.isArray(card.v_user) ? card.v_user : []
+  const creator = users
+    .map(user => decodeName(String(user?.nick ?? user?.nickname ?? user?.name ?? '')).trim())
+    .find(Boolean) ?? ''
+  return {
+    id: String(id),
+    name: title || global.i18n.t('qq_recommend_playlists'),
+    cover: normalizeAvatarUrl(card.cover) || undefined,
+    author: recommendation || creator || subtitle || 'QQ 音乐推荐',
+    description: recommendation || subtitle || undefined,
+  }
+}
+
+/**
+ * 推荐歌单：完全对齐 MusicOne 的首页音乐流 ——
+ * `music.recommend.RecommendFeed/get_recommend_feed`，从
+ * v_shelf → v_niche → v_card 里抽歌单卡。
+ *
+ * 旧的 PlaylistSquare/GetRecommendFeed 推荐栏在 MusicOne 里已经停用，不再使用。
+ * 每次刷新都取第一页并带 first_req_time=1，让推荐服务重新算一批，取前 8 张歌单卡。
+ */
+export const getQQMusicRecommendedPlaylists = async(cookie: string): Promise<{
   list: LX.QQMusic.PlaylistInfo[]
   hasMore: boolean
   nextFrom: number
 }> => {
   const cookies = parseQQMusicCookie(cookie)
   const authed = !!readUin(cookies) && !!readMusicKey(cookies)
+  let clientTimeZone = 'Asia/Shanghai'
+  try { clientTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || clientTimeZone } catch {}
   const body = await request(QQ_MUSICU_URL, authed ? cookie : '', {
     method: 'post',
     body: {
       comm: authed ? buildAuthComm(cookies) : buildAnonymousComm(),
       req_0: {
-        module: 'music.playlist.PlaylistSquare',
-        method: 'GetRecommendFeed',
+        module: 'music.recommend.RecommendFeed',
+        method: 'get_recommend_feed',
         param: {
-          From: from,
-          Size: RECOMMEND_PLAYLIST_PAGE_SIZE,
+          direction: 0,
+          page: 1,
+          s_num: 0,
+          client_time: Math.floor(Date.now() / 1000),
+          v_cache: [],
+          ext: {
+            bluetooth: '0',
+            has_login: '1',
+            no_need_sound_quality: '1',
+            ifRadarBlock: '0',
+            nopack_people: '0',
+            auto_folding_time: '0',
+            // 首页刷新：让推荐服务重新计算个性化内容
+            first_req_time: '1',
+            is_20_style: '1',
+            client_time_zone: clientTimeZone,
+          },
         },
       },
     },
   })
   const block = body?.req_0
-  // 先确认业务块拿到了。响应被拦、或没解析成 JSON 时 block 是 undefined，
-  // 此时若只判 block.code 会当成"成功但为空"，界面显示空列表、还把空结果写进缓存。
-  // 这里只拦「块不存在」，不额外校验外层 code —— 外层码在登录态下的取值没有验证过，
-  // 贸然判它会引入原来没有的失败分支。
   if (!block) {
     throw new Error(String(body?.message ?? body?.msg ?? global.i18n.t('qq_load_failed')))
   }
-  if (Number(block.code ?? 0) !== 0) {
-    // 业务码的消息有的在 block 上，有的塞在 data.msg 里（MusicOne 也是这么兜的）
-    throw new Error(String(block.message ?? block.msg ?? block.data?.msg ?? global.i18n.t('qq_load_failed')))
+  const data = block.data ?? {}
+  if (Number(body?.code ?? 0) !== 0 || Number(block.code ?? 0) !== 0 || Number(data.retcode ?? 0) !== 0) {
+    throw new Error(String(block.message ?? block.msg ?? data.msg ?? global.i18n.t('qq_load_failed')))
   }
-  const data = block?.data ?? {}
-  const feed = data.FeedRsp ?? data
-  const rawList: any[] = Array.isArray(feed.List) ? feed.List : []
-  const list = rawList
-    .map((item: any) => normalizeRecommendedPlaylist(item?.Playlist))
-    .filter((item: LX.QQMusic.PlaylistInfo | null): item is LX.QQMusic.PlaylistInfo => !!item)
-  return {
-    list,
-    // 请求的 From 是服务端原始流的偏移量，所以游标要按原始条数前进，
-    // 不能用映射后的条数：个别条目缺字段被丢掉时会让下一批重复上一批的尾巴。
-    // 空批次视为取尽，否则游标原地不动，每次刷新都在请求同一个偏移量。
-    // HasMore 是 GetRecommendWhole 保证有的字段，换到 GetRecommendFeed 后不一定给，
-    // 缺了就按「这批是不是满页」推：不兜这一下的话 hasMore 恒为 false，
-    // 页面每次刷新都会把游标打回 0，反复看到同一批。
-    hasMore: rawList.length > 0 &&
-      (feed.HasMore == null ? rawList.length >= RECOMMEND_PLAYLIST_PAGE_SIZE : !!feed.HasMore),
-    nextFrom: from + rawList.length,
+  const list: LX.QQMusic.PlaylistInfo[] = []
+  const seen = new Set<string>()
+  const shelves: any[] = Array.isArray(data.v_shelf) ? data.v_shelf : []
+  for (const shelf of shelves) {
+    const niches: any[] = Array.isArray(shelf?.v_niche) ? shelf.v_niche : []
+    for (const niche of niches) {
+      const cards: any[] = Array.isArray(niche?.v_card) ? niche.v_card : []
+      for (const card of cards) {
+        const item = readFeedPlaylistCard(card)
+        if (!item || seen.has(item.id)) continue
+        seen.add(item.id)
+        list.push(item)
+        if (list.length >= RECOMMEND_PLAYLIST_LIMIT) break
+      }
+      if (list.length >= RECOMMEND_PLAYLIST_LIMIT) break
+    }
+    if (list.length >= RECOMMEND_PLAYLIST_LIMIT) break
   }
+  if (!list.length) throw new Error(global.i18n.t('qq_load_failed'))
+  // 推荐位每次刷新都重新取第一页，游标不再使用；保留字段兼容旧缓存
+  return { list, hasMore: false, nextFrom: 0 }
 }
 
 /**

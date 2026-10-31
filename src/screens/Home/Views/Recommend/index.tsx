@@ -120,7 +120,6 @@ export default () => {
   const [similar, setSimilar] = useState<{ title: string, seedName: string, songs: Songs }>({ title: '', seedName: '', songs: [] })
   const [refreshing, setRefreshing] = useState(false)
   const refreshingRef = useRef(false)
-  const nextFromRef = useRef(0)
   const [playing, setPlaying] = useState(false)
   const [refreshingGuess, setRefreshingGuess] = useState(false)
   const refreshingGuessRef = useRef(false)
@@ -149,7 +148,6 @@ export default () => {
     void getQQMusicRecommendPlaylistsCache().catch(() => null).then(cache => {
       if (!cache?.list.length) return
       setPlaylists(cache.list)
-      nextFromRef.current = cache.nextFrom
     })
   }, [])
 
@@ -289,11 +287,11 @@ export default () => {
     refreshingPlaylistsRef.current = true
     setRefreshingPlaylists(true)
     try {
-      const result = await getQQMusicRecommendedPlaylists(cookie, nextFromRef.current)
+      // 每次都向个性化音乐流重新要第一页（first_req_time=1），换一批歌单卡；
+      // 和 MusicOne 首页刷新一致，不再自己维护 From 游标
+      const result = await getQQMusicRecommendedPlaylists(cookie)
       setPlaylists(result.list)
-      // 取尽后回到开头，这样能一直「一批批」换下去而不是停在最后一批
-      nextFromRef.current = result.hasMore ? result.nextFrom : 0
-      await saveQQMusicRecommendPlaylistsCache({ list: result.list, nextFrom: nextFromRef.current })
+      await saveQQMusicRecommendPlaylistsCache({ list: result.list, nextFrom: 0 })
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
