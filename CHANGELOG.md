@@ -6,6 +6,27 @@ Project versioning adheres to [Semantic Versioning](http://semver.org/).
 Commit convention is based on [Conventional Commits](http://conventionalcommits.org).
 Change log format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [1.9.2](https://github.com/lyswhut/lx-music-mobile/compare/v1.9.1...v1.9.2) - 2026-10-31
+
+### 新增
+
+- 首页推荐改为横向滑动页，新增「红心雷达」歌单（每天固定 50 首）
+- 推荐歌单改用 QQ 音乐个性化音乐流
+
+### 优化
+
+- 首页横向滑动与切页手势分离，滑动推荐卡 / 推荐歌单时不再误切到「我的」
+
+### 修复
+
+- 红心雷达 / 每日推荐按天固定，当天不再重复换批
+- 修复推荐歌单音乐流抽不到歌单卡时的加载失败
+
+### 变更
+
+- 同步上游 v1.9.2：修复无法打开 kg 歌单、部分 kg 歌单歌曲丢失
+- 默认禁用音频卸载
+
 ## [1.9.1](https://github.com/lyswhut/lx-music-mobile/compare/v1.9.0...v1.9.1) - 2026-09-19
 
 ### 优化

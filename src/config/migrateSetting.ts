@@ -44,6 +44,10 @@ export default (setting: any): Partial<LX.AppSetting> => {
     setting['sync.enable'] = setting.sync?.enable
     setting['theme.id'] = setting.themeId
   }
+  // 上游 v1.9.2：音频卸载在部分设备上会导致播放异常，升级时一并关掉
+  if (setting.version == '2.0') {
+    if (setting['player.isEnableAudioOffload']) setting['player.isEnableAudioOffload'] = false
+  }
 
   return setting
 }
