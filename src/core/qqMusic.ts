@@ -622,46 +622,45 @@ export const getQQMusicDailyPlaylist = async(cookie: string) => {
   return songs
 }
 
-// 红心雷达（GetRadarSong）一页固定回 10 首，相邻页之间还会重复。
-// 拼成一份能直接播的歌单要翻几页；去重后凑到 30 首就停，最多翻 5 页。
-const HEART_RADAR_TARGET = 30
-const HEART_RADAR_MAX_PAGES = 5
+/**
+ * 从「最近播放」的歌单列表里找红心雷达。
+ *
+ * MusicOne 的「我的 → 最近播放」读的是 `PlayRecentlyRead/GetPlayRecentlyInfo`
+ * 的 type=4，`geDanList` 里每一项都是最近播放过的歌单。红心雷达在那边就是一张
+ * 服务端给的普通歌单卡片，拿到真实歌单 id 后就能走通用 CgiGetDiss 取整份歌单。
+ */
+const findRecentHeartRadarPlaylist = async(cookie: string): Promise<{ id: string, dirid?: number } | null> => {
+  const body = await postAuthedMusicu(cookie, {
+    req_0: {
+      module: 'music.musicasset.PlayRecentlyRead',
+      method: 'GetPlayRecentlyInfo',
+      param: { type: 4, updateTime: 0, requestCnt: 500 },
+    },
+  })
+  // 响应层级和参考实现一致：req_0.data.data.geDanList；老一点的封装可能少一层 data
+  const rawList = pickArray(body?.req_0?.data, ['data.geDanList', 'geDanList'])
+  for (const raw of rawList) {
+    const name = decodeName(String(raw?.name ?? '')).replace(/\s+/g, '')
+    if (!name.includes('红心雷达')) continue
+    const id = Number(raw?.id)
+    const dirid = Number(raw?.dirid ?? raw?.dirId ?? 0)
+    if (dirid > 0) return { id: String(id || dirid), dirid }
+    if (id > 0) return { id: String(id) }
+  }
+  return null
+}
 
 /**
- * 红心雷达：按「我喜欢」推歌。和每日推荐一样是一份可以直接播的歌单。
+ * 红心雷达：按「我喜欢」推的歌单，和每日推荐一样每天固定一批（50 首）。
  *
- * 必须登录：不带票据时服务端也会回歌，但那是通用推荐，不是这个账号的红心结果。
- * 翻页会重复给同一批歌，所以按 songmid 去重，
- * 某一页一首新歌都没有就说明见底了。
+ * 不要用 GetRadarSong 自己拼数量：那是个无限流，每次请求给的歌都会变。
+ * 这里直接读「最近播放」里的那张红心雷达歌单，把整份歌单取回来，
+ * 歌单本身就是当天固定的那 50 首。
  */
 export const getQQMusicHeartRadarSongs = async(cookie: string): Promise<LX.Music.MusicInfoOnline[]> => {
-  const songs: LX.Music.MusicInfoOnline[] = []
-  const seen = new Set<string>()
-  for (let page = 1; page <= HEART_RADAR_MAX_PAGES && songs.length < HEART_RADAR_TARGET; page++) {
-    const body = await postAuthedMusicu(cookie, {
-      req_0: {
-        module: 'music.recommend.TrackRelationServer',
-        method: 'GetRadarSong',
-        param: { Page: page, ReqType: 0, FavSongs: [], EntranceSongs: [] },
-      },
-    })
-    const data = body?.req_0?.data ?? {}
-    const rawList = pickArray(data, ['VecSongs'])
-    if (!rawList.length) break
-    let added = 0
-    for (const raw of rawList) {
-      // 这个接口的歌曲包在 Track 里（字段名也是大写开头）
-      const info = rawSongToOldInfo(raw?.Track ?? raw)
-      if (!info || seen.has(info.songmid)) continue
-      seen.add(info.songmid)
-      songs.push(toNewMusicInfo(info) as LX.Music.MusicInfoOnline)
-      added++
-      if (songs.length >= HEART_RADAR_TARGET) break
-    }
-    if (!added) break
-    const hasMore = data?.HasMore
-    if (hasMore === false || hasMore === 0) break
-  }
+  const recent = await findRecentHeartRadarPlaylist(cookie)
+  if (!recent) throw new Error(global.i18n.t('qq_load_failed'))
+  const songs = await getQQMusicPlaylistSongs(cookie, recent.id, recent.dirid)
   if (!songs.length) throw new Error(global.i18n.t('qq_load_failed'))
   return songs
 }
