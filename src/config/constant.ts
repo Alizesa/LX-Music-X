@@ -24,6 +24,8 @@ export const LIST_IDS = {
 
 /** 「每日推荐」写进临时列表时用的来源标记（自动续播靠它认出推荐列表） */
 export const QQ_DAILY_RECOMMEND_ID = 'qq_daily_recommend'
+/** 「红心雷达」写进临时列表时用的列表 id（它是一份普通歌单，不挂电台续播） */
+export const QQ_HEART_RADAR_PLAYLIST_ID = 'qq_heart_radar_playlist'
 /**
  * 每日推荐的播放队列自己的来源标记。
  * 其它虚拟列表（排行榜/歌单/歌手）都是往临时列表里放、队列打的也是 temp，
@@ -129,6 +131,8 @@ export const storageDataPrefix = {
   // 注意与上面的区分：qqMusicDailyRecommend 存的是「猜你喜欢」电台的结果
   // (get_radio_track)，这里存的才是真正的每日推荐歌单 (CgiGetDiss dirid=202)
   qqMusicDailyPlaylist: '@qq_music_daily_playlist',
+  // 红心雷达（按「我喜欢」推的歌单）的缓存。和每日推荐一样，进首页只读缓存
+  qqMusicHeartRadar: '@qq_music_heart_radar',
   // 每日推荐播到哪了。只记歌 id：恢复时按 id 在当前列表里找位置，
   // 歌单换了/歌没了自然就退回开头
   qqMusicDailyPosition: '@qq_music_daily_position',
@@ -138,7 +142,7 @@ export const storageDataPrefix = {
   // 「我喜欢」那份缓存被本地改过（红心/取消红心）、还没跟服务端核对过的标记。
   // 下次打开「我喜欢」时据此重拉一次，见 core/qqMusicFavorite 的 markLiked
   qqMusicLikedSongsStale: '@qq_music_liked_stale',
-  // 每日推荐 / 猜你喜欢那两份缓存「最后一次刷新是哪天」。进首页时不是今天就自动刷一次，
+  // 每日推荐 / 猜你喜欢 / 红心雷达那几份缓存「最后一次刷新是哪天」。进首页时不是今天就自动刷一次，
   // 见 Home/Views/Recommend 里那段跨天检查
   qqMusicRefreshDay: '@qq_music_refresh_day',
   // 旧版：所有歌单歌曲放在一个对象里，仅保留用于迁移读取

@@ -9,12 +9,13 @@ import { useTheme } from '@/store/theme/hook'
 import { useWindowSize } from '@/utils/hooks'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
-import { LIST_IDS, QQ_DAILY_RECOMMEND_ID } from '@/config/constant'
+import { LIST_IDS, QQ_DAILY_RECOMMEND_ID, QQ_HEART_RADAR_PLAYLIST_ID } from '@/config/constant'
 import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import {
   getQQMusicDailyPlaylist,
   getQQMusicDailyRecommendations,
+  getQQMusicHeartRadarSongs,
   getQQMusicRecommendedPlaylists,
   getQQMusicSession,
   getQQMusicSimilarSongs,
@@ -28,10 +29,12 @@ import {
   getPlayHistory,
   getQQMusicDailyPlaylistCache,
   getQQMusicDailyRecommendCache,
+  getQQMusicHeartRadarCache,
   getQQMusicRecommendPlaylistsCache,
   getQQMusicRefreshDay,
   saveQQMusicDailyPlaylistCache,
   saveQQMusicDailyRecommendCache,
+  saveQQMusicHeartRadarCache,
   saveQQMusicRecommendPlaylistsCache,
   saveQQMusicRefreshDay,
 } from '@/utils/data'
@@ -44,6 +47,11 @@ type Playlist = LX.QQMusic.PlaylistInfo
 const DAILY_LIST_ID = QQ_DAILY_PLAYLIST_ID
 const H_PADDING = 14
 const CARD_GAP = 10
+// 横向滑动页里露出下一张的一小截，提示后面还有卡片
+const CARD_PEEK = 20
+
+/** 一行两张、可横向滑动的推荐卡宽度（第三张只露出一截） */
+const getCardSide = (width: number) => (width - H_PADDING * 2 - CARD_GAP * 2 - CARD_PEEK) / 2
 
 /**
  * 方形推荐卡。封面铺满，底部压一层暗色保证文字可读（没有渐变库，用纯色代替）。
@@ -61,7 +69,7 @@ const SquareCard = ({ title, subtitle, cover, onPress, disabled, action }: {
   action?: ReactNode
 }) => {
   const windowSize = useWindowSize()
-  const side = (windowSize.width - H_PADDING * 2 - CARD_GAP) / 2
+  const side = getCardSide(windowSize.width)
 
   return (
     <TouchableOpacity style={{ ...styles.card, width: side, height: side, opacity: disabled ? 0.6 : 1 }} activeOpacity={0.85} disabled={disabled} onPress={onPress}>
@@ -82,12 +90,12 @@ const SquareCard = ({ title, subtitle, cover, onPress, disabled, action }: {
   )
 }
 
-// 首页：个性化推荐。上排两张方形卡（每日推荐 / 猜你喜欢），
-// 下面是推荐歌单横向滚动和基于最近播放的相似推荐。
+// 首页：个性化推荐。上排是横向滑动的推荐卡（每日推荐 / 猜你喜欢 / 红心雷达），
+// 往下是推荐歌单横向滚动和基于最近播放的相似推荐。
 // 进页面只读本地缓存、不发请求；下拉刷新才联网，而且只管「每日推荐」这一块 ——
 // 猜你喜欢和推荐歌单各自带刷新钮（卡片右下角 / 板块标题右侧），下拉不碰它们，
 // 免得把用户正在听、正在看的那一批顺手换掉。
-// 两张卡的点击分别是「进每日推荐歌单页（头图 + 那 30 首）」和「播放」，
+// 每日推荐 / 红心雷达的点击是「进歌单页（头图 + 那批歌）」，猜你喜欢是「播放」；
 // 卡上的圆钮才是播放 / 刷新。
 export default () => {
   const t = useI18n()
@@ -96,6 +104,7 @@ export default () => {
   const [cookie, setCookie] = useState('')
   const [daily, setDaily] = useState<Songs>([])
   const [guess, setGuess] = useState<Songs>([])
+  const [radar, setRadar] = useState<Songs>([])
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [similar, setSimilar] = useState<{ title: string, seedName: string, songs: Songs }>({ title: '', seedName: '', songs: [] })
   const [refreshing, setRefreshing] = useState(false)
@@ -122,6 +131,7 @@ export default () => {
     // 先铺缓存
     void getQQMusicDailyPlaylistCache().then(setDaily)
     void getQQMusicDailyRecommendCache().then(setGuess)
+    void getQQMusicHeartRadarCache().then(setRadar)
     void getQQMusicRecommendPlaylistsCache().catch(() => null).then(cache => {
       if (!cache?.list.length) return
       setPlaylists(cache.list)
@@ -173,15 +183,25 @@ export default () => {
     return songs
   }, [cookie, t])
 
+  /** 拉一份新的红心雷达：铺上、落盘、记下「今天刷过了」 */
+  const fetchRadar = useCallback(async() => {
+    const songs = await getQQMusicHeartRadarSongs(cookie)
+    setRadar(songs)
+    await saveQQMusicHeartRadarCache(songs)
+    await saveQQMusicRefreshDay('radar')
+    return songs
+  }, [cookie])
+
   // 跨天自动刷新：首页铺完缓存后看一眼这份缓存是不是「今天刷的」，不是就自己去拉一次
   // （缓存空的时候记账也没有，同样落到这里）。每天首次进首页各一次请求，
   // 之后就不管了 —— 中途要看新的一批还是下拉/点刷新钮。失败保持旧内容，不打扰用户
   useEffect(() => {
     if (!cookie) return
     const check = async() => {
-      const [dailyDay, guessDay] = await Promise.all([
+      const [dailyDay, guessDay, radarDay] = await Promise.all([
         getQQMusicRefreshDay('playlist'),
         getQQMusicRefreshDay('recommend'),
+        getQQMusicRefreshDay('radar'),
       ])
       const today = new Date().toDateString()
       // 用户刚好在下拉刷新时别凑热闹
@@ -209,10 +229,17 @@ export default () => {
           refreshingGuessRef.current = false
         }
       }
+      if (radarDay != today) {
+        try {
+          await fetchRadar()
+        } catch (error) {
+          failures.push(`红心雷达: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
       if (failures.length) console.warn('[QQMusic] 跨天自动刷新失败，先用旧内容:', failures.join('; '))
     }
     void check()
-  }, [cookie, fetchDaily, fetchGuess])
+  }, [cookie, fetchDaily, fetchGuess, fetchRadar])
 
   const refresh = useCallback(async() => {
     // setRefreshing 要到下次渲染才生效，光靠 disabled 挡不住这个窗口内的第二次触发
@@ -300,6 +327,21 @@ export default () => {
     }
   }, [daily, fetchDaily, loggedIn, t])
 
+  /** 红心雷达同样先用首页缓存；缓存没铺（新装、刚登录）时点卡片再联网拉 */
+  const ensureRadarSongs = useCallback(async(): Promise<Songs | null> => {
+    if (radar.length) return radar
+    if (!loggedIn) {
+      loginRef.current?.show()
+      return null
+    }
+    try {
+      return await fetchRadar()
+    } catch (error: unknown) {
+      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      return null
+    }
+  }, [fetchRadar, loggedIn, radar, t])
+
   // 每日推荐整表播放。用 30 首的独立列表，不挂电台续播那套
   const playDaily = useCallback(async() => {
     const songs = await ensureDailySongs()
@@ -348,6 +390,26 @@ export default () => {
     void playList(LIST_IDS.TEMP, index)
   }, [])
 
+  // 红心雷达整表播放。和每日推荐一样是一份普通歌单，不挂电台续播
+  const playRadar = useCallback(async() => {
+    const songs = await ensureRadarSongs()
+    if (!songs) return
+    await playSongs(QQ_HEART_RADAR_PLAYLIST_ID, songs, 0)
+  }, [ensureRadarSongs, playSongs])
+
+  // 横幅进歌单页（头图 + 那批红心雷达歌曲），播放交给右下角的按钮
+  const openRadar = useCallback(async() => {
+    const songs = await ensureRadarSongs()
+    if (!songs) return
+    navigations.pushQQPlaylistScreen(commonState.componentIds.home!, {
+      id: QQ_HEART_RADAR_PLAYLIST_ID,
+      name: t('qq_heart_radar'),
+      radar: true,
+      cover: songs[0]?.meta.picUrl,
+      subtitle: t('mine_song_count', { num: songs.length }),
+    })
+  }, [ensureRadarSongs, t])
+
   const openPlaylist = (info: Playlist) => {
     navigations.pushQQPlaylistScreen(commonState.componentIds.home!, {
       id: info.id,
@@ -378,7 +440,12 @@ export default () => {
               </TouchableOpacity>
         }
 
-        <View style={styles.cardRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.cardScroll}
+          contentContainerStyle={styles.cardRow}
+        >
           <SquareCard
             title={t('qq_daily_recommend')}
             subtitle={t('mine_song_count', { num: daily.length })}
@@ -393,7 +460,14 @@ export default () => {
             disabled={playing}
             action={<IconAction overlay icon="refresh" onPress={() => { void refreshGuess() }} disabled={refreshingGuess} />}
           />
-        </View>
+          <SquareCard
+            title={t('qq_heart_radar')}
+            subtitle={t('mine_song_count', { num: radar.length })}
+            cover={radar[0]?.meta.picUrl}
+            onPress={() => { void openRadar() }}
+            action={<IconAction overlay icon="play" onPress={() => { void playRadar() }} />}
+          />
+        </ScrollView>
 
         {
           // 标题和刷新钮登录后一直在：列表空的时候也得留着入口，否则没法手动重拉
@@ -461,7 +535,9 @@ const styles = createStyle({
   scrollContent: { paddingHorizontal: H_PADDING, paddingBottom: 16 },
   loginCard: { marginTop: 12, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 8, alignItems: 'center' },
   loginHint: { marginTop: 4 },
-  cardRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
+  cardScroll: { marginTop: 12 },
+  // 横向滑动页：卡片之间留固定间距
+  cardRow: { gap: CARD_GAP },
   // 板块标题和右上角的刷新钮同一行
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 20, paddingBottom: 10 },
   card: { borderRadius: 12, overflow: 'hidden', justifyContent: 'flex-end' },
