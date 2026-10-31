@@ -11,21 +11,14 @@ import { IconIonicons } from '@/components/common/Icon'
 import IconAction from '@/components/common/IconAction'
 import PlusMinusIcon from '@/components/common/PlusMinusIcon'
 import { setComponentId } from '@/core/common'
-import { COMPONENT_IDS, LIST_IDS, QQ_HEART_RADAR_PLAYLIST_ID } from '@/config/constant'
+import { COMPONENT_IDS, LIST_IDS } from '@/config/constant'
 import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
-import { getQQMusicDailyPlaylist, getQQMusicHeartRadarSongs, getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
+import { getQQMusicDailyPlaylist, getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
 import { getQQMusicLikedSongs, isQQMusicLikedSongsStale, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs, releaseQQMusicLikedSongs, retainQQMusicLikedSongs, toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
 import { cachePlaylistSongs, getCachedPlaylistSongs, getPlaylistSongsCacheVersion } from '@/core/qqMusicPlaylistSongsCache'
 import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist } from '@/core/qqMusicDailyPosition'
-import {
-  getQQMusicDailyPlaylistCache,
-  getQQMusicHeartRadarCache,
-  getQQMusicPlaylistsCache,
-  saveQQMusicDailyPlaylistCache,
-  saveQQMusicHeartRadarCache,
-  saveQQMusicRefreshDay,
-} from '@/utils/data'
+import { getQQMusicDailyPlaylistCache, getQQMusicPlaylistsCache, saveQQMusicDailyPlaylistCache, saveQQMusicRefreshDay } from '@/utils/data'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { useWindowSize } from '@/utils/hooks'
@@ -39,8 +32,6 @@ interface Props {
     liked?: boolean
     /** 每日推荐这类没有歌单 id 的列表：歌曲读本地那份缓存，播放走位置记忆 */
     daily?: boolean
-    /** 红心雷达：同样没有歌单 id，歌曲读首页那份缓存，但播放不记位置 */
-    radar?: boolean
     /** 头图封面。调用方手上就有（推荐流、我的歌单都带），缺了用纯色兜底 */
     cover?: string | null
     /** 头图副标题（共 N 首 / 作者之类）。调用方按自己的语境拼好，这里不猜 */
@@ -118,8 +109,8 @@ export default ({ componentId, info }: Props) => {
   const [collected, setCollected] = useState(info.subscribed === true)
   const [collecting, setCollecting] = useState(false)
 
-  // 「我喜欢」、每日推荐和红心雷达都没有可收藏的歌单身份；subscribed 明确是 false 的说明是自己建的
-  const canCollect = !info.liked && !info.daily && !info.radar && info.subscribed !== false
+  // 「我喜欢」和每日推荐都没有可收藏的歌单身份；subscribed 明确是 false 的说明是自己建的
+  const canCollect = !info.liked && !info.daily && info.subscribed !== false
 
   // 调用方没给收藏状态时（推荐流那种：手上只有别人的歌单信息），去「我的歌单」缓存里查一下
   // —— 本地读，不发请求。缓存里没有就当没收藏
@@ -156,31 +147,25 @@ export default ({ componentId, info }: Props) => {
     listRef.current?.setStatus('refreshing')
     try {
       let songs: LX.Music.MusicInfoOnline[]
-      const localKind = info.daily === true ? 'daily' : info.radar === true ? 'radar' : null
-      if (localKind) {
-        // 每日推荐/红心雷达读首页那份缓存，只有下拉刷新才联网重取（取回来顺手更新缓存，
+      if (info.daily) {
+        // 每日推荐读首页那份缓存，只有下拉刷新才联网重取（取回来顺手更新缓存，
         // 首页下次进来读到的就是新的；「今天刷过了」的记账一起写上，
         // 免得首页再为同一批多拉一次）
-        const isDaily = localKind === 'daily'
-        const fetchSongs = isDaily ? getQQMusicDailyPlaylist : getQQMusicHeartRadarSongs
-        const readCache = isDaily ? getQQMusicDailyPlaylistCache : getQQMusicHeartRadarCache
-        const writeCache = isDaily ? saveQQMusicDailyPlaylistCache : saveQQMusicHeartRadarCache
-        const refreshKind = isDaily ? 'playlist' : 'radar'
         if (force) {
           const { cookie } = await getQQMusicSession()
           if (!cookie) throw new Error(t('qq_not_logged_in'))
-          songs = await fetchSongs(cookie)
-          await writeCache(songs)
-          await saveQQMusicRefreshDay(refreshKind)
+          songs = await getQQMusicDailyPlaylist(cookie)
+          await saveQQMusicDailyPlaylistCache(songs)
+          await saveQQMusicRefreshDay('playlist')
         } else {
-          songs = await readCache()
+          songs = await getQQMusicDailyPlaylistCache()
           if (!songs.length) {
             // 缓存还没铺：首页那个入口进页面前会先拉一次，这里是兜底（比如从别处进来）
             const { cookie } = await getQQMusicSession()
             if (!cookie) throw new Error(t('qq_not_logged_in'))
-            songs = await fetchSongs(cookie)
-            await writeCache(songs)
-            await saveQQMusicRefreshDay(refreshKind)
+            songs = await getQQMusicDailyPlaylist(cookie)
+            await saveQQMusicDailyPlaylistCache(songs)
+            await saveQQMusicRefreshDay('playlist')
           }
         }
       } else if (info.liked) {
@@ -214,7 +199,7 @@ export default ({ componentId, info }: Props) => {
       listRef.current?.setStatus('error')
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     }
-  }, [info.daily, info.id, info.liked, info.radar, t])
+  }, [info.daily, info.id, info.liked, t])
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.qqPlaylist, componentId)
@@ -231,16 +216,14 @@ export default ({ componentId, info }: Props) => {
   }, [componentId, load, info.liked])
 
   // 点某一首就从那首开始放。每日推荐要打自己的临时列表 id，位置记忆靠它认队列
-  // （见 core/qqMusicDailyPosition）；红心雷达也用自己的 id，免得和别的列表串位置记忆。
-  // 别的歌单沿用各自的 id
+  // （见 core/qqMusicDailyPosition），别的歌单沿用各自的 id
   const playFrom: OnlineListProps['onPlayList'] = useCallback((index: number) => {
     const songs = songsRef.current
     if (!songs.length) return
-    const listId = info.daily ? QQ_DAILY_PLAYLIST_ID : info.radar ? QQ_HEART_RADAR_PLAYLIST_ID : `qq__${info.id}`
-    void setTempList(listId, [...songs]).then(() => {
+    void setTempList(info.daily ? QQ_DAILY_PLAYLIST_ID : `qq__${info.id}`, [...songs]).then(() => {
       void playList(LIST_IDS.TEMP, index)
     })
-  }, [info.daily, info.id, info.radar])
+  }, [info.daily, info.id])
 
   // 头图的播放钮：每日推荐接着上次那首放，别的歌单从头放
   const playAll = useCallback(() => {
