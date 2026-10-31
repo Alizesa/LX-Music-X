@@ -1001,80 +1001,158 @@ const readFeedPlaylistCard = (card: any): LX.QQMusic.PlaylistInfo | null => {
   }
 }
 
+// 音乐流是混排的，首屏不一定有歌单卡；最多探 3 页去抽
+const FEED_RECOMMEND_PROBE_PAGES = 3
+
+/** 从 MusicOne 同款首页音乐流里抽歌单卡 */
+const readFeedRecommendedPlaylists = async(cookie: string): Promise<LX.QQMusic.PlaylistInfo[]> => {
+  const cookies = parseQQMusicCookie(cookie)
+  const authed = !!readUin(cookies) && !!readMusicKey(cookies)
+  let clientTimeZone = 'Asia/Shanghai'
+  try { clientTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || clientTimeZone } catch {}
+  const list: LX.QQMusic.PlaylistInfo[] = []
+  const seen = new Set<string>()
+  let shelfCount = 0
+  let shelfIds: string[] = []
+  let uniqueKeys: string[] = []
+  for (let page = 1; page <= FEED_RECOMMEND_PROBE_PAGES && list.length < RECOMMEND_PLAYLIST_LIMIT; page++) {
+    const body = await request(QQ_MUSICU_URL, authed ? cookie : '', {
+      method: 'post',
+      body: {
+        comm: authed ? buildAuthComm(cookies) : buildAnonymousComm(),
+        req_0: {
+          module: 'music.recommend.RecommendFeed',
+          method: 'get_recommend_feed',
+          param: {
+            direction: page === 1 ? 0 : 1,
+            page,
+            s_num: shelfCount,
+            client_time: Math.floor(Date.now() / 1000),
+            v_cache: shelfIds,
+            // 首屏/刷新让推荐服务重新算个性化内容；后续页要带上一页的排重键
+            ...(page > 1 ? { v_uniq: uniqueKeys } : {}),
+            ext: {
+              bluetooth: '0',
+              has_login: '1',
+              no_need_sound_quality: '1',
+              ifRadarBlock: '0',
+              nopack_people: '0',
+              auto_folding_time: '0',
+              first_req_time: page === 1 ? '1' : '0',
+              is_20_style: '1',
+              client_time_zone: clientTimeZone,
+            },
+          },
+        },
+      },
+    })
+    const block = body?.req_0
+    if (!block) {
+      throw new Error(String(body?.message ?? body?.msg ?? global.i18n.t('qq_load_failed')))
+    }
+    const data = block.data ?? {}
+    if (Number(body?.code ?? 0) !== 0 || Number(block.code ?? 0) !== 0 || Number(data.retcode ?? 0) !== 0) {
+      throw new Error(String(block.message ?? block.msg ?? data.msg ?? global.i18n.t('qq_load_failed')))
+    }
+    const shelves: any[] = Array.isArray(data.v_shelf) ? data.v_shelf : []
+    if (!shelves.length) break
+    const nextShelfIds: string[] = []
+    const nextUniqueKeys: string[] = []
+    for (const shelf of shelves) {
+      const shelfId = String(shelf?.id ?? '')
+      if (shelfId) nextShelfIds.push(shelfId)
+      const niches: any[] = Array.isArray(shelf?.v_niche) ? shelf.v_niche : []
+      for (const niche of niches) {
+        const cards: any[] = Array.isArray(niche?.v_card) ? niche.v_card : []
+        for (const card of cards) {
+          // 官方只为 315 号货架回传排重键
+          if (shelfId === '315' && card?.type != null) {
+            nextUniqueKeys.push(`${Number(card.type)}_${Number(card.subtype ?? 0)}_${String(card.id ?? '')}`)
+          }
+          const item = readFeedPlaylistCard(card)
+          if (!item || seen.has(item.id)) continue
+          seen.add(item.id)
+          list.push(item)
+          if (list.length >= RECOMMEND_PLAYLIST_LIMIT) break
+        }
+        if (list.length >= RECOMMEND_PLAYLIST_LIMIT) break
+      }
+      if (list.length >= RECOMMEND_PLAYLIST_LIMIT) break
+    }
+    shelfCount += shelves.length
+    shelfIds = [...new Set([...shelfIds, ...nextShelfIds])]
+    uniqueKeys = [...new Set([...uniqueKeys, ...nextUniqueKeys])].slice(-100)
+  }
+  return list
+}
+
+// 旧推荐栏的映射（仅作音乐流抽不到歌单卡时的兜底）
+const normalizeLegacyRecommendedPlaylist = (raw: any): LX.QQMusic.PlaylistInfo | null => {
+  const basic = raw?.basic
+  if (!basic) return null
+  const id = basic.tid ?? basic.dirid
+  const name = basic.title
+  if (id == null || !name) return null
+  const cover = basic.cover ?? {}
+  return {
+    id: String(id),
+    name: decodeName(String(name)),
+    cover: cover.medium_url ?? cover.small_url ?? cover.default_url ?? cover.big_url,
+    description: decodeName(String(basic.desc ?? '')).replace(/<br>/g, '\n'),
+    trackCount: Number(basic.song_cnt ?? 0) || undefined,
+    author: decodeName(String(basic.creator?.nick ?? '')) || undefined,
+  }
+}
+
+/** 旧接口 PlaylistSquare/GetRecommendFeed（MusicOne 已停用，只拿来兜底） */
+const getLegacyRecommendedPlaylists = async(cookie: string): Promise<LX.QQMusic.PlaylistInfo[]> => {
+  const cookies = parseQQMusicCookie(cookie)
+  const authed = !!readUin(cookies) && !!readMusicKey(cookies)
+  const body = await request(QQ_MUSICU_URL, authed ? cookie : '', {
+    method: 'post',
+    body: {
+      comm: authed ? buildAuthComm(cookies) : buildAnonymousComm(),
+      req_0: {
+        module: 'music.playlist.PlaylistSquare',
+        method: 'GetRecommendFeed',
+        param: { From: 0, Size: RECOMMEND_PLAYLIST_LIMIT },
+      },
+    },
+  })
+  const block = body?.req_0
+  if (!block) throw new Error(String(body?.message ?? body?.msg ?? global.i18n.t('qq_load_failed')))
+  if (Number(block.code ?? 0) !== 0) {
+    throw new Error(String(block.message ?? block.msg ?? block.data?.msg ?? global.i18n.t('qq_load_failed')))
+  }
+  const data = block.data ?? {}
+  const feed = data.FeedRsp ?? data
+  const rawList: any[] = Array.isArray(feed.List) ? feed.List : []
+  const list = rawList
+    .map((item: any) => normalizeLegacyRecommendedPlaylist(item?.Playlist))
+    .filter((item: LX.QQMusic.PlaylistInfo | null): item is LX.QQMusic.PlaylistInfo => !!item)
+  if (!list.length) throw new Error(global.i18n.t('qq_load_failed'))
+  return list
+}
+
 /**
- * 推荐歌单：完全对齐 MusicOne 的首页音乐流 ——
- * `music.recommend.RecommendFeed/get_recommend_feed`，从
- * v_shelf → v_niche → v_card 里抽歌单卡。
- *
- * 旧的 PlaylistSquare/GetRecommendFeed 推荐栏在 MusicOne 里已经停用，不再使用。
- * 每次刷新都取第一页并带 first_req_time=1，让推荐服务重新算一批，取前 8 张歌单卡。
+ * 推荐歌单：优先对齐 MusicOne 的首页音乐流（`RecommendFeed/get_recommend_feed`，
+ * 从 v_shelf → v_niche → v_card 抽歌单卡）。音乐流是混排的、首屏不一定有歌单卡，
+ * 所以最多探 3 页；还是抽不到（或请求失败）就退回旧的 PlaylistSquare 推荐栏兜底，
+ * 保证这个区块不会因为流里没歌单卡而整体报错。
  */
 export const getQQMusicRecommendedPlaylists = async(cookie: string): Promise<{
   list: LX.QQMusic.PlaylistInfo[]
   hasMore: boolean
   nextFrom: number
 }> => {
-  const cookies = parseQQMusicCookie(cookie)
-  const authed = !!readUin(cookies) && !!readMusicKey(cookies)
-  let clientTimeZone = 'Asia/Shanghai'
-  try { clientTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || clientTimeZone } catch {}
-  const body = await request(QQ_MUSICU_URL, authed ? cookie : '', {
-    method: 'post',
-    body: {
-      comm: authed ? buildAuthComm(cookies) : buildAnonymousComm(),
-      req_0: {
-        module: 'music.recommend.RecommendFeed',
-        method: 'get_recommend_feed',
-        param: {
-          direction: 0,
-          page: 1,
-          s_num: 0,
-          client_time: Math.floor(Date.now() / 1000),
-          v_cache: [],
-          ext: {
-            bluetooth: '0',
-            has_login: '1',
-            no_need_sound_quality: '1',
-            ifRadarBlock: '0',
-            nopack_people: '0',
-            auto_folding_time: '0',
-            // 首页刷新：让推荐服务重新计算个性化内容
-            first_req_time: '1',
-            is_20_style: '1',
-            client_time_zone: clientTimeZone,
-          },
-        },
-      },
-    },
-  })
-  const block = body?.req_0
-  if (!block) {
-    throw new Error(String(body?.message ?? body?.msg ?? global.i18n.t('qq_load_failed')))
+  try {
+    const list = await readFeedRecommendedPlaylists(cookie)
+    if (list.length) return { list, hasMore: false, nextFrom: 0 }
+    console.warn('[QQMusic] 音乐流没有返回歌单卡，改用旧推荐接口')
+  } catch (error) {
+    console.warn('[QQMusic] 音乐流推荐歌单失败，改用旧推荐接口:', error instanceof Error ? error.message : error)
   }
-  const data = block.data ?? {}
-  if (Number(body?.code ?? 0) !== 0 || Number(block.code ?? 0) !== 0 || Number(data.retcode ?? 0) !== 0) {
-    throw new Error(String(block.message ?? block.msg ?? data.msg ?? global.i18n.t('qq_load_failed')))
-  }
-  const list: LX.QQMusic.PlaylistInfo[] = []
-  const seen = new Set<string>()
-  const shelves: any[] = Array.isArray(data.v_shelf) ? data.v_shelf : []
-  for (const shelf of shelves) {
-    const niches: any[] = Array.isArray(shelf?.v_niche) ? shelf.v_niche : []
-    for (const niche of niches) {
-      const cards: any[] = Array.isArray(niche?.v_card) ? niche.v_card : []
-      for (const card of cards) {
-        const item = readFeedPlaylistCard(card)
-        if (!item || seen.has(item.id)) continue
-        seen.add(item.id)
-        list.push(item)
-        if (list.length >= RECOMMEND_PLAYLIST_LIMIT) break
-      }
-      if (list.length >= RECOMMEND_PLAYLIST_LIMIT) break
-    }
-    if (list.length >= RECOMMEND_PLAYLIST_LIMIT) break
-  }
-  if (!list.length) throw new Error(global.i18n.t('qq_load_failed'))
-  // 推荐位每次刷新都重新取第一页，游标不再使用；保留字段兼容旧缓存
+  const list = await getLegacyRecommendedPlaylists(cookie)
   return { list, hasMore: false, nextFrom: 0 }
 }
 
