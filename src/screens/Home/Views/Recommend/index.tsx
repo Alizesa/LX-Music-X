@@ -23,7 +23,7 @@ import {
 } from '@/core/qqMusic'
 import { continueRecommendQueue, initQQMusicRecommendAutoRefresh, startRecommendQueue } from '@/core/qqMusicRecommend'
 import { dropRecommendSession } from '@/core/qqMusicRecommendSession'
-import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist } from '@/core/qqMusicDailyPosition'
+import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist, playQQMusicHeartRadarPlaylist } from '@/core/qqMusicDailyPosition'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
 import {
@@ -404,12 +404,12 @@ export default () => {
     void playList(LIST_IDS.TEMP, index)
   }, [])
 
-  // 红心雷达整表播放。和每日推荐一样是一份普通歌单，不挂电台续播
+  // 红心雷达整表播放。和每日推荐一样接着上次那首放，不挂电台续播
   const playRadar = useCallback(async() => {
     const songs = await ensureRadarSongs()
     if (!songs) return
-    await playSongs(QQ_HEART_RADAR_PLAYLIST_ID, songs, 0)
-  }, [ensureRadarSongs, playSongs])
+    await playQQMusicHeartRadarPlaylist(songs)
+  }, [ensureRadarSongs])
 
   // 横幅进歌单页（头图 + 那批红心雷达歌曲），播放交给右下角的按钮
   const openRadar = useCallback(async() => {

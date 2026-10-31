@@ -55,9 +55,10 @@ export default async(appSetting: LX.AppSetting) => {
   // 「我喜欢」的状态集合要跟着账号变化清掉，否则换号后会显示上一个号的收藏状态
   const { initQQMusicFavorite } = await import('@/core/qqMusicFavorite')
   initQQMusicFavorite()
-  // 每日推荐的播放位置记忆
-  const { initQQMusicDailyPosition } = await import('@/core/qqMusicDailyPosition')
+  // 每日推荐 / 红心雷达的播放位置记忆
+  const { initQQMusicDailyPosition, initQQMusicHeartRadarPosition } = await import('@/core/qqMusicDailyPosition')
   initQQMusicDailyPosition()
+  initQQMusicHeartRadarPosition()
   // 把本机播放上报到 QQ 的云端「最近播放」（只写不读，见那个模块的说明）
   const { initQQMusicRecentPlayReport } = await import('@/core/qqMusicRecentPlay')
   initQQMusicRecentPlayReport()

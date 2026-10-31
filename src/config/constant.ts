@@ -133,6 +133,8 @@ export const storageDataPrefix = {
   qqMusicDailyPlaylist: '@qq_music_daily_playlist',
   // 红心雷达（按「我喜欢」推的歌单）的缓存。和每日推荐一样，进首页只读缓存
   qqMusicHeartRadar: '@qq_music_heart_radar',
+  // 红心雷达播到哪了。规则和每日推荐相同：只记歌 id，跨天作废
+  qqMusicHeartRadarPosition: '@qq_music_heart_radar_position',
   // 每日推荐播到哪了。只记歌 id：恢复时按 id 在当前列表里找位置，
   // 歌单换了/歌没了自然就退回开头
   qqMusicDailyPosition: '@qq_music_daily_position',

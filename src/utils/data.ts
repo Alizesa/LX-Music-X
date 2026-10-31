@@ -44,6 +44,7 @@ const qqMusicPlaylistsKey = storageDataPrefix.qqMusicPlaylists
 const qqMusicDailyRecommendKey = storageDataPrefix.qqMusicDailyRecommend
 const qqMusicDailyPlaylistKey = storageDataPrefix.qqMusicDailyPlaylist
 const qqMusicHeartRadarKey = storageDataPrefix.qqMusicHeartRadar
+const qqMusicHeartRadarPositionKey = storageDataPrefix.qqMusicHeartRadarPosition
 const qqMusicLikedSongsKey = storageDataPrefix.qqMusicLikedSongs
 const qqMusicLikedSongsStaleKey = storageDataPrefix.qqMusicLikedSongsStale
 const qqMusicRefreshDayKey = storageDataPrefix.qqMusicRefreshDay
@@ -629,6 +630,9 @@ export const removeQQMusicDailyRecommendCache = async() => removeData(qqMusicDai
 export const getQQMusicHeartRadarCache = async() => await getData<LX.Music.MusicInfoOnline[]>(qqMusicHeartRadarKey) ?? []
 export const saveQQMusicHeartRadarCache = async(list: LX.Music.MusicInfoOnline[]) => saveData(qqMusicHeartRadarKey, list)
 export const removeQQMusicHeartRadarCache = async() => removeData(qqMusicHeartRadarKey)
+export const getQQMusicHeartRadarPosition = async() => await getData<{ songId: string, savedAt: number }>(qqMusicHeartRadarPositionKey) ?? null
+export const saveQQMusicHeartRadarPosition = async(position: { songId: string, savedAt: number }) => saveData(qqMusicHeartRadarPositionKey, position)
+export const removeQQMusicHeartRadarPosition = async() => removeData(qqMusicHeartRadarPositionKey)
 
 /** 每日推荐/猜你喜欢/红心雷达那几份缓存最后一次刷新是哪天（本地日期字符串）。没刷过就是 undefined */
 export const getQQMusicRefreshDay = async(kind: QQMusicRefreshKind) =>

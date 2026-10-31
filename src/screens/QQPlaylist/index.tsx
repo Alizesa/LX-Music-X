@@ -17,7 +17,7 @@ import { playList } from '@/core/player/player'
 import { getQQMusicDailyPlaylist, getQQMusicHeartRadarSongs, getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
 import { getQQMusicLikedSongs, isQQMusicLikedSongsStale, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs, releaseQQMusicLikedSongs, retainQQMusicLikedSongs, toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
 import { cachePlaylistSongs, getCachedPlaylistSongs, getPlaylistSongsCacheVersion } from '@/core/qqMusicPlaylistSongsCache'
-import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist } from '@/core/qqMusicDailyPosition'
+import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist, playQQMusicHeartRadarPlaylist } from '@/core/qqMusicDailyPosition'
 import {
   getQQMusicDailyPlaylistCache,
   getQQMusicHeartRadarCache,
@@ -250,13 +250,14 @@ export default ({ componentId, info }: Props) => {
     })
   }, [info.daily, info.id, info.radar])
 
-  // 头图的播放钮：每日推荐接着上次那首放，别的歌单从头放
+  // 头图的播放钮：每日推荐 / 红心雷达接着上次那首放，别的歌单从头放
   const playAll = useCallback(() => {
     const songs = songsRef.current
     if (!songs.length) return
     if (info.daily) void playQQMusicDailyPlaylist(songs)
+    else if (info.radar) void playQQMusicHeartRadarPlaylist(songs)
     else playFrom(0)
-  }, [info.daily, playFrom])
+  }, [info.daily, info.radar, playFrom])
 
   return (
     <PageContent>
