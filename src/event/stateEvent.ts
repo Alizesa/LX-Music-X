@@ -87,10 +87,6 @@ export class StateEvent extends Event {
     this.emit('fetchingListStatusUpdated', fetchingListStatus)
   }
 
-  syncStatusUpdated(status: LX.Sync.Status) {
-    this.emit('syncStatusUpdated', status)
-  }
-
   versionInfoUpdated(info: VersionState['versionInfo']) {
     this.emit('versionInfoUpdated', info)
   }

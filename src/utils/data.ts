@@ -1,5 +1,6 @@
 import { getData, saveData, saveDataDirect, getAllKeys, removeDataMultiple, saveDataMultiple, removeData, getDataMultiple } from '@/plugins/storage'
-import { DEFAULT_SETTING, storageDataPrefix, type NAV_ID_Type } from '@/config/constant'
+import { DEFAULT_SETTING, LIST_IDS, storageDataPrefix, type NAV_ID_Type } from '@/config/constant'
+import { isRemovedUserList } from './legacyList'
 import { throttle } from './common'
 import { getSecureItem, removeSecureItem, setSecureItem } from './nativeModules/secureStorage'
 // import { gzip, ungzip } from '@/utils/nativeModules/gzip'
@@ -20,10 +21,6 @@ const ignoreVersionFailTipTimeKey = storageDataPrefix.ignoreVersionFailTipTimeKe
 const searchSettingKey = storageDataPrefix.searchSetting
 const searchHistoryListKey = storageDataPrefix.searchHistoryList
 const songListSettingKey = storageDataPrefix.songListSetting
-const leaderboardSettingKey = storageDataPrefix.leaderboardSetting
-const syncAuthKeyPrefix = storageDataPrefix.syncAuthKey
-const syncHostPrefix = storageDataPrefix.syncHost
-const syncHostHistoryPrefix = storageDataPrefix.syncHostHistory
 const listPrefix = storageDataPrefix.list
 const dislikeListPrefix = storageDataPrefix.dislikeList
 const userApiPrefix = storageDataPrefix.userApi
@@ -66,7 +63,6 @@ let listUpdateInfo: LX.List.ListUpdateInfo
 
 let searchSetting: typeof DEFAULT_SETTING['search']
 let songListSetting: typeof DEFAULT_SETTING['songList']
-let leaderboardSetting: typeof DEFAULT_SETTING['leaderboard']
 let searchHistoryList: string[]
 
 const saveListPositionThrottle = throttle(() => {
@@ -80,9 +76,6 @@ const saveSearchHistoryThrottle = throttle(() => {
 }, 1000)
 const saveSongListSettingThrottle = throttle(() => {
   void saveData(songListSettingKey, songListSetting)
-}, 1000)
-const saveLeaderboardSettingThrottle = throttle(() => {
-  void saveData(leaderboardSettingKey, leaderboardSetting)
 }, 1000)
 const saveViewPrevStateThrottle = throttle((state) => {
   void saveData(viewPrevStateKey, state)
@@ -270,17 +263,6 @@ export const saveSongListSetting = async(setting: Partial<typeof DEFAULT_SETTING
   saveSongListSettingThrottle()
 }
 
-export const getLeaderboardSetting = async() => {
-  // eslint-disable-next-line require-atomic-updates
-  leaderboardSetting ??= await getData(leaderboardSettingKey) ?? { ...DEFAULT_SETTING.leaderboard }
-  return { ...leaderboardSetting }
-}
-export const saveLeaderboardSetting = async(setting: Partial<typeof DEFAULT_SETTING['leaderboard']>) => {
-  if (!leaderboardSetting) await getLeaderboardSetting()
-  leaderboardSetting = Object.assign(leaderboardSetting, setting)
-  saveLeaderboardSettingThrottle()
-}
-
 export const getViewPrevState = async() => {
   return (await getData<{ id: NAV_ID_Type }>(viewPrevStateKey)) ?? { ...DEFAULT_SETTING.viewPrevState }
 }
@@ -300,17 +282,23 @@ export const saveTempListMeta = async(state: { id: string }) => {
 }
 
 
-const idFixRxp = /\.0$/
 /**
  * 获取用户列表
  */
 export const getUserLists = async(): Promise<LX.List.UserListInfo[]> => {
-  const list = await getData<LX.List.UserListInfo[]>(userListKey) ?? []
-  for (const info of list) {
-    // 兼容v2.3.0之前版本PC端插入数字类型的ID导致其意外在末尾追加 .0 的问题
-    if (info.sourceListId?.endsWith?.('.0')) {
-      info.sourceListId = info.sourceListId.replace(idFixRxp, '')
+  const rawList = await getData<LX.List.UserListInfo[]>(userListKey) ?? []
+  const list = rawList.filter(info => !isRemovedUserList(info))
+  if (list.length !== rawList.length) {
+    // 连同歌曲和位置记录一起清掉，不能只删目录留下整份歌曲。
+    // 旧备份可能含异常的内置 id，本地音乐和播放队列由各自模块管理。
+    const protectedIds = new Set<string | null>([...Object.values(LIST_IDS), ...list.map(info => info.id)])
+    const removedIds = rawList.filter(info => isRemovedUserList(info) && !protectedIds.has(info.id)).map(info => info.id)
+    await removeListMusics(removedIds)
+    for (const id of removedIds) {
+      await removeListPosition(id)
+      await removeListUpdateInfo(id)
     }
+    await saveData(userListKey, list)
   }
   return list
 }
@@ -659,58 +647,6 @@ export const removeQQMusicRecommendPlaylistsCache = async() => removeData(qqMusi
 export const getQQMusicRecommendSession = async() => await getData<LX.QQMusic.RecommendSession>(qqMusicRecommendSessionKey) ?? null
 export const saveQQMusicRecommendSession = async(session: LX.QQMusic.RecommendSession) => saveData(qqMusicRecommendSessionKey, session)
 export const removeQQMusicRecommendSession = async() => removeData(qqMusicRecommendSessionKey)
-
-export const getSyncAuthKey = async(serverId: string) => {
-  const keys = await getData<Record<string, LX.Sync.KeyInfo>>(syncAuthKeyPrefix)
-  if (!keys) return null
-  return keys[serverId] ?? null
-}
-export const setSyncAuthKey = async(serverId: string, info: LX.Sync.KeyInfo) => {
-  let keys = await getData<Record<string, LX.Sync.KeyInfo>>(syncAuthKeyPrefix) ?? {}
-  keys[serverId] = info
-  await saveData(syncAuthKeyPrefix, keys)
-}
-
-let syncHostInfo: string
-export const getSyncHost = async() => {
-  if (syncHostInfo === undefined) {
-    // eslint-disable-next-line require-atomic-updates
-    syncHostInfo = await getData(syncHostPrefix) ?? ''
-
-    // 清空1.0.0之前版本的同步主机
-    if (typeof syncHostInfo == 'object') syncHostInfo = ''
-  }
-  return syncHostInfo
-}
-export const setSyncHost = async(host: string) => {
-  // let hostInfo = await getData(syncHostPrefix) || {}
-  // hostInfo.host = host
-  // hostInfo.port = port
-  syncHostInfo = host
-  await saveData(syncHostPrefix, syncHostInfo)
-}
-let syncHostHistory: string[]
-export const getSyncHostHistory = async() => {
-  if (syncHostHistory === undefined) {
-    // eslint-disable-next-line require-atomic-updates
-    syncHostHistory = await getData(syncHostHistoryPrefix) ?? []
-
-    // 清空1.0.0之前版本的同步历史
-    if (syncHostHistory.length && typeof syncHostHistory[0] !== 'string') syncHostHistory = []
-  }
-  return syncHostHistory
-}
-export const addSyncHostHistory = async(host: string) => {
-  let syncHostHistory = await getSyncHostHistory()
-  if (syncHostHistory.some(h => h == host)) return
-  syncHostHistory.unshift(host)
-  if (syncHostHistory.length > 20) syncHostHistory = syncHostHistory.slice(0, 20) // 最多存储20个
-  await saveData(syncHostHistoryPrefix, syncHostHistory)
-}
-export const removeSyncHostHistory = async(index: number) => {
-  syncHostHistory.splice(index, 1)
-  await saveData(syncHostHistoryPrefix, syncHostHistory)
-}
 
 let userApis: LX.UserApi.UserApiInfo[] = []
 export const getUserApiList = async(): Promise<LX.UserApi.UserApiInfo[]> => {

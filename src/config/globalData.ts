@@ -42,9 +42,7 @@ global.lx = {
 
   // prevListPlayIndex: -1,
 
-  // syncKeyInfo: {},
 
-  isEnableSyncLog: false,
   isEnableUserApiLog: false,
 
   playerTrackId: '',
@@ -61,7 +59,6 @@ global.lx = {
 
   homePagerIdle: true,
 
-  // syncKeyInfo: initValue as LX.Sync.KeyInfo,
 
   // windowInfo: {
   //   screenW,

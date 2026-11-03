@@ -31,8 +31,6 @@ export default (setting: any): Partial<LX.AppSetting> => {
     setting['desktopLyric.style.fontSize'] = setting.desktopLyric?.style?.fontSize
     setting['desktopLyric.style.opacity'] = setting.desktopLyric?.style?.opacity
     setting['list.isClickPlayList'] = setting.list?.isClickPlayList
-    setting['list.isShowSource'] = setting.list?.isShowSource
-    setting['list.isSaveScrollLocation'] = setting.list?.isSaveScrollLocation
     setting['list.addMusicLocationType'] = setting.list?.addMusicLocationType
     setting['common.themeId'] = setting.themeId
     setting['common.isAutoTheme'] = setting.isAutoTheme
@@ -41,7 +39,6 @@ export default (setting: any): Partial<LX.AppSetting> => {
     setting['common.sourceNameType'] = setting.sourceNameType
     setting['common.shareType'] = setting.shareType
     setting['common.isAgreePact'] = setting.isAgreePact
-    setting['sync.enable'] = setting.sync?.enable
     setting['theme.id'] = setting.themeId
   }
   // 上游 v1.9.2：音频卸载在部分设备上会导致播放异常，升级时一并关掉

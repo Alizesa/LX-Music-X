@@ -3,27 +3,25 @@ import { filterMusicList, fixNewMusicInfoQuality, toNewMusicInfo } from '@/utils
 import { log } from '@/utils/log'
 import { confirmDialog, handleReadFile, handleSaveFile, showImportTip, toast } from '@/utils/tools'
 import listState from '@/store/list/state'
+import { isRemovedUserList } from '@/utils/legacyList'
 
 
 const getAllLists = async() => {
   const lists: LX.List.UserListInfoFull[] = []
 
-  for await (const list of listState.userList) {
+  // 旧版在线歌单副本不再导出
+  for await (const list of listState.userList.filter(item => !isRemovedUserList(item))) {
     lists.push(await getListMusics(list.id).then(musics => ({ ...list, list: musics })))
   }
 
   return lists
 }
 
-// 老备份里会混着「试听列表」/「我的收藏」（id 是 default / love）。这两类已经没有落点了，
-// 放进来只会凭空多出一个自建列表，直接跳过
-const isRemovedListId = (id: unknown) => id === 'default' || id === 'love'
-
 const importOldListData = async(lists: any[]) => {
   const allLists = await getAllLists()
   for (const list of lists) {
     try {
-      if (isRemovedListId(list?.id)) continue
+      if (isRemovedUserList(list)) continue
       const targetList = allLists.find(l => l.id == list.id)
       if (targetList) {
         targetList.list = filterMusicList((list.list as any[]).map(m => toNewMusicInfo(m)))
@@ -48,7 +46,7 @@ const importNewListData = async(lists: LX.List.UserListInfoFull[]) => {
   const allLists = await getAllLists()
   for (const list of lists) {
     try {
-      if (isRemovedListId(list?.id)) continue
+      if (isRemovedUserList(list)) continue
       const targetList = allLists.find(l => l.id == list.id)
       if (targetList) {
         targetList.list = filterMusicList(list.list).map(m => fixNewMusicInfoQuality(m))
@@ -77,9 +75,8 @@ const importNewListData = async(lists: LX.List.UserListInfoFull[]) => {
  * @returns
  */
 export const handleImportListPart = async(listData: LX.ConfigFile.MyListInfoPart['data'], position: number = listState.userList.length) => {
-  // 老备份里可能是「试听列表」/「我的收藏」的单列表导出。这两类已经拆了，
-  // 放进来只会在自建歌单里凭空多一个幽灵列表，跟整份导入那边的处理保持一致：跳过
-  if (isRemovedListId(listData.id)) {
+  // 单列表与整份备份采用同一规则，防止旧在线歌单副本重新进入本地列表。
+  if (isRemovedUserList(listData)) {
     toast(global.i18n.t('setting_backup_part_import_list_tip_removed'), 'long')
     return
   }
@@ -199,11 +196,7 @@ const exportAllList = async(path: string) => {
     data: await getAllLists(),
   }
 
-  try {
-    await handleSaveFile(path + '/lx_list.lxmc', data)
-  } catch (error: any) {
-    log.error(error.stack)
-  }
+  await handleSaveFile(path + '/lx_list.lxmc', data)
 }
 export const handleExportList = (path: string) => {
   toast(global.i18n.t('setting_backup_part_export_list_tip_zip'))

@@ -9,10 +9,10 @@
 [LX Music 移动版](https://github.com/lyswhut/lx-music-mobile) 的个人分支，按自己的使用习惯改的，只出 Android 包。
 
 - 应用 ID `io.github.alizesa.lxmusicx`，可与官方 LX Music 共存
-- 版本号跟随上游的 `package.json`（当前 1.9.0 / versionCode 77）
+- 版本号跟随上游，以 `package.json` 为准（当前 1.9.2 / versionCode 79）
 - 最低 Android 5（minSdk 21）
 
-上游本身的功能、自定义源机制、数据同步等都与官方一致，这里只记录**本分支多出来的东西**。
+保留上游的自定义源和多源搜索、换源能力。主界面已改为「首页 / 我的」，歌单收藏由 QQ 账号管理；本分支已移除设备间数据同步和旧本地歌单浏览入口。
 
 ## 与上游的差异
 
@@ -33,9 +33,9 @@
 
 ### 外部歌单与推荐内容
 
-- **歌单导入**：可从外部导入歌单，转为本地歌单长期保存；「我喜欢」这类虚拟歌单也可导入
-- **推荐内容**：一键播放，播到接近队列尾会自动续下一批，不会卡在固定的 20 首里循环
-- **本地缓存**：歌单与推荐内容均持久缓存，进页面直接显示、点击即播，都不需要联网；页面只在点「刷新」时请求。播放过程中的自动续播会另行拉取下一批，这是连续播放本身的成本
+- **歌单收藏**：QQ 歌单收藏写入当前账号，在「我的」查看；其他音源歌单可搜索和播放。旧版「QQ · 我喜欢」等在线歌单的本地副本会在升级后清理，备份导入、导出也会过滤这类副本。
+- **推荐内容**：「猜你喜欢」播到接近队列尾会自动续下一批；每日推荐和红心雷达按日缓存，并记住播放位置。
+- **本地缓存**：歌单与推荐内容优先读取持久缓存，缺少缓存、跨天推荐更新或手动刷新时联网。
 
 ### 本地资源优先
 
@@ -86,7 +86,6 @@ npm run pack          # 等价于 cd android && gradlew.bat assembleRelease
 - 桌面版：<https://github.com/lyswhut/lx-music-desktop>
 - 常见问题：<https://lyswhut.github.io/lx-music-doc/mobile/faq>
 - 播放列表机制：<https://lyswhut.github.io/lx-music-doc/mobile/faq/playlist>
-- 数据同步服务：<https://github.com/lyswhut/lx-music-sync-server#readme>
 
 上游的原始发布地址只有 [GitHub](https://github.com/lyswhut/lx-music-mobile/releases)，其他渠道均为第三方转载，与上游项目无关。
 

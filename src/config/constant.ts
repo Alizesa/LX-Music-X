@@ -81,9 +81,6 @@ export const storageDataPrefix = {
   musicOtherSource: '@music_other_source__',
   playInfo: '@play_info',
 
-  syncAuthKey: '@sync_auth_key',
-  syncHost: '@sync_host',
-  syncHostHistory: '@sync_host_history',
 
   openStoragePath: '@open_storage_path',
   selectedManagedFolder: '@selected_managed_folder',
@@ -108,7 +105,6 @@ export const storageDataPrefix = {
   listUpdateInfo: '@list_update_info',
   ignoreVersion: '@ignore_version',
   ignoreVersionFailTipTimeKey: '@ignore_version_fail_tip_time',
-  leaderboardSetting: '@leaderboard_setting',
   songListSetting: '@songist_setting',
   searchSetting: '@search_setting',
 
@@ -165,9 +161,6 @@ export const storageDataPrefixOld = {
   // lyric: '@lyric__',
   // musicUrl: '@music_url__',
   playInfo: '@play_info',
-  syncAuthKey: '@sync_auth_key',
-  syncHost: '@sync_host',
-  syncHostHistory: '@sync_host_history',
   notificationTipEnable: '@notification_tip_enable',
 } as const
 
@@ -217,11 +210,6 @@ export const MUSIC_TOGGLE_MODE_LIST = [
 ] as const
 
 export const DEFAULT_SETTING = {
-  leaderboard: {
-    source: 'kw' as LX.OnlineSource,
-    boardId: 'kw__16',
-  },
-
   songList: {
     source: 'kw' as LX.OnlineSource,
     sortId: 'new',

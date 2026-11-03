@@ -81,10 +81,8 @@ const defaultSetting: LX.AppSetting = {
   'search.isShowHistorySearch': false,
 
   'list.isClickPlayList': false,
-  'list.isShowSource': true,
   'list.isShowAlbumName': false,
   'list.isShowInterval': true,
-  'list.isSaveScrollLocation': true,
   'list.addMusicLocationType': 'top',
 
   'download.fileName': '歌名 - 歌手',
@@ -93,8 +91,6 @@ const defaultSetting: LX.AppSetting = {
   // 下载从哪条链取地址：'source' = 音源（默认，留档用音源那份），'account' = QQ 账号直取。
   // 播放不受它影响，始终账号优先
   'download.urlSource': 'source',
-
-  'sync.enable': false,
 
   // 'theme.id': 'blue_plus',
   'theme.id': 'green',

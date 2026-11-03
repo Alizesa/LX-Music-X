@@ -1,11 +1,12 @@
-import { createList, setTempList } from '@/core/list'
+import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import { getListDetail, getListDetailAll } from '@/core/songlist'
 import { LIST_IDS } from '@/config/constant'
 import listState from '@/store/list/state'
-import syncSourceList from '@/core/syncSourceList'
-import { confirmDialog, toMD5, toast } from '@/utils/tools'
-import { type Source } from '@/store/songlist/state'
+import { toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
+import { getQQMusicPlaylistsCache } from '@/utils/data'
+import { toast } from '@/utils/tools'
+import songlistState, { type Source } from '@/store/songlist/state'
 
 const getListId = (id: string, source: LX.OnlineSource) => `${source}__${id}`
 
@@ -32,27 +33,27 @@ export const handlePlay = async(id: string, source: Source, list?: LX.Music.Musi
 }
 
 export const handleCollect = async(id: string, source: Source, name: string) => {
-  const listId = getListId(id, source)
-
-  const targetList = listState.userList.find(l => l.sourceListId == listId)
-  if (targetList) {
-    const confirm = await confirmDialog({
-      message: global.i18n.t('duplicate_list_tip', { name: targetList.name }),
-      cancelButtonText: global.i18n.t('list_import_part_button_cancel'),
-      confirmButtonText: global.i18n.t('confirm_button_text'),
-    })
-    if (!confirm) return
-    void syncSourceList(targetList)
-    return
+  if (source !== 'tx') {
+    toast(global.i18n.t('qq_playlist_collect_unsupported'), 'long')
+    return false
   }
-
-  const list = await getListDetailAll(source, id)
-  await createList({
+  // 自建歌单不能再作为收藏歌单写入缓存；已经收藏的也无需重复请求。
+  const cached = await getQQMusicPlaylistsCache().catch(() => [])
+  const existing = cached.find(item => item.id == id)
+  if (existing?.subscribed === false || existing?.liked) {
+    toast(global.i18n.t('qq_playlist_collect_unsupported'), 'long')
+    return false
+  }
+  if (existing?.subscribed === true) {
+    toast(global.i18n.t('qq_playlist_faved', { name }))
+    return true
+  }
+  const detail = songlistState.listDetailInfo
+  const currentDetail = detail.id == id && detail.source == source ? detail : null
+  return toggleQQMusicPlaylistCollected({
+    id,
     name,
-    id: `${source}_${toMD5(listId)}`,
-    list,
-    source,
-    sourceListId: id,
-  })
-  toast(global.i18n.t('collect_success'))
+    cover: currentDetail?.info.img,
+    trackCount: currentDetail?.total ?? undefined,
+  }, true)
 }

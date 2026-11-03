@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useRef, useState } from 'react'
 import { View } from 'react-native'
 import Button from '@/components/common/Button'
 
@@ -17,6 +17,8 @@ export default memo(() => {
   const theme = useTheme()
   const t = useI18n()
   const info = useListInfo()
+  const collectingRef = useRef(false)
+  const [collecting, setCollecting] = useState(false)
 
   const back = () => {
     void pop(commonState.componentIds.songlistDetail!)
@@ -27,16 +29,23 @@ export default memo(() => {
     void handlePlay(info.id, info.source, songlistState.listDetailInfo.list)
   }
 
-  const handleCollection = () => {
-    if (!songlistState.listDetailInfo.info.name) return
-    void handleCollect(info.id, info.source, songlistState.listDetailInfo.info.name || info.name)
+  const handleCollection = async() => {
+    if (collectingRef.current || !songlistState.listDetailInfo.info.name) return
+    collectingRef.current = true
+    setCollecting(true)
+    try {
+      await handleCollect(info.id, info.source, songlistState.listDetailInfo.info.name || info.name)
+    } finally {
+      collectingRef.current = false
+      setCollecting(false)
+    }
   }
 
   return (
     <View style={styles.container}>
-      <Button onPress={handleCollection} style={styles.controlBtn}>
+      {info.source === 'tx' && <Button onPress={handleCollection} disabled={collecting} style={styles.controlBtn}>
         <Text style={{ ...styles.controlBtnText, color: theme['c-button-font'] }}>{t('collect_songlist')}</Text>
-      </Button>
+      </Button>}
       <Button onPress={handlePlayAll} style={styles.controlBtn}>
         <Text style={{ ...styles.controlBtnText, color: theme['c-button-font'] }}>{t('play_all')}</Text>
       </Button>
@@ -57,7 +66,7 @@ const styles = createStyle({
   controlBtn: {
     flexGrow: 1,
     flexShrink: 1,
-    width: '33%',
+    flexBasis: 0,
     paddingTop: 12,
     paddingBottom: 12,
     paddingLeft: 10,

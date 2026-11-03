@@ -3,6 +3,7 @@ import { storageDataPrefix, storageDataPrefixOld } from '@/config/constant'
 import { getAllKeys, getData, getDataMultiple, removeData, saveData } from '@/plugins/storage'
 import { allMusicList, listDataOverwrite, userLists } from '@/utils/listManage'
 import { saveListMusics, saveUserList } from '@/utils/data'
+import { isRemovedUserList } from '@/utils/legacyList'
 
 
 interface OldUserListInfo {
@@ -75,7 +76,7 @@ export const getAllListData = async(): Promise<{
   }
   const listData = await getDataMultiple(listKeys) as Array<[string, any]>
   for (const [key, value] of listData) {
-    if (removedListKeys.includes(key)) continue
+    if (removedListKeys.includes(key) || isRemovedUserList(value)) continue
     userList.push(value)
   }
 
