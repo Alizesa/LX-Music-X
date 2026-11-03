@@ -17,7 +17,11 @@ const load = (file, mocks = {}) => {
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${name}`)
       return mocks[name]
     },
-    global: { i18n: { t: key => key } },
+    global: {
+      i18n: { t: key => key },
+      app_event: { qqMusicPlaylistsUpdated() {} },
+      ...(mocks.__global ?? {}),
+    },
     console: { log() {}, error() {} },
   }
   vm.runInNewContext(outputText, context, { filename: file })
@@ -146,7 +150,9 @@ test('search collection uses the QQ account and never creates a local list', asy
     '@/store/list/state': {},
     '@/core/qqMusic': {
       getQQMusicSession: async() => ({ cookie: 'x' }),
-      getQQMusicPlaylists: async() => [],
+      getQQMusicPlaylists: async() => cached,
+      getQQMusicUin: cookie => cookie,
+      QQMusicSessionExpiredError: class extends Error {},
     },
     '@/core/qqMusicFavorite': { toggleQQMusicPlaylistCollected: async(...args) => { requests.push(copy(args)); return true } },
     '@/utils/data': { getQQMusicPlaylistsCache: async() => cached, saveQQMusicPlaylistsCache: async() => {} },
@@ -161,4 +167,56 @@ test('search collection uses the QQ account and never creates a local list', asy
   cached = [{ id: '12345', subscribed: true }]
   assert.equal(await api.handleCollect('12345', 'tx', 'Playlist'), true)
   assert.equal(requests.length, 1)
+})
+
+const collectHarness = ({ session, playlists, notified = () => {} }) => {
+  const requests = []
+  return {
+    api: load('src/screens/SonglistDetail/listAction.ts', {
+      '@/core/list': { createList() { assert.fail('Local snapshot must not be created') } },
+      '@/core/player/player': {},
+      '@/core/songlist': { getListDetailAll() { assert.fail('Collection must not fetch all songs') } },
+      '@/config/constant': constants,
+      '@/store/list/state': {},
+      '@/core/qqMusic': {
+        getQQMusicSession: session,
+        getQQMusicPlaylists: playlists,
+        getQQMusicUin: cookie => cookie,
+        QQMusicSessionExpiredError: class extends Error {},
+      },
+      '@/core/qqMusicFavorite': { toggleQQMusicPlaylistCollected: async(...args) => { requests.push(copy(args)); return true } },
+      '@/utils/data': { saveQQMusicPlaylistsCache: async() => {} },
+      '@/utils/tools': { toast() {} },
+      '@/store/songlist/state': { default: { listDetailInfo: { id: '12345', source: 'tx', total: 50, info: {} } } },
+      __global: { app_event: { qqMusicPlaylistsUpdated: notified } },
+    }),
+    requests,
+  }
+}
+
+test('collection aborts if the account changes during the refresh request', async() => {
+  let calls = 0
+  const h = collectHarness({
+    session: async() => ({ cookie: ++calls === 1 ? 'account-a' : 'account-b' }),
+    playlists: async() => [{ id: '12345', subscribed: true }],
+  })
+  assert.equal(await h.api.handleCollect('12345', 'tx', 'Playlist'), false)
+  assert.equal(h.requests.length, 0)
+})
+
+test('collection refreshes the cache and notifies the mine page before deciding', async() => {
+  let fetches = 0
+  let notifications = 0
+  const h = collectHarness({
+    session: async() => ({ cookie: 'account-a' }),
+    playlists: async() => {
+      fetches++
+      return [{ id: '12345', subscribed: true }]
+    },
+    notified: () => { notifications++ },
+  })
+  assert.equal(await h.api.handleCollect('12345', 'tx', 'Playlist'), true)
+  assert.equal(fetches, 1)
+  assert.equal(notifications, 1)
+  assert.equal(h.requests.length, 0)
 })

@@ -3,9 +3,9 @@ import { playList } from '@/core/player/player'
 import { getListDetail, getListDetailAll } from '@/core/songlist'
 import { LIST_IDS } from '@/config/constant'
 import listState from '@/store/list/state'
-import { getQQMusicPlaylists, getQQMusicSession } from '@/core/qqMusic'
+import { getQQMusicPlaylists, getQQMusicSession, getQQMusicUin, QQMusicSessionExpiredError } from '@/core/qqMusic'
 import { toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
-import { getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache } from '@/utils/data'
+import { saveQQMusicPlaylistsCache } from '@/utils/data'
 import { toast } from '@/utils/tools'
 import songlistState, { type Source } from '@/store/songlist/state'
 
@@ -38,21 +38,33 @@ export const handleCollect = async(id: string, source: Source, name: string) => 
     toast(global.i18n.t('qq_playlist_collect_unsupported'), 'long')
     return false
   }
-  // 自建歌单不能再作为收藏歌单写入缓存；已经收藏的也无需重复请求。
-  // 缓存里没有这条时先拉一次账号歌单再判断：只凭「缓存没找到」就发收藏，
-  // 会把自建/已收藏的歌单也发出去（全新登录或「我的」页没打开过时缓存是空的）。
-  const cached = await getQQMusicPlaylistsCache().catch(() => [])
-  let existing = cached.find(item => item.id == id)
-  if (!existing) {
-    const { cookie } = await getQQMusicSession()
-    if (cookie) {
-      const fresh = await getQQMusicPlaylists(cookie, { requireAll: true }).catch(() => null)
-      if (fresh) {
-        await saveQQMusicPlaylistsCache(fresh).catch(() => {})
-        existing = fresh.find(item => item.id == id)
-      }
-    }
+  // 每次收藏前都向服务器确认一次账号歌单，不能只信本地缓存：
+  // 缓存可能过时（在 QQ 客户端取消过收藏），也可能为空（全新登录/没进过「我的」页）。
+  // 这样也能顺手判断自建歌单，避免把它们当收藏歌单发出去。
+  const { cookie } = await getQQMusicSession()
+  if (!cookie) {
+    toast(global.i18n.t('qq_not_logged_in'), 'long')
+    return false
   }
+  const requestUin = getQQMusicUin(cookie)
+  let fresh: LX.QQMusic.PlaylistInfo[]
+  try {
+    fresh = await getQQMusicPlaylists(cookie, { requireAll: true })
+  } catch (error) {
+    // 票据失效交给上层走重新登录
+    if (error instanceof QQMusicSessionExpiredError) throw error
+    console.warn('[QQMusic] 收藏前刷新歌单失败:', error instanceof Error ? error.message : error)
+    toast(global.i18n.t('qq_load_failed'), 'long')
+    return false
+  }
+  // 请求期间退出/换号：旧账号的歌单不能写进当前缓存，也不能拿来判断
+  const { cookie: current } = await getQQMusicSession()
+  const currentUin = current ? getQQMusicUin(current) : ''
+  if (!requestUin || requestUin !== currentUin) return false
+  await saveQQMusicPlaylistsCache(fresh).catch(() => {})
+  // 常驻的「我的」页据此重读，别等用户手动下拉
+  global.app_event.qqMusicPlaylistsUpdated()
+  const existing = fresh.find(item => item.id == id)
   if (existing?.subscribed === false || existing?.liked) {
     toast(global.i18n.t('qq_playlist_collect_unsupported'), 'long')
     return false
