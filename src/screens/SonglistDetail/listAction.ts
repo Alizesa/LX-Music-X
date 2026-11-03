@@ -3,8 +3,9 @@ import { playList } from '@/core/player/player'
 import { getListDetail, getListDetailAll } from '@/core/songlist'
 import { LIST_IDS } from '@/config/constant'
 import listState from '@/store/list/state'
+import { getQQMusicPlaylists, getQQMusicSession } from '@/core/qqMusic'
 import { toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
-import { getQQMusicPlaylistsCache } from '@/utils/data'
+import { getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache } from '@/utils/data'
 import { toast } from '@/utils/tools'
 import songlistState, { type Source } from '@/store/songlist/state'
 
@@ -38,8 +39,20 @@ export const handleCollect = async(id: string, source: Source, name: string) => 
     return false
   }
   // 自建歌单不能再作为收藏歌单写入缓存；已经收藏的也无需重复请求。
+  // 缓存里没有这条时先拉一次账号歌单再判断：只凭「缓存没找到」就发收藏，
+  // 会把自建/已收藏的歌单也发出去（全新登录或「我的」页没打开过时缓存是空的）。
   const cached = await getQQMusicPlaylistsCache().catch(() => [])
-  const existing = cached.find(item => item.id == id)
+  let existing = cached.find(item => item.id == id)
+  if (!existing) {
+    const { cookie } = await getQQMusicSession()
+    if (cookie) {
+      const fresh = await getQQMusicPlaylists(cookie, { requireAll: true }).catch(() => null)
+      if (fresh) {
+        await saveQQMusicPlaylistsCache(fresh).catch(() => {})
+        existing = fresh.find(item => item.id == id)
+      }
+    }
+  }
   if (existing?.subscribed === false || existing?.liked) {
     toast(global.i18n.t('qq_playlist_collect_unsupported'), 'long')
     return false

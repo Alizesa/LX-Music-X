@@ -289,16 +289,21 @@ export const getUserLists = async(): Promise<LX.List.UserListInfo[]> => {
   const rawList = await getData<LX.List.UserListInfo[]>(userListKey) ?? []
   const list = rawList.filter(info => !isRemovedUserList(info))
   if (list.length !== rawList.length) {
-    // 连同歌曲和位置记录一起清掉，不能只删目录留下整份歌曲。
-    // 旧备份可能含异常的内置 id，本地音乐和播放队列由各自模块管理。
-    const protectedIds = new Set<string | null>([...Object.values(LIST_IDS), ...list.map(info => info.id)])
-    const removedIds = rawList.filter(info => isRemovedUserList(info) && !protectedIds.has(info.id)).map(info => info.id)
-    await removeListMusics(removedIds)
-    for (const id of removedIds) {
-      await removeListPosition(id)
-      await removeListUpdateInfo(id)
+    // 清理是尽力而为：存储偶发失败不能把启动流程整个卡死，下次启动还会再试。
+    try {
+      // 连同歌曲和位置记录一起清掉，不能只删目录留下整份歌曲。
+      // 旧备份可能含异常的内置 id，本地音乐和播放队列由各自模块管理。
+      const protectedIds = new Set<string | null>([...Object.values(LIST_IDS), ...list.map(info => info.id)])
+      const removedIds = rawList.filter(info => isRemovedUserList(info) && !protectedIds.has(info.id)).map(info => info.id)
+      await removeListMusics(removedIds)
+      for (const id of removedIds) {
+        await removeListPosition(id)
+        await removeListUpdateInfo(id)
+      }
+      await saveData(userListKey, list)
+    } catch (error) {
+      console.warn('[List] 清理旧歌单失败，先跳过:', error instanceof Error ? error.message : error)
     }
-    await saveData(userListKey, list)
   }
   return list
 }

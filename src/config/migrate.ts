@@ -1,6 +1,6 @@
 import { filterMusicList, toNewMusicInfo } from '@/utils'
 import { storageDataPrefix, storageDataPrefixOld } from '@/config/constant'
-import { getAllKeys, getData, getDataMultiple, removeData, saveData } from '@/plugins/storage'
+import { getAllKeys, getData, getDataMultiple, removeData, removeDataMultiple, saveData } from '@/plugins/storage'
 import { allMusicList, listDataOverwrite, userLists } from '@/utils/listManage'
 import { saveListMusics, saveUserList } from '@/utils/data'
 import { isRemovedUserList } from '@/utils/legacyList'
@@ -75,10 +75,16 @@ export const getAllListData = async(): Promise<{
     }
   }
   const listData = await getDataMultiple(listKeys) as Array<[string, any]>
+  const removedKeys: string[] = []
   for (const [key, value] of listData) {
-    if (removedListKeys.includes(key) || isRemovedUserList(value)) continue
+    if (removedListKeys.includes(key) || isRemovedUserList(value)) {
+      removedKeys.push(key)
+      continue
+    }
     userList.push(value)
   }
+  // 跳过的旧列表连同歌曲一起删掉，不能只不导入、把整份 @list__ 留在存储里
+  if (removedKeys.length) await removeDataMultiple(removedKeys)
 
   const listSort: Record<string, number> = await getData(storageDataPrefixOld.listSort) ?? {}
 

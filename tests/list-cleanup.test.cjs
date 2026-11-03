@@ -144,8 +144,12 @@ test('search collection uses the QQ account and never creates a local list', asy
     '@/core/songlist': { getListDetailAll() { assert.fail('Collection must not fetch all songs') } },
     '@/config/constant': constants,
     '@/store/list/state': {},
+    '@/core/qqMusic': {
+      getQQMusicSession: async() => ({ cookie: 'x' }),
+      getQQMusicPlaylists: async() => [],
+    },
     '@/core/qqMusicFavorite': { toggleQQMusicPlaylistCollected: async(...args) => { requests.push(copy(args)); return true } },
-    '@/utils/data': { getQQMusicPlaylistsCache: async() => cached },
+    '@/utils/data': { getQQMusicPlaylistsCache: async() => cached, saveQQMusicPlaylistsCache: async() => {} },
     '@/utils/tools': { toast() {} },
     '@/store/songlist/state': { default: { listDetailInfo: { id: '12345', source: 'tx', total: 50, info: { img: 'cover' } } } },
   })
