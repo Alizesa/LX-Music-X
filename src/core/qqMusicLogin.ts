@@ -12,6 +12,7 @@ import {
   mergeQQMusicCookies,
   normalizeUin,
   parseQQMusicCookie,
+  readAppLoginType,
   readMusicKey,
   readUin,
   serializeQQMusicCookie,
@@ -318,9 +319,7 @@ export const requestQQMusicCredentialRefresh = async(cookie: string) => {
   const accountId = readUin(values)
   const musicKey = readMusicKey(values)
   if (!accountId || !musicKey) return null
-  const loginType = Number(values.loginType) === 1 || Number(values.loginType) === 2
-    ? Number(values.loginType)
-    : musicKey.startsWith('W_X') ? 1 : 2
+  const loginType = readAppLoginType(values)
   const result = await postPhoneLogin('Login', {
     openid: values.openid ?? '',
     access_token: values.access_token ?? '',

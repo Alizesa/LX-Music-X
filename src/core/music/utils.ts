@@ -324,15 +324,15 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   const accountQuality = settingState.setting['player.noVipStandardQuality'] ? '128k' : targetQuality
   const order = urlSourceOrder ?? (settingState.setting['player.urlSource'] === 'source' ? 'sourceFirst' : 'accountFirst')
 
-  // QQ 账号直取。免费可听的歌能拿到完整音源；VIP 歌只会拿到试听重定向（函数返回 null），
-  // 这时交给音源那条路。它不依赖用户 API 脚本，所以默认排在音源前面 ——
-  // 没配脚本时也能播 QQ 的免费歌曲。
+  // QQ 账号直取：App 和网页通道都拿不到完整音频，才回落音源。
+  // 是否完整由取链层验证，不能根据 VIP 标签或 URL 参数推断。
   const byAccountUrl = async() => {
     if (musicInfo.source != 'tx') return null
     try {
       const byAccount = await getQQMusicUrlByAccount(musicInfo, accountQuality, accountQuality)
       return byAccount ? { musicInfo, url: byAccount.url, quality: byAccount.quality, isFromCache: false } : null
     } catch (error) {
+      if (isRequestCancelled(error)) throw error
       console.log('[QQMusic] 账号取链失败:', error)
       return null
     }

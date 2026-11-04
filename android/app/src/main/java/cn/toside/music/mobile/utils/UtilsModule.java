@@ -56,6 +56,11 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
     return "UtilsModule";
   }
 
+  @ReactMethod
+  public void probeRemoteAudio(String url, boolean inspectDuration, Promise promise) {
+    AsyncTask.runTask(() -> RemoteAudioProbe.read(url, inspectDuration), promise);
+  }
+
   @Override
   public void initialize() {
     super.initialize();

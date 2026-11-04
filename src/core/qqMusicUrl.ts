@@ -1,4 +1,6 @@
-import { getQQMusicSession, getQQMusicUin, postAuthedMusicu } from './qqMusic'
+import { getQQMusicSession, getQQMusicUin, postAuthedMusicu, QQMusicSessionExpiredError } from './qqMusic'
+import { probeRemoteAudio } from '@/utils/nativeModules/remoteAudio'
+import { isRequestCancelled } from '@/utils/message'
 
 // QQ 的取票接口按文件名前缀区分音质，扩展名跟着前缀走
 const QUALITY_SPEC: Partial<Record<LX.Quality, { prefix: string, extension: string }>> = {
@@ -14,7 +16,7 @@ const FALLBACK_ORDER: LX.Quality[] = ['flac24bit', 'flac', '320k', '128k']
 /**
  * 试链顺序：从 maxQuality 这一档开始往下，首选档（没超过上限的话）排最前。
  *
- * 试一档就是一次 vkey 请求，所以这个上限是有意义的：没开会员的账号只有标准音质，
+ * 每档最多请求 App / 网页两张票，所以这个上限是有意义的：没开会员的账号只有标准音质，
  * 把 maxQuality 传成 '128k' 时这里只剩一档，不会再白试上面那三档。
  */
 const buildTryOrder = (preferredQuality: LX.Quality | undefined, maxQuality: LX.Quality): LX.Quality[] => {
@@ -27,7 +29,7 @@ const buildTryOrder = (preferredQuality: LX.Quality | undefined, maxQuality: LX.
 // 固定 guid，和 tx SDK 的 comm 用同一个
 const GUID = '1F70E520B2EAA7D25E11760783C53CA9'
 
-// 试听地址带 src 参数
+// src 表示可能重定向到试听，仍须检查真实媒体时长。
 const TRIAL_RXP = /[?&]src=/i
 
 const buildFilenames = (prefix: string, extension: string, songMid: string, mediaMid: string): string[] =>
@@ -35,29 +37,60 @@ const buildFilenames = (prefix: string, extension: string, songMid: string, medi
     ? [`${prefix}${mediaMid}.${extension}`, `${prefix}${mediaMid}${mediaMid}.${extension}`]
     : [`${prefix}${songMid}${songMid}.${extension}`, `${prefix}${songMid}.${extension}`]
 
-/** 拼出可直接播放的绝对地址。purl 可能是相对路径，基址在响应的 sip 里。 */
-const absolutize = (purl: string, sips: string[]): string | null => {
-  const normalized = purl.startsWith('//') ? `https:${purl}` : purl
-  if (/^https?:\/\//i.test(normalized)) return normalized
-  const base = sips.map(item => item.trim()).find(item => item.startsWith('//') || /^https?:\/\//i.test(item))
-  if (!base) return null
-  const normalizedBase = base.startsWith('//') ? `https:${base}` : base
-  return `${normalizedBase.replace(/\/+$/, '')}/${normalized.replace(/^\/+/, '')}`
+const normalizeUrl = (value: string) => value.startsWith('//') ? `https:${value}` : value.replace(/^http:/i, 'https:')
+
+/** 保留全部 CDN 和 wifiurl 候选，首个地址失效时仍能在账号内回退。 */
+const buildUrlCandidates = (purls: string[], sips: string[]): string[] => {
+  const bases = sips.map(value => normalizeUrl(value.trim())).filter(value => /^https:\/\//i.test(value))
+  const urls = new Set<string>()
+  for (const purl of purls) {
+    const normalized = normalizeUrl(purl)
+    const absolute = /^https:\/\//i.test(normalized)
+    if (absolute) urls.add(normalized)
+    const path = absolute ? normalized.replace(/^https:\/\/[^/]+\//i, '') : normalized.replace(/^\/+/, '')
+    for (const base of bases) urls.add(`${base.replace(/\/+$/, '')}/${path}`)
+  }
+  return [...urls]
 }
 
-const pickUrl = (data: any): { url: string, trial: boolean } | null => {
+const getDurationMs = (interval: string | null): number => {
+  if (!interval || !/^\d+(?::\d{1,2}){1,2}$/.test(interval)) return 0
+  return interval.split(':').reduce((seconds, part) => seconds * 60 + Number(part), 0) * 1000
+}
+
+const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number): Promise<string | null> => {
   const list: any[] = Array.isArray(data?.midurlinfo) ? data.midurlinfo : []
-  const sips: string[] = Array.isArray(data?.sip) ? data.sip : []
+  const sips: string[] = Array.isArray(data?.sip) ? data.sip.filter((item: unknown) => typeof item === 'string') : []
+  const spec = QUALITY_SPEC[quality]!
+  const purls: string[] = []
   for (const info of list) {
     if (Number(info?.result ?? 0) !== 0) continue
-    const candidates = [info?.purl, info?.wifiurl].filter((item): item is string => typeof item == 'string' && item.length > 0)
-    for (const purl of candidates) {
-      const url = absolutize(purl, sips)
-      if (url) return { url, trial: TRIAL_RXP.test(url) }
+    for (const raw of [info?.purl, info?.wifiurl]) {
+      if (typeof raw !== 'string' || !raw.trim()) continue
+      const purl = raw.trim()
+      const filename = purl.split(/[?#]/)[0].split('/').pop()!.toLowerCase()
+      // 服务端可能返回其他音质，不能把它标成请求的音质。
+      if (filename.startsWith(spec.prefix.toLowerCase()) && filename.endsWith(`.${spec.extension}`)) purls.push(purl)
     }
+  }
+  const candidates = buildUrlCandidates(purls, sips)
+  // 先试普通直链，避免第一项是试听时漏掉后面的完整地址。
+  candidates.sort((a, b) => Number(TRIAL_RXP.test(a)) - Number(TRIAL_RXP.test(b)))
+  for (const url of candidates) {
+    const inspectDuration = TRIAL_RXP.test(url)
+    if (inspectDuration && expectedMs <= 0) continue
+    const media = await probeRemoteAudio(url, inspectDuration)
+    if (!media.readable) continue
+    if (!inspectDuration) return url
+    const expectedMime = quality === 'flac' || quality === 'flac24bit' ? 'audio/flac' : 'audio/mpeg'
+    const actualMs = media.durationMs ?? 0
+    // MusicOne 的容差：2 秒或歌曲时长的 2%，取较大值。
+    if (media.mime === expectedMime && actualMs > 0 && Math.abs(actualMs - expectedMs) <= Math.max(2000, expectedMs / 50)) return url
   }
   return null
 }
+
+class QQMusicVkeyError extends Error {}
 
 const requestVkey = async(cookie: string, songMid: string, filenames: string[], prefix: string, platform: '23' | '20') => {
   const param: Record<string, unknown> = {
@@ -77,7 +110,10 @@ const requestVkey = async(cookie: string, songMid: string, filenames: string[], 
   }
   const body = await postAuthedMusicu(cookie, {
     req_1: { module: 'music.vkey.GetVkey', method: 'UrlGetVkey', param },
-  })
+  }, {}, platform === '20' ? 'web' : 'app')
+  // 业务失败不再伪装成空地址、逐档重试；外层仍可交给音源兜底。
+  const code = Number(body?.code ?? 0) || Number(body?.req_1?.code ?? 0)
+  if (code) throw new QQMusicVkeyError(`QQ Music vkey ${code}`)
   return body?.req_1?.data
 }
 
@@ -89,15 +125,14 @@ export interface QQAccountUrl {
 /**
  * 用 QQ 账号直取播放地址。
  *
- * 免费可听的歌能拿到完整音源；VIP 歌服务端只给试听重定向（地址带 src 参数），
- * 这时返回 null，让调用方回落到用户 API 脚本的音源 —— 「免费可听走账号、
- * VIP 走音源」就落在这里。没登录、或这首歌没带 mid，同样返回 null。
+ * 账号能拿到完整音频时直接使用，只有无法取得完整音频才回落用户音源。
+ * 带 src 的地址会核对实际音频时长，不以 URL 参数判断会员权限。
  *
- * 逐档往下试：首选音质拿不到就退一档。各档都只给试听时，再用网页兼容票
- * (platform 20) 试一次 —— App 通道偶尔只会返回试听重定向，而这首其实是能听的。
+ * 每档先试 App，再试网页兼容票（platform 20），均不可用才降档。
+ * 空地址、不可读地址、试听或网络异常都会尝试网页票；登录/业务错误停止账号重试。
  *
  * maxQuality 是这次允许试到的最高档，调用方按「用户选的音质」+「账号有没有会员」来传，
- * 不传按无损处理（等于不设限）。每试一档就是一次 vkey 请求，所以把上限收窄是有意义的：
+ * 不传按无损处理（等于不设限）。每档最多请求两张票，所以把上限收窄是有意义的：
  * 没开会员的账号只有标准音质，传 '128k' 时就只剩这一档，不会再白试上面那三档。
  */
 export const getQQMusicUrlByAccount = async(
@@ -106,40 +141,30 @@ export const getQQMusicUrlByAccount = async(
   maxQuality: LX.Quality = 'flac24bit',
 ): Promise<QQAccountUrl | null> => {
   const meta = musicInfo.meta
-  const songMid = String(meta.songId ?? '')
+  const songMid = String(meta.songId ?? '').trim()
   if (!songMid) return null
   const { cookie } = await getQQMusicSession()
   if (!cookie) return null
 
   const order = buildTryOrder(preferredQuality, maxQuality)
 
-  const mediaMid = String(meta.strMediaMid ?? '')
-  let trial: { quality: LX.Quality, filenames: string[], prefix: string } | null = null
+  const mediaMid = String(meta.strMediaMid ?? '').trim()
+  const expectedMs = getDurationMs(musicInfo.interval)
 
   for (const quality of order) {
     const spec = QUALITY_SPEC[quality]
     if (!spec) continue
     const filenames = buildFilenames(spec.prefix, spec.extension, songMid, mediaMid)
-    let data
-    try {
-      data = await requestVkey(cookie, songMid, filenames, spec.prefix, '23')
-    } catch {
-      continue
-    }
-    const picked = pickUrl(data)
-    if (!picked) continue
-    if (!picked.trial) return { url: picked.url, quality }
-    // 只拿到试听：先记下这一档，继续往下试更低的
-    trial ??= { quality, filenames, prefix: spec.prefix }
-  }
-
-  if (trial) {
-    try {
-      const data = await requestVkey(cookie, songMid, trial.filenames, trial.prefix, '20')
-      const picked = pickUrl(data)
-      if (picked && !picked.trial) return { url: picked.url, quality: trial.quality }
-    } catch {
-      // 兼容票也失败就按「拿不到」处理，交给音源
+    for (const platform of ['23', '20'] as const) {
+      try {
+        const data = await requestVkey(cookie, songMid, filenames, spec.prefix, platform)
+        const url = await pickUrl(data, quality, expectedMs)
+        if (url) return { url, quality }
+      } catch (error) {
+        if (isRequestCancelled(error) || error instanceof QQMusicSessionExpiredError || error instanceof QQMusicVkeyError) throw error
+        // 不输出签名 URL / Cookie，保留取链通道以便定位失败。
+        console.warn(`[QQMusic] 账号取链请求失败: song=${songMid}, platform=${platform}, quality=${quality}`)
+      }
     }
   }
   return null

@@ -23,6 +23,7 @@ import {
   isQQMusicCookie,
   normalizeUin,
   parseQQMusicCookie,
+  readAppLoginType,
   readMusicKey,
   readUin,
   serializeQQMusicCookie,
@@ -123,6 +124,7 @@ const updateCommCredential = (comm: unknown, cookie: string) => {
   if ('uin' in next && uin) next.uin = uin
   if ('qq' in next && uin) next.qq = uin
   if ('authst' in next && authst) next.authst = authst
+  if ('tmeLoginType' in next) next.tmeLoginType = readAppLoginType(cookies)
   return next
 }
 
@@ -246,10 +248,6 @@ const refreshQQMusicCookie = async(cookie: string, force: boolean): Promise<stri
 }
 
 
-// QQ 音乐 App 用 tmeLoginType 区分登录方式：1 = QQ，2 = 微信。
-// 判据与 readUin 里的 login_type 保持一致。
-const readLoginType = (cookies: Record<string, string>) => Number(cookies.login_type) === 2 ? 2 : 1
-
 /**
  * 登录态请求的 comm 块。uin 必须是账号 UIN，且必须带 authst(音乐票据)，
  * 否则服务端不认这个身份 —— 这是早先 "session expired" 的直接原因之一。
@@ -271,26 +269,27 @@ const buildAuthComm = (cookies: Record<string, string>) => {
     v: 14090008,
     chid: '10003505',
     tmeAppID: 'qqmusic',
-    tmeLoginType: readLoginType(cookies),
+    tmeLoginType: readAppLoginType(cookies),
     ...(authst ? { authst } : {}),
   }
 }
 
 /**
  * 带登录态的 musicu.fcg 请求。extra 是要并进 body 的字段（req_0 / req_1 ...），
- * comm 由这里统一用 App 信封拼好。取链、写红心这类新链路都走这里。
+ * 默认用 App 信封；网页兼容取票必须同时切换 comm 和 UA。
  */
 export const postAuthedMusicu = async(
   cookie: string,
   extra: Record<string, unknown>,
   headers: Record<string, string> = {},
+  client: 'app' | 'web' = 'app',
 ) => {
   const cookies = parseQQMusicCookie(cookie)
   if (!readUin(cookies) || !readMusicKey(cookies)) throw new Error(global.i18n.t('qq_cookie_invalid'))
   return request(QQ_MUSICU_URL, cookie, {
     method: 'post',
-    body: { comm: buildAuthComm(cookies), ...extra },
-    headers,
+    body: { comm: client === 'web' ? buildCommonComm(cookies) : buildAuthComm(cookies), ...extra },
+    headers: { 'User-Agent': client === 'web' ? QQ_WEB_USER_AGENT : QQ_APP_USER_AGENT, ...headers },
   })
 }
 

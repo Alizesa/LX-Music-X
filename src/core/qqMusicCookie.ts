@@ -62,6 +62,14 @@ export const readUin = (cookies: Record<string, string>) => {
 // 会让"其实没登录成功"的 Cookie 通过本地校验，然后在服务端被拒。
 export const readMusicKey = (cookies: Record<string, string>) => cookies.qm_keyst || cookies.qqmusic_key || cookies.music_key || ''
 
+// App 的 loginType 与网页 login_type 含义相反：1 微信，2 QQ。
+// 与 MusicOne 的播放/续期协议一致，优先使用登录响应，再按音乐票据前缀判断。
+export const readAppLoginType = (cookies: Record<string, string>): 1 | 2 => {
+  const value = Number(cookies.loginType)
+  if (value === 1 || value === 2) return value
+  return readMusicKey(cookies).startsWith('W_X') ? 1 : 2
+}
+
 export const getQQMusicUin = (cookie: string) => readUin(parseQQMusicCookie(cookie))
 
 export const getQQMusicAuthKey = (cookie: string) => readMusicKey(parseQQMusicCookie(cookie))
