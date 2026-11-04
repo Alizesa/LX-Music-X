@@ -37,6 +37,7 @@ import java.util.Objects;
 
 public class UtilsModule extends ReactContextBaseJavaModule implements ComponentCallbacks2 {
   private final ReactApplicationContext reactContext;
+  private final RemoteAudioProbe audioProbes = new RemoteAudioProbe();
 
   private int listenerCount = 0;
   private boolean trimRegistered = false;
@@ -57,8 +58,13 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
   }
 
   @ReactMethod
-  public void probeRemoteAudio(String url, boolean inspectDuration, Promise promise) {
-    AsyncTask.runTask(() -> RemoteAudioProbe.read(url, inspectDuration), promise);
+  public void startRemoteAudioProbe(String id, String url, boolean inspectDuration, double timeoutMs, Promise promise) {
+    audioProbes.start(id, url, inspectDuration, timeoutMs, promise);
+  }
+
+  @ReactMethod
+  public void cancelRemoteAudioProbe(String id) {
+    audioProbes.cancel(id);
   }
 
   @Override
@@ -71,6 +77,7 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
 
   @Override
   public void invalidate() {
+    audioProbes.close();
     if (trimRegistered) {
       try {
         reactContext.unregisterComponentCallbacks(this);

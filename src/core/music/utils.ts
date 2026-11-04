@@ -323,15 +323,32 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   // 开了会员（或没开这个设置）时按 targetQuality 走：上限就是用户选的那一档，不越过它往上试。
   const accountQuality = settingState.setting['player.noVipStandardQuality'] ? '128k' : targetQuality
   const order = urlSourceOrder ?? (settingState.setting['player.urlSource'] === 'source' ? 'sourceFirst' : 'accountFirst')
+  // 对外只注册一次取消句柄，账号结束到音源初始化之间也不能丢失取消状态。
+  let cancelled = false
+  let currentCancel: (() => void) | undefined
+  const assertActive = () => {
+    if (cancelled) throw new Error(requestMsg.cancelRequest)
+  }
+  const registerCancel = (cancel: () => void) => {
+    currentCancel = cancel
+    if (cancelled) cancel()
+  }
+  onCancel?.(() => {
+    cancelled = true
+    currentCancel?.()
+  })
+  assertActive()
 
   // QQ 账号直取：App 和网页通道都拿不到完整音频，才回落音源。
   // 是否完整由取链层验证，不能根据 VIP 标签或 URL 参数推断。
   const byAccountUrl = async() => {
     if (musicInfo.source != 'tx') return null
     try {
-      const byAccount = await getQQMusicUrlByAccount(musicInfo, accountQuality, accountQuality)
+      const byAccount = await getQQMusicUrlByAccount(musicInfo, accountQuality, accountQuality, { isRefresh, onCancel: registerCancel })
+      assertActive()
       return byAccount ? { musicInfo, url: byAccount.url, quality: byAccount.quality, isFromCache: false } : null
     } catch (error) {
+      assertActive()
       if (isRequestCancelled(error)) throw error
       console.log('[QQMusic] 账号取链失败:', error)
       return null
@@ -341,28 +358,31 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   // 音源（用户配置的自定义源 / 内置源）。这段必须在 apiInitPromise 之后：
   // 脚本没初始化完就取链会直接失败。
   const bySourceUrl = async() => {
+    assertActive()
     if (!await global.lx.apiInitPromise[0]) throw new Error('source init failed')
+    assertActive()
     // console.log(musicInfo.source)
 
     let reqPromise
     try {
       const request = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), targetQuality)
-      if (onCancel) {
-        const cancel = request.canceleFn ?? request.cancelHttp
-        if (typeof cancel == 'function') onCancel(cancel as () => void)
-      }
+      const cancel = request.canceleFn ?? request.cancelHttp
+      if (typeof cancel == 'function') registerCancel(cancel as () => void)
       reqPromise = request.promise
     } catch (err: any) {
       reqPromise = Promise.reject(err)
     }
     return reqPromise.then(({ url, type }: { url: string, type: LX.Quality }) => {
+      assertActive()
       return { musicInfo, url, quality: type, isFromCache: false }
     }).catch(async(err: any) => {
+      assertActive()
       console.log(err)
       if (isRequestCancelled(err) || !allowToggleSource || err.message == requestMsg.tooManyRequests) throw err
       onToggleSource()
       // eslint-disable-next-line @typescript-eslint/promise-function-async
       return getOtherSource(musicInfo).then(otherSource => {
+        assertActive()
         // console.log('find otherSource', otherSource.length)
         if (otherSource.length) {
           return getOnlineOtherSourceMusicUrl({
@@ -371,7 +391,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
             quality,
             isRefresh,
             retryedSource: [musicInfo.source],
-            onCancel,
+            onCancel: registerCancel,
           })
         }
         throw err

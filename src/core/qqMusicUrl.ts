@@ -1,6 +1,8 @@
 import { getQQMusicSession, getQQMusicUin, postAuthedMusicu, QQMusicSessionExpiredError } from './qqMusic'
 import { probeRemoteAudio } from '@/utils/nativeModules/remoteAudio'
-import { isRequestCancelled } from '@/utils/message'
+import { isRequestCancelled, requestMsg } from '@/utils/message'
+import { throwIfAborted, withAbort } from '@/utils/abort'
+import BackgroundTimer from 'react-native-background-timer'
 
 // QQ 的取票接口按文件名前缀区分音质，扩展名跟着前缀走
 const QUALITY_SPEC: Partial<Record<LX.Quality, { prefix: string, extension: string }>> = {
@@ -58,7 +60,13 @@ const getDurationMs = (interval: string | null): number => {
   return interval.split(':').reduce((seconds, part) => seconds * 60 + Number(part), 0) * 1000
 }
 
-const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number): Promise<string | null> => {
+interface AccountUrlOptions {
+  isRefresh?: boolean
+  onCancel?: (cancel: () => void) => void
+}
+
+const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal: AbortSignal, isRefresh: boolean): Promise<string | null> => {
+  throwIfAborted(signal)
   const list: any[] = Array.isArray(data?.midurlinfo) ? data.midurlinfo : []
   const sips: string[] = Array.isArray(data?.sip) ? data.sip.filter((item: unknown) => typeof item === 'string') : []
   const spec = QUALITY_SPEC[quality]!
@@ -76,23 +84,50 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number): Promi
   const candidates = buildUrlCandidates(purls, sips)
   // 先试普通直链，避免第一项是试听时漏掉后面的完整地址。
   candidates.sort((a, b) => Number(TRIAL_RXP.test(a)) - Number(TRIAL_RXP.test(b)))
-  for (const url of candidates) {
-    const inspectDuration = TRIAL_RXP.test(url)
-    if (inspectDuration && expectedMs <= 0) continue
-    const media = await probeRemoteAudio(url, inspectDuration)
-    if (!media.readable) continue
-    if (!inspectDuration) return url
-    const expectedMime = quality === 'flac' || quality === 'flac24bit' ? 'audio/flac' : 'audio/mpeg'
-    const actualMs = media.durationMs ?? 0
-    // MusicOne 的容差：2 秒或歌曲时长的 2%，取较大值。
-    if (media.mime === expectedMime && actualMs > 0 && Math.abs(actualMs - expectedMs) <= Math.max(2000, expectedMs / 50)) return url
-  }
-  return null
+  const selected = candidates.filter(url => !TRIAL_RXP.test(url) || expectedMs > 0).slice(0, 6)
+  if (!selected.length) return null
+  // 每个响应最多探测 6 个候选、同时 3 个，整批含时长检查最多 5 秒。
+  return new Promise<string | null>((resolve, reject) => {
+    const controller = new AbortController()
+    let done = false
+    let next = 0
+    const finish = (url: string | null, error?: unknown) => {
+      if (done) return
+      done = true
+      BackgroundTimer.clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+      controller.abort()
+      if (error) reject(error)
+      else resolve(url)
+    }
+    const onAbort = () => { finish(null, new Error(requestMsg.cancelRequest)) }
+    const timer = BackgroundTimer.setTimeout(() => { finish(null) }, 5000)
+    signal.addEventListener('abort', onAbort)
+    if (signal.aborted) { onAbort(); return }
+    const worker = async() => {
+      while (next < selected.length) {
+        if (done) return
+        const url = selected[next++]
+        const inspectDuration = TRIAL_RXP.test(url)
+        const media = await probeRemoteAudio(url, inspectDuration, { signal: controller.signal, isRefresh, timeoutMs: 5000 })
+        if (done || !media.readable) continue
+        const expectedMime = quality === 'flac' || quality === 'flac24bit' ? 'audio/flac' : 'audio/mpeg'
+        const actualMs = media.durationMs ?? 0
+        // MusicOne 的容差：2 秒或歌曲时长的 2%，取较大值。
+        if (!inspectDuration || (media.mime === expectedMime && actualMs > 0 && Math.abs(actualMs - expectedMs) <= Math.max(2000, expectedMs / 50))) {
+          finish(url)
+        }
+      }
+    }
+    void Promise.all(Array.from({ length: Math.min(3, selected.length) }, worker))
+      .then(() => { finish(null) }, error => { finish(null, error) })
+  })
 }
 
 class QQMusicVkeyError extends Error {}
 
-const requestVkey = async(cookie: string, songMid: string, filenames: string[], prefix: string, platform: '23' | '20') => {
+const requestVkey = async(cookie: string, songMid: string, filenames: string[], prefix: string, platform: '23' | '20', signal: AbortSignal) => {
+  throwIfAborted(signal)
   const param: Record<string, unknown> = {
     guid: GUID,
     songmid: filenames.map(() => songMid),
@@ -110,7 +145,7 @@ const requestVkey = async(cookie: string, songMid: string, filenames: string[], 
   }
   const body = await postAuthedMusicu(cookie, {
     req_1: { module: 'music.vkey.GetVkey', method: 'UrlGetVkey', param },
-  }, {}, platform === '20' ? 'web' : 'app')
+  }, {}, platform === '20' ? 'web' : 'app', signal)
   // 业务失败不再伪装成空地址、逐档重试；外层仍可交给音源兜底。
   const code = Number(body?.code ?? 0) || Number(body?.req_1?.code ?? 0)
   if (code) throw new QQMusicVkeyError(`QQ Music vkey ${code}`)
@@ -139,33 +174,52 @@ export const getQQMusicUrlByAccount = async(
   musicInfo: LX.Music.MusicInfo_tx,
   preferredQuality?: LX.Quality,
   maxQuality: LX.Quality = 'flac24bit',
+  options: AccountUrlOptions = {},
 ): Promise<QQAccountUrl | null> => {
   const meta = musicInfo.meta
   const songMid = String(meta.songId ?? '').trim()
   if (!songMid) return null
-  const { cookie } = await getQQMusicSession()
-  if (!cookie) return null
-
-  const order = buildTryOrder(preferredQuality, maxQuality)
-
-  const mediaMid = String(meta.strMediaMid ?? '').trim()
-  const expectedMs = getDurationMs(musicInfo.interval)
-
-  for (const quality of order) {
-    const spec = QUALITY_SPEC[quality]
-    if (!spec) continue
-    const filenames = buildFilenames(spec.prefix, spec.extension, songMid, mediaMid)
-    for (const platform of ['23', '20'] as const) {
-      try {
-        const data = await requestVkey(cookie, songMid, filenames, spec.prefix, platform)
-        const url = await pickUrl(data, quality, expectedMs)
-        if (url) return { url, quality }
-      } catch (error) {
-        if (isRequestCancelled(error) || error instanceof QQMusicSessionExpiredError || error instanceof QQMusicVkeyError) throw error
-        // 不输出签名 URL / Cookie，保留取链通道以便定位失败。
-        console.warn(`[QQMusic] 账号取链请求失败: song=${songMid}, platform=${platform}, quality=${quality}`)
+  const controller = new AbortController()
+  const { signal } = controller
+  let timedOut = false
+  // 账号整条链也设上限，避免多个音质/通道的等待累加到播放器自动跳歌。
+  const timer = BackgroundTimer.setTimeout(() => {
+    if (signal.aborted) return
+    timedOut = true
+    controller.abort()
+  }, 30000)
+  try {
+    options.onCancel?.(() => { controller.abort() })
+    throwIfAborted(signal)
+    const { cookie } = await withAbort(getQQMusicSession(), signal)
+    if (!cookie) return null
+    const order = buildTryOrder(preferredQuality, maxQuality)
+    const mediaMid = String(meta.strMediaMid ?? '').trim()
+    const expectedMs = getDurationMs(musicInfo.interval)
+    for (const quality of order) {
+      const spec = QUALITY_SPEC[quality]
+      if (!spec) continue
+      const filenames = buildFilenames(spec.prefix, spec.extension, songMid, mediaMid)
+      for (const platform of ['23', '20'] as const) {
+        try {
+          const data = await requestVkey(cookie, songMid, filenames, spec.prefix, platform, signal)
+          const url = await pickUrl(data, quality, expectedMs, signal, options.isRefresh ?? false)
+          throwIfAborted(signal)
+          if (url) return { url, quality }
+        } catch (error) {
+          throwIfAborted(signal)
+          if (isRequestCancelled(error) || error instanceof QQMusicSessionExpiredError || error instanceof QQMusicVkeyError) throw error
+          console.warn(`[QQMusic] 账号取链请求失败: song=${songMid}, platform=${platform}, quality=${quality}`)
+        }
       }
     }
+    return null
+  } catch (error) {
+    // 超时允许音源接手，用户取消则必须终止整个播放请求。
+    if (timedOut && isRequestCancelled(error)) return null
+    throw error
+  } finally {
+    BackgroundTimer.clearTimeout(timer)
+    controller.abort()
   }
-  return null
 }

@@ -1,4 +1,5 @@
 import { httpFetch } from '@/utils/request'
+import { throwIfAborted, withAbort } from '@/utils/abort'
 import {
   getQQMusicCookie,
   getQQMusicUser,
@@ -128,8 +129,9 @@ const updateCommCredential = (comm: unknown, cookie: string) => {
   return next
 }
 
-const request = async(url: string, cookie: string, options: Record<string, any> = {}, autoCleanExpired = true): Promise<any> => {
-  const result = await httpFetch(url, {
+const request = async(url: string, cookie: string, options: Record<string, any> = {}, autoCleanExpired = true, signal?: AbortSignal): Promise<any> => {
+  throwIfAborted(signal)
+  const pendingRequest = httpFetch(url, {
     ...options,
     headers: {
       Referer: QQ_REFERER,
@@ -142,7 +144,9 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
       ...(cookie ? { Cookie: cookie } : {}),
       ...(options.headers ?? {}),
     },
-  }).promise
+  })
+  const result = await withAbort(pendingRequest.promise, signal, () => { pendingRequest.cancelHttp() })
+  throwIfAborted(signal)
   if (result.statusCode < 200 || result.statusCode >= 300) throw new Error(`QQ Music HTTP ${result.statusCode}`)
   const body = result.body as any
   // 所有带票据的请求都从这里过，过期就在这一处识别并清理，不再逐个接口手写判断。
@@ -153,7 +157,8 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
   if (autoCleanExpired && isQQMusicCookie(cookie) && hasExpiredSession(body)) {
     // 先试着续期：手机号登录的票据带 refresh_token，续成之后这个请求可以直接重放一次。
     // 续期失败才按原来的逻辑清会话、通知界面重新登录。
-    const refreshed = await refreshQQMusicCookie(cookie, true)
+    const refreshed = await withAbort(refreshQQMusicCookie(cookie, true), signal)
+    throwIfAborted(signal)
     if (refreshed && refreshed !== cookie) {
       let retryOptions = options
       const requestBody = options.body
@@ -161,11 +166,12 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
         const comm = updateCommCredential((requestBody as Record<string, unknown>).comm, refreshed)
         if (comm) retryOptions = { ...options, body: { ...requestBody, comm } }
       }
-      const retried: any = await request(url, refreshed, retryOptions, false)
+      const retried: any = await request(url, refreshed, retryOptions, false, signal)
       if (!hasExpiredSession(retried)) return retried
     }
     // 会话可能已经被用户换号/退出：别拿旧请求的过期去清掉新账号的会话
     const current = await getQQMusicCookie().catch(() => null)
+    throwIfAborted(signal)
     const currentUin = current ? readUin(parseQQMusicCookie(current)) : ''
     const requestUin = readUin(parseQQMusicCookie(cookie))
     if (!current || (currentUin && requestUin && currentUin !== requestUin)) {
@@ -283,6 +289,7 @@ export const postAuthedMusicu = async(
   extra: Record<string, unknown>,
   headers: Record<string, string> = {},
   client: 'app' | 'web' = 'app',
+  signal?: AbortSignal,
 ) => {
   const cookies = parseQQMusicCookie(cookie)
   if (!readUin(cookies) || !readMusicKey(cookies)) throw new Error(global.i18n.t('qq_cookie_invalid'))
@@ -290,7 +297,7 @@ export const postAuthedMusicu = async(
     method: 'post',
     body: { comm: client === 'web' ? buildCommonComm(cookies) : buildAuthComm(cookies), ...extra },
     headers: { 'User-Agent': client === 'web' ? QQ_WEB_USER_AGENT : QQ_APP_USER_AGENT, ...headers },
-  })
+  }, true, signal)
 }
 
 const buildCommonComm = (cookies: Record<string, string>) => ({
