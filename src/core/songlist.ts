@@ -1,4 +1,4 @@
-import songlistState, { type TagInfo, type ListDetailInfo, type ListInfo } from '@/store/songlist/state'
+import { type ListDetailInfo } from '@/store/songlist/state'
 import songlistActions from '@/store/songlist/action'
 import { deduplicationList, toNewMusicInfo } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
@@ -6,17 +6,13 @@ import musicSdk from '@/utils/musicSdk'
 
 interface DetailPageCache { data: ListDetailInfo, sourcePage: number }
 type LimitDetailCache = Map<string, DetailPageCache | ListDetailInfo['list']>
-type CacheValue = LimitDetailCache | ListInfo
 
-const cache = new Map<string, CacheValue>()
+const cache = new Map<string, LimitDetailCache>()
 const LIST_LOAD_LIMIT = 30
 // 歌单详情缓存的上限：最多留 8 个歌单、合计 3000 首。
 // 没有上限的话，搜过/开过多少个歌单，就有多少份完整歌曲信息常驻到进程结束。
 const DETAIL_CACHE_MAX = 8
 const DETAIL_CACHE_MAX_SONGS = 3000
-// 歌单广场列表页（slist__）是小块卡片数据，不参与详情淘汰；
-// 仍给一个上限防御，避免分类/分页浏览长期累积
-const SLIST_CACHE_MAX = 50
 // 正在加载的详情不参与淘汰：getListDetailLimit 的 then 里要校验 listCache 是否
 // 还是缓存里的那一个，被淘汰掉会直接返回 undefined。
 const loadingDetailKeys = new Set<string>()
@@ -39,8 +35,7 @@ const touchCache = (key: string) => {
   cache.set(key, value)
 }
 
-const countCachedSongs = (value: CacheValue | undefined) => {
-  if (!(value instanceof Map)) return 0
+const countCachedSongs = (value: LimitDetailCache) => {
   let total = 0
   for (const page of value.values()) {
     total += Array.isArray(page) ? page.length : page.data.list.length
@@ -56,30 +51,10 @@ export const releaseIdleSonglistCaches = () => {
   }
 }
 
-const pruneSListCache = () => {
-  let count = 0
-  for (const key of cache.keys()) {
-    if (key.startsWith('slist__')) count++
-  }
-  while (count > SLIST_CACHE_MAX) {
-    let oldest: string | undefined
-    for (const key of cache.keys()) {
-      if (key.startsWith('slist__')) {
-        oldest = key
-        break
-      }
-    }
-    if (oldest == null) break
-    cache.delete(oldest)
-    count--
-  }
-}
-
 const pruneDetailCache = () => {
   const detailKeys: string[] = []
   let totalSongs = 0
   for (const [key, value] of cache) {
-    if (!key.startsWith('sdetail__')) continue
     detailKeys.push(key)
     totalSongs += countCachedSongs(value)
   }
@@ -92,88 +67,10 @@ const pruneDetailCache = () => {
   for (const key of detailKeys) {
     if (count <= DETAIL_CACHE_MAX && totalSongs <= DETAIL_CACHE_MAX_SONGS) break
     if (key === newestKey || loadingDetailKeys.has(key) || retainedDetailKeys.has(key)) continue
-    totalSongs -= countCachedSongs(cache.get(key))
+    totalSongs -= countCachedSongs(cache.get(key)!)
     cache.delete(key)
     count--
   }
-}
-
-
-/**
- * 获取排序列表
- * @param source
- * @returns
- */
-export const getSortList = (source: LX.OnlineSource) => {
-  return songlistState.sortList[source]!
-}
-
-/**
- * 获取标签列表
- * @param source
- * @returns
- */
-export const getTags = async<T extends LX.OnlineSource>(source: T) => {
-  if (songlistState.tags[source]) return songlistState.tags[source] as TagInfo<T>
-  const info = await (musicSdk[source]?.songList.getTags() as Promise<TagInfo<T>>)
-  songlistActions.setTags(info, source)
-  return info
-}
-
-/**
- * 设置列表加载加载前的基本信息（用于加载失败后的重新加载）
- * @param source
- * @param tagId
- * @param sortId
- */
-export const setListInfo: typeof songlistActions.setListInfo = (source, tagId, sortId) => {
-  clearList()
-  songlistActions.setListInfo(source, tagId, sortId)
-}
-/**
- * 设置列表信息
- * @param result
- * @param tagId
- * @param sortId
- * @param page
- * @returns
- */
-export const setList: typeof songlistActions.setList = (result, tagId, sortId, page) => {
-  return songlistActions.setList(result, tagId, sortId, page)
-}
-
-export const clearList = () => {
-  songlistActions.clearList()
-}
-
-/**
- * 获取歌单列表
- * @param source 歌单源
- * @param tabId 类型id
- * @param sortId 排序
- * @param page 页数
- * @param isRefresh 是否跳过缓存
- * @returns
- */
-export const getList = async(source: LX.OnlineSource, tabId: string, sortId: string, page: number, isRefresh = false): Promise<ListInfo> => {
-  let pageKey = `slist__${source}__${sortId}__${tabId}__${page}`
-
-  let listCache = cache.get(pageKey) as ListInfo
-  if (listCache) {
-    if (isRefresh) cache.delete(pageKey)
-    else {
-      touchCache(pageKey)
-      return listCache
-    }
-  }
-
-  return musicSdk[source]?.songList.getList(sortId, tabId, page).then((result: ListInfo) => {
-    cache.set(pageKey, result)
-    pruneSListCache()
-    return result
-    // if (pageKey != listInfo.key) return
-    // setList(result, tabId, sortId, page)
-  })
 }
 
 
@@ -189,9 +86,11 @@ const getListDetailLimit = async(source: LX.OnlineSource, id: string, page: numb
   const prevPageKey = `sdetail__${source}__${id}__${page - 1}`
   const tempListKey = `sdetail__${source}__${id}__temp`
 
-  let listCache = cache.get(listKey) as LimitDetailCache
-  if (!listCache) cache.set(listKey, listCache = new Map())
-  else touchCache(listKey)
+  let listCache = cache.get(listKey)
+  if (!listCache) {
+    listCache = new Map()
+    cache.set(listKey, listCache)
+  } else touchCache(listKey)
   let sourcePage = 0
   {
     const prevPageData = listCache.get(prevPageKey) as DetailPageCache
@@ -242,10 +141,9 @@ const getListDetailLimit = async(source: LX.OnlineSource, id: string, page: numb
 }
 
 /**
- * 设置列表加载加载前的基本信息（用于加载失败后的重新加载）
+ * 设置歌单详情加载前的基本信息（用于加载失败后的重新加载）
  * @param source
- * @param tagId
- * @param sortId
+ * @param id
  */
 export const setListDetailInfo: typeof songlistActions.setListDetailInfo = (source, id) => {
   clearListDetail()
@@ -268,7 +166,7 @@ const ensurePreviousPages = async(source: LX.OnlineSource, id: string, page: num
   if (page <= 1) return
   const listKey = `sdetail__${source}__${id}`
   for (let p = 1; p < page; p++) {
-    const listCache = cache.get(listKey) as LimitDetailCache | undefined
+    const listCache = cache.get(listKey)
     if (listCache?.get(`${listKey}__${p}`)) continue
     await getListDetailLimit(source, id, p)
   }
@@ -285,9 +183,10 @@ export const getListDetail = async(id: string, source: LX.OnlineSource, page: nu
   const listKey = `sdetail__${source}__${id}`
   const pageKey = `sdetail__${source}__${id}__${page}`
 
-  let listCache = cache.get(listKey) as LimitDetailCache
+  let listCache = cache.get(listKey)
   if (!listCache || isRefresh) {
-    cache.set(listKey, listCache = new Map())
+    listCache = new Map()
+    cache.set(listKey, listCache)
   } else {
     touchCache(listKey)
   }
@@ -296,6 +195,9 @@ export const getListDetail = async(id: string, source: LX.OnlineSource, page: nu
   if (pageCache) return pageCache.data
 
   await ensurePreviousPages(source, id, page)
+  // 重建前面的页时，一次音源请求可能已经填好了当前页，优先复用，避免重复取页覆盖结果。
+  pageCache = cache.get(listKey)?.get(pageKey) as DetailPageCache
+  if (pageCache) return pageCache.data
   return getListDetailLimit(source, id, page)
 }
 
@@ -307,11 +209,11 @@ export const getListDetail = async(id: string, source: LX.OnlineSource, page: nu
  * @returns
  */
 export const getListDetailAll = async(source: LX.OnlineSource, id: string, isRefresh = false): Promise<LX.Music.MusicInfoOnline[]> => {
-  // console.log(tabId)
   const listKey = `sdetail__${source}__${id}`
-  let listCache = cache.get(listKey) as LimitDetailCache
+  let listCache = cache.get(listKey)
   if (!listCache || isRefresh) {
-    cache.set(listKey, listCache = new Map())
+    listCache = new Map()
+    cache.set(listKey, listCache)
   } else {
     touchCache(listKey)
   }

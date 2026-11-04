@@ -1,4 +1,3 @@
-import leaderboard from './leaderboard'
 import lyric from './lyric'
 import songList from './songList'
 import musicSearch from './musicSearch'
@@ -9,7 +8,6 @@ import hotSearch from './hotSearch'
 import comment from './comment'
 
 const tx = {
-  leaderboard,
   songList,
   musicSearch,
   singer,

@@ -6,7 +6,6 @@ export interface InitState {
   statusbarHeight: number
   componentIds: Partial<Record<COMPONENT_IDS, string>>
   navActiveId: NAV_ID_Type
-  lastNavActiveId: NAV_ID_Type
   sourceNames: Record<LX.OnlineSource | 'all', string>
   bgPic: string | null
 }
@@ -18,7 +17,6 @@ const state: InitState = {
   statusbarHeight: 0,
   componentIds: {},
   navActiveId: 'nav_home',
-  lastNavActiveId: 'nav_home',
   sourceNames: initData as InitState['sourceNames'],
   bgPic: null,
 }

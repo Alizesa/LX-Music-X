@@ -1,35 +1,7 @@
-import type { TagInfo, ListDetailInfo, ListInfo, Source } from './state'
+import type { ListDetailInfo, Source } from './state'
 import state from './state'
 
 export default {
-  setTags(tagInfo: TagInfo, source: LX.OnlineSource) {
-    state.tags[source] = tagInfo
-  },
-  setListInfo(source: Source, tagId: string, sortId: string) {
-    state.listInfo.source = source
-    state.listInfo.tagId = tagId
-    state.listInfo.sortId = sortId
-  },
-  setList(result: ListInfo, tagId: string, sortId: string, page: number) {
-    state.listInfo.list = page == 1 ? [...result.list] : [...state.listInfo.list, ...result.list]
-    if (page == 1 || (result.total && result.list.length)) state.listInfo.total = result.total
-    else state.listInfo.total = result.limit * page
-    state.listInfo.limit = result.limit
-    state.listInfo.page = page
-    state.listInfo.source = result.source
-    state.listInfo.tagId = tagId
-    state.listInfo.sortId = sortId
-    state.listInfo.maxPage = Math.ceil(state.listInfo.total / result.limit)
-
-    return state.listInfo
-  },
-  clearList() {
-    state.listInfo.list = []
-    state.listInfo.total = 0
-    state.listInfo.page = 1
-    state.listInfo.key = ''
-    state.listInfo.maxPage = 1
-  },
   setListDetailInfo(source: Source, id: string) {
     state.listDetailInfo.source = source
     state.listDetailInfo.id = id

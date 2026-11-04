@@ -182,10 +182,5 @@ export const setTempListMeta: typeof listAction['setTempListMeta'] = (meta) => {
 }
 
 
-export const setFetchingListStatus = (id: string, status: boolean) => {
-  listAction.setFetchingListStatus(id, status)
-}
-
-
 export { getUserLists, getListMusics } from '@/utils/listManage'
 

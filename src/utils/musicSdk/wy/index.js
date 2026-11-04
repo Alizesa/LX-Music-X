@@ -1,4 +1,3 @@
-import leaderboard from './leaderboard'
 import { apis } from '../api-source'
 import getLyric from './lyric'
 import getMusicInfo from './musicInfo'
@@ -8,7 +7,6 @@ import hotSearch from './hotSearch'
 import comment from './comment'
 
 const wy = {
-  leaderboard,
   musicSearch,
   songList,
   hotSearch,

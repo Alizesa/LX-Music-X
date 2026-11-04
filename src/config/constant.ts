@@ -2,7 +2,6 @@ import { type SearchType } from '@/store/search/state'
 
 export const HEADER_HEIGHT = 42
 export const LIST_ITEM_HEIGHT = 54
-export const LIST_SCROLL_POSITION_KEY = '__LIST_SCROLL_POSITION_KEY__'
 
 export const SPLIT_CHAR = {
   DISLIKE_NAME: '@',
@@ -105,7 +104,6 @@ export const storageDataPrefix = {
   listUpdateInfo: '@list_update_info',
   ignoreVersion: '@ignore_version',
   ignoreVersionFailTipTimeKey: '@ignore_version_fail_tip_time',
-  songListSetting: '@songist_setting',
   searchSetting: '@search_setting',
 
   fontSize: '@font_size',
@@ -174,20 +172,7 @@ export const NAV_MENUS = [
   { id: 'nav_mine', icon: 'person', outlineIcon: 'person-outline' },
 ] as const
 
-// 页面 id 全集。除两个 tab 外的 id 属于未清理干净的旧页面：
-// 搜索/设置/下载/播放历史已经改成推入式页面（不再占 pager 页），
-// 歌单/排行榜/我的列表会在后续清理中删掉，届时这里只剩 nav_home / nav_mine。
-export type NAV_ID_Type =
-  | 'nav_home'
-  | 'nav_mine'
-  | 'nav_search'
-  | 'nav_songlist'
-  | 'nav_top'
-  | 'nav_love'
-  | 'nav_qq'
-  | 'nav_download'
-  | 'nav_setting'
-  | 'nav_history'
+export type NAV_ID_Type = typeof NAV_MENUS[number]['id']
 
 export const LXM_FILE_EXT_RXP = ['json', 'lxmc', 'bin']
 export const USER_API_SOURCE_FILE_EXT_RXP = ['js']
@@ -210,13 +195,6 @@ export const MUSIC_TOGGLE_MODE_LIST = [
 ] as const
 
 export const DEFAULT_SETTING = {
-  songList: {
-    source: 'kw' as LX.OnlineSource,
-    sortId: 'new',
-    tagName: '',
-    tagId: '',
-  },
-
   search: {
     temp_source: 'kw' as LX.OnlineSource,
     source: 'all' as LX.OnlineSource | 'all',

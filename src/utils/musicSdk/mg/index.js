@@ -1,5 +1,4 @@
 import { apis } from '../api-source'
-import leaderboard from './leaderboard'
 import songList from './songList'
 import musicSearch from './musicSearch'
 import pic from './pic'
@@ -10,7 +9,6 @@ import comment from './comment'
 const mg = {
   songList,
   musicSearch,
-  leaderboard,
   hotSearch,
   comment,
   getMusicUrl(songInfo, type) {

@@ -1,4 +1,3 @@
-import leaderboard from './leaderboard'
 import { apis } from '../api-source'
 import songList from './songList'
 import musicSearch from './musicSearch'
@@ -8,7 +7,6 @@ import hotSearch from './hotSearch'
 import comment from './comment'
 
 const kg = {
-  leaderboard,
   songList,
   musicSearch,
   hotSearch,

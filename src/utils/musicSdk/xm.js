@@ -1,5 +1,4 @@
 // import { apis } from '../api-source'
-// import leaderboard from './leaderboard'
 // import songList from './songList'
 // import musicSearch from './musicSearch'
 // import pic from './pic'
@@ -12,7 +11,6 @@
 const xm = {
   // songList,
   // musicSearch,
-  // leaderboard,
   // hotSearch,
   // closeVerifyModal,
   comment: {

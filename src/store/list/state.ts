@@ -12,8 +12,6 @@ export interface InitState {
   tempListMeta: {
     id: string
   }
-
-  fetchingListStatus: Record<string, boolean>
 }
 
 const state: InitState = {
@@ -32,7 +30,6 @@ const state: InitState = {
   tempListMeta: {
     id: '',
   },
-  fetchingListStatus: {},
 }
 
 state.allList = [state.localList]

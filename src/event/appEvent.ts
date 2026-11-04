@@ -1,5 +1,4 @@
 import Event from './Event'
-import { type Source as SonglistSource } from '@/store/songlist/state'
 import { type SearchType } from '@/store/search/state'
 
 
@@ -178,32 +177,6 @@ export class AppEvent extends Event {
    */
   searchTypeChanged(type: SearchType) {
     this.emit('searchTypeChanged', type)
-  }
-
-  /**
-   * 长按播放条封面/标题，跳回「正在播放的这首歌所在的列表」。
-   * 「我的列表」页在这次改造里已经不存在（列表来源改成 QQ 账号），页面没了但
-   * nav_love 这个 id 还在。原来的实现会把 navActiveId 设成一个没有对应页面的 id，
-   * 结果是底部两个 tab 同时失去选中态，所以这里先禁用，等列表页重新落地再恢复。
-   */
-  jumpListPosition() {
-    // no-op
-  }
-
-  changeLoveListVisible(visible: boolean) {
-    this.emit('changeLoveListVisible', visible)
-  }
-
-  showSonglistTagList(source: SonglistSource, activeId: string) {
-    this.emit('showSonglistTagList', source, activeId)
-  }
-
-  hideSonglistTagList() {
-    this.emit('hideSonglistTagList')
-  }
-
-  songlistTagInfoChange(name: string, id: string) {
-    this.emit('songlistTagInfoChange', name, id)
   }
 }
 

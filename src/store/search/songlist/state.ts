@@ -1,12 +1,16 @@
 import music from '@/utils/musicSdk'
 
 
-// import { deduplicationList } from '@common/utils/renderer'
-
-import { type ListInfo } from '@/store/songlist/state'
+import { type ListInfoItem } from '@/store/songlist/state'
 export type { ListInfoItem } from '@/store/songlist/state'
 
-export type SearchListInfo = Omit<ListInfo, 'source' | 'maxPage'>
+export interface SearchListInfo {
+  list: ListInfoItem[]
+  total: number
+  page: number
+  limit: number
+  key: string | null
+}
 
 
 interface ListInfos extends Partial<Record<LX.OnlineSource, SearchListInfo>> {
@@ -34,8 +38,6 @@ const state: InitState = {
       total: 0,
       list: [],
       key: null,
-      tagId: '',
-      sortId: '',
     },
   },
   maxPages: {},
@@ -51,8 +53,6 @@ for (const source of music.sources) {
     total: 0,
     list: [],
     key: null,
-    tagId: '',
-    sortId: '',
   }
   maxPages[source.id as LX.OnlineSource] = 0
 }

@@ -97,7 +97,5 @@ export default {
     listInfo.total = 0
     listInfo.list = []
     listInfo.key = null
-    listInfo.tagId = ''
-    listInfo.sortId = ''
   },
 }

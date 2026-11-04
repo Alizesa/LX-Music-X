@@ -9,13 +9,12 @@ import settingState from '@/store/setting/state'
 import commonActions from '@/store/common/action'
 import commonState, { type InitState as CommonStateType } from '@/store/common/state'
 
-import { storageDataPrefix, type NAV_ID_Type } from '@/config/constant'
+import { storageDataPrefix, NAV_MENUS } from '@/config/constant'
 import { saveData } from '@/plugins/storage'
 import { throttle } from '@/utils/common'
-import { getSelectedManagedFolder, saveFontSize, saveViewPrevState, setSelectedManagedFolder } from '@/utils/data'
+import { saveFontSize, saveViewPrevState } from '@/utils/data'
 import { showPactModal as handleShowPactModal } from '@/navigation'
 import { hideDesktopLyricView } from '@/utils/nativeModules/lyricDesktop'
-import { getPersistedUriList, selectManagedFolder } from '@/utils/fs'
 
 
 const throttleSaveSetting = throttle(() => {
@@ -80,13 +79,9 @@ export const removeComponentId = (name: string) => {
   commonActions.removeComponentId(name)
 }
 
-// 底部导航只剩这两个 tab，页面上也只有它们。旧版本会把 nav_search / nav_setting 这类
-// id 存进 viewPrevState，启动时原样恢复会让两个 tab 同时失去选中态，所以入口统一折回
-// 「首页」。设置页改成推入式页面后不再占 nav id，原来对 nav_setting 的特判也一并去掉。
-const TAB_NAV_IDS = new Set<NAV_ID_Type>(['nav_home', 'nav_mine'])
-
-export const setNavActiveId = (id: Parameters<typeof commonActions.setNavActiveId>['0']) => {
-  const nextId = TAB_NAV_IDS.has(id) ? id : 'nav_home'
+// 旧版本可能保存已移除的页面 id；恢复时按当前导航菜单校验，未知值回到首页。
+export const setNavActiveId = (id: string) => {
+  const nextId = NAV_MENUS.find(menu => menu.id == id)?.id ?? 'nav_home'
   if (nextId == commonState.navActiveId) return
   commonActions.setNavActiveId(nextId)
   saveViewPrevState({ id: nextId })
@@ -94,22 +89,6 @@ export const setNavActiveId = (id: Parameters<typeof commonActions.setNavActiveI
 
 export const showPactModal = () => {
   handleShowPactModal()
-}
-
-export const checkStoragePermissions = async() => {
-  const selectedManagedFolder = await getSelectedManagedFolder()
-  if (selectedManagedFolder) return (await getPersistedUriList()).some(uri => selectedManagedFolder.startsWith(uri))
-  return false
-}
-
-export const requestStoragePermission = async() => {
-  const isGranted = await checkStoragePermissions()
-  if (isGranted) return isGranted
-
-  const uri = await selectManagedFolder()
-  if (!uri.isDirectory) return false
-  await setSelectedManagedFolder(uri.path)
-  return true
 }
 
 export const setBgPic = (pic: string | null) => {

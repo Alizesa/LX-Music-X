@@ -1,6 +1,5 @@
 import Event from './Event'
 import type { InitState as CommonState } from '@/store/common/state'
-import type { InitState as ListState } from '@/store/list/state'
 import type { InitState as PlayerState } from '@/store/player/state'
 import type { InitState as VersionState } from '@/store/version/state'
 import { type I18n } from '@/lang'
@@ -81,10 +80,6 @@ export class StateEvent extends Event {
    */
   mylistUpdated(lists: LX.List.MyListInfo[]) {
     this.emit('mylistUpdated', lists)
-  }
-
-  fetchingListStatusUpdated(fetchingListStatus: ListState['fetchingListStatus']) {
-    this.emit('fetchingListStatusUpdated', fetchingListStatus)
   }
 
   versionInfoUpdated(info: VersionState['versionInfo']) {

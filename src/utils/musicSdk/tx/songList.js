@@ -3,217 +3,17 @@ import { decodeName, formatPlayTime, sizeFormate, dateFormat, formatPlayCount } 
 import { formatSingerName } from '../utils'
 
 export default {
-  _requestObj_tags: null,
-  _requestObj_hotTags: null,
-  _requestObj_list: null,
-  limit_list: 36,
   limit_song: 100000,
   successCode: 0,
-  sortList: [
-    {
-      name: '推荐',
-      tid: 'recommend',
-      id: '-1',
-    },
-    {
-      name: '最热',
-      tid: 'hot',
-      id: '3',
-    },
-    {
-      name: '最新',
-      tid: 'new',
-      id: '2',
-    },
-  ],
   regExps: {
-    hotTagHtml: /class="c_bg_link js_tag_item" data-id="\w+">.+?<\/a>/g,
-    hotTag: /data-id="(\w+)">(.+?)<\/a>/,
 
     // https://y.qq.com/n/yqq/playlist/7217720898.html
     // https://i.y.qq.com/n2/m/share/details/taoge.html?platform=11&appshare=android_qq&appversion=9050006&id=7217720898&ADTAG=qfshare
     listDetailLink: /\/playlist\/(\d+)/,
     listDetailLink2: /id=(\d+)/,
   },
-  tagsUrl: 'https://u.y.qq.com/cgi-bin/musicu.fcg?loginUin=0&hostUin=0&format=json&inCharset=utf-8&outCharset=utf-8&notice=0&platform=wk_v15.json&needNewCode=0&data=%7B%22tags%22%3A%7B%22method%22%3A%22get_all_categories%22%2C%22param%22%3A%7B%22qq%22%3A%22%22%7D%2C%22module%22%3A%22playlist.PlaylistAllCategoriesServer%22%7D%7D',
-  hotTagUrl: 'https://c.y.qq.com/node/pc/wk_v15/category_playlist.html',
-  getListUrl(id, page) {
-    id = parseInt(id)
-    return `https://u.y.qq.com/cgi-bin/musicu.fcg?loginUin=0&hostUin=0&format=json&inCharset=utf-8&outCharset=utf-8&notice=0&platform=wk_v15.json&needNewCode=0&data=${encodeURIComponent(JSON.stringify({
-        comm: { cv: 1602, ct: 20 },
-        playlist: {
-          method: 'get_category_content',
-          param: {
-            titleid: id,
-            caller: '0',
-            category_id: id,
-            size: this.limit_list,
-            page: page - 1,
-            use_page: 1,
-          },
-          module: 'playlist.PlayListCategoryServer',
-        },
-        }))}`
-    // return `https://u.y.qq.com/cgi-bin/musicu.fcg?loginUin=0&hostUin=0&format=json&inCharset=utf-8&outCharset=utf-8&data=${encodeURIComponent(JSON.stringify({
-    //       comm: { cv: 1602, ct: 20 },
-    //       playlist: {
-    //         method: 'get_playlist_by_tag',
-    //         param: { id: 10000000, sin: this.limit_list * (page - 1), size: this.limit_list, order: sortId, cur_page: page },
-    //         module: 'playlist.PlayListPlazaServer',
-    //       },
-    //   }))}`
-  },
   getListDetailUrl(id) {
     return `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&json=1&utf8=1&onlysong=0&new_format=1&disstid=${id}&loginUin=0&hostUin=0&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0`
-  },
-
-  // http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=2849349915&pn=0&rn=100&encode=utf8&keyset=pl2012&identity=kuwo&pcmp4=1&vipver=MUSIC_9.0.5.0_W1&newver=1
-  // 获取标签
-  getTag(tryNum = 0) {
-    if (this._requestObj_tags) this._requestObj_tags.cancelHttp()
-    if (tryNum > 2) return Promise.reject(new Error('try max num'))
-    this._requestObj_tags = httpFetch(this.tagsUrl)
-    return this._requestObj_tags.promise.then(({ body }) => {
-      if (body.code !== this.successCode) return this.getTag(++tryNum)
-      return this.filterTagInfo(body.tags.data.v_group)
-    })
-  },
-  // 获取标签
-  getHotTag(tryNum = 0) {
-    if (this._requestObj_hotTags) this._requestObj_hotTags.cancelHttp()
-    if (tryNum > 2) return Promise.reject(new Error('try max num'))
-    this._requestObj_hotTags = httpFetch(this.hotTagUrl)
-    return this._requestObj_hotTags.promise.then(({ statusCode, body }) => {
-      if (statusCode !== 200) return this.getHotTag(++tryNum)
-      return this.filterInfoHotTag(body)
-    })
-  },
-  filterInfoHotTag(html) {
-    let hotTag = html.match(this.regExps.hotTagHtml)
-    const hotTags = []
-    if (!hotTag) return hotTags
-
-    hotTag.forEach(tagHtml => {
-      let result = tagHtml.match(this.regExps.hotTag)
-      if (!result) return
-      hotTags.push({
-        id: parseInt(result[1]),
-        name: result[2],
-        source: 'tx',
-      })
-    })
-    return hotTags
-  },
-  filterTagInfo(rawList) {
-    return rawList.map(type => ({
-      name: type.group_name,
-      list: type.v_item.map(item => ({
-        parent_id: type.group_id,
-        parent_name: type.group_name,
-        id: item.id,
-        name: item.name,
-        source: 'tx',
-      })),
-    }))
-  },
-
-  async getRecommendList(page) {
-    const { body } = await httpFetch(
-    `https://u.y.qq.com/cgi-bin/musicu.fcg?loginUin=0&hostUin=0&format=json&inCharset=utf-8&outCharset=utf-8&notice=0&platform=wk_v15.json&needNewCode=0&data=${encodeURIComponent(
-      JSON.stringify({
-        comm: { cv: 1602, ct: 20 },
-        playlist: {
-          module: 'music.playlist.PlaylistSquare',
-          method: 'GetRecommendWhole',
-          param: {
-            IsReqFeed: true,
-            FeedReq: {
-              From: (page - 1) * this.limit_list,
-              Size: this.limit_list,
-            },
-          },
-        },
-      }),
-    )}`,
-    ).promise
-    if (body.code !== this.successCode) throw new Error('tx getRecommendList failed')
-    return {
-      list:
-      body.playlist.data.FeedRsp.List?.map(({ Playlist }) => ({
-        play_count: formatPlayCount(Playlist.basic.play_cnt),
-        id: String(Playlist.basic.tid),
-        author: decodeName(Playlist.basic.creator.nick),
-        name: decodeName(Playlist.basic.title),
-        time: Playlist.basic.modify_time ? dateFormat(Playlist.basic.modify_time * 1000, 'Y-M-D') : '',
-        img: Playlist.basic.cover.medium_url || Playlist.basic.cover.default_url,
-        total: Playlist.basic.song_cnt,
-        desc: decodeName(Playlist.basic.desc).replace(/<br>/g, '\n'),
-        source: 'tx',
-      })) || [],
-      total: body.playlist.data.FeedRsp.FromLimit,
-      limit: this.limit_list,
-      page,
-      source: 'tx',
-    }
-  },
-
-  // 获取列表数据
-  getList(sortId, tagId, page, tryNum = 0) {
-    if (this._requestObj_list) this._requestObj_list.cancelHttp()
-    if (tryNum > 2) return Promise.reject(new Error('try max num'))
-    if (!tagId) {
-      if (!tagId && sortId == -1) return this.getRecommendList(page)
-      tagId = sortId
-    }
-    this._requestObj_list = httpFetch(
-      this.getListUrl(tagId, page),
-    )
-    // console.log(this.getListUrl(sortId, tagId, page))
-    return this._requestObj_list.promise.then(({ body }) => {
-      if (body.code !== this.successCode) return this.getList(sortId, tagId, page, ++tryNum)
-      return this.filterList(body.playlist.data, page)
-    })
-  },
-
-  // filterList(data, page) {
-  //   return {
-  //     list: data.v_playlist.map(item => ({
-  //       play_count: formatPlayCount(item.access_num),
-  //       id: String(item.tid),
-  //       author: item.creator_info.nick,
-  //       name: item.title,
-  //       time: item.modify_time ? dateFormat(item.modify_time * 1000, 'Y-M-D') : '',
-  //       img: item.cover_url_medium,
-  //       // grade: item.favorcnt / 10,
-  //       total: item.song_ids?.length,
-  //       desc: decodeName(item.desc).replace(/<br>/g, '\n'),
-  //       source: 'tx',
-  //     })),
-  //     total: data.total,
-  //     page,
-  //     limit: this.limit_list,
-  //     source: 'tx',
-  //   }
-  // },
-  filterList({ content }, page) {
-    // console.log(content.v_item)
-    return {
-      list: content.v_item.map(({ basic }) => ({
-        play_count: formatPlayCount(basic.play_cnt),
-        id: String(basic.tid),
-        author: basic.creator.nick,
-        name: basic.title,
-        // time: basic.publish_time,
-        img: basic.cover.medium_url || basic.cover.default_url,
-        // grade: basic.favorcnt / 10,
-        desc: decodeName(basic.desc).replace(/<br>/g, '\n'),
-        source: 'tx',
-      })),
-      total: content.total_cnt,
-      page,
-      limit: this.limit_list,
-      source: 'tx',
-    }
   },
 
   async handleParseId(link, retryNum = 0) {
@@ -388,9 +188,6 @@ export default {
       }
     })
   },
-  getTags() {
-    return Promise.all([this.getTag(), this.getHotTag()]).then(([tags, hotTag]) => ({ tags, hotTag, source: 'tx' }))
-  },
 
   async getDetailPageUrl(id) {
     id = await this.getListId(id)
@@ -431,7 +228,3 @@ export default {
       })
   },
 }
-
-// getList
-// getTags
-// getListDetail

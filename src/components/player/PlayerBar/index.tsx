@@ -22,9 +22,9 @@ export default memo(({ isHome = false }: { isHome?: boolean }) => {
 
   const playerComponent = useMemo(() => (
     <View style={{ ...styles.container, backgroundColor: setColorAlpha(theme['c-content-background'], playBarOpacity) }}>
-      <Pic isHome={isHome} />
+      <Pic />
       <View style={styles.center}>
-        <Title isHome={isHome} />
+        <Title />
         {/* <View style={{ ...styles.row, justifyContent: 'space-between' }}>
           <PlayTime />
         </View> */}

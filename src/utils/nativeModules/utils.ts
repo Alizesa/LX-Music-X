@@ -21,12 +21,6 @@ export const screenUnkeepAwake = () => {
   UtilsModule.screenUnkeepAwake()
 }
 
-export const getWIFIIPV4Address = UtilsModule.getWIFIIPV4Address as () => Promise<string>
-
-export const getDeviceName = async(): Promise<string> => {
-  return UtilsModule.getDeviceName().then((deviceName: string) => deviceName || 'Unknown')
-}
-
 export const isNotificationsEnabled = UtilsModule.isNotificationsEnabled as () => Promise<boolean>
 
 export const requestNotificationPermission = async() => new Promise<boolean>((resolve) => {

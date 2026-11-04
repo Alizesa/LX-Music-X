@@ -78,7 +78,5 @@ module.exports = {
   ignorePatterns: [
     'node_modules',
     '*.min.js',
-    'test.js',
-    '*Test.ts',
   ],
 }

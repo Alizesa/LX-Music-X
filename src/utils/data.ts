@@ -20,7 +20,6 @@ const ignoreVersionKey = storageDataPrefix.ignoreVersion
 const ignoreVersionFailTipTimeKey = storageDataPrefix.ignoreVersionFailTipTimeKey
 const searchSettingKey = storageDataPrefix.searchSetting
 const searchHistoryListKey = storageDataPrefix.searchHistoryList
-const songListSettingKey = storageDataPrefix.songListSetting
 const listPrefix = storageDataPrefix.list
 const dislikeListPrefix = storageDataPrefix.dislikeList
 const userApiPrefix = storageDataPrefix.userApi
@@ -58,11 +57,11 @@ const qqMusicRecommendSessionKey = storageDataPrefix.qqMusicRecommendSession
 // const defaultListKey = listPrefix + 'default'
 // const loveListKey = listPrefix + 'love'
 
+// 旧列表的滚动位置和更新记录仅保留删除、覆盖清理路径，供迁移及备份导入使用。
 let listPosition: LX.List.ListPositionInfo
 let listUpdateInfo: LX.List.ListUpdateInfo
 
 let searchSetting: typeof DEFAULT_SETTING['search']
-let songListSetting: typeof DEFAULT_SETTING['songList']
 let searchHistoryList: string[]
 
 const saveListPositionThrottle = throttle(() => {
@@ -73,9 +72,6 @@ const saveSearchSettingThrottle = throttle(() => {
 }, 1000)
 const saveSearchHistoryThrottle = throttle(() => {
   void saveData(searchHistoryListKey, searchHistoryList)
-}, 1000)
-const saveSongListSettingThrottle = throttle(() => {
-  void saveData(songListSettingKey, songListSetting)
 }, 1000)
 const saveViewPrevStateThrottle = throttle((state) => {
   void saveData(viewPrevStateKey, state)
@@ -95,15 +91,6 @@ export const saveUserTheme = async(themes: LX.Theme[]) => {
 const initPosition = async() => {
   // eslint-disable-next-line require-atomic-updates
   listPosition ??= await getData(listScrollPositionKey) ?? {}
-}
-export const getListPosition = async(id: string): Promise<number> => {
-  await initPosition()
-  return listPosition[id] ?? 0
-}
-export const saveListPosition = async(id: string, position?: number) => {
-  await initPosition()
-  listPosition[id] = position ?? 0
-  saveListPositionThrottle()
 }
 export const removeListPosition = async(id: string) => {
   await initPosition()
@@ -129,33 +116,6 @@ const initListUpdateInfo = async() => {
   // eslint-disable-next-line require-atomic-updates
   listUpdateInfo ??= await getData(listUpdateInfoKey) ?? {}
 }
-export const getListUpdateInfo = async() => {
-  await initListUpdateInfo()
-  return listUpdateInfo
-}
-export const saveListUpdateInfo = async(info: LX.List.ListUpdateInfo) => {
-  await initListUpdateInfo()
-  listUpdateInfo = info
-  saveListUpdateInfoThrottle()
-}
-export const setListAutoUpdate = async(id: string, enable: boolean) => {
-  await initListUpdateInfo()
-  const targetInfo = listUpdateInfo[id] ?? { updateTime: 0, isAutoUpdate: false }
-  targetInfo.isAutoUpdate = enable
-  listUpdateInfo[id] = targetInfo
-  saveListUpdateInfoThrottle()
-}
-export const setListUpdateTime = async(id: string, time: number) => {
-  await initListUpdateInfo()
-  const targetInfo = listUpdateInfo[id] ?? { updateTime: 0, isAutoUpdate: false }
-  targetInfo.updateTime = time
-  listUpdateInfo[id] = targetInfo
-  saveListUpdateInfoThrottle()
-}
-// export const setListUpdateInfo = (id, { updateTime, isAutoUpdate }) => {
-//   listUpdateInfo[id] = { updateTime, isAutoUpdate }
-//   saveListUpdateInfo()
-// }
 export const removeListUpdateInfo = async(id: string) => {
   await initListUpdateInfo()
   delete listUpdateInfo[id]
@@ -252,19 +212,8 @@ export const saveSearchHistory = async(historyList: typeof searchHistoryList) =>
   saveSearchHistoryThrottle()
 }
 
-export const getSongListSetting = async() => {
-  // eslint-disable-next-line require-atomic-updates
-  songListSetting ??= await getData(songListSettingKey) ?? { ...DEFAULT_SETTING.songList }
-  return { ...songListSetting }
-}
-export const saveSongListSetting = async(setting: Partial<typeof DEFAULT_SETTING['songList']>) => {
-  if (!songListSetting) await getSongListSetting()
-  songListSetting = Object.assign(songListSetting, setting)
-  saveSongListSettingThrottle()
-}
-
 export const getViewPrevState = async() => {
-  return (await getData<{ id: NAV_ID_Type }>(viewPrevStateKey)) ?? { ...DEFAULT_SETTING.viewPrevState }
+  return (await getData<{ id: string }>(viewPrevStateKey)) ?? { ...DEFAULT_SETTING.viewPrevState }
 }
 export const saveViewPrevState = (state: { id: NAV_ID_Type }) => {
   saveViewPrevStateThrottle(state)

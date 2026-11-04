@@ -18,7 +18,6 @@ export default memo(() => {
   const t = useI18n()
   const [cleaning, setCleaning] = useState(false)
   const [cacheSize, setCacheSize] = useState<string | null>(null)
-  // const setting = useGetter('common', 'setting')
   // TODO clear list cache
   // const clearCache = useDispatch('list', 'clearCache')
 

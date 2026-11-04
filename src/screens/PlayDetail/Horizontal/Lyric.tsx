@@ -91,7 +91,6 @@ export default () => {
   const isShowLyricProgressSetting = useSettingValue('playDetail.isShowLyricProgressSetting')
   // useLock()
   // const [imgUrl, setImgUrl] = useState(null)
-  // const theme = useGetter('common', 'theme')
   // const { onLayout, ...layout } = useLayout()
 
   // useEffect(() => {
