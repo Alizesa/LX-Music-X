@@ -21,7 +21,7 @@ export default () => {
       <View style={styles.content}>
         <Header />
         <Main />
-        <PlayerBar isHome />
+        <PlayerBar />
       </View>
       <BottomTabBar />
     </>

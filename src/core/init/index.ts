@@ -16,6 +16,9 @@ import { cheatTip } from '@/utils/tools'
 
 let isFirstPush = true
 const handlePushedHomeScreen = async() => {
+  void import('@/core/download').then(async({ initDownloads }) => initDownloads()).catch(error => {
+    console.warn('[Download] init failed:', error instanceof Error ? error.message : error)
+  })
   await cheatTip()
   if (settingState.setting['common.isAgreePact']) {
     if (isFirstPush) {

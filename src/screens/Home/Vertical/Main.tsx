@@ -9,6 +9,8 @@ import { setNavActiveId } from '@/core/common'
 import { setHomePagerScrollHandler } from '@/core/homePagerScroll'
 import settingState from '@/store/setting/state'
 import { type NAV_ID_Type } from '@/config/constant'
+import { useNavActiveId } from '@/store/common/hook'
+import { VisibilityBoundary } from '@/utils/hooks/useScreenVisible'
 
 // 只有「首页」和「我的」两个 tab。搜索/设置/下载/播放历史已经改成推入式页面，
 // 不再占 pager 页，所以这里的映射也只管这两个。
@@ -19,6 +21,7 @@ const viewMap: Partial<Record<NAV_ID_Type, number>> = {
 const indexMap = ['nav_home', 'nav_mine'] as const
 
 const Main = () => {
+  const navId = useNavActiveId()
   const pagerViewRef = useRef<ComponentRef<typeof PagerView>>(null)
   const activeIndexRef = useRef(viewMap[commonState.navActiveId] ?? 0)
 
@@ -83,13 +86,13 @@ const Main = () => {
       style={styles.pagerView}
     >
       <View collapsable={false} key="nav_home" style={styles.pageStyle}>
-        <Recommend />
+        <VisibilityBoundary visible={navId === 'nav_home'}><Recommend /></VisibilityBoundary>
       </View>
       <View collapsable={false} key="nav_mine" style={styles.pageStyle}>
-        <Mine />
+        <VisibilityBoundary visible={navId === 'nav_mine'}><Mine /></VisibilityBoundary>
       </View>
     </PagerView>
-  ), [onPageScrollStateChanged, onPageSelected])
+  ), [navId, onPageScrollStateChanged, onPageSelected])
 
   return component
 }

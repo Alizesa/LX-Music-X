@@ -10,8 +10,40 @@ const rootPath = path.join(__dirname, './')
 // JS 侧在 src/plugins/player/utils.ts 的 updateOptions 里传 playModeButton / lyricButton
 // 两个开关与对应图标，按钮行为在 src/plugins/player/service.ts 里接管。
 const METADATA_MANAGER = path.join(rootPath, 'node_modules/react-native-track-player/android/src/main/java/com/guichaguri/trackplayer/service/metadata/MetadataManager.java')
+const MEDIA_METADATA_DIR = path.join(rootPath, 'node_modules/react-native-local-media-metadata/android/src/main/java/com/localmediametadata')
 
 const patchs = [
+  [
+    path.join(MEDIA_METADATA_DIR, 'MediaFile.java'),
+    '      ParcelFileDescriptor parcelFileDescriptor = context.getContentResolver().openFileDescriptor(dFile.getUri(), isWrite ? "rw" : "r");',
+    `      // LX: 必须保存到成员字段，closeFile 的 finally 才能及时关闭句柄。
+      parcelFileDescriptor = context.getContentResolver().openFileDescriptor(dFile.getUri(), isWrite ? "rw" : "r");`,
+  ],
+  [
+    path.join(MEDIA_METADATA_DIR, 'MediaFile.java'),
+    `    } catch (Exception ignored) { closeFile(); }
+    return createTempFile();`,
+    `    } catch (Exception ignored) {}
+    // LX: 权限检查未通过的正常回退同样要关闭句柄。
+    closeFile();
+    return createTempFile();`,
+  ],
+  [
+    path.join(MEDIA_METADATA_DIR, 'LocalMediaMetadataModule.java'),
+    `  @ReactMethod
+  public void writeMetadata(String filePath, ReadableMap metadata, boolean isOverwrite, Promise promise) {`,
+    `  @ReactMethod
+  public void writeTags(String filePath, ReadableMap metadata, String picPath, String lyric, Promise promise) {
+    android.os.Bundle values = Arguments.toBundle(metadata);
+    AsyncTask.runTask(() -> {
+      MetadataWriter.writeTags(reactContext, filePath, values, picPath, lyric);
+      return null;
+    }, promise);
+  }
+
+  @ReactMethod
+  public void writeMetadata(String filePath, ReadableMap metadata, boolean isOverwrite, Promise promise) {`,
+  ],
   // 1. 两个新按钮的字段 + 记住当前播放状态（updateOptions 重建按钮后要按它重装 mActions）
   [
     METADATA_MANAGER,
@@ -178,6 +210,13 @@ const toLF = str => str.replace(/\r\n/g, '\n')
     // 打不上就让构建失败：不然出出来的包少了功能却一路绿灯，很难查
     process.exitCode = 1
     console.error('\nDependencies patch failed.\n')
+    return
+  }
+  try {
+    await fs.promises.copyFile(path.join(rootPath, 'patches/MetadataWriter.java'), path.join(MEDIA_METADATA_DIR, 'MetadataWriter.java'))
+  } catch (error) {
+    process.exitCode = 1
+    console.error('Installing MetadataWriter failed:', error.message)
     return
   }
   console.log('\nDependencies patch finished.\n')

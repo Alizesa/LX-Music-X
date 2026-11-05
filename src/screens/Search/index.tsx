@@ -11,6 +11,7 @@ import { COMPONENT_IDS } from '@/config/constant'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
 import { scaleSizeH } from '@/utils/pixelRatio'
+import { retainSearchResults } from '@/core/search/cache'
 
 // 搜索从 pager 页改成了推入式页面：入口在「首页」右上角的放大镜。
 export default ({ componentId }: { componentId: string }) => {
@@ -18,6 +19,7 @@ export default ({ componentId }: { componentId: string }) => {
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.search, componentId)
+    return retainSearchResults()
   }, [componentId])
 
   return (

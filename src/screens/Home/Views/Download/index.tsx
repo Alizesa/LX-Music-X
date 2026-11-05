@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import { Alert, type AlertButton, FlatList, TouchableOpacity, View } from 'react-native'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
 import { useTheme } from '@/store/theme/hook'
 import { createStyle, toast } from '@/utils/tools'
 import { getDownloadPath } from '@/utils/data'
-import { pauseAllTasks, pauseTask, removeTasks, resumeAllTasks, retryTask, setDownloadDirectory } from '@/core/download'
-import { useDownloadTasks } from '@/store/download/hook'
+import { getDownloadIds, hasDownloadTask, isDownloadCompleted, pauseAllTasks, pauseTask, removeTasks, resumeAllTasks, retryTask, setDownloadDirectory } from '@/core/download'
+import { useDownloadItem, useDownloadTasks } from '@/store/download/hook'
 import { selectManagedFolder } from '@/utils/fs'
 
 const formatBytes = (value: number) => {
@@ -35,32 +35,33 @@ const statusText = (task: LX.Download.DownloadListItem) => {
   }
 }
 
-const DownloadItem = ({ task, isSelected, isMultiSelect, onPress, onLongPress, onToggle }: {
-  task: LX.Download.DownloadListItem
+const DownloadItem = memo(({ item, isSelected, isMultiSelect, onPress, onLongPress, onToggle }: {
+  item: LX.Download.DownloadListItem
   isSelected: boolean
   isMultiSelect: boolean
-  onPress: () => void
-  onLongPress: () => void
-  onToggle: () => void
+  onPress: (id: string) => void
+  onLongPress: (id: string) => void
+  onToggle: (task: LX.Download.DownloadListItem) => void
 }) => {
+  const task = useDownloadItem(item)
   const theme = useTheme()
   const canToggle = task.status != 'completed' && task.status != 'finalizing'
   const toggleIcon = task.status == 'run' || task.status == 'waiting' || task.status == 'resolving' ? 'pause' : 'play-outline'
   return (
     <View style={{ ...styles.item, borderBottomColor: theme['c-border-background'], backgroundColor: isSelected ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)' }}>
-      <TouchableOpacity style={styles.itemBody} activeOpacity={0.7} onPress={onPress} onLongPress={onLongPress}>
+      <TouchableOpacity style={styles.itemBody} activeOpacity={0.7} onPress={() => { onPress(task.id) }} onLongPress={() => { onLongPress(task.id) }}>
         <Text numberOfLines={1}>{task.name}</Text>
         <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{task.singer} · {task.quality}</Text>
         <Text size={12} color={task.status == 'error' ? theme['c-600'] : theme['c-font-label']} numberOfLines={1}>{statusText(task)}</Text>
       </TouchableOpacity>
-      {canToggle && !isMultiSelect ? <TouchableOpacity style={styles.action} onPress={onToggle}><Icon name={toggleIcon} color={theme['c-button-font']} /></TouchableOpacity> : null}
+      {canToggle && !isMultiSelect ? <TouchableOpacity style={styles.action} onPress={() => { onToggle(task) }}><Icon name={toggleIcon} color={theme['c-button-font']} /></TouchableOpacity> : null}
     </View>
   )
-}
+})
 
 export default () => {
   const theme = useTheme()
-  const tasks = useDownloadTasks()
+  const { tasks, count, hasMore, loading, error, loadMore, retry } = useDownloadTasks()
   const [directory, setDirectory] = useState<LX.Download.DownloadDirectory | null>(null)
   const [isMultiSelect, setIsMultiSelect] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
@@ -69,11 +70,11 @@ export default () => {
 
   // 任务被删光后没有可操作的对象了，顺手退出多选，免得留下一条空栏
   useEffect(() => {
-    if (!tasks.length && isMultiSelect) {
+    if (!count && isMultiSelect) {
       setIsMultiSelect(false)
       setSelectedIds(new Set())
     }
-  }, [tasks.length, isMultiSelect])
+  }, [count, isMultiSelect])
 
   const chooseDownloadPath = async() => {
     try {
@@ -92,35 +93,36 @@ export default () => {
     setSelectedIds(new Set())
   }
 
-  const enterSelect = (id: string) => {
+  const enterSelect = useCallback((id: string) => {
+    if (isMultiSelect) return
     setIsMultiSelect(true)
     setSelectedIds(new Set([id]))
-  }
+  }, [isMultiSelect])
 
-  const toggleSelect = (id: string) => {
+  const toggleSelect = useCallback((id: string) => {
+    if (!isMultiSelect) return
     setSelectedIds(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return next
     })
-  }
+  }, [isMultiSelect])
 
   // 从 tasks 派生计数，而不是直接用 selectedIds.size：任务可能在别处被移除
   // （例如在本地音乐列表删歌会连带移除下载记录），集合里会残留已不存在的 id，
   // 直接用 size 会把它们也算进去
-  const selectedCount = tasks.reduce((count, task) => selectedIds.has(task.id) ? count + 1 : count, 0)
+  const selectedCount = [...selectedIds].filter(hasDownloadTask).length
 
-  const handleSelectAll = () => {
-    if (tasks.length && selectedCount == tasks.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(tasks.map(task => task.id)))
+  const handleSelectAll = async() => {
+    if (count && selectedCount == count) setSelectedIds(new Set())
+    else setSelectedIds(new Set(await getDownloadIds()))
   }
 
   const handleDelete = () => {
-    const selected = tasks.filter(task => selectedIds.has(task.id))
-    if (!selected.length) return
-    const ids = selected.map(task => task.id)
-    const hasCompleted = selected.some(task => task.status == 'completed')
+    const ids = [...selectedIds].filter(hasDownloadTask)
+    if (!ids.length) return
+    const hasCompleted = ids.some(isDownloadCompleted)
     const doRemove = (deleteFile: boolean) => {
       void removeTasks(ids, deleteFile).catch((error: unknown) => {
         toast(error instanceof Error ? error.message : String(error), 'long')
@@ -140,14 +142,14 @@ export default () => {
     )
   }
 
-  const handleToggle = (task: LX.Download.DownloadListItem) => {
+  const handleToggle = useCallback((task: LX.Download.DownloadListItem) => {
     if (task.status == 'run' || task.status == 'waiting' || task.status == 'resolving') void pauseTask(task.id)
     else {
       void retryTask(task.id).catch((error: unknown) => {
         toast(error instanceof Error ? error.message : String(error), 'long')
       })
     }
-  }
+  }, [])
 
   return (
     // 同上：不刷不透明底色，否则会盖住 PageContent 的背景图
@@ -165,23 +167,31 @@ export default () => {
       </View>
       <FlatList
         data={tasks}
+        initialNumToRender={12}
+        windowSize={5}
+        maxToRenderPerBatch={8}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
           <DownloadItem
-            task={item}
+            item={item}
             isSelected={selectedIds.has(item.id)}
             isMultiSelect={isMultiSelect}
-            onPress={() => { if (isMultiSelect) toggleSelect(item.id) }}
-            onLongPress={() => { if (!isMultiSelect) enterSelect(item.id) }}
-            onToggle={() => { handleToggle(item) }}
+            onPress={toggleSelect}
+            onLongPress={enterSelect}
+            onToggle={handleToggle}
           />
         )}
-        ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{global.i18n.t('download_empty')}</Text>}
+        ListEmptyComponent={!loading && !error ? <Text style={styles.empty} color={theme['c-font-label']}>{global.i18n.t('download_empty')}</Text> : null}
+        ListFooterComponent={loading || hasMore || error
+          ? <Text style={styles.empty} onPress={error ? retry : loadMore}>{global.i18n.t(error ? 'list_error' : 'list_loading')}</Text>
+          : null}
       />
       {isMultiSelect
         ? <View style={{ ...styles.selectBar, borderTopColor: theme['c-border-background'], backgroundColor: theme['c-content-background'] }}>
             <TouchableOpacity style={styles.selectBarButton} onPress={handleSelectAll}>
-              <Text size={13}>{global.i18n.t(selectedCount && selectedCount == tasks.length ? 'list_select_unall' : 'list_select_all')}</Text>
+              <Text size={13}>{global.i18n.t(selectedCount && selectedCount == count ? 'list_select_unall' : 'list_select_all')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.selectBarButton} disabled={!selectedCount} onPress={handleDelete}>
               <Text size={13} color={selectedCount ? theme['c-600'] : theme['c-font-label']}>{`${global.i18n.t('delete')} (${selectedCount})`}</Text>

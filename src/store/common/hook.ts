@@ -1,6 +1,7 @@
 import { type COMPONENT_IDS } from '@/config/constant'
 import { useEffect, useState } from 'react'
 import state, { type InitState } from './state'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 export const useFontSize = () => {
   const [value, update] = useState(state.fontSize)
@@ -66,13 +67,16 @@ export const useNavActiveId = () => {
 
 export const useBgPic = () => {
   const [value, update] = useState(state.bgPic)
+  const visible = useScreenVisible()
 
   useEffect(() => {
+    if (!visible) return
+    update(state.bgPic)
     global.state_event.on('bgPicUpdated', update)
     return () => {
       global.state_event.off('bgPicUpdated', update)
     }
-  }, [])
+  }, [visible])
 
   return value
 }

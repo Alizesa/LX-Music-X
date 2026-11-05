@@ -9,6 +9,7 @@ import { defaultHeaders } from './common/Image'
 import SizeView from './SizeView'
 import { useBgPic } from '@/store/common/hook'
 import { useSettingValue } from '@/store/setting/hook'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 interface Props {
   children: React.ReactNode
@@ -23,6 +24,7 @@ export default ({ children }: Props) => {
   const theme = useTheme()
   const windowSize = useWindowSize()
   const pic = useBgPic()
+  const visible = useScreenVisible()
   const customBgImage = useSettingValue('theme.customBgImage')
   const bgOpacity = useSettingValue('theme.bgOpacity')
   const hideBgDark = useSettingValue('theme.hideBgDark')
@@ -33,7 +35,7 @@ export default ({ children }: Props) => {
     <View style={{ flex: 1, overflow: 'hidden' }}>
       <ImageBackground
         style={{ position: 'absolute', left: 0, top: 0, height: windowSize.height, width: windowSize.width, backgroundColor: theme['c-content-background'] }}
-        source={theme['bg-image']}
+        source={visible ? theme['bg-image'] : null}
         resizeMode="cover"
       >
       </ImageBackground>
@@ -41,7 +43,7 @@ export default ({ children }: Props) => {
         {children}
       </View>
     </View>
-  ), [children, theme, windowSize.height, windowSize.width])
+  ), [children, theme, visible, windowSize.height, windowSize.width])
 
   const picComponent = useMemo(() => {
     // 自定义背景优先，其次是动态背景（播放封面）
@@ -53,7 +55,8 @@ export default ({ children }: Props) => {
         <ImageBackground
           style={{ position: 'absolute', left: 0, top: 0, height: windowSize.height, width: windowSize.width, backgroundColor: theme['c-content-background'] }}
           // 自定义背景是本地文件，不需要请求头；动态背景是网络图，带上它
-          source={isCustom ? { uri } : { uri, headers: defaultHeaders }}
+          source={visible ? (isCustom ? { uri } : { uri, headers: defaultHeaders }) : null}
+          resizeMethod="resize"
           // cover = 等比铺满，图片比例与屏幕不合适时从中心裁掉超出部分，不拉伸
           resizeMode="cover"
           // 播放封面模糊是为了压住花纹好压字；用户自己选的壁纸原样显示
@@ -66,7 +69,7 @@ export default ({ children }: Props) => {
         </View>
       </View>
     )
-  }, [bgOpacity, children, customBgUri, pic, theme, windowSize.height, windowSize.width])
+  }, [bgOpacity, children, customBgUri, pic, theme, visible, windowSize.height, windowSize.width])
 
   return (
     <>

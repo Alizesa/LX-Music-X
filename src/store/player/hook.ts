@@ -1,16 +1,20 @@
 import { isActive } from '@/utils/tools'
 import { useEffect, useState } from 'react'
 import state, { type InitState } from './state'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 export const usePlayerMusicInfo = () => {
   const [value, update] = useState(state.musicInfo)
+  const visible = useScreenVisible()
 
   useEffect(() => {
+    if (!visible) return
+    update(state.musicInfo)
     global.state_event.on('playerMusicInfoChanged', update)
     return () => {
       global.state_event.off('playerMusicInfoChanged', update)
     }
-  }, [])
+  }, [visible])
 
   return value
 }
@@ -69,9 +73,10 @@ export const useIsPlay = () => {
 
 export const useProgress = (autoUpdate = true) => {
   const [value, update] = useState(state.progress)
+  const visible = useScreenVisible()
 
   useEffect(() => {
-    if (!autoUpdate) return
+    if (!autoUpdate || !visible) return
     const handleUpdate = (progress: InitState['progress']) => {
       if (isActive()) update(progress)
     }
@@ -80,7 +85,7 @@ export const useProgress = (autoUpdate = true) => {
     return () => {
       global.state_event.off('playProgressChanged', handleUpdate)
     }
-  }, [autoUpdate])
+  }, [autoUpdate, visible])
 
   return value
 }

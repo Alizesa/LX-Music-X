@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from 'react'
+import { memo, useCallback } from 'react'
 import { View, StyleSheet, TouchableOpacity } from 'react-native'
 
 import Progress, { ProgressPlain } from '@/components/player/Progress'
@@ -7,8 +7,6 @@ import { useProgress, usePlayerMusicInfo } from '@/store/player/hook'
 import { useTheme } from '@/store/theme/hook'
 import { createStyle } from '@/utils/tools'
 import Text from '@/components/common/Text'
-import { COMPONENT_IDS } from '@/config/constant'
-import { usePageVisible } from '@/store/common/hook'
 import { scaleSizeH, scaleSizeW, scaleSizeWR } from '@/utils/pixelRatio'
 import { useBufferProgress } from '@/plugins/player'
 import { useSettingValue } from '@/store/setting/hook'
@@ -32,17 +30,12 @@ const PlayTimeMax = memo(({ timeStr }: { timeStr: string }) => {
   return <Text size={FONT_SIZE} color={theme['c-500']}>{timeStr}</Text>
 })
 
-export default ({ isHome }: { isHome: boolean }) => {
+export default () => {
   const theme = useTheme()
   const musicInfo = usePlayerMusicInfo()
-  const [autoUpdate, setAutoUpdate] = useState(true)
-  const { maxPlayTimeStr, nowPlayTimeStr, progress, maxPlayTime } = useProgress(autoUpdate)
+  const { maxPlayTimeStr, nowPlayTimeStr, progress, maxPlayTime } = useProgress()
   const buffered = useBufferProgress()
   const allowProgressBarSeek = useSettingValue('common.allowProgressBarSeek')
-
-  usePageVisible([COMPONENT_IDS.home], useCallback((visible) => {
-    if (isHome) setAutoUpdate(visible)
-  }, [isHome]))
 
   // 关掉「允许通过底栏进度条调整播放进度」时，这一整行都可以点开播放详情。
   // 否则能点开的只有左边的封面和上面那行歌名，想从进度条这一带点开就会点空。
@@ -55,7 +48,7 @@ export default ({ isHome }: { isHome: boolean }) => {
     <>
       {/* <MusicName /> */}
       <View style={styles.status}>
-        <Status autoUpdate={autoUpdate} />
+        <Status autoUpdate />
       </View>
       <View style={{ flexGrow: 0, flexShrink: 0, flexDirection: 'row', alignItems: 'flex-start' }} >
         <PlayTimeCurrent timeStr={nowPlayTimeStr} />

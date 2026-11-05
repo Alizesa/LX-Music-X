@@ -1,5 +1,6 @@
 import { httpFetch } from '@/utils/request'
 import { zzcSign } from './crypto'
+import { throwIfAborted, withAbort } from '@/utils/abort'
 
 // 注意：**这里是搜索链路，不能用 App 信封**。
 //
@@ -32,18 +33,21 @@ export const comm = {
  * @param data 请求体
  * @param path 接口路径，搜索接口是 musics.fcg，按 module/method 调用的接口是 musicu.fcg
  */
-export const signRequest = async(data, path = 'musics.fcg') => {
+export const signRequest = async(data, path = 'musics.fcg', signal) => {
+  throwIfAborted(signal)
   // console.log(data)
   const sign = await zzcSign(JSON.stringify(data))
+  throwIfAborted(signal)
   // console.log('sign', sign)
-  return httpFetch(`https://u.y.qq.com/cgi-bin/${path}?sign=${sign}`, {
+  const request = httpFetch(`https://u.y.qq.com/cgi-bin/${path}?sign=${sign}`, {
     method: 'post',
     headers: {
       // 与上面 comm 的 cv=2151 配套，改一个就要改另一个
       'User-Agent': 'QQMusic 14090508(android 12)',
     },
     body: data,
-  }).promise
+  })
+  return withAbort(request.promise, signal, () => { request.cancelHttp() })
 }
 
 /**

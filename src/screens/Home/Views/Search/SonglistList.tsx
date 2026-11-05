@@ -59,7 +59,7 @@ export default forwardRef<MusicListType, {}>((props, ref) => {
   const handleRefresh: SonglistProps['onRefresh'] = () => {
     const page = 1
     listRef.current?.setStatus('refreshing')
-    search(searchInfoRef.current.text, page, searchInfoRef.current.source).then((list) => {
+    search(searchInfoRef.current.text, page, searchInfoRef.current.source, true).then((list) => {
       // null：结果作废，列表归发起更新的那次请求管
       if (list == null || isUnmountedRef.current) return
       listRef.current?.setList(list, searchInfoRef.current.source == 'all')

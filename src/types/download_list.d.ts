@@ -75,6 +75,8 @@ declare namespace LX {
       filePath?: string
       directoryUri: string
       nativeId?: string
+      /** 文件已下载，归档失败时复用它重试，避免重新取链下载。 */
+      pendingCompletion?: { downloaded: number, total: number }
       error?: string
       createdAt: number
     }

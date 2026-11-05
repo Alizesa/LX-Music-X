@@ -6,7 +6,7 @@ export default () => {
   return (
     <>
       <Content />
-      <PlayerBar isHome />
+      <PlayerBar />
       <BottomTabBar />
     </>
   )

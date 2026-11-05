@@ -40,9 +40,6 @@ export default async(appSetting: LX.AppSetting) => {
   bootLog(`Local match index: ${getCurrentLocalMatchIndex()?.rows.length ?? 0} rows.`)
   const { initPlayQueue } = await import('@/core/player/playQueue')
   await initPlayQueue()
-  const { getDownloadList } = await import('@/core/download')
-  const { default: downloadState } = await import('@/store/download/state')
-  downloadState.tasks = await getDownloadList()
   bootLog('User list inited.')
   setNavActiveId((await getViewPrevState()).id)
   // 临时列表来源标记（每日推荐靠它续播）。内存里那份重启就没了，

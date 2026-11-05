@@ -1,4 +1,4 @@
-import { getData, saveData, saveDataDirect, getAllKeys, removeDataMultiple, saveDataMultiple, removeData, getDataMultiple } from '@/plugins/storage'
+import { getData, saveData, saveDataDirect, getAllKeys, removeDataMultiple, removeDataMultipleDirect, saveDataMultiple, saveDataMultipleDirect, removeData, getDataMultiple } from '@/plugins/storage'
 import { DEFAULT_SETTING, LIST_IDS, storageDataPrefix, type NAV_ID_Type } from '@/config/constant'
 import { isRemovedUserList } from './legacyList'
 import { throttle } from './common'
@@ -20,6 +20,8 @@ const ignoreVersionKey = storageDataPrefix.ignoreVersion
 const ignoreVersionFailTipTimeKey = storageDataPrefix.ignoreVersionFailTipTimeKey
 const searchSettingKey = storageDataPrefix.searchSetting
 const searchHistoryListKey = storageDataPrefix.searchHistoryList
+export const getSearchResultCache = async<T>(key: string) => getData<T>(storageDataPrefix.searchResultsCache + key)
+export const saveSearchResultCache = async(key: string, value: unknown) => saveData(storageDataPrefix.searchResultsCache + key, value)
 const listPrefix = storageDataPrefix.list
 const dislikeListPrefix = storageDataPrefix.dislikeList
 const userApiPrefix = storageDataPrefix.userApi
@@ -423,6 +425,14 @@ export const getDownloadHistory = async(): Promise<LX.Download.DownloadHistoryIt
 export const saveDownloadHistory = async(history: LX.Download.DownloadHistoryItem[]) => {
   await saveData(downloadTasksHistoryKey, history)
 }
+
+export const removeLegacyDownloadHistory = async() => removeData(downloadTasksHistoryKey)
+export const getDownloadHistoryMigrated = async() => (await getData<boolean>(storageDataPrefix.downloadHistoryMigrated)) === true
+export const saveDownloadHistoryMigrated = async() => saveDataDirect(storageDataPrefix.downloadHistoryMigrated, true)
+export const getDownloadHistoryKeys = async() => (await getAllKeys()).filter(key => key.startsWith(storageDataPrefix.downloadHistoryItem))
+export const getDownloadHistoryItems = async(keys: string[]) => getDataMultiple(keys)
+export const saveDownloadHistoryItems = async(items: Array<[string, LX.Download.DownloadHistoryItem]>) => saveDataMultipleDirect(items)
+export const removeDownloadHistoryItems = async(keys: string[]) => removeDataMultipleDirect(keys)
 
 export const getDownloadTasksMigrated = async() =>
   (await getData<boolean>(downloadTasksMigratedKey)) === true

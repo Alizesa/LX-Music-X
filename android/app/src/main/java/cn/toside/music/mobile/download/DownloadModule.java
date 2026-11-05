@@ -23,6 +23,9 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.MoreExecutors;
 
 import java.io.File;
 import java.util.Map;
@@ -158,10 +161,18 @@ public class DownloadModule extends ReactContextBaseJavaModule {
   @ReactMethod
   public void getState(String workId, Promise promise) {
     try {
-      WorkInfo info = WorkManager.getInstance(reactContext)
-        .getWorkInfoById(UUID.fromString(workId))
-        .get();
-      promise.resolve(toMap(info));
+      Futures.addCallback(WorkManager.getInstance(reactContext).getWorkInfoById(UUID.fromString(workId)),
+        new FutureCallback<WorkInfo>() {
+          @Override
+          public void onSuccess(WorkInfo info) {
+            promise.resolve(toMap(info));
+          }
+
+          @Override
+          public void onFailure(Throwable error) {
+            promise.reject("get_download_state_failed", error);
+          }
+        }, MoreExecutors.directExecutor());
     } catch (Exception error) {
       promise.reject("get_download_state_failed", error);
     }

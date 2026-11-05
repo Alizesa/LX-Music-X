@@ -143,6 +143,14 @@ export class AppEvent extends Event {
     this.emit('downloadListUpdate')
   }
 
+  downloadTaskUpdate(task: LX.Download.DownloadListItem) {
+    this.emit('downloadTaskUpdate', task)
+  }
+
+  downloadCountUpdate(count: number) {
+    this.emit('downloadCountUpdate', count)
+  }
+
   playQueueUpdate(queue: LX.Player.PlayQueueItem[]) {
     this.emit('playQueueUpdate', queue)
   }

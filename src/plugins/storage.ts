@@ -100,6 +100,21 @@ export const saveDataDirect = async(key: string, value: any) => {
   }
 }
 
+/** 确定小于分片上限的独立记录，批量原子替换各 key，不先删除旧值。 */
+export const saveDataMultipleDirect = async(datas: Array<[string, unknown]>) => {
+  if (!datas.length) return
+  const values: Array<[string, string]> = datas.map(([key, value]) => {
+    const json = JSON.stringify(value)
+    if (json.length > limit) throw new Error('Direct storage value is too large: ' + key)
+    return [key, json]
+  })
+  await AsyncStorage.multiSet(values)
+}
+
+export const removeDataMultipleDirect = async(keys: string[]) => {
+  if (keys.length) await AsyncStorage.multiRemove(keys)
+}
+
 export const getData = async<T = unknown>(key: string): Promise<T | null> => {
   let value: string | null
   try {

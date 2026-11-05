@@ -1,6 +1,8 @@
 import searchMusicState, { type Source } from '@/store/search/music/state'
 import searchMusicActions, { type SearchResult } from '@/store/search/music/action'
 import musicSdk from '@/utils/musicSdk'
+import { restoreSearchResult } from './cache'
+import { beginSearchRequest, finishSearchRequest } from './request'
 
 export const setSource: typeof searchMusicActions['setSource'] = (source) => {
   searchMusicActions.setSource(source)
@@ -22,42 +24,56 @@ export const clearListInfo: typeof searchMusicActions.clearListInfo = (source) =
  * 调用方拿到 null 时不要动列表——空数组是"这一页确实没有结果"，两者被混用的话，
  * 一次作废的响应就会把界面上的列表清成空白页。
  */
-export const search = async(text: string, page: number, sourceId: Source): Promise<LX.Music.MusicInfoOnline[] | null> => {
+export const search = async(text: string, page: number, sourceId: Source, isRefresh = false): Promise<LX.Music.MusicInfoOnline[] | null> => {
   const listInfo = searchMusicState.listInfos[sourceId]!
   if (!text) return null
-  const key = `${page}__${text}`
-  if (sourceId == 'all') {
-    listInfo.key = key
-    let task = []
-    for (const source of searchMusicState.sources) {
-      if (source == 'all') continue
-      task.push(((musicSdk[source]?.musicSearch.search(text, page, searchMusicState.listInfos.all.limit) as Promise<SearchResult>) ?? Promise.reject(new Error('source not found: ' + source))).catch((error: any) => {
-        console.log(error)
-        return {
-          allPage: 1,
-          limit: 30,
-          list: [],
-          source,
-          total: 0,
-        }
-      }))
+  const signal = beginSearchRequest('music')
+  try {
+    if (page === 1 && !isRefresh && await restoreSearchResult('music', sourceId, text, signal)) return listInfo.list
+    if (signal.aborted) return null
+    const key = `${page}__${text}`
+    if (sourceId == 'all') {
+      let task = []
+      for (const source of searchMusicState.sources) {
+        if (source == 'all') continue
+        const sdk = musicSdk[source]?.musicSearch
+        const request = source === 'tx'
+          ? musicSdk.tx.musicSearch.search(text, page, searchMusicState.listInfos.all.limit, signal)
+          : sdk?.search(text, page, searchMusicState.listInfos.all.limit)
+        task.push(((request as Promise<SearchResult>) ?? Promise.reject(new Error('source not found: ' + source))).catch((error: any) => {
+          console.log(error)
+          return {
+            allPage: 1,
+            limit: 30,
+            list: [],
+            source,
+            total: 0,
+          }
+        }))
+      }
+      return await Promise.all(task).then((results: SearchResult[]) => {
+        if (signal.aborted) return null
+        setSearchText(text)
+        setSource(sourceId)
+        const list = setListInfo(results, page, text)
+        listInfo.key = key
+        return list
+      })
+    } else {
+      if (!isRefresh && listInfo?.key == key && listInfo?.list.length) return listInfo?.list
+      const sdk = musicSdk[sourceId]?.musicSearch
+      const request = sourceId === 'tx' ? musicSdk.tx.musicSearch.search(text, page, listInfo.limit, signal) : sdk?.search(text, page, listInfo.limit)
+      return await (request?.then((data: SearchResult) => {
+        if (signal.aborted) return null
+        setSearchText(text)
+        const list = setListInfo(data, page, text)
+        listInfo.key = key
+        return list
+      }) ?? Promise.reject(new Error('source not found: ' + sourceId))).catch((err: any) => {
+        if (signal.aborted) return null
+        if (listInfo.list.length && page == 1) clearListInfo(sourceId)
+        throw err
+      })
     }
-    return Promise.all(task).then((results: SearchResult[]) => {
-      if (key != listInfo.key) return null
-      setSearchText(text)
-      setSource(sourceId)
-      return setListInfo(results, page, text)
-    })
-  } else {
-    if (listInfo?.key == key && listInfo?.list.length) return listInfo?.list
-    listInfo.key = key
-    return (musicSdk[sourceId]?.musicSearch.search(text, page, listInfo.limit).then((data: SearchResult) => {
-      if (key != listInfo.key) return null
-      return setListInfo(data, page, text)
-    }) ?? Promise.reject(new Error('source not found: ' + sourceId))).catch((err: any) => {
-      if (listInfo.list.length && page == 1) clearListInfo(sourceId)
-      throw err
-    })
-  }
+  } finally { finishSearchRequest('music', signal) }
 }
-

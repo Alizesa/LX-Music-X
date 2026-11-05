@@ -12,7 +12,7 @@ import { useTheme } from '@/store/theme/hook'
 import { useSettingValue } from '@/store/setting/hook'
 
 
-export default memo(({ isHome = false }: { isHome?: boolean }) => {
+export default memo(() => {
   // const { onLayout, ...layout } = useLayout()
   const { keyboardShown } = useKeyboard()
   const theme = useTheme()
@@ -28,13 +28,13 @@ export default memo(({ isHome = false }: { isHome?: boolean }) => {
         {/* <View style={{ ...styles.row, justifyContent: 'space-between' }}>
           <PlayTime />
         </View> */}
-        <PlayInfo isHome={isHome} />
+        <PlayInfo />
       </View>
       <View style={styles.right}>
         <ControlBtn />
       </View>
     </View>
-  ), [theme, isHome, playBarOpacity])
+  ), [theme, playBarOpacity])
 
   // console.log('render pb')
 

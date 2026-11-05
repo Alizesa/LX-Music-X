@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
-import { Alert, RefreshControl, ScrollView, TouchableOpacity, View } from 'react-native'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { Alert, RefreshControl, SectionList, TouchableOpacity, View } from 'react-native'
 import Text from '@/components/common/Text'
 import { Icon, IconIonicons } from '@/components/common/Icon'
 import Image from '@/components/common/Image'
@@ -7,7 +7,7 @@ import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMu
 import QQMusicPhoneLoginModal, { type QQMusicPhoneLoginModalType } from '@/components/QQMusicPhoneLoginModal'
 import QQPlaylistEditModal, { type QQPlaylistEditModalType } from '@/components/QQPlaylistEditModal'
 import { useTheme } from '@/store/theme/hook'
-import { useDownloadTasks } from '@/store/download/hook'
+import { useDownloadCount } from '@/store/download/hook'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo, isQQMusicSessionCurrent, updateQQMusicPlaylistsCache, type QQMusicSession } from '@/core/qqMusic'
@@ -48,16 +48,16 @@ const Entry = ({ icon, ionIcon, ionSize, label, count, onPress }: {
   )
 }
 
-const PlaylistRow = ({ item, onPress, onMore }: {
+const PlaylistRow = memo(({ item, onPress, onMore }: {
   item: LX.QQMusic.PlaylistInfo
-  onPress: () => void
-  onMore?: () => void
+  onPress: (item: LX.QQMusic.PlaylistInfo) => void
+  onMore?: (item: LX.QQMusic.PlaylistInfo) => void
 }) => {
   const theme = useTheme()
   const t = useI18n()
   return (
     <View style={{ ...styles.row, borderBottomColor: theme['c-border-background'] }}>
-      <TouchableOpacity style={styles.rowMain} activeOpacity={0.7} onPress={onPress}>
+      <TouchableOpacity style={styles.rowMain} activeOpacity={0.7} onPress={() => { onPress(item) }}>
         {item.cover
           ? <Image url={item.cover} style={styles.cover} />
           : <View style={{ ...styles.cover, backgroundColor: theme['c-primary-background'] }} />}
@@ -69,13 +69,13 @@ const PlaylistRow = ({ item, onPress, onMore }: {
         </View>
       </TouchableOpacity>
       {onMore
-        ? <TouchableOpacity style={styles.rowMore} onPress={onMore}>
+        ? <TouchableOpacity style={styles.rowMore} onPress={() => { onMore(item) }}>
             <IconIonicons name="ellipsis-horizontal" size={18} color={theme['c-font-label']} />
           </TouchableOpacity>
         : null}
     </View>
   )
-}
+})
 
 // 「我的」页。结构参考 QQ 音乐的版式（账号卡片 / 入口宫格 / 歌单列表），
 // 但不做像素级复刻，也没有会员中心。
@@ -94,7 +94,7 @@ export default () => {
   const [avatarStage, setAvatarStage] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const refreshingRef = useRef(false)
-  const tasks = useDownloadTasks()
+  const downloadCount = useDownloadCount()
 
   const loggedIn = !!cookie && !!user
 
@@ -241,7 +241,7 @@ export default () => {
     ])
   }
 
-  const openPlaylist = (info: LX.QQMusic.PlaylistInfo) => {
+  const openPlaylist = useCallback((info: LX.QQMusic.PlaylistInfo) => {
     navigations.pushQQPlaylistScreen(commonState.componentIds.home!, {
       id: info.id,
       name: info.name,
@@ -253,9 +253,9 @@ export default () => {
       // 作者缺失（空串也算）时退回曲目数
       subtitle: info.author ? info.author : info.trackCount ? t('mine_song_count', { num: info.trackCount }) : undefined,
     })
-  }
+  }, [t])
 
-  const showPlaylistActions = (playlist: LX.QQMusic.PlaylistInfo) => {
+  const showPlaylistActions = useCallback((playlist: LX.QQMusic.PlaylistInfo) => {
     const confirmDelete = () => {
       Alert.alert(t('qq_playlist_delete_title'), t('qq_playlist_delete_message', { name: playlist.name }), [
         { text: t('cancel'), style: 'cancel' },
@@ -280,7 +280,7 @@ export default () => {
       { text: t('qq_playlist_delete'), style: 'destructive', onPress: confirmDelete },
       { text: t('cancel'), style: 'cancel' },
     ])
-  }
+  }, [t])
 
   // 头像按顺序试：接口给的地址 → QQ 头像服务。前一个加载失败就换下一个，
   // 全都失败才退回纯色占位（比 LX 占位图好看，也说明确实没辙了）
@@ -318,43 +318,37 @@ export default () => {
   }, [cookie, user])
 
   const liked = playlists.find(item => item.liked)
-  const created = playlists.filter(item => !item.liked && !item.subscribed)
-  const collected = playlists.filter(item => item.subscribed)
-
-  const renderSection = (title: string, list: LX.QQMusic.PlaylistInfo[], options?: {
-    onCreate?: () => void
-    onMore?: (item: LX.QQMusic.PlaylistInfo) => void
-  }) => (
-    <>
-      <View style={styles.sectionHeader}>
-        <Text size={15}>{`${title} ${list.length}`}</Text>
-        {options?.onCreate
-          ? <TouchableOpacity style={styles.sectionAction} onPress={options.onCreate}>
-              <IconIonicons name="add" size={20} color={theme['c-primary-font']} />
-            </TouchableOpacity>
-          : null}
-      </View>
-      {
-        list.length
-          ? list.map(item => (
-              <PlaylistRow
-                key={item.id}
-                item={item}
-                onPress={() => { openPlaylist(item) }}
-                onMore={options?.onMore ? () => options.onMore?.(item) : undefined}
-              />
-          ))
-          : <Text style={styles.empty} size={13} color={theme['c-font-label']}>{loggedIn ? t('qq_load_hint') : t('qq_login_hint')}</Text>
-      }
-    </>
-  )
+  const sections = useMemo(() => [
+    { key: 'created', title: t('mine_created_playlists'), editable: loggedIn, data: playlists.filter(item => !item.liked && !item.subscribed) },
+    { key: 'collected', title: t('mine_collected_playlists'), editable: false, data: playlists.filter(item => item.subscribed) },
+  ], [loggedIn, playlists, t])
 
   return (
     <View style={styles.container}>
-      <ScrollView
+      <SectionList
         style={styles.scroll}
+        sections={sections}
+        stickySectionHeadersEnabled={false}
+        initialNumToRender={12}
+        windowSize={5}
+        maxToRenderPerBatch={8}
+        keyExtractor={item => item.id}
+        renderItem={({ item, section }) => <PlaylistRow item={item} onPress={openPlaylist} onMore={section.editable ? showPlaylistActions : undefined} />}
+        renderSectionHeader={({ section }) => (
+          <View style={styles.sectionHeader}>
+            <Text size={15}>{`${section.title} ${section.data.length}`}</Text>
+            {section.editable
+              ? <TouchableOpacity style={styles.sectionAction} onPress={() => playlistEditRef.current?.show({ mode: 'create' })}>
+                  <IconIonicons name="add" size={20} color={theme['c-primary-font']} />
+                </TouchableOpacity>
+              : null}
+          </View>
+        )}
+        renderSectionFooter={({ section }) => !section.data.length
+          ? <Text style={styles.empty} size={13} color={theme['c-font-label']}>{loggedIn ? t('qq_load_hint') : t('qq_login_hint')}</Text>
+          : null}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh() }} colors={[theme['c-primary']]} />}
-      >
+        ListHeaderComponent={<>
         <View style={styles.userCard}>
           <TouchableOpacity style={styles.userMain} activeOpacity={0.7} onPress={() => { if (!loggedIn) loginRef.current?.show() }}>
             {
@@ -379,18 +373,12 @@ export default () => {
         <View style={styles.entries}>
           <Entry icon="love" label={t('mine_liked')} count={liked?.trackCount} onPress={() => { if (liked) openPlaylist(liked) }} />
           <Entry ionIcon="time-sharp" ionSize={27} label={t('nav_history')} count={historyCount} onPress={() => { navigations.pushPlayHistoryScreen(commonState.componentIds.home!) }} />
-          <Entry icon="download-2" label={t('nav_download')} count={tasks.length} onPress={() => { navigations.pushDownloadScreen(commonState.componentIds.home!) }} />
+          <Entry icon="download-2" label={t('nav_download')} count={downloadCount} onPress={() => { navigations.pushDownloadScreen(commonState.componentIds.home!) }} />
           <Entry ionIcon="folder-sharp" label={t('mine_local_songs')} count={localCount} onPress={() => { navigations.pushLocalSongsScreen(commonState.componentIds.home!) }} />
         </View>
 
-        {renderSection(t('mine_created_playlists'), created, loggedIn
-          ? {
-              onCreate: () => playlistEditRef.current?.show({ mode: 'create' }),
-              onMore: showPlaylistActions,
-            }
-          : undefined)}
-        {renderSection(t('mine_collected_playlists'), collected)}
-      </ScrollView>
+        </>}
+      />
 
       <QQMusicLoginModal ref={loginRef} onLoggedIn={nextUser => { setUser(nextUser); void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />
       <QQMusicPhoneLoginModal ref={phoneLoginRef} onLoggedIn={nextUser => { setUser(nextUser); void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />

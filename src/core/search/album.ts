@@ -1,6 +1,8 @@
 import searchAlbumState, { type AlbumItem } from '@/store/search/album/state'
 import searchAlbumActions, { type SearchResult } from '@/store/search/album/action'
 import musicSdk from '@/utils/musicSdk'
+import { restoreSearchResult } from './cache'
+import { beginSearchRequest, finishSearchRequest } from './request'
 
 export const setSearchText: typeof searchAlbumActions['setSearchText'] = (text) => {
   searchAlbumActions.setSearchText(text)
@@ -15,15 +17,22 @@ export const setSearchText: typeof searchAlbumActions['setSearchText'] = (text) 
 export const search = async(text: string, page: number, isRefresh = false): Promise<AlbumItem[] | null> => {
   const listInfo = searchAlbumState.listInfo
   if (!text) return null
-  const key = `${page}__${text}`
-  if (!isRefresh && listInfo.key == key && listInfo.list.length) return listInfo.list
-  listInfo.key = key
-  return (musicSdk.tx.musicSearch.searchAlbum(text, page, listInfo.limit) as Promise<SearchResult>).then((result) => {
-    if (key != listInfo.key) return null
-    return searchAlbumActions.setListInfo(result, page, text)
-  }).catch((err: any) => {
-    // 失败后别把这个关键词记成已加载，否则重试会直接命中缓存拿不到数据
-    if (listInfo.key == key) listInfo.key = null
-    throw err
-  })
+  const signal = beginSearchRequest('album')
+  try {
+    if (page === 1 && !isRefresh && await restoreSearchResult('album', 'tx', text, signal)) return listInfo.list
+    if (signal.aborted) return null
+    const key = `${page}__${text}`
+    if (!isRefresh && listInfo.key == key && listInfo.list.length) return listInfo.list
+    return await (musicSdk.tx.musicSearch.searchAlbum(text, page, listInfo.limit, signal) as Promise<SearchResult>).then((result) => {
+      if (signal.aborted) return null
+      const list = searchAlbumActions.setListInfo(result, page, text)
+      listInfo.key = key
+      return list
+    }).catch((err: any) => {
+      if (signal.aborted) return null
+      // 失败后别把这个关键词记成已加载，否则重试会直接命中缓存拿不到数据
+      if (listInfo.key == key) listInfo.key = null
+      throw err
+    })
+  } finally { finishSearchRequest('album', signal) }
 }

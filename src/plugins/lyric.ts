@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Lyric, { type Lines } from 'lrc-file-parser'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 // import { getStore, subscribe } from '@/store'
 export type Line = Lines[number]
 type PlayHook = (line: number, text: string) => void
@@ -100,9 +101,10 @@ export const pause = () => {
 
 // on lyric play hook
 export const useLrcPlay = (autoUpdate = true) => {
+  const visible = useScreenVisible()
   const [lrcInfo, setLrcInfo] = useState(lrcTools.currentLineData)
   useEffect(() => {
-    if (!autoUpdate) return
+    if (!autoUpdate || !visible) return
     const setLrcCallback: SetLyricHook = () => {
       setLrcInfo({ line: 0, text: '' })
     }
@@ -116,7 +118,7 @@ export const useLrcPlay = (autoUpdate = true) => {
       lrcTools.removeSetLyricHook(setLrcCallback)
       lrcTools.removePlayHook(playCallback)
     }
-  }, [autoUpdate])
+  }, [autoUpdate, visible])
 
   return lrcInfo
 }
@@ -124,13 +126,15 @@ export const useLrcPlay = (autoUpdate = true) => {
 // on lyric set hook
 export const useLrcSet = () => {
   const [lines, setLines] = useState<Lines>(lrcTools.currentLines)
+  const visible = useScreenVisible()
   useEffect(() => {
+    if (!visible) return
     const callback = (lines: Lines) => {
       setLines(lines)
     }
     lrcTools.addSetLyricHook(callback)
     return () => { lrcTools.removeSetLyricHook(callback) }
-  }, [])
+  }, [visible])
 
   return lines
 }

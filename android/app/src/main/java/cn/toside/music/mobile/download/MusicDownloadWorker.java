@@ -41,6 +41,7 @@ public class MusicDownloadWorker extends Worker {
   public static final String KEY_ERROR = "error";
   private static final String CHANNEL_ID = "music_downloads";
   private static final Semaphore DOWNLOAD_SLOTS = new Semaphore(2, true);
+  private boolean notificationChannelCreated = false;
 
   public MusicDownloadWorker(@NonNull Context context, @NonNull WorkerParameters params) {
     super(context, params);
@@ -116,7 +117,7 @@ public class MusicDownloadWorker extends Worker {
         output.write(buffer, 0, count);
         downloaded += count;
         long now = System.currentTimeMillis();
-        if (now - lastUpdate >= 500) {
+        if (now - lastUpdate >= 1000) {
           publishProgress(taskId, fileName, downloaded, total);
           lastUpdate = now;
         }
@@ -195,8 +196,9 @@ public class MusicDownloadWorker extends Worker {
 
   private ForegroundInfo createForegroundInfo(String fileName, long downloaded, long total) {
     NotificationManager manager = (NotificationManager) getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE);
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !notificationChannelCreated) {
       manager.createNotificationChannel(new NotificationChannel(CHANNEL_ID, "Music downloads", NotificationManager.IMPORTANCE_LOW));
+      notificationChannelCreated = true;
     }
     int max = total > 0 ? 100 : 0;
     int progress = total > 0 ? (int) Math.min(100, downloaded * 100 / total) : 0;

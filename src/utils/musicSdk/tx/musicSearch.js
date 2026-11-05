@@ -1,9 +1,17 @@
 import { formatPlayTime, sizeFormate } from '../../index'
 import { formatSingerName } from '../utils'
 import { comm, signRequest } from './utils'
+import { throwIfAborted, withAbort } from '@/utils/abort'
 
 // 接口出错（多为被限流）时重试的间隔，避免连着打好几次
 const retryDelay = 500
+const waitRetry = (attempt, signal) => {
+  throwIfAborted(signal)
+  let timer
+  const promise = new Promise(resolve => { timer = setTimeout(resolve, Math.min(4000, retryDelay * 2 ** attempt)) })
+  return withAbort(promise, signal, () => { clearTimeout(timer) })
+}
+const isPermanentError = (body, req) => [1000, 104400, 104401].includes(Number(body?.code)) || [1000, 104400, 104401].includes(Number(req?.code))
 
 /** 搜索结果里歌曲所在的 tab：0 单曲、1 歌手、2 专辑、3 歌单、4 MV */
 const SEARCH_TYPE_SONG = 0
@@ -18,8 +26,9 @@ export default {
   successCode: 0,
   /** 服务端表示“没有搜索结果”（见 searchSingerRequest） */
   noResultCode: 2001,
-  musicSearch(str, page, limit, retryNum = 0) {
-    if (retryNum > 5) return Promise.reject(new Error('搜索失败'))
+  musicSearch(str, page, limit, retryNum = 0, signal) {
+    throwIfAborted(signal)
+    if (retryNum > 3) return Promise.reject(new Error('搜索失败'))
     const searchRequest = signRequest({
       comm,
       'music.search.SearchCgiService': {
@@ -35,17 +44,20 @@ export default {
           searchid: this.getSearchId(),
         },
       },
-    })
+    }, 'musics.fcg', signal)
     return searchRequest.then(({ body }) => {
       // console.log(body)
       const req = body?.['music.search.SearchCgiService'] ?? body?.req
+      if (req?.code == this.noResultCode) return { body: { song: { list: [] } }, meta: { sum: 0 } }
       if (!req || body.code != this.successCode || req.code != this.successCode) {
-        return this.musicSearch(str, page, limit, ++retryNum)
+        if (isPermanentError(body, req) || retryNum >= 3) throw new Error('搜索失败')
+        return waitRetry(retryNum, signal).then(() => this.musicSearch(str, page, limit, retryNum + 1, signal))
       }
       return req.data
     })
   },
-  searchSingerRequest(str, page, limit, retryNum = 0) {
+  searchSingerRequest(str, page, limit, retryNum = 0, signal) {
+    throwIfAborted(signal)
     if (retryNum > 3) return Promise.reject(new Error('搜索失败'))
     const searchRequest = signRequest({
       comm,
@@ -62,7 +74,7 @@ export default {
           searchid: this.getSearchId(),
         },
       },
-    })
+    }, 'musics.fcg', signal)
     return searchRequest.then(({ body }) => {
       const req = body?.['music.search.SearchCgiService'] ?? body?.req
       // 2001 是“这个关键词没有结果”，不是出错：重试也还是同样的结果，
@@ -70,8 +82,8 @@ export default {
       if (req?.code == this.noResultCode) return { body: { singer: { list: [] } }, meta: { sum: 0 } }
       if (!req || body.code != this.successCode || req.code != this.successCode) {
         // 失败多半是被限流，等一下再试，别连着打
-        return new Promise(resolve => { setTimeout(resolve, retryDelay) })
-          .then(() => this.searchSingerRequest(str, page, limit, ++retryNum))
+        if (isPermanentError(body, req) || retryNum >= 3) throw new Error('搜索失败')
+        return waitRetry(retryNum, signal).then(() => this.searchSingerRequest(str, page, limit, retryNum + 1, signal))
       }
       return req.data
     })
@@ -80,10 +92,10 @@ export default {
    * 搜索歌手。注意歌手页每页最多只能要 20 条左右，
    * 请求 50 条时服务端会返回 code 0 但列表为空（不是限流）。
    */
-  searchSinger(str, page = 1, limit = 20) {
+  searchSinger(str, page = 1, limit = 20, signal) {
     // 和 musicSearch 一样，这里拿到的是 { body, meta }，歌手在 body.singer.list 里，
     // 总数在 meta.sum 上（body.singer 自己没有 total 字段）
-    return this.searchSingerRequest(str, page, limit).then(({ body, meta }) => {
+    return this.searchSingerRequest(str, page, limit, 0, signal).then(({ body, meta }) => {
       const rawList = body?.singer?.list ?? []
       const list = rawList.map(item => {
         const mid = item.singerMID ?? ''
@@ -102,7 +114,8 @@ export default {
       return { list, total, allPage: Math.ceil(total / limit), limit, source: 'tx' }
     })
   },
-  searchAlbumRequest(str, page, limit, retryNum = 0) {
+  searchAlbumRequest(str, page, limit, retryNum = 0, signal) {
+    throwIfAborted(signal)
     if (retryNum > 3) return Promise.reject(new Error('搜索失败'))
     const searchRequest = signRequest({
       comm,
@@ -119,15 +132,15 @@ export default {
           searchid: this.getSearchId(),
         },
       },
-    })
+    }, 'musics.fcg', signal)
     return searchRequest.then(({ body }) => {
       const req = body?.['music.search.SearchCgiService'] ?? body?.req
       // 和搜歌手一样：2001 是“这个关键词没有结果”，当成空列表返回
       if (req?.code == this.noResultCode) return { body: { album: { list: [] } }, meta: { sum: 0 } }
       if (!req || body.code != this.successCode || req.code != this.successCode) {
         // 失败多半是被限流，等一下再试，别连着打
-        return new Promise(resolve => { setTimeout(resolve, retryDelay) })
-          .then(() => this.searchAlbumRequest(str, page, limit, ++retryNum))
+        if (isPermanentError(body, req) || retryNum >= 3) throw new Error('搜索失败')
+        return waitRetry(retryNum, signal).then(() => this.searchAlbumRequest(str, page, limit, retryNum + 1, signal))
       }
       return req.data
     })
@@ -135,8 +148,8 @@ export default {
   /**
    * 搜索专辑。专辑在 body.album.list 里，总数同样在 meta.sum 上
    */
-  searchAlbum(str, page = 1, limit = 30) {
-    return this.searchAlbumRequest(str, page, limit).then(({ body, meta }) => {
+  searchAlbum(str, page = 1, limit = 30, signal) {
+    return this.searchAlbumRequest(str, page, limit, 0, signal).then(({ body, meta }) => {
       const list = (body?.album?.list ?? []).map(item => {
         const mid = item.albumMID ?? ''
         return {
@@ -233,10 +246,10 @@ export default {
     // console.log(list)
     return list
   },
-  search(str, page = 1, limit) {
+  search(str, page = 1, limit, signal) {
     if (limit == null) limit = this.limit
     // http://newlyric.kuwo.cn/newlyric.lrc?62355680
-    return this.musicSearch(str, page, limit).then(({ body, meta }) => {
+    return this.musicSearch(str, page, limit, 0, signal).then(({ body, meta }) => {
       let list = this.handleResult(body.song.list)
 
       this.total = meta.sum

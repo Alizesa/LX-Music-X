@@ -13,6 +13,7 @@ export interface ImageProps extends ViewProps {
   url?: string | number | null
   cache?: boolean
   resizeMode?: ComponentProps<typeof FastImage>['resizeMode']
+  resizeMethod?: ComponentProps<typeof FastImage>['resizeMethod']
   onError?: (url: string | number) => void
 }
 
@@ -34,7 +35,7 @@ const EmptyPic = memo(({ style, nativeID }: { style: ImageProps['style'], native
   )
 })
 
-const Image = memo(({ url, cache, resizeMode = 'cover', style, onError, nativeID }: ImageProps) => {
+const Image = memo(({ url, cache, resizeMode = 'cover', resizeMethod = 'resize', style, onError, nativeID }: ImageProps) => {
   const [isError, setError] = useState(false)
   const handleError = useCallback(() => {
     setError(true)
@@ -63,14 +64,11 @@ const Image = memo(({ url, cache, resizeMode = 'cover', style, onError, nativeID
             }}
             onError={handleError}
             resizeMode={resizeMode}
+            resizeMethod={resizeMethod}
             nativeID={nativeID}
           />
         )
   )
-}, (prevProps, nextProps) => {
-  return prevProps.url == nextProps.url &&
-    prevProps.style == nextProps.style &&
-    prevProps.nativeID == nextProps.nativeID
 })
 
 export const getSize = (uri: string, success: (width: number, height: number) => void, failure?: (error: any) => void) => {

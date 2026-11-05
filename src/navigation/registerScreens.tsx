@@ -17,6 +17,7 @@ import {
   LocalSongs,
 } from '@/screens'
 import { Provider } from '@/store/Provider'
+import { ScreenVisibilityProvider } from '@/utils/hooks/useScreenVisible'
 
 import {
   HOME_SCREEN,
@@ -40,15 +41,15 @@ import PactModal from './components/PactModal'
 
 function WrappedComponent(Component: any) {
   return function inject(props: Record<string, any>) {
-    const EnhancedComponent = () => (
-      <Provider>
-        <Component
-          {...props}
-        />
-      </Provider>
+    return (
+      <ScreenVisibilityProvider componentId={props.componentId}>
+        <Provider>
+          <Component
+            {...props}
+          />
+        </Provider>
+      </ScreenVisibilityProvider>
     )
-
-    return <EnhancedComponent />
   }
 }
 

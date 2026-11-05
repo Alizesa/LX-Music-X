@@ -88,6 +88,8 @@ export const storageDataPrefix = {
   downloadTasks: '@download_tasks',
   downloadTasksActive: '@download_tasks_active',
   downloadTasksHistory: '@download_tasks_history',
+  downloadHistoryItem: '@download_history_item__',
+  downloadHistoryMigrated: '@download_history_items_migrated',
   // 旧单 key 已成功拆分到新 key 的标记。写在新 key 之后、删旧 key 之前，
   // 防止「旧 key 没删掉」时下次启动又拿旧数据覆盖新下载
   downloadTasksMigrated: '@download_tasks_migrated',
@@ -106,6 +108,7 @@ export const storageDataPrefix = {
   ignoreVersion: '@ignore_version',
   ignoreVersionFailTipTimeKey: '@ignore_version_fail_tip_time',
   searchSetting: '@search_setting',
+  searchResultsCache: '@search_results_cache__',
 
   fontSize: '@font_size',
 

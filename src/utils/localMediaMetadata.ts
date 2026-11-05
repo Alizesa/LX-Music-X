@@ -1,5 +1,6 @@
 import { temporaryDirectoryPath, readDir, unlink, extname } from '@/utils/fs'
-import { readPic as _readPic } from 'react-native-local-media-metadata'
+import { readPic as _readPic, writeMetadata, writePic, writeLyric } from 'react-native-local-media-metadata'
+import { NativeModules } from 'react-native'
 export {
   type MusicMetadata,
   type MusicMetadataFull,
@@ -12,6 +13,17 @@ export {
 
 let cleared = false
 const picCachePath = temporaryDirectoryPath + '/local-media-metadata'
+
+export const writeDownloadMetadata = async(path: string, metadata: { name: string, singer: string, albumName: string }, picPath: string | null, lyric: string | null) => {
+  const native = NativeModules.LocalMediaMetadata as {
+    writeTags?: (path: string, metadata: object, picPath: string | null, lyric: string | null) => Promise<void>
+  }
+  if (native.writeTags) return native.writeTags(path, metadata, picPath, lyric)
+  // 开发时旧 APK 配新 bundle 仍可工作；新 APK 走一次原生提交。
+  await writeMetadata(path, metadata, true)
+  if (picPath) await writePic(path, picPath)
+  if (lyric) await writeLyric(path, lyric)
+}
 
 export const scanAudioFiles = async(dirPath: string) => {
   const files = await readDir(dirPath)
