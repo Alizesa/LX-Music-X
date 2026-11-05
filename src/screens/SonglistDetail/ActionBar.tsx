@@ -2,7 +2,7 @@ import { memo, useRef, useState } from 'react'
 import { View } from 'react-native'
 import Button from '@/components/common/Button'
 
-import { createStyle } from '@/utils/tools'
+import { createStyle, toast } from '@/utils/tools'
 import { pop } from '@/navigation'
 import { useTheme } from '@/store/theme/hook'
 import commonState from '@/store/common/state'
@@ -35,6 +35,9 @@ export default memo(() => {
     setCollecting(true)
     try {
       await handleCollect(info.id, info.source, songlistState.listDetailInfo.info.name || info.name)
+    } catch (error) {
+      // 票据失效等错误会从 handleCollect 抛上来，不能变成未处理的 Promise rejection
+      toast(error instanceof Error ? error.message : global.i18n.t('qq_playlist_write_failed'), 'long')
     } finally {
       collectingRef.current = false
       setCollecting(false)

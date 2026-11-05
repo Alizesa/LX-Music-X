@@ -477,7 +477,7 @@ const resolveOwnedQQMusicPlaylist = async(
   return { target, fresh }
 }
 
-const isSameQQMusicSession = async(cookie: string) => {
+export const isSameQQMusicSession = async(cookie: string) => {
   const expected = getQQMusicUin(cookie)
   if (!expected) return false
   const { cookie: current } = await getQQMusicSession()
@@ -638,8 +638,10 @@ export const changeQQMusicPlaylistMembership = async(
 export const setQQMusicPlaylistCollected = async(
   playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'>,
   collected: boolean,
+  cookieOverride?: string,
 ): Promise<FavoriteResult> => {
-  const { cookie } = await getQQMusicSession()
+  // 调用方校验过归属时传入当时的 Cookie，保证写操作和判断用的是同一个账号
+  const cookie = cookieOverride ?? (await getQQMusicSession()).cookie
   if (!cookie) return 'unsupported'
   // 这条接口只认数字 id（disstid/tid 那一类），拿不到就没法收藏
   const playlistId = Number(playlist.id)
@@ -676,6 +678,7 @@ export const setQQMusicPlaylistCollected = async(
 export const toggleQQMusicPlaylistCollected = async(
   playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'> & Partial<Pick<LX.QQMusic.PlaylistInfo, 'cover' | 'trackCount'>>,
   collected: boolean,
+  options?: { cookie?: string },
 ): Promise<boolean> => {
   // 没有数字 id 的歌单压根没发收藏（本地就能判出来），别跟「没登录」共用一条提示
   if (!Number.isFinite(Number(playlist.id)) || Number(playlist.id) <= 0) {
@@ -683,8 +686,10 @@ export const toggleQQMusicPlaylistCollected = async(
     return false
   }
   try {
-    const result = await setQQMusicPlaylistCollected(playlist, collected)
+    const result = await setQQMusicPlaylistCollected(playlist, collected, options?.cookie)
     if (result == 'ok') {
+      // 写入期间换号/退出：写已经落在原账号上，但不能再把结果写进当前账号的缓存/提示
+      if (options?.cookie && !await isSameQQMusicSession(options.cookie)) return false
       toast(global.i18n.t(collected ? 'qq_playlist_faved' : 'qq_playlist_unfaved', { name: playlist.name }))
       // 就地更新「我的歌单」缓存：收藏的加进去、取消的拿掉。
       // 不能整份作废 —— 空缓存会被别处当成「这个号真的没有歌单」：添加歌单的选择器会显示

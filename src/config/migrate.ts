@@ -83,8 +83,15 @@ export const getAllListData = async(): Promise<{
     }
     userList.push(value)
   }
-  // 跳过的旧列表连同歌曲一起删掉，不能只不导入、把整份 @list__ 留在存储里
-  if (removedKeys.length) await removeDataMultiple(removedKeys)
+  // 跳过的旧列表连同歌曲一起删掉，不能只不导入、把整份 @list__ 留在存储里。
+  // 清理失败不能阻断迁移，否则整个启动都会因为一次存储抖动而退出。
+  if (removedKeys.length) {
+    try {
+      await removeDataMultiple(removedKeys)
+    } catch (error) {
+      console.warn('[Migrate] 清理旧歌单失败，先跳过:', error instanceof Error ? error.message : error)
+    }
+  }
 
   const listSort: Record<string, number> = await getData(storageDataPrefixOld.listSort) ?? {}
 

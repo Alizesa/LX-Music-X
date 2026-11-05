@@ -19,9 +19,14 @@ const getAllLists = async() => {
 
 const importOldListData = async(lists: any[]) => {
   const allLists = await getAllLists()
+  let imported = 0
+  let skipped = 0
   for (const list of lists) {
     try {
-      if (isRemovedUserList(list)) continue
+      if (isRemovedUserList(list)) {
+        skipped++
+        continue
+      }
       const targetList = allLists.find(l => l.id == list.id)
       if (targetList) {
         targetList.list = filterMusicList((list.list as any[]).map(m => toNewMusicInfo(m)))
@@ -36,17 +41,24 @@ const importOldListData = async(lists: any[]) => {
         }
         allLists.push(listInfo as LX.List.UserListInfoFull)
       }
+      imported++
     } catch (err) {
       console.log(err)
     }
   }
   await overwriteListFull({ userList: allLists })
+  return { imported, skipped }
 }
 const importNewListData = async(lists: LX.List.UserListInfoFull[]) => {
   const allLists = await getAllLists()
+  let imported = 0
+  let skipped = 0
   for (const list of lists) {
     try {
-      if (isRemovedUserList(list)) continue
+      if (isRemovedUserList(list)) {
+        skipped++
+        continue
+      }
       const targetList = allLists.find(l => l.id == list.id)
       if (targetList) {
         targetList.list = filterMusicList(list.list).map(m => fixNewMusicInfoQuality(m))
@@ -61,11 +73,22 @@ const importNewListData = async(lists: LX.List.UserListInfoFull[]) => {
         }
         allLists.push(data as LX.List.UserListInfoFull)
       }
+      imported++
     } catch (err) {
       console.log(err)
     }
   }
   await overwriteListFull({ userList: allLists })
+  return { imported, skipped }
+}
+
+// 整份备份里混着旧在线歌单副本时，和单列表导入一样给出提示；
+// 如果整份备份都被过滤掉，就别再报「导入成功」
+const importWithLegacyNotice = async(importer: () => Promise<{ imported: number, skipped: number }>) => {
+  const { imported, skipped } = await importer()
+  if (!skipped) return false
+  toast(global.i18n.t('setting_backup_part_import_list_tip_removed'), 'long')
+  return imported === 0
 }
 
 /**
@@ -144,22 +167,22 @@ const importPlayList = async(path: string) => {
     case 'playList':
       if (!await showConfirm()) return true
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      await importOldListData(configData.data)
+      if (await importWithLegacyNotice(async() => importOldListData(configData.data))) return true
       break
     case 'playList_v2':
       if (!await showConfirm()) return true
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      await importNewListData(configData.data)
+      if (await importWithLegacyNotice(async() => importNewListData(configData.data))) return true
       break
     case 'allData':
       if (!await showConfirm()) return true
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      await importOldListData(configData.playList)
+      if (await importWithLegacyNotice(async() => importOldListData(configData.playList))) return true
       break
     case 'allData_v2':
       if (!await showConfirm()) return true
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      await importNewListData(configData.playList)
+      if (await importWithLegacyNotice(async() => importNewListData(configData.playList))) return true
       break
     case 'playListPart':
       configData.data.list = filterMusicList((configData.data as LX.ConfigFile.MyListInfoPart['data']).list.map(m => toNewMusicInfo(m)))

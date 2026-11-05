@@ -3,8 +3,8 @@ import { playList } from '@/core/player/player'
 import { getListDetail, getListDetailAll } from '@/core/songlist'
 import { LIST_IDS } from '@/config/constant'
 import listState from '@/store/list/state'
-import { getQQMusicPlaylists, getQQMusicSession, getQQMusicUin, QQMusicSessionExpiredError } from '@/core/qqMusic'
-import { toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
+import { getQQMusicPlaylists, getQQMusicSession, QQMusicSessionExpiredError } from '@/core/qqMusic'
+import { isSameQQMusicSession, toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
 import { saveQQMusicPlaylistsCache } from '@/utils/data'
 import { toast } from '@/utils/tools'
 import songlistState, { type Source } from '@/store/songlist/state'
@@ -46,7 +46,6 @@ export const handleCollect = async(id: string, source: Source, name: string) => 
     toast(global.i18n.t('qq_not_logged_in'), 'long')
     return false
   }
-  const requestUin = getQQMusicUin(cookie)
   let fresh: LX.QQMusic.PlaylistInfo[]
   try {
     fresh = await getQQMusicPlaylists(cookie, { requireAll: true })
@@ -58,9 +57,7 @@ export const handleCollect = async(id: string, source: Source, name: string) => 
     return false
   }
   // 请求期间退出/换号：旧账号的歌单不能写进当前缓存，也不能拿来判断
-  const { cookie: current } = await getQQMusicSession()
-  const currentUin = current ? getQQMusicUin(current) : ''
-  if (!requestUin || requestUin !== currentUin) return false
+  if (!await isSameQQMusicSession(cookie)) return false
   await saveQQMusicPlaylistsCache(fresh).catch(() => {})
   // 常驻的「我的」页据此重读，别等用户手动下拉
   global.app_event.qqMusicPlaylistsUpdated()
@@ -80,5 +77,5 @@ export const handleCollect = async(id: string, source: Source, name: string) => 
     name,
     cover: currentDetail?.info.img,
     trackCount: currentDetail?.total ?? undefined,
-  }, true)
+  }, true, { cookie })
 }

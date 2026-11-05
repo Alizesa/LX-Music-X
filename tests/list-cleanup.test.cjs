@@ -154,7 +154,13 @@ test('search collection uses the QQ account and never creates a local list', asy
       getQQMusicUin: cookie => cookie,
       QQMusicSessionExpiredError: class extends Error {},
     },
-    '@/core/qqMusicFavorite': { toggleQQMusicPlaylistCollected: async(...args) => { requests.push(copy(args)); return true } },
+    '@/core/qqMusicFavorite': {
+      isSameQQMusicSession: async() => true,
+      toggleQQMusicPlaylistCollected: async(playlist, collected) => {
+        requests.push([copy(playlist), collected])
+        return true
+      },
+    },
     '@/utils/data': { getQQMusicPlaylistsCache: async() => cached, saveQQMusicPlaylistsCache: async() => {} },
     '@/utils/tools': { toast() {} },
     '@/store/songlist/state': { default: { listDetailInfo: { id: '12345', source: 'tx', total: 50, info: { img: 'cover' } } } },
@@ -184,7 +190,16 @@ const collectHarness = ({ session, playlists, notified = () => {} }) => {
         getQQMusicUin: cookie => cookie,
         QQMusicSessionExpiredError: class extends Error {},
       },
-      '@/core/qqMusicFavorite': { toggleQQMusicPlaylistCollected: async(...args) => { requests.push(copy(args)); return true } },
+      '@/core/qqMusicFavorite': {
+        isSameQQMusicSession: async cookie => {
+          const { cookie: current } = await session()
+          return !!cookie && cookie === current
+        },
+        toggleQQMusicPlaylistCollected: async(playlist, collected) => {
+          requests.push([copy(playlist), collected])
+          return true
+        },
+      },
       '@/utils/data': { saveQQMusicPlaylistsCache: async() => {} },
       '@/utils/tools': { toast() {} },
       '@/store/songlist/state': { default: { listDetailInfo: { id: '12345', source: 'tx', total: 50, info: {} } } },
