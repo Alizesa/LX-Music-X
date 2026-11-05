@@ -1,78 +1,83 @@
+import { decode as decodeEntities } from 'he'
+import { QQ_LYRIC_CACHE_VERSION } from '@/config/constant'
 import { httpFetch } from '../../request'
-import getMusicInfo from './musicInfo'
+import { requestMsg } from '../../message'
 import { decodeQrc } from './qrcDecode'
 
-const songIdMap = new Map()
-const promises = new Map()
-const SONG_ID_CACHE_MAX = 1000
-const setSongIdCache = (songmid, songId) => {
-  songIdMap.set(songmid, songId)
-  if (songIdMap.size <= SONG_ID_CACHE_MAX) return
-  const oldest = songIdMap.keys().next().value
-  if (oldest != null) songIdMap.delete(oldest)
+// 同一接口可能返回 QRC 密文、Base64 或明文，crypt=0 时也可能仍有 QRC 密文。
+const decodeLyricText = async(raw) => {
+  if (typeof raw != 'string') return ''
+  const text = raw.trim()
+  if (!text) return ''
+  if (text.includes('[') || text.includes('LyricContent=')) return text
+  if (/^[\da-f]+$/i.test(text) && text.length % 16 === 0) {
+    const decoded = await decodeQrc(text)
+    if (decoded) return decoded
+  }
+  return Buffer.from(text, 'base64').toString('utf8')
 }
-export const decodeLyric = async(lrc, tlrc, rlrc) => ({
-  lyric: await decodeQrc(lrc),
-  tlyric: await decodeQrc(tlrc),
-  rlyric: await decodeQrc(rlrc),
-})
 
+export const decodeLyric = async(lrc, tlrc, rlrc) => {
+  const [lyric, tlyric, rlyric] = await Promise.all([lrc, tlrc, rlrc].map(decodeLyricText))
+  return { lyric, tlyric, rlyric }
+}
 
 const parseTools = {
   rxps: {
-    info: /^{"/,
     lineTime: /^\[(\d+),\d+\]/,
-    lineTime2: /^\[([\d:.]+)\]/,
+    lrcTimes: /\[(\d+:\d{2}(?:[.:]\d{1,3})?)\]/g,
     wordTime: /\(\d+,\d+\)/,
     wordTimeAll: /(\(\d+,\d+\))/g,
-    timeLabelFixRxp: /(?:\.0+|0+)$/,
   },
   msFormat(timeMs) {
-    if (Number.isNaN(timeMs)) return ''
-    let ms = timeMs % 1000
-    timeMs /= 1000
-    let m = parseInt(timeMs / 60).toString().padStart(2, '0')
-    timeMs %= 60
-    let s = parseInt(timeMs).toString().padStart(2, '0')
+    if (!Number.isFinite(timeMs)) return ''
+    const ms = timeMs % 1000
+    const m = Math.floor(timeMs / 60000).toString().padStart(2, '0')
+    const s = Math.floor(timeMs / 1000 % 60).toString().padStart(2, '0')
     return `[${m}:${s}.${String(ms).padStart(3, '0')}]`
   },
+  getIntv(interval) {
+    const result = /^(\d+):(\d{2})(?:[.:](\d{1,3}))?$/.exec(interval)
+    if (!result) return NaN
+    return (Number(result[1]) * 60 + Number(result[2])) * 1000 + Number((result[3] ?? '').padEnd(3, '0'))
+  },
+  parseLrc(lrc) {
+    const lines = []
+    for (const line of lrc.split('\n')) {
+      const text = line.replace(this.rxps.lrcTimes, '').trim()
+      for (const match of line.matchAll(this.rxps.lrcTimes)) {
+        const time = this.getIntv(match[1])
+        if (Number.isFinite(time)) lines.push({ time, text })
+      }
+    }
+    return lines.sort((a, b) => a.time - b.time)
+  },
   parseLyric(lrc) {
-    lrc = lrc.trim()
-    lrc = lrc.replace(/\r/g, '')
-    if (!lrc) return { lyric: '', lxlyric: '' }
-    const lines = lrc.split('\n')
-
     const lxlrcLines = []
     const lrcLines = []
-
-    for (let line of lines) {
+    for (let line of lrc.replace(/\r/g, '').split('\n')) {
       line = line.trim()
-      let result = this.rxps.lineTime.exec(line)
+      const result = this.rxps.lineTime.exec(line)
       if (!result) {
         if (line.startsWith('[offset')) {
           lxlrcLines.push(line)
           lrcLines.push(line)
         }
-        if (this.rxps.lineTime2.test(line)) {
-          // lxlrcLines.push(line)
-          lrcLines.push(line)
-        }
+        for (const { time, text } of this.parseLrc(line)) lrcLines.push(`${this.msFormat(time)}${text}`)
         continue
       }
 
-      const startMsTime = parseInt(result[1])
+      const startMsTime = Number(result[1])
       const startTimeStr = this.msFormat(startMsTime)
       if (!startTimeStr) continue
-
-      let words = line.replace(this.rxps.lineTime, '')
-
+      const words = line.replace(this.rxps.lineTime, '')
       lrcLines.push(`${startTimeStr}${words.replace(this.rxps.wordTimeAll, '')}`)
 
       let times = words.match(this.rxps.wordTimeAll)
       if (!times) continue
       times = times.map(time => {
         const result = /\((\d+),(\d+)\)/.exec(time)
-        return `<${Math.max(parseInt(result[1]) - startMsTime, 0)},${result[2]}>`
+        return `<${Math.max(Number(result[1]) - startMsTime, 0)},${result[2]}>`
       })
       const wordArr = words.split(this.rxps.wordTime)
       const newWords = times.map((time, index) => `${time}${wordArr[index]}`).join('')
@@ -83,103 +88,29 @@ const parseTools = {
       lxlyric: lxlrcLines.join('\n'),
     }
   },
-  parseRlyric(lrc) {
-    lrc = lrc.trim()
-    lrc = lrc.replace(/\r/g, '')
-    if (!lrc) return { lyric: '', lxlyric: '' }
-    const lines = lrc.split('\n')
-
-    const lrcLines = []
-
-    for (let line of lines) {
-      line = line.trim()
-      let result = this.rxps.lineTime.exec(line)
-      if (!result) continue
-
-      const startMsTime = parseInt(result[1])
-      const startTimeStr = this.msFormat(startMsTime)
-      if (!startTimeStr) continue
-
-      let words = line.replace(this.rxps.lineTime, '')
-
-      lrcLines.push(`${startTimeStr}${words.replace(this.rxps.wordTimeAll, '')}`)
-    }
-    return lrcLines.join('\n')
-  },
   removeTag(str) {
-    return str.replace(/^[\S\s]*?LyricContent="/, '').replace(/"\/>[\S\s]*?$/, '')
+    return decodeEntities(str.replace(/^[\S\s]*?LyricContent="/, '').replace(/"\s*\/>[\S\s]*$/, ''))
   },
-  getIntv(interval) {
-    if (!interval) return 0
-    if (!interval.includes('.')) interval += '.0'
-    let arr = interval.split(/:|\./)
-    while (arr.length < 3) arr.unshift('0')
-    const [m, s, ms] = arr
-    return parseInt(m) * 3600000 + parseInt(s) * 1000 + parseInt(ms)
-  },
-  fixRlrcTimeTag(rlrc, lrc) {
-    // console.log(lrc)
-    // console.log(rlrc)
-    const rlrcLines = rlrc.split('\n')
-    let lrcLines = lrc.split('\n')
-    // let temp = []
-    let newLrc = []
-    rlrcLines.forEach((line) => {
-      const result = this.rxps.lineTime2.exec(line)
-      if (!result) return
-      const words = line.replace(this.rxps.lineTime2, '')
-      if (!words.trim()) return
-      const t1 = this.getIntv(result[1])
-
-      while (lrcLines.length) {
-        const lrcLine = lrcLines.shift()
-        const lrcLineResult = this.rxps.lineTime2.exec(lrcLine)
-        if (!lrcLineResult) continue
-        const t2 = this.getIntv(lrcLineResult[1])
-        if (Math.abs(t1 - t2) < 100) {
-          newLrc.push(line.replace(this.rxps.lineTime2, lrcLineResult[0]))
-          break
+  fixExtendedLyricTimeTags(extended, original) {
+    const translated = this.parseLrc(extended).filter(line => line.text && !/^\/+$/u.test(line.text))
+    if (!translated.length) return ''
+    const lines = []
+    // 与 MusicOne 一样，逐行找 600ms 内最近的翻译。找不到就跳过该行，
+    // 不能用 shift 耗尽整份原歌词，否则一个无对应行的前奏/署名就会吞掉后面的翻译。
+    for (const line of this.parseLrc(original)) {
+      if (!line.text) continue
+      let nearest = null
+      let distance = 601
+      for (const candidate of translated) {
+        const delta = Math.abs(candidate.time - line.time)
+        if (delta < distance) {
+          nearest = candidate
+          distance = delta
         }
-        // temp.push(line)
       }
-      // lrcLines = [...temp, ...lrcLines]
-      // temp = []
-    })
-    return newLrc.join('\n')
-  },
-  fixTlrcTimeTag(tlrc, lrc) {
-    // console.log(lrc)
-    // console.log(tlrc)
-    const tlrcLines = tlrc.split('\n')
-    let lrcLines = lrc.split('\n')
-    // let temp = []
-    let newLrc = []
-    tlrcLines.forEach((line) => {
-      const result = this.rxps.lineTime2.exec(line)
-      if (!result) return
-      const words = line.replace(this.rxps.lineTime2, '')
-      if (!words.trim()) return
-      let time = result[1]
-      if (time.includes('.')) {
-        time += ''.padStart(3 - time.split('.')[1].length, '0')
-      }
-      const t1 = this.getIntv(time)
-
-      while (lrcLines.length) {
-        const lrcLine = lrcLines.shift()
-        const lrcLineResult = this.rxps.lineTime2.exec(lrcLine)
-        if (!lrcLineResult) continue
-        const t2 = this.getIntv(lrcLineResult[1])
-        if (Math.abs(t1 - t2) < 100) {
-          newLrc.push(line.replace(this.rxps.lineTime2, lrcLineResult[0]))
-          break
-        }
-        // temp.push(line)
-      }
-      // lrcLines = [...temp, ...lrcLines]
-      // temp = []
-    })
-    return newLrc.join('\n')
+      if (nearest && nearest.text !== line.text) lines.push(`${this.msFormat(line.time)}${nearest.text}`)
+    }
+    return lines.join('\n')
   },
   parse(lrc, tlrc, rlrc) {
     const info = {
@@ -187,124 +118,89 @@ const parseTools = {
       tlyric: '',
       rlyric: '',
       lxlyric: '',
+      qqLyricVersion: QQ_LYRIC_CACHE_VERSION,
     }
-    if (lrc) {
-      let { lyric, lxlyric } = this.parseLyric(this.removeTag(lrc))
-      info.lyric = lyric
-      info.lxlyric = lxlyric
-      // console.log(lyric)
-      // console.log(lxlyric)
-    }
-    if (rlrc) info.rlyric = this.fixRlrcTimeTag(this.parseRlyric(this.removeTag(rlrc)), info.lyric)
-    if (tlrc) info.tlyric = this.fixTlrcTimeTag(tlrc, info.lyric)
-    // console.log(info.lxlyric)
-    // console.log(info.lyric)
-    // console.log(info.tlyric)
-    // console.log(info.rlyric)
-
+    if (lrc) Object.assign(info, this.parseLyric(this.removeTag(lrc)))
+    if (tlrc) info.tlyric = this.fixExtendedLyricTimeTags(this.parseLyric(this.removeTag(tlrc)).lyric, info.lyric)
+    if (rlrc) info.rlyric = this.fixExtendedLyricTimeTags(this.parseLyric(this.removeTag(rlrc)).lyric, info.lyric)
     return info
   },
 }
 
+const LYRIC_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
+const WEB_LYRIC_URL = 'https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg'
+const LYRIC_HEADERS = {
+  Referer: 'https://y.qq.com/portal/player.html',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+}
 
 export default {
-  successCode: 0,
-  async getSongId({ songId, songmid }) {
-    if (songId) return songId
-    if (songIdMap.has(songmid)) return songIdMap.get(songmid)
-    if (promises.has(songmid)) return (await promises.get(songmid)).songId
-    const promise = getMusicInfo(songmid)
-    // 键必须是 songmid，不能是 promise 本身（否则查询/删除都永远不命中）
-    promises.set(songmid, promise)
-    try {
-      const info = await promise
-      setSongIdCache(songmid, info.songId)
-      return info.songId
-    } finally {
-      // 只删自己：并发时后一个可能已经覆盖
-      if (promises.get(songmid) === promise) promises.delete(songmid)
-    }
-  },
   async parseLyric(lrc, tlrc, rlrc) {
     const { lyric, tlyric, rlyric } = await decodeLyric(lrc, tlrc, rlrc)
-    // return {
-
-    // }
-    // console.log('lyric', lyric)
-    // console.log('tlyric', tlyric)
-    // console.log('rlyric', rlyric)
     return parseTools.parse(lyric, tlyric, rlyric)
   },
-  getLyric(mInfo, retryNum = 0) {
-    if (retryNum > 3) return Promise.reject(new Error('Get lyric failed'))
+  getLyric(mInfo) {
+    let cancelled = false
+    let pendingRequest = null
+    const throwIfCancelled = () => {
+      if (cancelled) throw new Error(requestMsg.cancelRequest)
+    }
+    const request = async(url, options = {}) => {
+      throwIfCancelled()
+      pendingRequest = httpFetch(url, { ...options, headers: LYRIC_HEADERS })
+      const { body, statusCode } = await pendingRequest.promise
+      throwIfCancelled()
+      if (statusCode < 200 || statusCode >= 300) throw new Error(`QQ lyric HTTP ${statusCode}`)
+      return body
+    }
 
     return {
       cancelHttp() {
-
+        cancelled = true
+        pendingRequest?.cancelHttp()
       },
-      promise: this.getSongId(mInfo).then(songId => {
-        const requestObj = httpFetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
-          method: 'post',
-          headers: {
-            referer: 'https://y.qq.com',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
-          },
-          body: {
-            comm: {
-              ct: '19',
-              cv: '1859',
-              uin: '0',
-            },
-            req: {
-              method: 'GetPlayLyricInfo',
-              module: 'music.musichallSong.PlayLyricInfo',
-              param: {
-                format: 'json',
-                crypt: 1,
-                ct: 19,
-                cv: 1873,
-                interval: 0,
-                lrc_t: 0,
-                qrc: 1,
-                qrc_t: 0,
-                roma: 1,
-                roma_t: 0,
-                songID: songId,
-                trans: 1,
-                trans_t: 0,
-                type: -1,
+      promise: (async() => {
+        const songmid = String(mInfo?.songmid ?? '')
+        const id = Number(mInfo?.songId)
+        const songId = Number.isSafeInteger(id) && id > 0 ? id : 0
+        if (!songmid && !songId) throw new Error('Get lyric failed: missing song ID')
+        try {
+          // MusicOne 使用的新歌词参数；同时请求罗马音以保留本项目的显示选项。
+          // songMID 可以独立定位歌曲，缺少数字 ID 时无需先请求歌曲详情。
+          const body = await request(LYRIC_URL, {
+            method: 'post',
+            body: {
+              comm: { ct: 19, cv: 0, tmeAppID: 'qqmusiclight' },
+              req: {
+                method: 'GetPlayLyricInfo',
+                module: 'music.musichallSong.PlayLyricInfo',
+                param: { songMID: songmid, songID: songId, platform: 0, needNew: 1, crypt: 0, qrc: 1, roma: 1, trans: 1 },
               },
             },
-          },
-        })
-        return requestObj.promise.then(({ body }) => {
-          // console.log(body)
-          if (body.code != this.successCode || body.req.code != this.successCode) return this.getLyric(songId, ++retryNum)
+          })
+          if (body?.code !== 0 || body.req?.code !== 0) throw new Error('Get lyric failed')
           const data = body.req.data
-          return this.parseLyric(data.lyric, data.trans, data.roma)
-        })
+          const info = await this.parseLyric(data?.lyric || data?.qrc, data?.trans, data?.roma)
+          throwIfCancelled()
+          if (/\[\d+:\d{2}\.\d{3}\]/.test(info.lyric)) return info
+        } catch (error) {
+          throwIfCancelled()
+          if (!songmid) throw error
+        }
+
+        // 主接口失败或没有歌词时再走网页接口；正常无翻译的歌曲无需多发一次请求。
+        if (!songmid) throw new Error('Get lyric failed')
+        const body = await request(`${WEB_LYRIC_URL}?songmid=${encodeURIComponent(songmid)}&format=json&nobase64=1`)
+        if (body?.code !== 0) throw new Error('Get lyric failed')
+        const info = await this.parseLyric(body.lyric, body.trans, body.roma)
+        throwIfCancelled()
+        if (!/\[\d+:\d{2}\.\d{3}\]/.test(info.lyric)) throw new Error('Get lyric failed')
+        // 网页接口的内容可能缺翻译/逐字时间，只作临时缓存；下次加载仍可重试主接口。
+        return { ...info, qqLyricVersion: 0 }
+      })().catch(error => {
+        throwIfCancelled()
+        throw error
       }),
     }
   },
 }
-
-// export default {
-//   regexps: {
-//     matchLrc: /.+"lyric":"([\w=+/]*)".+/,
-//   },
-//   getLyric(songmid) {
-//     const requestObj = httpFetch(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${songmid}&g_tk=5381&loginUin=0&hostUin=0&format=json&inCharset=utf8&outCharset=utf-8&platform=yqq`, {
-//       headers: {
-//         Referer: 'https://y.qq.com/portal/player.html',
-//       },
-//     })
-//     requestObj.promise = requestObj.promise.then(({ body }) => {
-//       if (body.code != 0 || !body.lyric) return Promise.reject(new Error('Get lyric failed'))
-//       return {
-//         lyric: decodeName(b64DecodeUnicode(body.lyric)),
-//         tlyric: decodeName(b64DecodeUnicode(body.trans)),
-//       }
-//     })
-//     return requestObj
-//   },
-// }

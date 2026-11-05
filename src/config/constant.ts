@@ -25,6 +25,8 @@ export const LIST_IDS = {
 export const QQ_DAILY_RECOMMEND_ID = 'qq_daily_recommend'
 /** 「红心雷达」写进临时列表时用的列表 id（它是一份普通歌单，不挂电台续播） */
 export const QQ_HEART_RADAR_PLAYLIST_ID = 'qq_heart_radar_playlist'
+/** QQ 歌词解析版本：旧缓存可能在时间轴对齐时丢失翻译，需要重新获取。 */
+export const QQ_LYRIC_CACHE_VERSION = 1
 /**
  * 每日推荐的播放队列自己的来源标记。
  * 其它虚拟列表（排行榜/歌单/歌手）都是往临时列表里放、队列打的也是 temp，

@@ -13,6 +13,7 @@ import {
   handleGetOnlineMusicUrl,
   handleGetOnlinePicUrl,
   getCachedLyricInfo,
+  isLyricCacheStale,
 } from './utils'
 
 /* export const setMusicUrl = ({ musicInfo, type, url }: {
@@ -90,18 +91,26 @@ export const getLyricInfo = async({ musicInfo, isRefresh, allowToggleSource = tr
   allowToggleSource?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
 }): Promise<LX.Player.LyricInfo> => {
-  if (!isRefresh) {
-    const lyricInfo = await getCachedLyricInfo(musicInfo)
-    if (lyricInfo) return buildLyricInfo(lyricInfo)
-  }
+  const cached = isRefresh ? null : await getCachedLyricInfo(musicInfo, true)
+  if (cached && !isLyricCacheStale(musicInfo, cached)) return buildLyricInfo(cached)
 
-  // lrcRequest = music[musicInfo.source].getLyric(musicInfo)
-  return handleGetOnlineLyricInfo({ musicInfo, onToggleSource, isRefresh, allowToggleSource }).then(async({ lyricInfo, musicInfo: targetMusicInfo, isFromCache }) => {
-    // lrcRequest = null
+  try {
+    const { lyricInfo, musicInfo: targetMusicInfo, isFromCache } = await handleGetOnlineLyricInfo({
+      musicInfo,
+      onToggleSource,
+      isRefresh,
+      // 旧缓存升级失败时继续显示已有歌词，避免断网时丢歌词或切到别的版本。
+      allowToggleSource: cached ? false : allowToggleSource,
+    })
+    // 主接口暂时失败时，网页备用结果不能覆盖已有的翻译和逐字时间。
+    if (cached && isLyricCacheStale(targetMusicInfo, lyricInfo)) return buildLyricInfo(cached)
     if (isFromCache) return buildLyricInfo(lyricInfo)
     if (targetMusicInfo.id == musicInfo.id) void saveLyric(musicInfo, lyricInfo)
     else void saveLyric(targetMusicInfo, lyricInfo)
 
     return buildLyricInfo(lyricInfo)
-  })
+  } catch (error) {
+    if (cached) return buildLyricInfo(cached)
+    throw error
+  }
 }

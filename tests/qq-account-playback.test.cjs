@@ -445,6 +445,7 @@ const onlineHarness = (h, apiReady = Promise.resolve(true)) => {
   let sourceCalls = 0
   const pipeline = load('src/core/music/utils.ts', {
     __global: { lx: { apiInitPromise: [apiReady] } },
+    '@/config/constant': load('src/config/constant.ts'),
     '@/utils/musicSdk': {
       default: {
         tx: {

@@ -103,6 +103,8 @@ declare namespace LX {
       rlyric?: string | null
       // 逐字歌词
       lxlyric?: string | null
+      // QQ 歌词接口与解析版本，用于重新获取旧版丢失翻译的缓存
+      qqLyricVersion?: number
     }
 
     interface LyricInfoSave {

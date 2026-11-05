@@ -12,6 +12,7 @@ import { isRequestCancelled, requestMsg } from '@/utils/message'
 import BackgroundTimer from 'react-native-background-timer'
 import { apis } from '@/utils/musicSdk/api-source'
 import { getQQMusicUrlByAccount } from '@/core/qqMusicUrl'
+import { QQ_LYRIC_CACHE_VERSION } from '@/config/constant'
 
 
 const getOtherSourcePromises = new Map()
@@ -128,8 +129,13 @@ export const buildLyricInfo = async(lyricInfo: MakeOptional<LX.Player.LyricInfo,
   return lyricInfo.rawlrcInfo ? lyricInfo : { ...lyricInfo, rawlrcInfo: { ...lyricInfo } }
 }
 
-export const getCachedLyricInfo = async(musicInfo: LX.Music.MusicInfo): Promise<LX.Player.LyricInfo | null> => {
+export const isLyricCacheStale = (musicInfo: LX.Music.MusicInfo, lyricInfo: Pick<LX.Player.LyricInfo, 'isEdited' | 'qqLyricVersion'>) =>
+  musicInfo.source === 'tx' && !lyricInfo.isEdited && (lyricInfo.qqLyricVersion ?? 0) < QQ_LYRIC_CACHE_VERSION
+
+export const getCachedLyricInfo = async(musicInfo: LX.Music.MusicInfo, allowStale = false): Promise<LX.Player.LyricInfo | null> => {
   let lrcInfo = await getStoreLyric(musicInfo)
+  if (lrcInfo.isEdited && existTimeExp.test(lrcInfo.lyric)) return lrcInfo
+  if (!allowStale && isLyricCacheStale(musicInfo, lrcInfo)) return null
   // lrcInfo = {}
   if (existTimeExp.test(lrcInfo.lyric) && lrcInfo.tlyric != null) {
     // if (musicInfo.lrc.startsWith('\ufeff[id:$00000000]')) {

@@ -350,9 +350,11 @@ export const getPlayerLyric = async(musicInfo: LX.Music.MusicInfo): Promise<LX.P
     return lyricInfo.lyric ? {
       ...lyricInfo,
       rawlrcInfo: rawLyricInfo,
+      isEdited: true,
     } : {
       ...rawLyricInfo,
       rawlrcInfo: rawLyricInfo,
+      isEdited: false,
     }
   })
 }

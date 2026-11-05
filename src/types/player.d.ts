@@ -19,6 +19,8 @@ declare global {
 
       interface LyricInfo extends LX.Music.LyricInfo {
         rawlrcInfo: LX.Music.LyricInfo
+        /** 手工编辑优先，接口/解析升级不能覆盖这份内容。 */
+        isEdited?: boolean
       }
 
       type PlayMusic = LX.Music.MusicInfo | LX.Download.ListItem
