@@ -36,8 +36,6 @@ export const SETTING_COMPONENTS = {
 
 export type SettingScreenIds = keyof typeof SETTING_COMPONENTS
 
-export const SETTING_SCREENS = Object.keys(SETTING_COMPONENTS) as SettingScreenIds[]
-
 export const SETTING_GROUPS = {
   basic: ['basic'],
   player: ['player', 'lyric_desktop'],

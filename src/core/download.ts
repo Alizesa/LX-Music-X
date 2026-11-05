@@ -435,11 +435,6 @@ const init = async() => {
   return initPromise
 }
 
-export const getTasks = async() => {
-  await init()
-  return tasks
-}
-
 export const getDownloadHistory = async() => {
   await init()
   return history
@@ -524,42 +519,6 @@ export const addTasks = async(musicInfos: LX.Music.MusicInfoOnline[], quality: L
   return added.map(task => task.id)
 }
 
-export const addTask = async(musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality = settingState.setting['download.quality']) => {
-  await init()
-  const directory = await getDownloadPath()
-  if (!directory) throw new Error(global.i18n.t('download_path_required'))
-  // 过去这里直接用传入的音质，绕过了播放侧的降级逻辑：请求歌曲没有的音质会失败，
-  // 接着去别的平台找同样音质的版本（core/music/utils.ts 会跳过音质不符的候选），
-  // 都没有就把任务标记为出错 —— 而不是退而求其次。这里按歌曲实际拥有的音质降级，
-  // 与播放行为一致。
-  // 降级必须发生在这一步：文件名后缀与 MIME 都由 quality 推导，
-  // 只在取址时降级会得到「.flac 后缀、内容是 mp3」的文件。
-  const targetQuality = getPlayQuality(quality, musicInfo)
-  const fileName = buildFileName(musicInfo, targetQuality)
-  const id = toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`)
-  if (historyIds.has(id) || tasks.some(task => task.id == id && task.status != 'error')) return id
-  // 走到这里说明是老任务失败了在重下（或第一次下），清掉残留的中转文件，
-  // 免得接着上次的旧数据续传出一个大小不对的文件
-  await clearPartialFile(id)
-  const task: LX.Download.DownloadTask = {
-    id,
-    musicInfo,
-    quality: targetQuality,
-    status: 'waiting',
-    progress: { progress: 0, downloaded: 0, total: 0, speed: '' },
-    fileName,
-    directoryUri: directory.uri,
-    createdAt: Date.now(),
-  }
-  const oldIndex = tasks.findIndex(item => item.id == id)
-  if (oldIndex >= 0) tasks.splice(oldIndex, 1, task)
-  else tasks.unshift(task)
-  await persistNow()
-  notify()
-  void processQueue()
-  return id
-}
-
 const pauseTaskInternal = async(id: string, persist: boolean) => {
   await init()
   const task = tasks.find(item => item.id == id)
@@ -622,13 +581,9 @@ export const resumeAllTasks = async() => {
   }
 }
 
-export const removeTask = async(id: string, deleteFile = false) => {
-  await removeTasks([id], deleteFile)
-}
-
 /**
- * 批量移除任务。与循环调用 removeTask 的区别是只落盘一次、只通知一次，
- * 批量删除时不会产生 N 次写存储与重渲染。活跃和历史同时查。
+ * 批量移除任务。只落盘一次、只通知一次，批量删除时不会产生 N 次写存储与重渲染。
+ * 活跃和历史同时查。
  */
 export const removeTasks = async(ids: string[], deleteFile = false) => {
   await init()
@@ -657,16 +612,6 @@ export const removeTasks = async(ids: string[], deleteFile = false) => {
     console.warn('[Download] 保存删除结果失败:', error instanceof Error ? error.message : error)
   }
   notify()
-}
-
-export const removeTasksByFilePaths = async(paths: string[]) => {
-  await init()
-  const pathSet = new Set(paths)
-  const ids = [
-    ...tasks.filter(task => task.filePath && pathSet.has(task.filePath)).map(task => task.id),
-    ...history.filter(item => item.filePath && pathSet.has(item.filePath)).map(item => item.id),
-  ]
-  if (ids.length) await removeTasks(ids)
 }
 
 export const setDownloadDirectory = async(directory: LX.Download.DownloadDirectory) => {

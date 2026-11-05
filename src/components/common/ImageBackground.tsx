@@ -43,8 +43,6 @@ import type { ImageBackgroundProps as _ImageBackgroundProps } from 'react-native
  * ```
  */
 
-export type ImageBackgroundType = View
-
 export interface ImageBackgroundProps extends Omit<_ImageBackgroundProps, 'source'> {
   source?: _ImageBackgroundProps['source'] | null
 }

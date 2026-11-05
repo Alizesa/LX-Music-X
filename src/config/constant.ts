@@ -84,7 +84,6 @@ export const storageDataPrefix = {
 
 
   openStoragePath: '@open_storage_path',
-  selectedManagedFolder: '@selected_managed_folder',
   // 旧版：活跃 + 已完成历史同一个数组，仅保留用于迁移
   downloadTasks: '@download_tasks',
   downloadTasksActive: '@download_tasks_active',

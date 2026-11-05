@@ -24,7 +24,6 @@ const listPrefix = storageDataPrefix.list
 const dislikeListPrefix = storageDataPrefix.dislikeList
 const userApiPrefix = storageDataPrefix.userApi
 const openStoragePathPrefix = storageDataPrefix.openStoragePath
-const selectedManagedFolderPrefix = storageDataPrefix.selectedManagedFolder
 const downloadTasksKey = storageDataPrefix.downloadTasks
 const downloadTasksActiveKey = storageDataPrefix.downloadTasksActive
 const downloadTasksHistoryKey = storageDataPrefix.downloadTasksHistory
@@ -83,9 +82,6 @@ export const saveFontSize = async(size: number) => {
 }
 
 export const getUserTheme = async() => (await getData<LX.Theme[]>(themeKey) ?? [])
-export const saveUserTheme = async(themes: LX.Theme[]) => {
-  await saveData(themeKey, themes)
-}
 
 
 const initPosition = async() => {
@@ -331,11 +327,6 @@ export const clearLyric = async(keys?: string[]) => {
   if (!keys) keys = (await getAllKeys()).filter(key => key.startsWith(storageDataPrefix.lyric))
   await removeDataMultiple(keys)
 }
-export const saveEditedLyric = async(musicInfo: LX.Music.MusicInfo, lyricInfo: LX.Music.LyricInfo) => saveData(`${storageDataPrefix.lyric}${musicInfo.id}_edited`, lyricInfo)
-export const clearEditedLyric = async() => {
-  let keys = (await getAllKeys()).filter(key => key.startsWith(storageDataPrefix.lyric) && key.endsWith('_edited'))
-  await removeDataMultiple(keys)
-}
 export const getPlayerLyric = async(musicInfo: LX.Music.MusicInfo): Promise<LX.Player.LyricInfo> => {
   return getDataMultiple([
     `${storageDataPrefix.lyric}${musicInfo.id}`,
@@ -360,7 +351,6 @@ export const getPlayerLyric = async(musicInfo: LX.Music.MusicInfo): Promise<LX.P
 }
 
 export const getOtherSource = async(id: string) => getData<LX.Music.MusicInfoOnline[]>(`${storageDataPrefix.musicOtherSource}${id}`).then((url) => url ?? [])
-export const saveOtherSource = async(id: string, sourceInfo: LX.Music.MusicInfoOnline[]) => saveData(`${storageDataPrefix.musicOtherSource}${id}`, sourceInfo)
 export const clearOtherSource = async(keys?: string[]) => {
   if (!keys) keys = (await getAllKeys()).filter(key => key.startsWith(storageDataPrefix.musicOtherSource))
   await removeDataMultiple(keys)
@@ -410,26 +400,9 @@ export const getPlayInfo = async() => {
   return getData<LX.Player.SavedPlayInfo | null>(playInfoStorageKey)
 }
 
-let selectedManagedFolder: string | null = ''
-export const setSelectedManagedFolder = async(uri: string) => {
-  selectedManagedFolder = uri
-  return saveData(selectedManagedFolderPrefix, uri)
-}
-export const getSelectedManagedFolder = async() => {
-  if (selectedManagedFolder != '') return selectedManagedFolder
-  let uri = await getData<string>(selectedManagedFolderPrefix)
-  if (selectedManagedFolder != uri) selectedManagedFolder = uri
-  return selectedManagedFolder
-}
-
 /** @deprecated 旧版单 key，仅用于迁移读取/删除 */
 export const getDownloadTasks = async(): Promise<LX.Download.DownloadTask[]> => {
   return await getData<LX.Download.DownloadTask[]>(downloadTasksKey) ?? []
-}
-
-/** @deprecated 旧版单 key，仅用于迁移读取/删除 */
-export const saveDownloadTasks = async(tasks: LX.Download.DownloadTask[]) => {
-  await saveData(downloadTasksKey, tasks)
 }
 
 /** @deprecated 旧版单 key，仅用于迁移读取/删除 */
@@ -483,15 +456,6 @@ export const savePlayHistory = async(history: LX.Player.PlayHistoryItem[]) => {
   playHistoryCache = history
   savePlayHistoryThrottled(history)
 }
-export const clearPlayHistory = async() => {
-  // 先撤掉节流里还没触发的那次写盘：否则它会在 1 秒后用旧数组把整份历史写回来，
-  // 用户清空后重启又「复活」了
-  savePlayHistoryThrottled.cancel()
-  playHistoryCache = []
-  // 清空是用户主动操作，立即生效，不等节流
-  await removeData(playHistoryKey)
-}
-
 export const getQQMusicCookie = async() => {
   const cookie = await getSecureItem(qqMusicCookieKey)
   if (cookie) return cookie
@@ -525,8 +489,6 @@ export const removeQQMusicDailyPosition = async() => removeData(qqMusicDailyPosi
 /** @deprecated 旧版单 key，仅用于迁移读取/删除 */
 export const getQQMusicPlaylistSongsCache = async() => await getData<Record<string, { songs: LX.Music.MusicInfoOnline[], savedAt: number }>>(qqMusicPlaylistSongsKey) ?? {}
 /** @deprecated 旧版单 key，仅用于迁移读取/删除 */
-export const saveQQMusicPlaylistSongsCache = async(cache: Record<string, { songs: LX.Music.MusicInfoOnline[], savedAt: number }>) => saveData(qqMusicPlaylistSongsKey, cache)
-/** @deprecated 旧版单 key，仅用于迁移读取/删除 */
 export const removeQQMusicPlaylistSongsCache = async() => removeData(qqMusicPlaylistSongsKey)
 
 // 歌单歌曲缓存：轻量索引 + 每个歌单独立 key。索引很小，用原子直写
@@ -540,7 +502,6 @@ export const getQQMusicPlaylistSongsIndex = async() =>
   await getData<QQMusicPlaylistSongsIndex>(qqMusicPlaylistSongsIndexKey)
 export const saveQQMusicPlaylistSongsIndex = async(index: QQMusicPlaylistSongsIndex) =>
   saveDataDirect(qqMusicPlaylistSongsIndexKey, index)
-export const removeQQMusicPlaylistSongsIndex = async() => removeData(qqMusicPlaylistSongsIndexKey)
 export const getQQMusicPlaylistSongsItemKey = (id: string) => qqMusicPlaylistSongsItemPrefix + id
 export const getQQMusicPlaylistSongsItemPrefix = () => qqMusicPlaylistSongsItemPrefix
 export const getQQMusicPlaylistSongsItem = async(id: string) =>

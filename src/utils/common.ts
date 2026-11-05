@@ -72,18 +72,6 @@ export const formatPlayTime2 = (time: number) => {
 
 export const isUrl = (path: string) => /https?:\/\//.test(path)
 
-// 解析URL参数为对象
-export const parseUrlParams = (str: string): Record<string, string> => {
-  const params: Record<string, string> = {}
-  if (typeof str !== 'string') return params
-  const paramsArr = str.split('&')
-  for (const param of paramsArr) {
-    let [key, value] = param.split('=')
-    params[key] = value
-  }
-  return params
-}
-
 /**
  * 生成节流函数
  * @param fn 回调
@@ -219,26 +207,6 @@ export const arrPushByPosition = <T>(list: T[], newList: T[], position: number) 
 }
 
 
-// https://stackoverflow.com/a/2450976
-export const arrShuffle = <T>(array: T[]) => {
-  let currentIndex = array.length
-  let randomIndex
-
-  // While there remain elements to shuffle.
-  while (currentIndex != 0) {
-    // Pick a remaining element.
-    randomIndex = Math.floor(Math.random() * currentIndex)
-    currentIndex--;
-
-    // And swap it with the current element.
-    [array[currentIndex], array[randomIndex]] = [
-      array[randomIndex], array[currentIndex]]
-  }
-
-  return array
-}
-
-
 // export const freezeListItem = <T extends any[]>(list: T): MakeArrayItemReadOnly<T> => {
 //   for (let i = 0; i < list.length; i++) {
 //     Object.freeze(list[i])
@@ -246,7 +214,3 @@ export const arrShuffle = <T>(array: T[]) => {
 //   return list
 // }
 
-export const b64DecodeUnicode = (str: string) => {
-  // Going backwards: from bytestream, to percent-encoding, to original string.
-  return Buffer.from(str, 'base64').toString()
-}

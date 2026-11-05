@@ -1,4 +1,4 @@
-import { Platform, ToastAndroid, BackHandler, Linking, Dimensions, Alert, Appearance, PermissionsAndroid, AppState, StyleSheet, type ScaledSize } from 'react-native'
+import { Platform, ToastAndroid, BackHandler, Linking, Alert, Appearance, PermissionsAndroid, AppState, StyleSheet } from 'react-native'
 // import ExtraDimensions from 'react-native-extra-dimensions-android'
 import Clipboard from '@react-native-clipboard/clipboard'
 import { storageDataPrefix } from '@/config/constant'
@@ -375,11 +375,6 @@ export const shareMusic = (shareType: LX.ShareType, downloadFileName: LX.AppSett
       break
   }
 }
-
-export const onDimensionChange = (handler: (info: { window: ScaledSize, screen: ScaledSize }) => void) => {
-  return Dimensions.addEventListener('change', handler)
-}
-
 
 export const getAppearance = () => {
   return Appearance.getColorScheme() ?? 'light'

@@ -43,29 +43,11 @@ export const updateUserList = async(listInfos: LX.List.UserListInfo[]) => {
 }
 
 /**
- * 批量移动用户列表位置
- */
-export const updateUserListPosition = async(position: number, ids: string[]) => {
-  await global.list_event.list_update_position(position, ids)
-}
-
-
-/**
  * 批量添加歌曲到列表
  */
 export const addListMusics = async(id: string, musicInfos: LX.Music.MusicInfo[], addMusicLocationType: LX.AddMusicLocationType) => {
   await withLocalGuard(id === LIST_IDS.LOCAL, 'list:addMusics', async() => {
     await global.list_event.list_music_add(id, musicInfos, addMusicLocationType)
-  })
-}
-
-/**
- * 跨列表批量移动歌曲
- */
-export const moveListMusics = async(fromId: string, toId: string, musicInfos: LX.Music.MusicInfo[], addMusicLocationType: LX.AddMusicLocationType) => {
-  const isLocal = fromId === LIST_IDS.LOCAL || toId === LIST_IDS.LOCAL
-  await withLocalGuard(isLocal, 'list:moveMusics', async() => {
-    await global.list_event.list_music_move(fromId, toId, musicInfos, addMusicLocationType)
   })
 }
 
@@ -89,29 +71,11 @@ export const updateListMusics = async(infos: Array<{ id: string, musicInfo: LX.M
 }
 
 /**
- * 批量移动列表内歌曲的位置
- */
-export const updateListMusicPosition = async(listId: string, position: number, ids: string[]) => {
-  await withLocalGuard(listId === LIST_IDS.LOCAL, 'list:updatePosition', async() => {
-    await global.list_event.list_music_update_position(listId, position, ids)
-  })
-}
-
-/**
  * 覆盖列表内的歌曲
  */
 export const overwriteListMusics = async(listId: string, musicInfos: LX.Music.MusicInfo[]) => {
   await withLocalGuard(listId === LIST_IDS.LOCAL, 'list:overwriteMusics', async() => {
     await global.list_event.list_music_overwrite(listId, musicInfos)
-  })
-}
-
-/**
- * 覆盖列表内的歌曲
- */
-export const clearListMusics = async(ids: string[]) => {
-  await withLocalGuard(ids.includes(LIST_IDS.LOCAL), 'list:clearMusics', async() => {
-    await global.list_event.list_music_clear(ids)
   })
 }
 

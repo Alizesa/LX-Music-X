@@ -104,7 +104,6 @@ const heartRadarPosition = createPlaylistPosition(QQ_HEART_RADAR_PLAYLIST_ID, {
 }, 'heart radar')
 
 export const initQQMusicDailyPosition = dailyPosition.init
-export const resolveQQMusicDailyIndex = dailyPosition.resolveIndex
 export const playQQMusicDailyPlaylist = dailyPosition.play
 
 /** 红心雷达和每日推荐一样有播放位置记忆（同样按天作废） */

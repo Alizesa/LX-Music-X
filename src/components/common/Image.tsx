@@ -76,9 +76,6 @@ const Image = memo(({ url, cache, resizeMode = 'cover', style, onError, nativeID
 export const getSize = (uri: string, success: (width: number, height: number) => void, failure?: (error: any) => void) => {
   FastImage.getSize(uri, success, failure)
 }
-export const clearMemoryCache = async() => {
-  // return Promise.all([FastImage.clearMemoryCache(), FastImage.clearDiskCache()])
-}
 export default Image
 
 const styles = createStyle({

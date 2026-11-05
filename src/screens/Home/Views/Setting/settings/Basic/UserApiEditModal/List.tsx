@@ -64,10 +64,6 @@ const ListItem = ({ item, activeId, onRemove, onChangeAllowShowUpdateAlert }: {
   )
 }
 
-export interface UserApiEditModalProps {
-  onSave: (rules: string) => void
-  // onSourceChange: SourceSelectorProps['onSourceChange']
-}
 export interface UserApiEditModalType {
   show: (rules: string) => void
 }

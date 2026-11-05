@@ -28,8 +28,6 @@ export const selectFile = async(options: OpenDocumentOptions) => AndroidScoped.o
 export const removeManagedFolder = async(path: string) => AndroidScoped.releasePersistableUriPermission(path)
 export const getManagedFolders = async() => AndroidScoped.getPersistedUriPermissions()
 
-export const getPersistedUriList = async() => AndroidScoped.getPersistedUriPermissions()
-
 
 export const readDir = async(path: string) => FileSystem.ls(path)
 

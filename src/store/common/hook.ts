@@ -28,19 +28,6 @@ export const useStatusbarHeight = () => {
   return value
 }
 
-export const useComponentIds = () => {
-  const [value, update] = useState(state.componentIds)
-
-  useEffect(() => {
-    global.state_event.on('componentIdsUpdated', update)
-    return () => {
-      global.state_event.off('componentIdsUpdated', update)
-    }
-  }, [])
-
-  return value
-}
-
 const hasVisible = (visibleNames: COMPONENT_IDS[], ids: InitState['componentIds']) => {
   const names = Object.keys(ids)
   return names.length == visibleNames.length ? visibleNames.every(n => names.includes(n)) : false
@@ -84,20 +71,6 @@ export const useBgPic = () => {
     global.state_event.on('bgPicUpdated', update)
     return () => {
       global.state_event.off('bgPicUpdated', update)
-    }
-  }, [])
-
-  return value
-}
-
-
-export const useSourceNames = () => {
-  const [value, update] = useState(state.sourceNames)
-
-  useEffect(() => {
-    global.state_event.on('sourceNamesUpdated', update)
-    return () => {
-      global.state_event.off('sourceNamesUpdated', update)
     }
   }, [])
 

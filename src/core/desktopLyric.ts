@@ -16,7 +16,6 @@ import {
   setSingleLine,
   setVertical,
   setVerticalRotateLatin,
-  setPosition,
   setMaxLineNum,
   setWidth,
   setLyricTextPosition,
@@ -92,7 +91,6 @@ export const setDesktopLyricSingleLine = setSingleLine
 export const setDesktopLyricVertical = setVertical
 export const setDesktopLyricVerticalRotateLatin = setVerticalRotateLatin
 export const onDesktopLyricLongPress = onViewLongPress
-export const setDesktopLyricPosition = setPosition
 export const setDesktopLyricMaxLineNum = setMaxLineNum
 export const setDesktopLyricWidth = setWidth
 export const setDesktopLyricTextPosition = async(x: LX.AppSetting['desktopLyric.textPosition.x'] | null, y: LX.AppSetting['desktopLyric.textPosition.y'] | null) => {

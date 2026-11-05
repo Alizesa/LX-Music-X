@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-import { getUserTheme, saveUserTheme } from '@/utils/data'
+import { getUserTheme } from '@/utils/data'
 import themes from '@/theme/themes/themes'
 import settingState from '@/store/setting/state'
 import themeState from '@/store/theme/state'
@@ -25,20 +25,6 @@ export const getAllThemes = async() => {
     userThemes,
     dataPath: privateStorageDirectoryPath + '/theme_images',
   }
-}
-
-export const saveTheme = async(theme: LX.Theme) => {
-  const targetTheme = userThemes.find(t => t.id === theme.id)
-  if (targetTheme) Object.assign(targetTheme, theme)
-  else userThemes.push(theme)
-  await saveUserTheme(userThemes)
-}
-
-export const removeTheme = async(id: string) => {
-  const index = userThemes.findIndex(t => t.id === id)
-  if (index < 0) return
-  userThemes.splice(index, 1)
-  await saveUserTheme(userThemes)
 }
 
 export type LocalTheme = typeof themes[number]
