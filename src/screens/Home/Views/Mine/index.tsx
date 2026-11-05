@@ -10,13 +10,13 @@ import { useTheme } from '@/store/theme/hook'
 import { useDownloadTasks } from '@/store/download/hook'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
-import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo } from '@/core/qqMusic'
+import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo, isQQMusicSessionCurrent, updateQQMusicPlaylistsCache, type QQMusicSession } from '@/core/qqMusic'
 import { deleteQQMusicPlaylist, ensureQQMusicLikedCount, getQQMusicLikedCount, refreshQQMusicLikedSongs } from '@/core/qqMusicFavorite'
 import { isQQMusicFallbackAvatar, isQQMusicFallbackNickname } from '@/core/qqMusicProfile'
 import { getLocalMusicCount } from '@/utils/localMatchIndex'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
-import { getPlayHistory, getQQMusicPlaylistsCache, saveQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
+import { getPlayHistory, getQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
 import { useI18n } from '@/lang'
 
 const AVATAR_SIZE = 56
@@ -101,8 +101,9 @@ export default () => {
   // 歌单：读本地缓存，正常情况下只有「从没拉过」才联网。
   // 例外：旧版手机号登录写入的收藏列表可能没有「我喜欢」项，这种缓存要重拉一次，
   // 否则入口一直点不开（新列表里一定带 liked，见 getQQMusicPlaylists 的兜底）。
-  const loadPlaylists = useCallback(async(activeCookie: string) => {
-    if (!activeCookie) {
+  const loadPlaylists = useCallback(async(session: QQMusicSession) => {
+    if (!isQQMusicSessionCurrent(session)) return
+    if (!session.cookie) {
       setPlaylists([])
       return
     }
@@ -115,14 +116,15 @@ export default () => {
       const likedCount = getQQMusicLikedCount() ?? await ensureQQMusicLikedCount()
       if (likedCount) likedItem.trackCount = likedCount
     }
+    if (!isQQMusicSessionCurrent(session)) return
     if (cachedList.some(item => item.liked)) {
       setPlaylists(cachedList)
       return
     }
     if (cachedList.length) setPlaylists(cachedList)
     try {
-      const fresh = await getQQMusicPlaylists(activeCookie, { requireAll: true })
-      await saveQQMusicPlaylistsCache(fresh)
+      const fresh = await getQQMusicPlaylists(session.cookie, { requireAll: true })
+      if (!await updateQQMusicPlaylistsCache(session, () => fresh) || !isQQMusicSessionCurrent(session)) return
       setPlaylists(filterVisiblePlaylists(fresh))
     } catch (error) {
       console.warn('[QQMusic] 拉取歌单失败:', error instanceof Error ? error.message : error)
@@ -134,12 +136,13 @@ export default () => {
     const syncFromSession = (nextUser?: LX.QQMusic.UserInfo | null) => {
       if (nextUser !== undefined) setUser(nextUser)
       void getQQMusicSession().then(session => {
+        if (!isQQMusicSessionCurrent(session)) return
         setCookie(session.cookie)
         // 冷启动挂载时没有 nextUser，账号资料只能从会话里拿。
         // 漏了这句就是「cookie 有、user 空」，界面按未登录画。
         // 反过来 cookie 空时不能拿残留的 user 顶上：卡片会显示旧昵称却没登录
-        if (nextUser === undefined && session.cookie) setUser(session.user)
-        void loadPlaylists(session.cookie)
+        if (nextUser === undefined) setUser(session.cookie ? session.user : null)
+        void loadPlaylists(session)
       })
     }
     syncFromSession()
@@ -214,9 +217,11 @@ export default () => {
     refreshingRef.current = true
     setRefreshing(true)
     try {
-      const list = await getQQMusicPlaylists(cookie, { requireAll: true })
+      const session = await getQQMusicSession()
+      if (!session.cookie || !isQQMusicSessionCurrent(session)) return
+      const list = await getQQMusicPlaylists(session.cookie, { requireAll: true })
+      if (!await updateQQMusicPlaylistsCache(session, () => list) || !isQQMusicSessionCurrent(session)) return
       setPlaylists(list)
-      await saveQQMusicPlaylistsCache(list)
       // 顺手把「我喜欢」也刷一遍：它平时只读本地缓存（拉全量要翻好几页），
       // 下拉刷新是唯一的重拉时机
       void refreshQQMusicLikedSongs()
@@ -226,7 +231,7 @@ export default () => {
       refreshingRef.current = false
       setRefreshing(false)
     }
-  }, [cookie, loggedIn, t])
+  }, [loggedIn, t])
 
   const logout = () => {
     Alert.alert(t('qq_logout_title'), t('qq_logout_message'), [

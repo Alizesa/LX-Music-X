@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { filterVisiblePlaylists, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicTrackIdentity, getQQMusicUin, isReservedQQMusicPlaylistName, postAuthedMusicu } from './qqMusic'
-import { getQQMusicLikedSongsCache, getQQMusicLikedSongsStale, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, removeQQMusicLikedSongsStale, saveQQMusicLikedSongsCache, saveQQMusicLikedSongsStale, saveQQMusicPlaylistsCache } from '@/utils/data'
+import { filterVisiblePlaylists, getQQMusicPlaylistSongs, getQQMusicPlaylists, getQQMusicSession, getQQMusicTrackIdentity, isQQMusicSessionCurrent, isReservedQQMusicPlaylistName, postAuthedMusicu, updateQQMusicPlaylistsCache, type QQMusicSession } from './qqMusic'
+import { getQQMusicLikedSongsCache, getQQMusicLikedSongsStale, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, removeQQMusicLikedSongsStale, saveQQMusicLikedSongsCache, saveQQMusicLikedSongsStale } from '@/utils/data'
 import { clearPlaylistSongsCache, dropCachedPlaylistSongs, getPlaylistSongsCacheVersion } from './qqMusicPlaylistSongsCache'
 import { toast } from '@/utils/tools'
 
@@ -78,17 +78,20 @@ const logLikedCacheError = (error: unknown) => {
 // 「我喜欢」的数量以常驻的 id 集合为准；变化时同步回歌单缓存，
 // 这样 Mine 入口、歌单页副标题和重启后的数字都一致。
 const syncLikedCountToPlaylistCache = async(count: number) => {
+  const version = likedSessionVersion
   try {
+    const session = await getQQMusicSession()
+    if (!session.cookie || !isQQMusicSessionCurrent(session) || version !== likedSessionVersion) return
     // 本地改过、还没和服务端核对时，缓存可能只是「本地新增的那几首」；
     // 这时只更新界面上的数字，不把它写进歌单缓存，等下次重拉后再说
     if (await isQQMusicLikedSongsStale().catch(() => false)) return
-    const cached = await getQQMusicPlaylistsCache()
-    const index = cached.findIndex(item => item.liked)
-    if (index < 0) return
-    if (cached[index].trackCount === count) return
-    cached[index] = { ...cached[index], trackCount: count || undefined }
-    await saveQQMusicPlaylistsCache(cached)
-    global.app_event.qqMusicPlaylistsUpdated()
+    await updateQQMusicPlaylistsCache(session, cached => {
+      if (version !== likedSessionVersion) return null
+      const index = cached.findIndex(item => item.liked)
+      if (index < 0 || cached[index].trackCount === count) return null
+      cached[index] = { ...cached[index], trackCount: count || undefined }
+      return cached
+    })
   } catch (error) {
     console.warn('[QQMusic] 同步我喜欢曲目数失败:', error instanceof Error ? error.message : error)
   }
@@ -190,7 +193,8 @@ export const loadQQMusicLikedSongsCache = async(): Promise<LX.Music.MusicInfoOnl
 const doFetch = async() => {
   const version = likedSessionVersion
   try {
-    const { cookie } = await getQQMusicSession()
+    const session = await getQQMusicSession()
+    const { cookie } = session
     if (version !== likedSessionVersion) return
     if (!cookie) {
       cancelScheduledRelease()
@@ -205,7 +209,7 @@ const doFetch = async() => {
     }
     const songs = await getQQMusicPlaylistSongs(cookie, LIKED_DIRID)
     // 拉取期间换号了：这份是旧账号的数据，丢弃
-    if (version !== likedSessionVersion) return
+    if (version !== likedSessionVersion || !isQQMusicSessionCurrent(session)) return
     setLikedSongs(songs)
     likedCacheQueue = likedCacheQueue.catch(() => {}).then(async() => {
       if (version !== likedSessionVersion) return
@@ -215,6 +219,7 @@ const doFetch = async() => {
       await saveQQMusicLikedSongsStale(false)
     })
     await likedCacheQueue
+    if (version !== likedSessionVersion || !isQQMusicSessionCurrent(session)) return
     // 服务端数组已落盘、stale 已清，这时数量才是权威的
     if (likedIds) void syncLikedCountToPlaylistCache(likedIds.size)
     // 没有页面占用时（例如「我的」页下拉刷新触发的），整个数组不需要常驻
@@ -474,14 +479,7 @@ const resolveOwnedQQMusicPlaylist = async(
   const target = fresh.find(item => !item.subscribed && !item.liked && item.id == playlist.id)
   if (!target) throw new Error(global.i18n.t('qq_playlist_not_owned'))
   if (!target.dirId) throw new Error(global.i18n.t('qq_playlist_missing_dir'))
-  return { target, fresh }
-}
-
-export const isSameQQMusicSession = async(cookie: string) => {
-  const expected = getQQMusicUin(cookie)
-  if (!expected) return false
-  const { cookie: current } = await getQQMusicSession()
-  return !!current && getQQMusicUin(current) === expected
+  return target
 }
 
 const validateQQMusicPlaylistName = (name: string) => {
@@ -496,11 +494,12 @@ const validateQQMusicPlaylistName = (name: string) => {
  * 写成功后就地更新「我的歌单」缓存并广播，别让 UI 再整份重拉。
  * 期间换号/退出就放弃：旧账号的列表不能写回公共缓存。
  */
-const saveQQMusicPlaylistsAfterEdit = async(cookie: string, next: LX.QQMusic.PlaylistInfo[]) => {
+const saveQQMusicPlaylistsAfterEdit = async(
+  session: QQMusicSession,
+  update: (cached: LX.QQMusic.PlaylistInfo[]) => LX.QQMusic.PlaylistInfo[],
+) => {
   try {
-    if (!await isSameQQMusicSession(cookie)) return
-    await saveQQMusicPlaylistsCache(next)
-    global.app_event.qqMusicPlaylistsUpdated()
+    await updateQQMusicPlaylistsCache(session, update)
   } catch (error) {
     // 写操作已经成功：缓存更新失败只影响界面刷新时机，不能反过来报操作失败
     console.warn('[QQMusic] 更新歌单缓存失败:', error instanceof Error ? error.message : error)
@@ -525,12 +524,13 @@ const writeQQMusicPlaylistBase = async(
 /** 新建歌单。写入成功后重拉一次完整列表（新建没有可靠的本地 id，无法就地插入） */
 export const createQQMusicPlaylist = async(name: string) => {
   const title = validateQQMusicPlaylistName(name)
-  const { cookie } = await getQQMusicSession()
-  if (!cookie) throw new Error(global.i18n.t('qq_not_logged_in'))
+  const session = await getQQMusicSession()
+  const { cookie } = session
+  if (!cookie || !isQQMusicSessionCurrent(session)) throw new Error(global.i18n.t('qq_not_logged_in'))
   await writeQQMusicPlaylistBase(cookie, 'AddPlaylist', { dirName: title, dirShow: 1 })
   try {
     const fresh = await getQQMusicPlaylists(cookie, { requireAll: true })
-    await saveQQMusicPlaylistsAfterEdit(cookie, fresh)
+    await saveQQMusicPlaylistsAfterEdit(session, () => fresh)
   } catch (error) {
     // 歌单已经建好了：刷新失败只影响列表什么时候显示，不能让调用方误报失败
     console.warn('[QQMusic] 新建歌单后刷新列表失败:', error instanceof Error ? error.message : error)
@@ -543,33 +543,36 @@ export const renameQQMusicPlaylist = async(
   name: string,
 ) => {
   const title = validateQQMusicPlaylistName(name)
-  const { cookie } = await getQQMusicSession()
-  if (!cookie) throw new Error(global.i18n.t('qq_not_logged_in'))
-  const { target, fresh } = await resolveOwnedQQMusicPlaylist(cookie, playlist)
+  const session = await getQQMusicSession()
+  const { cookie } = session
+  if (!cookie || !isQQMusicSessionCurrent(session)) throw new Error(global.i18n.t('qq_not_logged_in'))
+  const target = await resolveOwnedQQMusicPlaylist(cookie, playlist)
+  if (!isQQMusicSessionCurrent(session)) throw new Error(global.i18n.t('qq_session_expired'))
   await writeQQMusicPlaylistBase(cookie, 'EditPlaylist', {
     dirId: target.dirId,
     mask: 1,
     dirNewName: title,
   })
-  const next = fresh.map(item => item.id == playlist.id ? { ...item, name: title } : item)
-  await saveQQMusicPlaylistsAfterEdit(cookie, next)
+  // 只修改目标项；写请求期间收藏/取消收藏的其他歌单应以队列里的最新缓存为准。
+  await saveQQMusicPlaylistsAfterEdit(session, cached => cached.map(item => item.id == playlist.id ? { ...item, name: title } : item))
 }
 
 /** 删除自建歌单。删除后顺手丢掉该歌单的歌曲缓存 */
 export const deleteQQMusicPlaylist = async(
   playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'>,
 ) => {
-  const { cookie } = await getQQMusicSession()
-  if (!cookie) throw new Error(global.i18n.t('qq_not_logged_in'))
-  const { target, fresh } = await resolveOwnedQQMusicPlaylist(cookie, playlist)
+  const session = await getQQMusicSession()
+  const { cookie } = session
+  if (!cookie || !isQQMusicSessionCurrent(session)) throw new Error(global.i18n.t('qq_not_logged_in'))
+  const target = await resolveOwnedQQMusicPlaylist(cookie, playlist)
+  if (!isQQMusicSessionCurrent(session)) throw new Error(global.i18n.t('qq_session_expired'))
   await writeQQMusicPlaylistBase(cookie, 'DelPlaylist', {
     dirId: target.dirId,
     dirName: target.name,
   })
-  const next = fresh.filter(item => item.id != playlist.id)
-  await saveQQMusicPlaylistsAfterEdit(cookie, next)
+  await saveQQMusicPlaylistsAfterEdit(session, cached => cached.filter(item => item.id != playlist.id))
   // 缓存清理失败不影响删除结果；dropCachedPlaylistSongs 内部已经兜底
-  void dropCachedPlaylistSongs(playlist.id)
+  if (isQQMusicSessionCurrent(session)) void dropCachedPlaylistSongs(playlist.id)
 }
 
 /** 能往里写歌的那批：自己创建的歌单。收藏来的写不了 */
@@ -584,17 +587,18 @@ const writablePlaylists = (list: LX.QQMusic.PlaylistInfo[]) =>
  * 不指望用户记得去下拉刷新。
  */
 export const loadWritableQQMusicPlaylists = async(): Promise<LX.QQMusic.PlaylistInfo[]> => {
+  const session = await getQQMusicSession()
+  if (!session.cookie || !isQQMusicSessionCurrent(session)) return []
   const cached = writablePlaylists(await getQQMusicPlaylistsCache())
+  if (!isQQMusicSessionCurrent(session)) return []
   if (!cached.some(item => !item.dirId)) return cached
-  const { cookie } = await getQQMusicSession()
-  if (!cookie) return cached
   try {
-    const fresh = await getQQMusicPlaylists(cookie, { requireAll: true })
-    await saveQQMusicPlaylistsCache(fresh)
+    const fresh = await getQQMusicPlaylists(session.cookie, { requireAll: true })
+    if (!await updateQQMusicPlaylistsCache(session, () => fresh) || !isQQMusicSessionCurrent(session)) return []
     return writablePlaylists(fresh)
   } catch (error) {
     console.warn('[QQMusic] 刷新歌单失败:', error instanceof Error ? error.message : error)
-    return cached
+    return isQQMusicSessionCurrent(session) ? cached : []
   }
 }
 
@@ -638,11 +642,12 @@ export const changeQQMusicPlaylistMembership = async(
 export const setQQMusicPlaylistCollected = async(
   playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'>,
   collected: boolean,
-  cookieOverride?: string,
+  sessionOverride?: QQMusicSession,
 ): Promise<FavoriteResult> => {
-  // 调用方校验过归属时传入当时的 Cookie，保证写操作和判断用的是同一个账号
-  const cookie = cookieOverride ?? (await getQQMusicSession()).cookie
-  if (!cookie) return 'unsupported'
+  // 调用方校验过归属时沿用当时的会话，不能只带 Cookie 而丢掉会话代次。
+  const session = sessionOverride ?? await getQQMusicSession()
+  if (!session.cookie || !isQQMusicSessionCurrent(session)) return 'unsupported'
+  const { cookie } = session
   // 这条接口只认数字 id（disstid/tid 那一类），拿不到就没法收藏
   const playlistId = Number(playlist.id)
   if (!Number.isFinite(playlistId) || playlistId <= 0) return 'unsupported'
@@ -678,7 +683,7 @@ export const setQQMusicPlaylistCollected = async(
 export const toggleQQMusicPlaylistCollected = async(
   playlist: Pick<LX.QQMusic.PlaylistInfo, 'id' | 'name'> & Partial<Pick<LX.QQMusic.PlaylistInfo, 'cover' | 'trackCount'>>,
   collected: boolean,
-  options?: { cookie?: string },
+  options?: { session?: QQMusicSession },
 ): Promise<boolean> => {
   // 没有数字 id 的歌单压根没发收藏（本地就能判出来），别跟「没登录」共用一条提示
   if (!Number.isFinite(Number(playlist.id)) || Number(playlist.id) <= 0) {
@@ -686,29 +691,34 @@ export const toggleQQMusicPlaylistCollected = async(
     return false
   }
   try {
-    const result = await setQQMusicPlaylistCollected(playlist, collected, options?.cookie)
+    // 无论调用方有没有传选项，都在请求前捕获会话，写回时沿用同一个代次。
+    const session = options?.session ?? await getQQMusicSession()
+    if (!session.cookie) {
+      toast(global.i18n.t('qq_not_logged_in'), 'long')
+      return false
+    }
+    if (!isQQMusicSessionCurrent(session)) return false
+    const result = await setQQMusicPlaylistCollected(playlist, collected, session)
     if (result == 'ok') {
-      // 写入期间换号/退出：写已经落在原账号上，但不能再把结果写进当前账号的缓存/提示
-      if (options?.cookie && !await isSameQQMusicSession(options.cookie)) return false
-      toast(global.i18n.t(collected ? 'qq_playlist_faved' : 'qq_playlist_unfaved', { name: playlist.name }))
       // 就地更新「我的歌单」缓存：收藏的加进去、取消的拿掉。
       // 不能整份作废 —— 空缓存会被别处当成「这个号真的没有歌单」：添加歌单的选择器会显示
       // 「还没有自建歌单」，推荐流里查收藏状态也查不到，我的页还得等下次重新进才恢复
-      const cached = await getQQMusicPlaylistsCache()
-      const next = cached.filter(item => item.id != playlist.id)
-      if (collected) {
-        next.push({
-          id: playlist.id,
-          name: playlist.name,
-          cover: playlist.cover,
-          trackCount: playlist.trackCount,
-          subscribed: true,
-          liked: false,
-        })
-      }
-      await saveQQMusicPlaylistsCache(next)
-      // 通知常驻页面（「我的」页）重读一遍，不用等重新进页面
-      global.app_event.qqMusicPlaylistsUpdated()
+      const saved = await updateQQMusicPlaylistsCache(session, cached => {
+        const next = cached.filter(item => item.id != playlist.id)
+        if (collected) {
+          next.push({
+            id: playlist.id,
+            name: playlist.name,
+            cover: playlist.cover,
+            trackCount: playlist.trackCount,
+            subscribed: true,
+            liked: false,
+          })
+        }
+        return next
+      })
+      if (!saved || !isQQMusicSessionCurrent(session)) return false
+      toast(global.i18n.t(collected ? 'qq_playlist_faved' : 'qq_playlist_unfaved', { name: playlist.name }))
       return true
     }
     // 走到 unsupported 就是没登录（数字 id 上面已经挡过了）

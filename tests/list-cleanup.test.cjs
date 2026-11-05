@@ -149,19 +149,18 @@ test('search collection uses the QQ account and never creates a local list', asy
     '@/config/constant': constants,
     '@/store/list/state': {},
     '@/core/qqMusic': {
-      getQQMusicSession: async() => ({ cookie: 'x' }),
+      getQQMusicSession: async() => ({ cookie: 'x', generation: 0 }),
       getQQMusicPlaylists: async() => cached,
-      getQQMusicUin: cookie => cookie,
+      isQQMusicSessionCurrent: () => true,
+      updateQQMusicPlaylistsCache: async() => true,
       QQMusicSessionExpiredError: class extends Error {},
     },
     '@/core/qqMusicFavorite': {
-      isSameQQMusicSession: async() => true,
       toggleQQMusicPlaylistCollected: async(playlist, collected) => {
         requests.push([copy(playlist), collected])
         return true
       },
     },
-    '@/utils/data': { getQQMusicPlaylistsCache: async() => cached, saveQQMusicPlaylistsCache: async() => {} },
     '@/utils/tools': { toast() {} },
     '@/store/songlist/state': { default: { listDetailInfo: { id: '12345', source: 'tx', total: 50, info: { img: 'cover' } } } },
   })
@@ -175,7 +174,7 @@ test('search collection uses the QQ account and never creates a local list', asy
   assert.equal(requests.length, 1)
 })
 
-const collectHarness = ({ session, playlists, notified = () => {} }) => {
+const collectHarness = ({ session, playlists, current = () => true, notified = () => {} }) => {
   const requests = []
   return {
     api: load('src/screens/SonglistDetail/listAction.ts', {
@@ -187,20 +186,20 @@ const collectHarness = ({ session, playlists, notified = () => {} }) => {
       '@/core/qqMusic': {
         getQQMusicSession: session,
         getQQMusicPlaylists: playlists,
-        getQQMusicUin: cookie => cookie,
+        isQQMusicSessionCurrent: current,
+        updateQQMusicPlaylistsCache: async expected => {
+          if (!current(expected)) return false
+          notified()
+          return true
+        },
         QQMusicSessionExpiredError: class extends Error {},
       },
       '@/core/qqMusicFavorite': {
-        isSameQQMusicSession: async cookie => {
-          const { cookie: current } = await session()
-          return !!cookie && cookie === current
-        },
         toggleQQMusicPlaylistCollected: async(playlist, collected) => {
           requests.push([copy(playlist), collected])
           return true
         },
       },
-      '@/utils/data': { saveQQMusicPlaylistsCache: async() => {} },
       '@/utils/tools': { toast() {} },
       '@/store/songlist/state': { default: { listDetailInfo: { id: '12345', source: 'tx', total: 50, info: {} } } },
       __global: { app_event: { qqMusicPlaylistsUpdated: notified } },
@@ -210,10 +209,14 @@ const collectHarness = ({ session, playlists, notified = () => {} }) => {
 }
 
 test('collection aborts if the account changes during the refresh request', async() => {
-  let calls = 0
+  let generation = 0
   const h = collectHarness({
-    session: async() => ({ cookie: ++calls === 1 ? 'account-a' : 'account-b' }),
-    playlists: async() => [{ id: '12345', subscribed: true }],
+    session: async() => ({ cookie: 'account-a', generation }),
+    playlists: async() => {
+      generation++
+      return [{ id: '12345', subscribed: true }]
+    },
+    current: session => session.generation === generation,
   })
   assert.equal(await h.api.handleCollect('12345', 'tx', 'Playlist'), false)
   assert.equal(h.requests.length, 0)
@@ -223,7 +226,7 @@ test('collection refreshes the cache and notifies the mine page before deciding'
   let fetches = 0
   let notifications = 0
   const h = collectHarness({
-    session: async() => ({ cookie: 'account-a' }),
+    session: async() => ({ cookie: 'account-a', generation: 0 }),
     playlists: async() => {
       fetches++
       return [{ id: '12345', subscribed: true }]
