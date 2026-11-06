@@ -9,7 +9,6 @@ import { defaultHeaders } from './common/Image'
 import SizeView from './SizeView'
 import { useBgPic } from '@/store/common/hook'
 import { useSettingValue } from '@/store/setting/hook'
-import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 interface Props {
   children: React.ReactNode
@@ -24,18 +23,19 @@ export default ({ children }: Props) => {
   const theme = useTheme()
   const windowSize = useWindowSize()
   const pic = useBgPic()
-  const visible = useScreenVisible()
   const customBgImage = useSettingValue('theme.customBgImage')
   const bgOpacity = useSettingValue('theme.bgOpacity')
   const hideBgDark = useSettingValue('theme.hideBgDark')
   // 和主题自带背景一样，深色主题勾了「隐藏黑色主题背景」时自定义背景也一起隐藏
   const customBgUri = customBgImage && !(theme.isDark && hideBgDark) ? toFileUri(customBgImage) : ''
 
+  // 返回动画会先露出下层页面；背景随页面保留，避免等 didAppear 后重建图片时闪烁。
   const themeComponent = useMemo(() => (
     <View style={{ flex: 1, overflow: 'hidden' }}>
       <ImageBackground
         style={{ position: 'absolute', left: 0, top: 0, height: windowSize.height, width: windowSize.width, backgroundColor: theme['c-content-background'] }}
-        source={visible ? theme['bg-image'] : null}
+        source={theme['bg-image']}
+        fadeDuration={0}
         resizeMode="cover"
       >
       </ImageBackground>
@@ -43,7 +43,7 @@ export default ({ children }: Props) => {
         {children}
       </View>
     </View>
-  ), [children, theme, visible, windowSize.height, windowSize.width])
+  ), [children, theme, windowSize.height, windowSize.width])
 
   const picComponent = useMemo(() => {
     // 自定义背景优先，其次是动态背景（播放封面）
@@ -55,7 +55,8 @@ export default ({ children }: Props) => {
         <ImageBackground
           style={{ position: 'absolute', left: 0, top: 0, height: windowSize.height, width: windowSize.width, backgroundColor: theme['c-content-background'] }}
           // 自定义背景是本地文件，不需要请求头；动态背景是网络图，带上它
-          source={visible ? (isCustom ? { uri } : { uri, headers: defaultHeaders }) : null}
+          source={isCustom ? { uri } : { uri, headers: defaultHeaders }}
+          fadeDuration={0}
           resizeMethod="resize"
           // cover = 等比铺满，图片比例与屏幕不合适时从中心裁掉超出部分，不拉伸
           resizeMode="cover"
@@ -69,7 +70,7 @@ export default ({ children }: Props) => {
         </View>
       </View>
     )
-  }, [bgOpacity, children, customBgUri, pic, theme, visible, windowSize.height, windowSize.width])
+  }, [bgOpacity, children, customBgUri, pic, theme, windowSize.height, windowSize.width])
 
   return (
     <>
