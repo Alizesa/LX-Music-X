@@ -12,6 +12,7 @@ import Singer from './Singer'
 import { screenkeepAwake, screenUnkeepAwake } from '@/utils/nativeModules/utils'
 import commonState, { type InitState as CommonState } from '@/store/common/state'
 import { createStyle } from '@/utils/tools'
+import { VisibilityBoundary } from '@/utils/hooks/useScreenVisible'
 // import { useTheme } from '@/store/theme/hook'
 
 // 三页的顺序就是 PagerView 里子节点的顺序：歌手那页在封面左边（往右划才划得到），
@@ -97,7 +98,9 @@ export default memo(({ componentId }: { componentId: string }) => {
             <Pic componentId={componentId} />
           </View>
           <View key="lyric" collapsable={false}>
-            <LyricPage activeIndex={pageIndex} />
+            <VisibilityBoundary visible={pageIndex === LYRIC_PAGE}>
+              <LyricPage activeIndex={pageIndex} />
+            </VisibilityBoundary>
           </View>
         </PagerView>
         {/* <View style={styles.pageIndicator} nativeID={NAV_SHEAR_NATIVE_IDS.playDetail_pageIndicator}>

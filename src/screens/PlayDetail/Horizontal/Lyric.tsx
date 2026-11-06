@@ -1,5 +1,5 @@
-import { memo, useMemo, useEffect, useRef, useCallback } from 'react'
-import { View, FlatList, type FlatListProps, type NativeSyntheticEvent, type NativeScrollEvent, type LayoutChangeEvent } from 'react-native'
+import { memo, useMemo } from 'react'
+import { View, FlatList, type FlatListProps, type LayoutChangeEvent } from 'react-native'
 // import { useLayout } from '@/utils/hooks'
 import { type Line, useLrcPlay, useLrcSet } from '@/plugins/lyric'
 import { createStyle } from '@/utils/tools'
@@ -8,9 +8,8 @@ import { useTheme } from '@/store/theme/hook'
 import { useSettingValue } from '@/store/setting/hook'
 import { AnimatedColorText } from '@/components/common/Text'
 import { setSpText } from '@/utils/pixelRatio'
-import playerState from '@/store/player/state'
-import { scrollTo } from '@/utils/scroll'
-import PlayLine, { type PlayLineType } from '../components/PlayLine'
+import PlayLine from '../components/PlayLine'
+import { useLyricScroll } from '../components/useLyricScroll'
 import { resolveLrcColors } from '../components/lrcColors'
 // import { screenkeepAwake } from '@/utils/nativeModules/utils'
 // import { log } from '@/utils/log'
@@ -71,203 +70,19 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout }: LineProps) => {
     prevProps.activeLine != nextProps.lineNum &&
     nextProps.activeLine != nextProps.lineNum
 })
-const wait = async() => new Promise(resolve => setTimeout(resolve, 100))
-// 首屏只渲染一屏附近；不要按当前播放行数增长，否则从后面播起会一次性挂几百行
+// 首屏渲染数量固定，远处的当前句由定位逻辑带入渲染窗口。
 const INITIAL_LYRIC_LINES = 30
 
 export default () => {
   const lyricLines = useLrcSet()
   const { line } = useLrcPlay()
-  const flatListRef = useRef<FlatList>(null)
-  const playLineRef = useRef<PlayLineType>(null)
-  const isPauseScrollRef = useRef(true)
-  const scrollTimoutRef = useRef<NodeJS.Timeout | null>(null)
-  const delayScrollTimeout = useRef<NodeJS.Timeout | null>(null)
-  const lineRef = useRef({ line: 0, prevLine: 0 })
-  const isFirstSetLrc = useRef(true)
-  const scrollInfoRef = useRef<NativeSyntheticEvent<NativeScrollEvent>['nativeEvent'] | null>(null)
-  const listLayoutInfoRef = useRef<{ spaceHeight: number, lineHeights: number[] }>({ spaceHeight: 0, lineHeights: [] })
-  const scrollCancelRef = useRef<(() => void) | null>(null)
   const isShowLyricProgressSetting = useSettingValue('playDetail.isShowLyricProgressSetting')
-  // useLock()
-  // const [imgUrl, setImgUrl] = useState(null)
-  // const { onLayout, ...layout } = useLayout()
-
-  // useEffect(() => {
-  //   const url = playMusicInfo ? playMusicInfo.musicInfo.img : null
-  //   if (imgUrl == url) return
-  //   setImgUrl(url)
-  // // eslint-disable-next-line react-hooks/exhaustive-deps
-  // }, [playMusicInfo])
-
-  // const imgWidth = useMemo(() => layout.width * 0.75, [layout.width])
-  const handleScrollToActive = (index = lineRef.current.line) => {
-    if (index < 0) return
-    if (flatListRef.current) {
-      // console.log('handleScrollToActive', index)
-      if (scrollInfoRef.current && lineRef.current.line - lineRef.current.prevLine == 1) {
-        let offset = listLayoutInfoRef.current.spaceHeight
-        for (let line = 0; line < index; line++) {
-          offset += listLayoutInfoRef.current.lineHeights[line]
-        }
-        offset += listLayoutInfoRef.current.lineHeights[index] / 2
-        // 跳到远处时中间的行可能还没渲染，缺少行高就交给列表估算/定位
-        if (Number.isFinite(offset)) {
-          try {
-            scrollCancelRef.current = scrollTo(flatListRef.current, scrollInfoRef.current, offset - scrollInfoRef.current.layoutMeasurement.height * 0.42, 600, () => {
-              scrollCancelRef.current = null
-            })
-          } catch {}
-          return
-        }
-      }
-      if (scrollCancelRef.current) {
-        scrollCancelRef.current()
-        scrollCancelRef.current = null
-      }
-      try {
-        flatListRef.current.scrollToIndex({
-          index,
-          animated: true,
-          viewPosition: 0.42,
-        })
-      } catch {}
-    }
-  }
-
-  const handleScroll = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
-    scrollInfoRef.current = nativeEvent
-    if (isPauseScrollRef.current) {
-      playLineRef.current?.updateScrollInfo(nativeEvent)
-    }
-  }
-  const handleScrollBeginDrag = () => {
-    isPauseScrollRef.current = true
-    playLineRef.current?.setVisible(true)
-    if (delayScrollTimeout.current) {
-      clearTimeout(delayScrollTimeout.current)
-      delayScrollTimeout.current = null
-    }
-    if (scrollTimoutRef.current) {
-      clearTimeout(scrollTimoutRef.current)
-      scrollTimoutRef.current = null
-    }
-    if (scrollCancelRef.current) {
-      scrollCancelRef.current()
-      scrollCancelRef.current = null
-    }
-  }
-
-  const onScrollEndDrag = () => {
-    if (!isPauseScrollRef.current) return
-    if (scrollTimoutRef.current) clearTimeout(scrollTimoutRef.current)
-    scrollTimoutRef.current = setTimeout(() => {
-      playLineRef.current?.setVisible(false)
-      scrollTimoutRef.current = null
-      isPauseScrollRef.current = false
-      if (!playerState.isPlay) return
-      handleScrollToActive()
-    }, 3000)
-  }
-
-
-  useEffect(() => {
-    return () => {
-      if (delayScrollTimeout.current) {
-        clearTimeout(delayScrollTimeout.current)
-        delayScrollTimeout.current = null
-      }
-      if (scrollTimoutRef.current) {
-        clearTimeout(scrollTimoutRef.current)
-        scrollTimoutRef.current = null
-      }
-    }
-  }, [])
-
-  useEffect(() => {
-    // linesRef.current = lyricLines
-    listLayoutInfoRef.current.lineHeights = []
-    lineRef.current.prevLine = 0
-    lineRef.current.line = 0
-    if (!flatListRef.current) return
-    flatListRef.current.scrollToOffset({
-      offset: 0,
-      animated: false,
-    })
-    if (!lyricLines.length) return
-    playLineRef.current?.updateLyricLines(lyricLines)
-    requestAnimationFrame(() => {
-      if (isFirstSetLrc.current) {
-        isFirstSetLrc.current = false
-        setTimeout(() => {
-          isPauseScrollRef.current = false
-          handleScrollToActive()
-        }, 100)
-      } else {
-        if (delayScrollTimeout.current) clearTimeout(delayScrollTimeout.current)
-        delayScrollTimeout.current = setTimeout(() => {
-          handleScrollToActive(0)
-        }, 100)
-      }
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lyricLines])
-
-  useEffect(() => {
-    if (line < 0) return
-    lineRef.current.prevLine = lineRef.current.line
-    lineRef.current.line = line
-    if (!flatListRef.current || isPauseScrollRef.current) return
-
-    if (line - lineRef.current.prevLine != 1) {
-      handleScrollToActive()
-      return
-    }
-
-    delayScrollTimeout.current = setTimeout(() => {
-      delayScrollTimeout.current = null
-      handleScrollToActive()
-    }, 600)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [line])
-
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      playLineRef.current?.updateLayoutInfo(listLayoutInfoRef.current)
-      playLineRef.current?.updateLyricLines(lyricLines)
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isShowLyricProgressSetting])
-
-  const handleScrollToIndexFailed: FlatListType['onScrollToIndexFailed'] = (info) => {
-    // 目标行还没进入渲染窗口：先按平均行高滚到它前一点，把它带进窗口，
-    // 再走正常的测量/居中逻辑
-    const offset = Math.max(
-      0,
-      listLayoutInfoRef.current.spaceHeight + info.averageItemLength * (info.index - INITIAL_LYRIC_LINES),
-    )
-    try {
-      flatListRef.current?.scrollToOffset({ offset, animated: false })
-    } catch {}
-    void wait().then(() => {
-      handleScrollToActive(info.index)
-    })
-  }
-
-  const handleLineLayout = useCallback<LineProps['onLayout']>((lineNum, height) => {
-    listLayoutInfoRef.current.lineHeights[lineNum] = height
-    playLineRef.current?.updateLayoutInfo(listLayoutInfoRef.current)
-  }, [])
-
-  const handleSpaceLayout = useCallback(({ nativeEvent }: LayoutChangeEvent) => {
-    listLayoutInfoRef.current.spaceHeight = nativeEvent.layout.height
-    playLineRef.current?.updateLayoutInfo(listLayoutInfoRef.current)
-  }, [])
-
-  const handlePlayLine = useCallback((time: number) => {
-    playLineRef.current?.setVisible(false)
-    global.app_event.setProgress(time)
-  }, [])
+  const {
+    flatListRef, playLineRef, ready,
+    handleScroll, handleLineLayout, handleSpaceLayout, handleLayout, handlePlayLine,
+    handleScrollBeginDrag, handleScrollEndDrag, handleMomentumScrollBegin, handleMomentumScrollEnd,
+    handleScrollToIndexFailed, handleContentSizeChange,
+  } = useLyricScroll(lyricLines, line, isShowLyricProgressSetting)
 
   const renderItem: FlatListType['renderItem'] = ({ item, index }) => {
     return (
@@ -286,13 +101,17 @@ export default () => {
         data={lyricLines}
         renderItem={renderItem}
         keyExtractor={getkey}
-        style={styles.container}
+        style={[styles.container, { opacity: ready ? 1 : 0 }]}
         ref={flatListRef}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={spaceComponent}
         ListFooterComponent={spaceComponent}
         onScrollBeginDrag={handleScrollBeginDrag}
-        onScrollEndDrag={onScrollEndDrag}
+        onScrollEndDrag={handleScrollEndDrag}
+        onMomentumScrollBegin={handleMomentumScrollBegin}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        onLayout={handleLayout}
+        onContentSizeChange={handleContentSizeChange}
         fadingEdgeLength={100}
         initialNumToRender={INITIAL_LYRIC_LINES}
         onScrollToIndexFailed={handleScrollToIndexFailed}

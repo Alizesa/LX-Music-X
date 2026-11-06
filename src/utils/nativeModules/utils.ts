@@ -2,6 +2,13 @@ import { AppState, NativeEventEmitter, NativeModules } from 'react-native'
 
 const { UtilsModule } = NativeModules
 
+export const supportsScrollAnimationCancellation = typeof UtilsModule.stopScrollAnimation === 'function'
+
+export const stopScrollAnimation = async(viewTag: number): Promise<void> => {
+  if (!supportsScrollAnimationCancellation) return
+  return UtilsModule.stopScrollAnimation(viewTag) as Promise<void>
+}
+
 export const exitApp = UtilsModule.exitApp
 
 export const getSupportedAbis = UtilsModule.getSupportedAbis

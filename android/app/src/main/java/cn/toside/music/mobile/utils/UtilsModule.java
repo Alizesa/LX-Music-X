@@ -27,6 +27,9 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.bridge.WritableNativeArray;
+import com.facebook.react.uimanager.IllegalViewOperationException;
+import com.facebook.react.uimanager.UIManagerModule;
+import com.facebook.react.views.scroll.ReactScrollView;
 
 import java.io.File;
 import java.util.Locale;
@@ -62,6 +65,35 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
   @ReactMethod
   public void cancelRemoteAudioProbe(String id) {
     audioProbes.cancel(id);
+  }
+
+  @ReactMethod
+  public void stopScrollAnimation(int viewTag, Promise promise) {
+    UIManagerModule uiManager = reactContext.getNativeModule(UIManagerModule.class);
+    if (uiManager == null) {
+      promise.reject("E_SCROLL_UI_MANAGER", "Scroll UI manager is unavailable");
+      return;
+    }
+    // UIBlock 排在已提交的滚动命令之后；完成后 JS 才能发送新的定位。
+    uiManager.addUIBlock(nativeViewHierarchyManager -> {
+      try {
+        android.view.View view = nativeViewHierarchyManager.resolveView(viewTag);
+        if (!(view instanceof ReactScrollView)) {
+          promise.reject("E_SCROLL_VIEW", "Expected a ReactScrollView");
+          return;
+        }
+        ReactScrollView scrollView = (ReactScrollView) view;
+        // RN 0.73 的 abortAnimation 只停止 OverScroller，ObjectAnimator 要单独取消。
+        scrollView.getFlingAnimator().cancel();
+        scrollView.abortAnimation();
+        scrollView.getReactScrollViewScrollState().setFinalAnimatedPositionScroll(
+            scrollView.getScrollX(), scrollView.getScrollY());
+        promise.resolve(null);
+      } catch (IllegalViewOperationException ignored) {
+        // 页面已经卸载，没有仍需停止的滚动视图。
+        promise.resolve(null);
+      }
+    });
   }
 
   @Override
