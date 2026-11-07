@@ -22,6 +22,7 @@ const searchSettingKey = storageDataPrefix.searchSetting
 const searchHistoryListKey = storageDataPrefix.searchHistoryList
 export const getSearchResultCache = async<T>(key: string) => getData<T>(storageDataPrefix.searchResultsCache + key)
 export const saveSearchResultCache = async(key: string, value: unknown) => saveData(storageDataPrefix.searchResultsCache + key, value)
+export const removeSearchResultCache = async(key: string) => removeData(storageDataPrefix.searchResultsCache + key)
 const listPrefix = storageDataPrefix.list
 const dislikeListPrefix = storageDataPrefix.dislikeList
 const userApiPrefix = storageDataPrefix.userApi

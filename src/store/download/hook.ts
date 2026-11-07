@@ -38,7 +38,13 @@ export const useDownloadTasks = () => {
   const retryRef = useRef<(() => void) | null>(null)
   const visible = useScreenVisible()
   useEffect(() => {
-    if (!visible) return
+    if (!visible) {
+      // 卸掉 UI 持有的历史明细，保留展开范围，返回时从本地重新读取。
+      setTasks([])
+      setLoading(false)
+      setError(false)
+      return
+    }
     let version = 0
     retainDownloadList()
     const read = (offset: number, size: number, append: boolean) => {

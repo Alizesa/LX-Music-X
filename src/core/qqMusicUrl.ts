@@ -63,6 +63,8 @@ const getDurationMs = (interval: string | null): number => {
 interface AccountUrlOptions {
   isRefresh?: boolean
   onCancel?: (cancel: () => void) => void
+  /** 下载必须保持指定音质；播放默认允许依次降档。 */
+  allowQualityFallback?: boolean
 }
 
 const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal: AbortSignal, isRefresh: boolean): Promise<string | null> => {
@@ -194,6 +196,7 @@ export const getQQMusicUrlByAccount = async(
     const { cookie } = await withAbort(getQQMusicSession(), signal)
     if (!cookie) return null
     const order = buildTryOrder(preferredQuality, maxQuality)
+      .filter(quality => options.allowQualityFallback !== false || quality === (preferredQuality ?? maxQuality))
     const mediaMid = String(meta.strMediaMid ?? '').trim()
     const expectedMs = getDurationMs(musicInfo.interval)
     for (const quality of order) {

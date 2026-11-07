@@ -1,6 +1,5 @@
 import { addListMusics, removeListMusics } from '@/core/list'
 import { getLyricInfo, getMusicUrl, getPicPath } from '@/core/music'
-import { getPlayQuality } from '@/core/music/utils'
 import { LIST_IDS } from '@/config/constant'
 import settingState from '@/store/setting/state'
 import { filterFileName } from '@/utils'
@@ -420,7 +419,12 @@ const handleNativeUpdate = (state: NativeDownloadState) => {
 
 const reconcileTask = async(task: LX.Download.DownloadTask) => {
   if (task.status == 'completed' || task.status == 'pause') return
-  if (resumeFinalization(task) || !task.nativeId) return
+  if (resumeFinalization(task)) return
+  if (!task.nativeId) {
+    // 取链尚未完成时退出，重启后没有原生 work 可恢复，需要重新进入取链队列。
+    if (task.status === 'resolving') task.status = 'waiting'
+    return
+  }
   const nativeId = task.nativeId
   try {
     const state = await getDownloadState(nativeId)
@@ -648,8 +652,9 @@ export const addTasks = async(musicInfos: LX.Music.MusicInfoOnline[], quality: L
   // 320k 的预期大小去比，判成「可能下错了音质」把任务废掉。
   const accountOnlyStandard = settingState.setting['player.noVipStandardQuality'] &&
     settingState.setting['download.urlSource'] === 'account'
+  // 文件名、大小校验和各音源请求使用同一音质；不能按主音源能力提前降档。
+  const targetQuality = accountOnlyStandard ? '128k' : quality
   for (const musicInfo of musicInfos) {
-    const targetQuality = accountOnlyStandard ? '128k' : getPlayQuality(quality, musicInfo)
     const id = toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`)
     if (existing.has(id)) continue
     existing.add(id)

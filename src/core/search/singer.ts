@@ -1,7 +1,7 @@
 import searchSingerState, { type SingerItem } from '@/store/search/singer/state'
 import searchSingerActions, { type SearchResult } from '@/store/search/singer/action'
 import musicSdk from '@/utils/musicSdk'
-import { restoreSearchResult } from './cache'
+import { invalidateSearchResult, restoreSearchResult } from './cache'
 import { beginSearchRequest, finishSearchRequest } from './request'
 
 export const setSearchText: typeof searchSingerActions['setSearchText'] = (text) => {
@@ -27,6 +27,7 @@ export const search = async(text: string, page: number, isRefresh = false): Prom
       if (signal.aborted) return null
       const list = searchSingerActions.setListInfo(result, page, text)
       listInfo.key = key
+      if (page === 1) invalidateSearchResult('singer', 'tx')
       return list
     }).catch((err: any) => {
       if (signal.aborted) return null

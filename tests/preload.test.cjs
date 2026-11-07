@@ -150,6 +150,32 @@ test('with no selected scripts, account fallback does not trigger pointless cros
   assert.equal(searches, 0)
 })
 
+test('a lower-quality account result advances to the selected source for downloads while playback may use it', async() => {
+  const source = priorityHarness(async(id, music, quality) => ({ url: `https://audio.test/${id}`, type: quality }))
+  const options = []
+  const api = load('src/core/music/utils.ts', {
+    '@/utils/musicSdk': {}, '@/utils/data': {}, '@/utils': {},
+    '@/store/setting/state': { default: { setting: { ...settings(), 'player.playQuality': 'flac' } } },
+    '@/utils/message': message, 'react-native-background-timer': {}, '@/utils/musicSdk/api-source': {},
+    '@/core/qqMusicUrl': { getQQMusicUrlByAccount: async(music, preferred, max, opts) => {
+      options.push(opts)
+      return { url: 'https://audio.test/account.mp3', quality: '128k' }
+    } },
+    '@/config/constant': {}, './sourcePriority': source.api,
+  }, { global: { lx: { qualityList: { tx: ['flac', '128k'] } } } })
+  const request = { musicInfo: song('one'), isRefresh: true, allowToggleSource: false, urlSourceOrder: 'accountFirst', onToggleSource() {} }
+  const download = await api.handleGetOnlineMusicUrl({ ...request, quality: 'flac' })
+  assert.equal(download.quality, 'flac')
+  assert.equal(download.url, 'https://audio.test/user_api_a')
+  assert.equal(options[0].allowQualityFallback, false)
+  assert.deepEqual(source.calls, ['user_api_a'])
+  const playback = await api.handleGetOnlineMusicUrl(request)
+  assert.equal(playback.quality, '128k')
+  assert.equal(playback.url, 'https://audio.test/account.mp3')
+  assert.equal(options[1].allowQualityFallback, true)
+  assert.equal(source.calls.length, 1)
+})
+
 const preloadHarness = ({ local = false, resolveGate, cacheHeadGate, nativeAvailable = true, cacheWritable = true } = {}) => {
   const setting = settings()
   const resolutions = [], cacheCalls = [], cancelledCache = [], failed = new Set()

@@ -1,7 +1,7 @@
 import searchAlbumState, { type AlbumItem } from '@/store/search/album/state'
 import searchAlbumActions, { type SearchResult } from '@/store/search/album/action'
 import musicSdk from '@/utils/musicSdk'
-import { restoreSearchResult } from './cache'
+import { invalidateSearchResult, restoreSearchResult } from './cache'
 import { beginSearchRequest, finishSearchRequest } from './request'
 
 export const setSearchText: typeof searchAlbumActions['setSearchText'] = (text) => {
@@ -27,6 +27,7 @@ export const search = async(text: string, page: number, isRefresh = false): Prom
       if (signal.aborted) return null
       const list = searchAlbumActions.setListInfo(result, page, text)
       listInfo.key = key
+      if (page === 1) invalidateSearchResult('album', 'tx')
       return list
     }).catch((err: any) => {
       if (signal.aborted) return null

@@ -3,6 +3,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
 const { test } = require('node:test')
+const { EventEmitter } = require('node:events')
+const { createHash } = require('node:crypto')
 const ts = require('typescript')
 
 const compiled = new Map()
@@ -126,12 +128,17 @@ const activeTask = id => ({
   progress: { progress: 0, downloaded: 0, total: 0, speed: '' },
   musicInfo: { id, name: id, singer: 'Artist', source: 'tx', interval: '03:00', meta: { albumName: 'Album', _qualitys: {} } },
 })
-const downloadHarness = ({ count = 0, active = [], nativeState = async() => null, tags = async() => {}, url = async() => 'https://fixture.test/audio', enqueue = async() => 'work-new' } = {}) => {
+const downloadHarness = ({ count = 0, active = [], nativeState = async() => null, tags = async() => {}, url = async() => 'https://fixture.test/audio', enqueue = async() => 'work-new', setting = {} } = {}) => {
   const h = historyHarness({ count })
   const clock = timers()
   let nativeUpdate
   let savedActive = copy(active)
   const events = [], localWrites = [], deleted = [], nativeQueries = [], tagWrites = [], urlRequests = []
+  const app = Object.assign(new EventEmitter(), {
+    downloadListUpdate() { events.push(['list']); this.emit('downloadListUpdate') },
+    downloadCountUpdate(count) { events.push(['count', count]); this.emit('downloadCountUpdate', count) },
+    downloadTaskUpdate(item) { events.push(['item', copy(item)]); this.emit('downloadTaskUpdate', item) },
+  })
   const data = {
     getDownloadTasksMigrated: async() => true, removeDownloadTasks: async() => {},
     getDownloadActiveTasks: async() => copy(savedActive),
@@ -141,8 +148,9 @@ const downloadHarness = ({ count = 0, active = [], nativeState = async() => null
   const api = load('src/core/download.ts', {
     '@/core/list': { addListMusics: async(id, items) => { localWrites.push(copy(items)) }, removeListMusics: async() => {} },
     '@/core/music': { getPicPath: async() => null, getLyricInfo: async() => null, getMusicUrl: async info => { urlRequests.push(info); return url(info) } },
-    '@/core/music/utils': {}, '@/config/constant': constants,
-    '@/store/setting/state': { default: { setting: {} } }, '@/utils': {}, '@/utils/lrcTools': {},
+    '@/config/constant': constants,
+    '@/store/setting/state': { default: { setting: { 'download.fileName': '歌名 - 歌手', 'download.quality': '320k', ...setting } } },
+    '@/utils': { filterFileName: name => name }, '@/utils/lrcTools': {},
     '@/utils/data': data, './downloadHistory': h.api,
     '@/utils/fs': { privateStorageDirectoryPath: '/private', temporaryDirectoryPath: '/temp', unlink: async file => { deleted.push(file) } },
     '@/utils/localMediaMetadata': { writeDownloadMetadata: async(...args) => { tagWrites.push(args); await tags(...args) } },
@@ -152,19 +160,60 @@ const downloadHarness = ({ count = 0, active = [], nativeState = async() => null
       enqueueDownload: enqueue,
       removeDownload: async() => {}, pauseDownload: async() => {},
     },
-    '@/utils/tools': {}, '@/utils/common': {},
+    '@/utils/tools': { toMD5: value => createHash('md5').update(value).digest('hex') }, '@/utils/common': {},
   }, {
     ...clock,
-    global: { i18n: { t: key => key }, app_event: {
-      downloadListUpdate: () => events.push(['list']),
-      downloadCountUpdate: count => events.push(['count', count]),
-      downloadTaskUpdate: item => events.push(['item', copy(item)]),
-    } },
+    global: { i18n: { t: key => key }, lx: { qualityList: { tx: ['128k'] } }, app_event: app },
   })
-  return { ...h, api, historyApi: h.api, clock, events, localWrites, deleted, nativeQueries, tagWrites, urlRequests, activeData: data,
+  return { ...h, api, historyApi: h.api, clock, app, events, localWrites, deleted, nativeQueries, tagWrites, urlRequests, activeData: data,
     update: state => nativeUpdate(state), savedActive: () => savedActive }
 }
 const completed = id => ({ taskId: id, nativeId: `work-${id}`, status: 'completed', downloaded: 100, total: 100, filePath: `content://fixture/${id}` })
+
+test('download filenames and source requests keep FLAC even when the primary source only supports 128k', async() => {
+  const h = downloadHarness()
+  const song = activeTask('flac-song').musicInfo
+  song.meta._qualitys = { flac: { size: '20M' }, '128k': { size: '3M' } }
+  const [id] = await h.api.addTasks([song], 'flac')
+  await flush()
+  const task = h.savedActive().find(item => item.id === id)
+  assert.equal(task.quality, 'flac')
+  assert.match(task.fileName, /\.flac$/)
+  assert.deepEqual(h.urlRequests.map(request => request.quality), ['flac'])
+  assert.equal((await h.api.addTasks([song], 'flac')).length, 0)
+  assert.equal(h.urlRequests.length, 1)
+})
+
+test('the explicit standard-quality account preference still applies to download tasks', async() => {
+  const h = downloadHarness({ setting: { 'download.urlSource': 'account', 'player.noVipStandardQuality': true } })
+  await h.api.addTasks([activeTask('standard-song').musicInfo], 'flac')
+  await flush()
+  assert.equal(h.savedActive()[0].quality, '128k')
+  assert.match(h.savedActive()[0].fileName, /\.mp3$/)
+  assert.equal(h.urlRequests[0].quality, '128k')
+  assert.equal(h.urlRequests[0].urlSourceOrder, 'accountFirst')
+})
+
+test('startup resumes unfinished URL resolution once without restarting paused or failed downloads', async() => {
+  const h = downloadHarness({ active: ['resolving', 'pause', 'error'].map(status => ({ ...activeTask(status), status, nativeId: undefined })) })
+  await Promise.all([h.api.initDownloads(), h.api.initDownloads(), h.api.getDownloadCount()])
+  await flush()
+  assert.deepEqual(h.urlRequests.map(request => request.musicInfo.id), ['resolving'])
+  assert.equal(h.nativeQueries.length, 0)
+  assert.equal(h.savedActive().find(task => task.id === 'resolving').nativeId, 'work-new')
+  assert.equal(h.api.getDownloadTaskItem('pause').status, 'pause')
+  assert.equal(h.api.getDownloadTaskItem('error').status, 'error')
+})
+
+test('startup reconciles a resolving snapshot with an existing worker instead of resolving another URL', async() => {
+  const h = downloadHarness({ active: [{ ...activeTask('existing'), status: 'resolving' }],
+    nativeState: async nativeId => ({ nativeId, status: 'run', downloaded: 30, total: 100 }) })
+  await h.api.initDownloads()
+  await flush()
+  assert.equal(h.urlRequests.length, 0)
+  assert.deepEqual(h.nativeQueries, ['work-existing'])
+  assert.equal(h.api.getDownloadTaskItem('existing').status, 'run')
+})
 
 test('four progress events create no history snapshots, list refreshes or count updates', async() => {
   const h = downloadHarness({ count: 10000,
@@ -444,22 +493,136 @@ test('cancelling during QQ signing never starts an HTTP request', async() => {
 const searchCacheHarness = () => {
   const clock = timers()
   const empty = () => ({ key: null, list: [], page: 0, limit: 30, maxPage: 0, total: 0 })
-  const music = { listInfos: { tx: empty(), kw: empty(), all: empty() }, maxPages: {}, source: 'tx', searchText: '' }
-  const songlist = { listInfos: { tx: empty() }, maxPages: {}, source: 'tx', searchText: '' }
+  const music = { listInfos: { tx: empty(), kw: empty(), all: empty() }, sources: ['all', 'tx', 'kw'], maxPages: {}, source: 'tx', searchText: '' }
+  const songlist = { listInfos: { tx: empty(), kw: empty(), all: empty() }, sources: ['all', 'tx', 'kw'], maxPages: {}, source: 'tx', searchText: '' }
   const singer = { listInfo: empty(), searchText: '' }, album = { listInfo: empty(), searchText: '' }
   const disk = new Map()
   const data = {
     getSearchResultCache: async key => copy(disk.get(key)),
     saveSearchResultCache: async(key, value) => { disk.set(key, copy(value)) },
+    removeSearchResultCache: async key => { disk.delete(key) },
   }
   const request = load('src/core/search/request.ts')
-  const api = load('src/core/search/cache.ts', {
+  const createApi = () => load('src/core/search/cache.ts', {
     '@/store/search/music/state': { default: music }, '@/store/search/songlist/state': { default: songlist },
     '@/store/search/singer/state': { default: singer }, '@/store/search/album/state': { default: album },
     '@/utils/data': data, './request': request,
   }, clock)
-  return { api, music, songlist, singer, album, disk, data, request, clock }
+  return { api: createApi(), createApi, music, songlist, singer, album, disk, data, request, clock }
 }
+
+const searchResultHarness = (kind = 'music', source = 'tx', respond = async() => []) => {
+  const h = searchCacheHarness()
+  const state = h[kind]
+  const info = state.listInfos ? state.listInfos[source] : state.listInfo
+  const actions = load(`src/store/search/${kind}/action.ts`, {
+    './state': { default: state },
+    '@/utils/common': { sortInsert: (list, item) => list.push(item), similar: () => 0, arrPush: (list, items) => list.push(...items) },
+    '@/utils': { toNewMusicInfo: item => item, deduplicationList: list => [...new Map(list.map(item => [item.id, item])).values()] },
+  })
+  const requests = []
+  const request = async source => {
+    requests.push(source)
+    const list = await respond(source)
+    return { list, total: list.length, allPage: Math.ceil(list.length / 30), limit: 30, source }
+  }
+  const sdk = Object.fromEntries(['tx', 'kw'].map(source => [source, {
+    musicSearch: { search: () => request(source), searchSinger: () => request(source), searchAlbum: () => request(source) },
+    songList: { search: () => request(source) },
+  }]))
+  const api = load(`src/core/search/${kind}.ts`, {
+    [`@/store/search/${kind}/state`]: { default: state }, [`@/store/search/${kind}/action`]: actions,
+    '@/utils/musicSdk': { default: sdk }, './cache': h.api, './request': h.request,
+  })
+  const seed = async() => {
+    Object.assign(info, { list: [{ id: 'old', mid: 'old' }], key: kind === 'songlist' ? `1__${source}__query` : '1__query', page: 1, total: 1, maxPage: 1 })
+    await h.api.releaseIdleSearchCaches()
+    await h.api.restoreSearchResult(kind, source, 'query')
+  }
+  const search = (refresh = false) => state.listInfos ? api.search('query', 1, source, refresh) : api.search('query', 1, refresh)
+  return { ...h, info, requests, seed, search, diskKey: `${kind}_${source}` }
+}
+
+for (const [kind, source] of [['music', 'tx'], ['music', 'all'], ['songlist', 'tx'], ['songlist', 'all'], ['singer', 'tx'], ['album', 'tx']]) {
+  test(`${kind}/${source}: empty refresh invalidates the old disk result, including after restart`, async() => {
+    const h = searchResultHarness(kind, source)
+    await h.seed()
+    assert.equal((await h.search(true)).length, 0)
+    await h.api.releaseIdleSearchCaches()
+    assert.equal(h.disk.has(h.diskKey), false)
+    assert.equal(await h.createApi().restoreSearchResult(kind, source, 'query'), false)
+    assert.equal((await h.search()).length, 0)
+    assert.equal(h.requests.length, source === 'all' ? 4 : 2)
+  })
+}
+
+for (const [kind, source] of [['music', 'tx'], ['music', 'all'], ['songlist', 'all']]) {
+  test(`${kind}/${source}: a failed refresh preserves the previous disk result for recovery`, async() => {
+    const h = searchResultHarness(kind, source, async() => { throw new Error('offline') })
+    await h.seed()
+    await assert.rejects(h.search(true), /offline/)
+    assert.equal(h.disk.has(h.diskKey), true)
+    h.info.list = []
+    h.info.key = null
+    assert.equal(await h.createApi().restoreSearchResult(kind, source, 'query'), true)
+    assert.equal(h.info.list[0].id, 'old')
+  })
+}
+
+for (const kind of ['music', 'songlist']) {
+  test(`${kind}: aggregate search still accepts successful results when another source fails`, async() => {
+    const h = searchResultHarness(kind, 'all', async source => {
+      if (source === 'kw') throw new Error('offline')
+      return [{ id: 'fresh', name: 'Fresh result' }]
+    })
+    await h.seed()
+    assert.deepEqual(Array.from(await h.search(true), item => item.id), ['fresh'])
+    assert.equal(h.requests.length, 2)
+  })
+}
+
+test('a cancelled search cannot invalidate its previous disk result when an empty response arrives late', async() => {
+  const gate = deferred()
+  const h = searchResultHarness('music', 'tx', () => gate.promise)
+  await h.seed()
+  const pending = h.search(true)
+  await flush()
+  const signal = h.request.beginSearchRequest('album')
+  gate.resolve([])
+  assert.equal(await pending, null)
+  assert.equal(h.info.list[0].id, 'old')
+  assert.equal(h.disk.get(h.diskKey).info.list[0].id, 'old')
+  h.request.finishSearchRequest('album', signal)
+})
+
+test('an empty search result removes a stale snapshot even when that snapshot is still being written', async() => {
+  const h = searchResultHarness()
+  await h.seed()
+  const gate = deferred(), save = h.data.saveSearchResultCache
+  h.data.saveSearchResultCache = async(...args) => { await gate.promise; await save(...args) }
+  const evicting = h.api.releaseIdleSearchCaches()
+  await flush()
+  assert.equal((await h.search(true)).length, 0)
+  gate.resolve()
+  await evicting
+  await flush()
+  assert.equal(h.disk.has(h.diskKey), false)
+  assert.equal(await h.createApi().restoreSearchResult('music', 'tx', 'query'), false)
+})
+
+test('failed snapshot removal cannot revive old results, and a later successful save remains reusable', async() => {
+  let rows = []
+  const h = searchResultHarness('music', 'tx', async() => rows)
+  await h.seed()
+  h.data.removeSearchResultCache = async() => { throw new Error('storage unavailable') }
+  assert.equal((await h.search(true)).length, 0)
+  assert.equal(await h.api.restoreSearchResult('music', 'tx', 'query'), false)
+  rows = [{ id: 'new' }]
+  await h.search(true)
+  await h.api.releaseIdleSearchCaches()
+  assert.equal(await h.api.restoreSearchResult('music', 'tx', 'query'), true)
+  assert.equal(h.info.list[0].id, 'new')
+})
 
 test('idle search eviction preserves visible results and restores pagination without a network request', async() => {
   const h = searchCacheHarness()
@@ -559,6 +722,11 @@ const hookHost = () => {
       const frame = current, index = frame.cursor++
       return frame.slots[index] ??= { current: initial }
     },
+    useCallback(callback, deps) {
+      const slot = react.useRef({ callback, deps })
+      if (!deps.every((value, i) => Object.is(value, slot.current.deps[i]))) slot.current = { callback, deps }
+      return slot.current.callback
+    },
   }
   return {
     react,
@@ -575,6 +743,87 @@ const hookHost = () => {
     },
   }
 }
+
+const downloadHookHarness = options => {
+  const h = downloadHarness(options)
+  const host = hookHost(), frame = host.frame()
+  const hooks = load('src/store/download/hook.ts', {
+    react: host.react, './state': { default: { count: 0 } }, '@/core/download': h.api,
+    '@/utils/hooks/useScreenVisible': { useScreenVisible: host.visible },
+  }, { global: { app_event: h.app } })
+  return { ...h, frame, render: () => host.render(frame, hooks.useDownloadTasks) }
+}
+
+test('hidden download pages release all expanded rows and restore their range from local storage', async() => {
+  const h = downloadHookHarness({ count: 1100 })
+  h.render()
+  await flush()
+  let view = h.render()
+  for (let page = 1; page < 10; page++) { view.loadMore(); await flush(); view = h.render() }
+  assert.equal(view.tasks.length, 1000)
+  h.frame.visible = false
+  h.render()
+  view = h.render()
+  assert.equal(view.tasks.length, 0)
+  assert.equal(h.app.listenerCount('downloadListUpdate'), 0)
+  assert.equal(h.app.listenerCount('downloadCountUpdate'), 0)
+  const reads = h.reads.length
+  h.app.downloadListUpdate()
+  await flush()
+  assert.equal(h.reads.length, reads)
+  h.frame.visible = true
+  h.render()
+  await flush()
+  view = h.render()
+  assert.equal(view.tasks.length, 1000)
+  assert.equal(view.count, 1100)
+  view.loadMore()
+  await flush()
+  view = h.render()
+  assert.equal(view.tasks.length, 1100)
+  assert.equal(new Set(view.tasks.map(task => task.id)).size, 1100)
+})
+
+test('a page read that finishes after hiding cannot retain rows or skip the next page on return', async() => {
+  const h = downloadHookHarness({ count: 300 })
+  h.render()
+  await flush()
+  const gate = deferred(), read = h.data.getDownloadHistoryItems
+  h.data.getDownloadHistoryItems = async keys => { await gate.promise; return read(keys) }
+  h.render().loadMore()
+  await flush()
+  h.frame.visible = false
+  h.render()
+  gate.resolve()
+  await flush()
+  assert.equal(h.render().tasks.length, 0)
+  h.frame.visible = true
+  h.render()
+  await flush()
+  assert.equal(h.render().tasks.length, 100)
+  h.render().loadMore()
+  await flush()
+  assert.equal(h.render().tasks.length, 200)
+})
+
+test('downloads keep completing and archiving while their hidden page releases its rows', async() => {
+  const h = downloadHookHarness({ active: [activeTask('background')] })
+  h.render()
+  await flush()
+  assert.equal(h.render().tasks.length, 1)
+  h.frame.visible = false
+  h.render()
+  h.update(completed('background'))
+  await flush()
+  await h.clock.run(250)
+  assert.equal(h.render().tasks.length, 0)
+  assert.equal(h.savedActive().length, 0)
+  assert.equal(h.records.size, 1)
+  h.frame.visible = true
+  h.render()
+  await flush()
+  assert.equal(h.render().tasks[0].status, 'completed')
+})
 
 const bufferHarness = (getBuffered = async() => 50, getState = async() => 'playing') => {
   const host = hookHost()

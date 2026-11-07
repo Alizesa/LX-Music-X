@@ -377,14 +377,17 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   const byAccountUrl = async() => {
     if (musicInfo.source != 'tx') return null
     try {
-      const byAccount = await getQQMusicUrlByAccount(musicInfo, accountQuality, accountQuality, { isRefresh, onCancel: registerCancel })
+      const byAccount = await getQQMusicUrlByAccount(musicInfo, accountQuality, accountQuality, {
+        isRefresh,
+        onCancel: registerCancel,
+        allowQualityFallback: quality == null,
+      })
       assertActive()
-      if (byAccount) {
-        if (isMusicUrlFailed(byAccount.url) || rejectedUrls?.has(byAccount.url)) return null
-        await validateUrl?.(byAccount.url)
-        assertActive()
-      }
-      return byAccount ? { musicInfo, url: byAccount.url, quality: byAccount.quality, isFromCache: false } : null
+      if (!byAccount || (quality != null && byAccount.quality !== quality)) return null
+      if (isMusicUrlFailed(byAccount.url) || rejectedUrls?.has(byAccount.url)) return null
+      await validateUrl?.(byAccount.url)
+      assertActive()
+      return { musicInfo, url: byAccount.url, quality: byAccount.quality, isFromCache: false }
     } catch (error) {
       assertActive()
       if (isRequestCancelled(error)) throw error

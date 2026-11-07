@@ -206,6 +206,24 @@ test('quality downgrade happens only after both account channels, respecting the
   assert.equal(wrongQuality.probes.length, 0)
 })
 
+test('an exact download quality tries both account channels without requesting a lower-quality ticket', async() => {
+  const h = harness({ ticket: param => response(param.filename[0].startsWith('M500') ? 'M500media.mp3' : '') })
+  assert.equal(await h.resolve(song, 'flac', 'flac', { allowQualityFallback: false }), null)
+  assert.deepEqual(h.requests.map(req => [req.body.req_1.param.platform, req.body.req_1.param.filename[0]]), [
+    ['23', 'F000media.flac'], ['20', 'F000media.flac'],
+  ])
+  assert.equal(h.probes.length, 0)
+  const web = harness({ ticket: param => response(param.platform === '20' ? 'F000media.flac' : '') })
+  assert.equal((await web.resolve(song, 'flac', 'flac', { allowQualityFallback: false })).quality, 'flac')
+  assert.equal(web.requests.length, 2)
+})
+
+test('an unsupported exact account quality never borrows another format', async() => {
+  const h = harness()
+  assert.equal(await h.resolve(song, 'wav', 'wav', { allowQualityFallback: false }), null)
+  assert.equal(h.requests.length, 0)
+})
+
 test('cancelled requests and business rejections stop account retries', async() => {
   const cancelled = harness({ ticket: () => { throw new Error(message.requestMsg.cancelRequest) } })
   await assert.rejects(cancelled.resolve(), { message: message.requestMsg.cancelRequest })

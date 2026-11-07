@@ -1,7 +1,7 @@
 import searchMusicState, { type Source } from '@/store/search/music/state'
 import searchMusicActions, { type SearchResult } from '@/store/search/music/action'
 import musicSdk from '@/utils/musicSdk'
-import { restoreSearchResult } from './cache'
+import { invalidateSearchResult, restoreSearchResult } from './cache'
 import { beginSearchRequest, finishSearchRequest } from './request'
 
 export const setSource: typeof searchMusicActions['setSource'] = (source) => {
@@ -34,13 +34,19 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
     const key = `${page}__${text}`
     if (sourceId == 'all') {
       let task = []
+      let hadSuccess = false
+      let requestError: Error | null = null
       for (const source of searchMusicState.sources) {
         if (source == 'all') continue
         const sdk = musicSdk[source]?.musicSearch
         const request = source === 'tx'
           ? musicSdk.tx.musicSearch.search(text, page, searchMusicState.listInfos.all.limit, signal)
           : sdk?.search(text, page, searchMusicState.listInfos.all.limit)
-        task.push(((request as Promise<SearchResult>) ?? Promise.reject(new Error('source not found: ' + source))).catch((error: any) => {
+        task.push(((request as Promise<SearchResult>) ?? Promise.reject(new Error('source not found: ' + source))).then(result => {
+          hadSuccess = true
+          return result
+        }).catch((error: any) => {
+          requestError = error instanceof Error ? error : new Error(String(error))
           console.log(error)
           return {
             allPage: 1,
@@ -53,10 +59,13 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
       }
       return await Promise.all(task).then((results: SearchResult[]) => {
         if (signal.aborted) return null
+        // 全部请求失败不能当成空结果，否则刷新会错误删除仍可恢复的缓存。
+        if (!hadSuccess) throw requestError ?? new Error('Search failed')
         setSearchText(text)
         setSource(sourceId)
         const list = setListInfo(results, page, text)
         listInfo.key = key
+        if (page === 1) invalidateSearchResult('music', sourceId)
         return list
       })
     } else {
@@ -68,6 +77,7 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
         setSearchText(text)
         const list = setListInfo(data, page, text)
         listInfo.key = key
+        if (page === 1) invalidateSearchResult('music', sourceId)
         return list
       }) ?? Promise.reject(new Error('source not found: ' + sourceId))).catch((err: any) => {
         if (signal.aborted) return null

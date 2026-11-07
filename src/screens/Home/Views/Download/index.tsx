@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, type AlertButton, FlatList, TouchableOpacity, View } from 'react-native'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
@@ -8,6 +8,7 @@ import { getDownloadPath } from '@/utils/data'
 import { getDownloadIds, hasDownloadTask, isDownloadCompleted, pauseAllTasks, pauseTask, removeTasks, resumeAllTasks, retryTask, setDownloadDirectory } from '@/core/download'
 import { useDownloadItem, useDownloadTasks } from '@/store/download/hook'
 import { selectManagedFolder } from '@/utils/fs'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 const formatBytes = (value: number) => {
   if (!value) return ''
@@ -65,6 +66,26 @@ export default () => {
   const [directory, setDirectory] = useState<LX.Download.DownloadDirectory | null>(null)
   const [isMultiSelect, setIsMultiSelect] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const visible = useScreenVisible()
+  const listRef = useRef<FlatList<LX.Download.DownloadListItem>>(null)
+  const scrollOffset = useRef(0)
+  const restoringScroll = useRef(false)
+  const loadedCount = tasks.length
+
+  useEffect(() => {
+    if (!visible) restoringScroll.current = true
+  }, [visible])
+
+  // 明细回收后只保留一个偏移量，等本地数据和列表布局恢复，再回到原位置。
+  const restoreScroll = useCallback(() => {
+    if (visible && !loading && loadedCount && restoringScroll.current) {
+      listRef.current?.scrollToOffset({ offset: scrollOffset.current, animated: false })
+    }
+  }, [visible, loading, loadedCount])
+  useEffect(() => {
+    const frame = requestAnimationFrame(restoreScroll)
+    return () => { cancelAnimationFrame(frame) }
+  }, [restoreScroll])
 
   useEffect(() => { void getDownloadPath().then(setDirectory) }, [])
 
@@ -166,7 +187,21 @@ export default () => {
         <TouchableOpacity style={styles.toolbarButton} onPress={() => { void resumeAllTasks() }}><Icon name="play-outline" color={theme['c-button-font']} size={17} /><Text size={13}>{global.i18n.t('download_resume_all')}</Text></TouchableOpacity>
       </View>
       <FlatList
+        ref={listRef}
         data={tasks}
+        onContentSizeChange={restoreScroll}
+        scrollEventThrottle={100}
+        onScroll={({ nativeEvent }) => {
+          if (!visible) return
+          const offset = nativeEvent.contentOffset.y
+          if (restoringScroll.current) {
+            if (Math.abs(offset - scrollOffset.current) < 1) restoringScroll.current = false
+          } else scrollOffset.current = offset
+        }}
+        onScrollBeginDrag={({ nativeEvent }) => {
+          restoringScroll.current = false
+          scrollOffset.current = nativeEvent.contentOffset.y
+        }}
         initialNumToRender={12}
         windowSize={5}
         maxToRenderPerBatch={8}

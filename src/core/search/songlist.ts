@@ -1,7 +1,7 @@
 import searchSonglistState, { type Source, type ListInfoItem } from '@/store/search/songlist/state'
 import searchSonglistActions, { type SearchResult } from '@/store/search/songlist/action'
 import musicSdk from '@/utils/musicSdk'
-import { restoreSearchResult } from './cache'
+import { invalidateSearchResult, restoreSearchResult } from './cache'
 import { beginSearchRequest, finishSearchRequest } from './request'
 
 export const setSource: typeof searchSonglistActions['setSource'] = (source) => {
@@ -35,9 +35,15 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
     if (!isRefresh && listInfo.key == key && listInfo.list.length) return listInfo.list
     if (sourceId == 'all') {
       let task = []
+      let hadSuccess = false
+      let requestError: Error | null = null
       for (const source of searchSonglistState.sources) {
         if (source == 'all' || (page > 1 && page > (searchSonglistState.maxPages[source]!))) continue
-        task.push(((musicSdk[source]?.songList.search(text, page, searchSonglistState.listInfos.all.limit) as Promise<SearchResult>) ?? Promise.reject(new Error('source not found: ' + source))).catch((error: any) => {
+        task.push(((musicSdk[source]?.songList.search(text, page, searchSonglistState.listInfos.all.limit) as Promise<SearchResult>) ?? Promise.reject(new Error('source not found: ' + source))).then(result => {
+          hadSuccess = true
+          return result
+        }).catch((error: any) => {
+          requestError = error instanceof Error ? error : new Error(String(error))
           console.log(error)
           return {
             list: [],
@@ -49,10 +55,13 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
       }
       return await Promise.all(task).then((results: SearchResult[]) => {
         if (signal.aborted) return null
+        // 翻页跳过已结束的音源时可以没有请求；已发出的请求全失败则保留旧结果。
+        if (task.length && !hadSuccess) throw requestError ?? new Error('Search failed')
         setSearchText(text)
         setSource(sourceId)
         const list = setListInfo(results, page, text)
         listInfo.key = key
+        if (page === 1) invalidateSearchResult('songlist', sourceId)
         return list
       })
     } else {
@@ -62,6 +71,7 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
         setSearchText(text)
         const list = setListInfo(data, page, text)
         listInfo.key = key
+        if (page === 1) invalidateSearchResult('songlist', sourceId)
         return list
       }) ?? Promise.reject(new Error('source not found: ' + sourceId))).catch((err: any) => {
         if (signal.aborted) return null
