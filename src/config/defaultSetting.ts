@@ -9,7 +9,6 @@ const defaultSetting: LX.AppSetting = {
   'common.shareType': 'system',
   'common.isAgreePact': false,
   'common.autoHidePlayBar': true,
-  'common.homePageScroll': true,
   // 默认关闭：不用底栏拖进度时，那一行整行都可以点开播放详情（见 PlayInfo.tsx）
   'common.allowProgressBarSeek': false,
   'common.useSystemFileSelector': true,

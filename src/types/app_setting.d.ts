@@ -49,11 +49,6 @@ declare global {
       'common.autoHidePlayBar': boolean
 
       /**
-       * 启用首页滑动
-       */
-      'common.homePageScroll': boolean
-
-      /**
        * 允许通过底栏进度条调整进度
        */
       'common.allowProgressBarSeek': boolean

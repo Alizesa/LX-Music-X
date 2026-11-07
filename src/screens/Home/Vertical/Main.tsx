@@ -7,7 +7,6 @@ import { createStyle } from '@/utils/tools'
 import PagerView, { type PageScrollStateChangedNativeEvent, type PagerViewOnPageSelectedEvent } from 'react-native-pager-view'
 import { setNavActiveId } from '@/core/common'
 import { setHomePagerScrollHandler } from '@/core/homePagerScroll'
-import settingState from '@/store/setting/state'
 import { type NAV_ID_Type } from '@/config/constant'
 import { useNavActiveId } from '@/store/common/hook'
 import { VisibilityBoundary } from '@/utils/hooks/useScreenVisible'
@@ -45,10 +44,9 @@ const Main = () => {
 
   // 首页里的横向滚动块触摸时，临时关掉 PagerView 的横滑：
   // 不关的话 Android 的原生 ViewPager 会先把手势吃掉，结果就是切到「我的」页，
-  // 或者内层横向列表一动不动。触摸结束再按用户设置恢复。
+  // 或者内层横向列表一动不动。触摸结束再恢复首页横滑。
   const onHorizontalScroll = useCallback((active: boolean) => {
-    const enabled = !active && settingState.setting['common.homePageScroll']
-    pagerViewRef.current?.setScrollEnabled(enabled)
+    pagerViewRef.current?.setScrollEnabled(!active)
   }, [])
 
   // 用同步回调注册给横向滚动块，别走 app_event（那条是 setImmediate，太晚）
@@ -64,15 +62,9 @@ const Main = () => {
       activeIndexRef.current = index
       pagerViewRef.current?.setPageWithoutAnimation(index)
     }
-    const handleConfigUpdate = (keys: Array<keyof LX.AppSetting>, setting: Partial<LX.AppSetting>) => {
-      if (!keys.includes('common.homePageScroll')) return
-      pagerViewRef.current?.setScrollEnabled(setting['common.homePageScroll']!)
-    }
     global.state_event.on('navActiveIdUpdated', handleUpdate)
-    global.state_event.on('configUpdated', handleConfigUpdate)
     return () => {
       global.state_event.off('navActiveIdUpdated', handleUpdate)
-      global.state_event.off('configUpdated', handleConfigUpdate)
     }
   }, [])
 
@@ -82,7 +74,7 @@ const Main = () => {
       offscreenPageLimit={1}
       onPageSelected={onPageSelected}
       onPageScrollStateChanged={onPageScrollStateChanged}
-      scrollEnabled={settingState.setting['common.homePageScroll']}
+      scrollEnabled
       style={styles.pagerView}
     >
       <View collapsable={false} key="nav_home" style={styles.pageStyle}>
