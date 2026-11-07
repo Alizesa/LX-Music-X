@@ -109,24 +109,17 @@ export default () => {
   const t = useI18n()
   const theme = useTheme()
   const { isWide, contentWidth } = useTabletLayout()
-  // 平板横屏内容更宽：边距放大、推荐卡一行三张、歌单铺成网格
+  // 平板横屏内容更宽：边距放大、推荐卡一行三张；推荐歌单仍横向滑动
   const hPadding = isWide ? 24 : H_PADDING
   const availableWidth = contentWidth - hPadding * 2
   const cardsPerRow = isWide ? 3 : 2
   // createStyle 会缩放 gap，尺寸计算使用渲染时的同一份值。
   const cardGap = styles.cardRow.gap
-  const playlistGap = styles.playlistGrid.gap
   const cardWidth = isWide
     ? Math.min(Math.floor((availableWidth - cardGap * (cardsPerRow - 1)) / cardsPerRow), 340)
     : getCardSide(contentWidth, cardGap)
   // 平板横屏把卡片压扁到约 16:9，三张卡片不再占满首屏
   const cardHeight = isWide ? Math.min(Math.round(cardWidth * 0.56), 200) : cardWidth
-  const playlistColumns = isWide
-    ? Math.max(3, Math.min(6, Math.floor((availableWidth + playlistGap) / (150 + playlistGap))))
-    : 1
-  const playlistCardWidth = isWide
-    ? Math.floor((availableWidth - playlistGap * (playlistColumns - 1)) / playlistColumns)
-    : scaleSizeW(104)
   const similarColumns = isWide ? 2 : 1
   const similarItemWidth: `${number}%` = isWide ? '50%' : '100%'
   const loginRef = useRef<QQMusicLoginModalType>(null)
@@ -520,31 +513,18 @@ export default () => {
                 </View>
                 {
                   playlists.length
-                    ? isWide
-                      ? <View style={styles.playlistGrid}>
-                          {
-                            playlists.map(item => (
-                              <TouchableOpacity key={item.id} style={{ width: playlistCardWidth }} activeOpacity={0.8} onPress={() => { openPlaylist(item) }}>
-                                {item.cover
-                                  ? <Image url={item.cover} style={{ width: playlistCardWidth, height: playlistCardWidth, borderRadius: 8 }} />
-                                  : <View style={{ width: playlistCardWidth, height: playlistCardWidth, borderRadius: 8, backgroundColor: theme['c-primary-background'] }} />}
-                                <Text style={styles.playlistName} size={12} numberOfLines={2}>{item.name}</Text>
-                              </TouchableOpacity>
-                            ))
-                          }
-                        </View>
-                      : <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList} {...horizontalScrollProps}>
-                          {
-                            playlists.map(item => (
-                              <TouchableOpacity key={item.id} style={styles.playlistCard} activeOpacity={0.8} onPress={() => { openPlaylist(item) }}>
-                                {item.cover
-                                  ? <Image url={item.cover} style={styles.playlistCover} />
-                                  : <View style={{ ...styles.playlistCover, backgroundColor: theme['c-primary-background'] }} />}
-                                <Text style={styles.playlistName} size={12} numberOfLines={2}>{item.name}</Text>
-                              </TouchableOpacity>
-                            ))
-                          }
-                        </ScrollView>
+                    ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList} {...horizontalScrollProps}>
+                        {
+                          playlists.map(item => (
+                            <TouchableOpacity key={item.id} style={styles.playlistCard} activeOpacity={0.8} onPress={() => { openPlaylist(item) }}>
+                              {item.cover
+                                ? <Image url={item.cover} style={styles.playlistCover} />
+                                : <View style={{ ...styles.playlistCover, backgroundColor: theme['c-primary-background'] }} />}
+                              <Text style={styles.playlistName} size={12} numberOfLines={2}>{item.name}</Text>
+                            </TouchableOpacity>
+                          ))
+                        }
+                      </ScrollView>
                     : null
                 }
               </>
@@ -603,8 +583,6 @@ const styles = createStyle({
   cardFooter: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', padding: 10 },
   cardText: { flex: 1, paddingRight: 8 },
   sectionTitle: { paddingTop: 20, paddingBottom: 10 },
-  // 平板横屏：歌单和相似推荐用网格铺满宽度
-  playlistGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: CARD_GAP },
   similarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   hList: { paddingRight: 8 },
   playlistCard: { width: scaleSizeW(104), marginRight: 10 },
