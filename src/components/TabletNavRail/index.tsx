@@ -57,7 +57,6 @@ export default () => {
         active={activeId == 'nav_home'}
         onPress={() => { switchTab('nav_home') }}
       />
-      <View style={styles.spacer} />
       <RailItem
         icon="person"
         outlineIcon="person-outline"
@@ -84,8 +83,5 @@ const styles = createStyle({
   },
   label: {
     marginTop: 3,
-  },
-  spacer: {
-    flex: 1,
   },
 })
