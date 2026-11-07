@@ -12,6 +12,9 @@ import apiSourceInfo from '@/utils/musicSdk/api-source-info'
 import { useSettingValue } from '@/store/setting/hook'
 import { useStatus, useUserApiList } from '@/store/userApi'
 import Button from '../../components/Button'
+import IconButton from '@/components/common/Button'
+import { IconIonicons } from '@/components/common/Icon'
+import { scaleSizeW } from '@/utils/pixelRatio'
 import UserApiEditModal, { type UserApiEditModalType } from './UserApiEditModal'
 import Text from '@/components/common/Text'
 import { useTheme } from '@/store/theme/hook'
@@ -62,8 +65,14 @@ const Item = ({ id, name, desc, statusLabel, change, priority = -1, total = 0, m
         </CheckBox>
       </View>
       {priority >= 0 && move ? <View style={styles.sourceActions}>
-        <Button disabled={priority == 0} onPress={() => { move(id, -1) }}>{t('source_priority_up')}</Button>
-        <Button disabled={priority == total - 1} onPress={() => { move(id, 1) }}>{t('source_priority_down')}</Button>
+        <IconButton style={styles.sourceAction} disabled={priority == 0} onPress={() => { move(id, -1) }}
+          accessibilityRole="button" accessibilityLabel={t('source_priority_up')} accessibilityState={{ disabled: priority == 0 }}>
+          <IconIonicons name="arrow-up" size={scaleSizeW(18)} color={theme['c-font-label']} />
+        </IconButton>
+        <IconButton style={styles.sourceAction} disabled={priority == total - 1} onPress={() => { move(id, 1) }}
+          accessibilityRole="button" accessibilityLabel={t('source_priority_down')} accessibilityState={{ disabled: priority == total - 1 }}>
+          <IconIonicons name="arrow-down" size={scaleSizeW(18)} color={theme['c-font-label']} />
+        </IconButton>
       </View> : null}
     </View>
   )
@@ -147,7 +156,15 @@ export default memo(() => {
 const styles = createStyle({
   sourceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   sourceInfo: { flex: 1 },
-  sourceActions: { flexDirection: 'row', flexShrink: 0 },
+  sourceActions: { flexShrink: 0, marginLeft: 4 },
+  sourceAction: {
+    width: scaleSizeW(30),
+    height: scaleSizeW(30),
+    borderRadius: scaleSizeW(15),
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
   list: {
     flexGrow: 0,
     flexShrink: 1,
