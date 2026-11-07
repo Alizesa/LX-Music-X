@@ -4,6 +4,7 @@ import { FlatList, type FlatListProps, RefreshControl, View } from 'react-native
 // import { useMusicList } from '@/store/list/hook'
 import CommentFloor from './CommentFloor'
 import { createStyle } from '@/utils/tools'
+import { useTabletLayout } from '@/utils/hooks'
 import { useTheme } from '@/store/theme/hook'
 import { type Comment } from '../utils'
 import { useI18n } from '@/lang'
@@ -28,6 +29,7 @@ const List = forwardRef<ListType, ListProps>(({
 }, ref) => {
   // const t = useI18n()
   const theme = useTheme()
+  const { isWide } = useTabletLayout()
   const flatListRef = useRef<FlatList>(null)
   const [currentList, setList] = useState<Comment[]>([])
   const [status, setStatus] = useState<Status>('idle')
@@ -85,7 +87,7 @@ const List = forwardRef<ListType, ListProps>(({
   return (
     <FlatList
       ref={flatListRef}
-      style={styles.list}
+      style={[styles.list, isWide ? styles.listWide : null]}
       data={currentList}
       onEndReachedThreshold={0.5}
       // maxToRenderPerBatch={4}
@@ -135,6 +137,12 @@ const styles = createStyle({
     flexShrink: 1,
     paddingLeft: 15,
     paddingRight: 15,
+  },
+  // 平板横屏：长评论一行铺满太宽，限宽居中更好读
+  listWide: {
+    maxWidth: 900,
+    width: '100%',
+    alignSelf: 'center',
   },
   footer: {
     textAlign: 'center',

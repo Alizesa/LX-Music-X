@@ -27,7 +27,7 @@ export default ({ componentId }: Props) => {
   }, [])
 
   return (
-    <PageContent>
+    <PageContent componentId={componentId}>
       {
         isHorizontalMode
           ? <Horizontal />

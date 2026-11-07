@@ -8,6 +8,7 @@ import QQMusicPhoneLoginModal, { type QQMusicPhoneLoginModalType } from '@/compo
 import QQPlaylistEditModal, { type QQPlaylistEditModalType } from '@/components/QQPlaylistEditModal'
 import { useTheme } from '@/store/theme/hook'
 import { useDownloadCount } from '@/store/download/hook'
+import { useTabletLayout } from '@/utils/hooks'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { clearQQMusicSession, filterVisiblePlaylists, getQQMusicPlaylists, getQQMusicSession, getQQMusicUserInfo, isQQMusicSessionCurrent, updateQQMusicPlaylistsCache, type QQMusicSession } from '@/core/qqMusic'
@@ -77,11 +78,58 @@ const PlaylistRow = memo(({ item, onPress, onMore }: {
   )
 })
 
+// 平板横屏：歌单按行分块后渲染成封面网格，沿用 SectionList 的虚拟化
+const chunkList = <T,>(list: T[], size: number): T[][] => {
+  const rows: T[][] = []
+  for (let i = 0; i < list.length; i += size) rows.push(list.slice(i, i + size))
+  return rows
+}
+
+const GRID_GAP = 12
+const GRID_PADDING = 16
+
+const PlaylistGridRow = memo(({ items, cardWidth, onPress, onMore }: {
+  items: LX.QQMusic.PlaylistInfo[]
+  cardWidth: number
+  onPress: (item: LX.QQMusic.PlaylistInfo) => void
+  onMore?: (item: LX.QQMusic.PlaylistInfo) => void
+}) => {
+  const theme = useTheme()
+  const t = useI18n()
+  return (
+    <View style={styles.gridRow}>
+      {
+        items.map(item => (
+          <TouchableOpacity key={item.id} style={{ width: cardWidth }} activeOpacity={0.8} onPress={() => { onPress(item) }}>
+            {item.cover
+              ? <Image url={item.cover} style={{ width: cardWidth, height: cardWidth, borderRadius: 8 }} />
+              : <View style={{ width: cardWidth, height: cardWidth, borderRadius: 8, backgroundColor: theme['c-primary-background'] }} />}
+            <Text style={styles.gridName} numberOfLines={2}>{item.name}</Text>
+            <Text size={11} color={theme['c-font-label']} numberOfLines={1}>{t('mine_song_count', { num: item.trackCount ?? 0 })}</Text>
+            {onMore
+              ? <TouchableOpacity style={styles.gridMore} onPress={() => { onMore(item) }}>
+                  <IconIonicons name="ellipsis-horizontal" size={18} color="#fff" />
+                </TouchableOpacity>
+              : null}
+          </TouchableOpacity>
+        ))
+      }
+    </View>
+  )
+})
+
 // 「我的」页。结构参考 QQ 音乐的版式（账号卡片 / 入口宫格 / 歌单列表），
 // 但不做像素级复刻，也没有会员中心。
 export default () => {
   const theme = useTheme()
   const t = useI18n()
+  const { isWide, contentWidth } = useTabletLayout()
+  const playlistColumns = isWide
+    ? Math.max(3, Math.min(6, Math.floor((contentWidth - GRID_PADDING * 2 + GRID_GAP) / (150 + GRID_GAP))))
+    : 1
+  const playlistCardWidth = isWide
+    ? (contentWidth - GRID_PADDING * 2 - GRID_GAP * (playlistColumns - 1)) / playlistColumns
+    : 0
   const loginRef = useRef<QQMusicLoginModalType>(null)
   const phoneLoginRef = useRef<QQMusicPhoneLoginModalType>(null)
   const playlistEditRef = useRef<QQPlaylistEditModalType>(null)
@@ -318,10 +366,15 @@ export default () => {
   }, [cookie, user])
 
   const liked = playlists.find(item => item.liked)
-  const sections = useMemo(() => [
-    { key: 'created', title: t('mine_created_playlists'), editable: loggedIn, data: playlists.filter(item => !item.liked && !item.subscribed) },
-    { key: 'collected', title: t('mine_collected_playlists'), editable: false, data: playlists.filter(item => item.subscribed) },
-  ], [loggedIn, playlists, t])
+  const sections = useMemo(() => {
+    const created = playlists.filter(item => !item.liked && !item.subscribed)
+    const collected = playlists.filter(item => item.subscribed)
+    return [
+      // data 按列数切成一行一行，手机每行一首（保持原来的整行样式）
+      { key: 'created', title: t('mine_created_playlists'), editable: loggedIn, count: created.length, data: chunkList(created, playlistColumns) },
+      { key: 'collected', title: t('mine_collected_playlists'), editable: false, count: collected.length, data: chunkList(collected, playlistColumns) },
+    ]
+  }, [loggedIn, playlistColumns, playlists, t])
 
   return (
     <View style={styles.container}>
@@ -332,11 +385,13 @@ export default () => {
         initialNumToRender={12}
         windowSize={5}
         maxToRenderPerBatch={8}
-        keyExtractor={item => item.id}
-        renderItem={({ item, section }) => <PlaylistRow item={item} onPress={openPlaylist} onMore={section.editable ? showPlaylistActions : undefined} />}
+        keyExtractor={row => row.map(item => item.id).join('|')}
+        renderItem={({ item, section }) => isWide
+          ? <PlaylistGridRow items={item} cardWidth={playlistCardWidth} onPress={openPlaylist} onMore={section.editable ? showPlaylistActions : undefined} />
+          : <PlaylistRow item={item[0]} onPress={openPlaylist} onMore={section.editable ? showPlaylistActions : undefined} />}
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
-            <Text size={15}>{`${section.title} ${section.data.length}`}</Text>
+            <Text size={15}>{`${section.title} ${section.count}`}</Text>
             {section.editable
               ? <TouchableOpacity style={styles.sectionAction} onPress={() => playlistEditRef.current?.show({ mode: 'create' })}>
                   <IconIonicons name="add" size={20} color={theme['c-primary-font']} />
@@ -344,7 +399,7 @@ export default () => {
               : null}
           </View>
         )}
-        renderSectionFooter={({ section }) => !section.data.length
+        renderSectionFooter={({ section }) => !section.count
           ? <Text style={styles.empty} size={13} color={theme['c-font-label']}>{loggedIn ? t('qq_load_hint') : t('qq_login_hint')}</Text>
           : null}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh() }} colors={[theme['c-primary']]} />}
@@ -400,6 +455,10 @@ const styles = createStyle({
   entryLabel: { marginTop: 6 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 18, paddingBottom: 8 },
   sectionAction: { padding: 4 },
+  // 平板横屏的歌单网格：每行由 chunkList 分好，这里只负责横向排列
+  gridRow: { flexDirection: 'row', paddingHorizontal: GRID_PADDING, paddingBottom: GRID_GAP, gap: GRID_GAP, alignItems: 'flex-start' },
+  gridName: { marginTop: 6 },
+  gridMore: { position: 'absolute', top: 6, right: 6, width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1 },
   rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   rowMore: { padding: 8, marginLeft: 4 },

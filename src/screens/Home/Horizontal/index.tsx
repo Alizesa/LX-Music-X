@@ -2,6 +2,7 @@ import { View } from 'react-native'
 import PlayerBar from '@/components/player/PlayerBar'
 import BottomTabBar from '@/components/BottomTabBar'
 import StatusBar from '@/components/common/StatusBar'
+import { useTabletLayout } from '@/utils/hooks'
 import Header from './Header'
 import Main from './Main'
 import { createStyle } from '@/utils/tools'
@@ -13,8 +14,11 @@ const styles = createStyle({
   },
 })
 
-// 横屏原来用左侧图标导航条（Aside），现在和竖屏统一：底部 tab bar。
+// 平板横屏：左侧导航条（PageContent 里渲染）替换底部 tab；
+// 手机横屏没有左侧导航条，仍然用底部 tab。
 export default () => {
+  const { isWide } = useTabletLayout()
+
   return (
     <>
       <StatusBar />
@@ -23,7 +27,7 @@ export default () => {
         <Main />
         <PlayerBar />
       </View>
-      <BottomTabBar />
+      {isWide ? null : <BottomTabBar />}
     </>
   )
 }

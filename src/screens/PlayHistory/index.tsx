@@ -13,6 +13,7 @@ import { getPlayHistory } from '@/utils/data'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
+import { useTabletLayout } from '@/utils/hooks'
 
 const formatDate = (timestamp: number) => {
   if (!timestamp) return ''
@@ -28,6 +29,10 @@ export default ({ componentId }: { componentId: string }) => {
   const t = useI18n()
   const theme = useTheme()
   const [local, setLocal] = useState<LX.Player.PlayHistoryItem[]>([])
+  // 平板横屏多列；列数跟着可用宽度走，和歌曲列表同一套规则
+  const { contentWidth } = useTabletLayout()
+  const rowNum = contentWidth >= 1080 ? 3 : contentWidth >= 620 ? 2 : 1
+  const itemWidth = (rowNum == 3 ? '33.3333%' : rowNum == 2 ? '50%' : '100%') as `${number}%`
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.playHistory, componentId)
@@ -39,12 +44,14 @@ export default ({ componentId }: { componentId: string }) => {
   }, [componentId])
 
   return (
-    <PageContent>
+    <PageContent componentId={componentId}>
       <StatusBar />
       <SimpleHeader componentId={componentId} title={t('nav_history')} />
       <FlatList
+        key={`history-${rowNum}`}
         style={styles.list}
         data={local}
+        numColumns={rowNum}
         keyExtractor={(item, index) => `${item.musicInfo.id}-${item.playedAt}-${index}`}
         ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{t('setting_play_history_empty')}</Text>}
         renderItem={({ item }) => {
@@ -52,7 +59,7 @@ export default ({ componentId }: { componentId: string }) => {
           const info = 'metadata' in item.musicInfo ? item.musicInfo.metadata.musicInfo : item.musicInfo
           return (
             <TouchableOpacity
-              style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}
+              style={{ ...styles.item, width: itemWidth, borderBottomColor: theme['c-border-background'] }}
               activeOpacity={0.7}
               onPress={() => { addTempPlayList([{ listId: null, musicInfo: info, isTop: true }]) }}
             >

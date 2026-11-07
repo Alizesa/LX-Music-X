@@ -7,6 +7,7 @@ import { createStyle, toast } from '@/utils/tools'
 import { getDownloadPath } from '@/utils/data'
 import { getDownloadIds, hasDownloadTask, isDownloadCompleted, pauseAllTasks, pauseTask, removeTasks, resumeAllTasks, retryTask, setDownloadDirectory } from '@/core/download'
 import { useDownloadItem, useDownloadTasks } from '@/store/download/hook'
+import { useTabletLayout } from '@/utils/hooks'
 import { selectManagedFolder } from '@/utils/fs'
 
 const formatBytes = (value: number) => {
@@ -35,8 +36,9 @@ const statusText = (task: LX.Download.DownloadListItem) => {
   }
 }
 
-const DownloadItem = memo(({ item, isSelected, isMultiSelect, onPress, onLongPress, onToggle }: {
+const DownloadItem = memo(({ item, itemWidth, isSelected, isMultiSelect, onPress, onLongPress, onToggle }: {
   item: LX.Download.DownloadListItem
+  itemWidth: `${number}%`
   isSelected: boolean
   isMultiSelect: boolean
   onPress: (id: string) => void
@@ -48,7 +50,7 @@ const DownloadItem = memo(({ item, isSelected, isMultiSelect, onPress, onLongPre
   const canToggle = task.status != 'completed' && task.status != 'finalizing'
   const toggleIcon = task.status == 'run' || task.status == 'waiting' || task.status == 'resolving' ? 'pause' : 'play-outline'
   return (
-    <View style={{ ...styles.item, borderBottomColor: theme['c-border-background'], backgroundColor: isSelected ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)' }}>
+    <View style={{ ...styles.item, width: itemWidth, borderBottomColor: theme['c-border-background'], backgroundColor: isSelected ? theme['c-primary-background-hover'] : 'rgba(0,0,0,0)' }}>
       <TouchableOpacity style={styles.itemBody} activeOpacity={0.7} onPress={() => { onPress(task.id) }} onLongPress={() => { onLongPress(task.id) }}>
         <Text numberOfLines={1}>{task.name}</Text>
         <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{task.singer} · {task.quality}</Text>
@@ -61,6 +63,10 @@ const DownloadItem = memo(({ item, isSelected, isMultiSelect, onPress, onLongPre
 
 export default () => {
   const theme = useTheme()
+  // 平板横屏两列；下载条目文字多，三列会挤
+  const { isWide } = useTabletLayout()
+  const rowNum = isWide ? 2 : 1
+  const itemWidth = (isWide ? '50%' : '100%') as `${number}%`
   const { tasks, count, hasMore, loading, error, loadMore, retry } = useDownloadTasks()
   const [directory, setDirectory] = useState<LX.Download.DownloadDirectory | null>(null)
   const [isMultiSelect, setIsMultiSelect] = useState(false)
@@ -166,7 +172,9 @@ export default () => {
         <TouchableOpacity style={styles.toolbarButton} onPress={() => { void resumeAllTasks() }}><Icon name="play-outline" color={theme['c-button-font']} size={17} /><Text size={13}>{global.i18n.t('download_resume_all')}</Text></TouchableOpacity>
       </View>
       <FlatList
+        key={`download-${rowNum}`}
         data={tasks}
+        numColumns={rowNum}
         initialNumToRender={12}
         windowSize={5}
         maxToRenderPerBatch={8}
@@ -176,6 +184,7 @@ export default () => {
         renderItem={({ item }) => (
           <DownloadItem
             item={item}
+            itemWidth={itemWidth}
             isSelected={selectedIds.has(item.id)}
             isMultiSelect={isMultiSelect}
             onPress={toggleSelect}

@@ -55,7 +55,7 @@ export default ({ componentId, info }: { componentId: string, info: SingerDetail
   }, [])
 
   return (
-    <PageContent>
+    <PageContent componentId={componentId}>
       <StatusBar />
       <Header params={info} info={singerInfo} />
       <View style={{ ...styles.tabBar, height: BAR_HEIGHT, borderBottomColor: theme['c-border-background'] }}>

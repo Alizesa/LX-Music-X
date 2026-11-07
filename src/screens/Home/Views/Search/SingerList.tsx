@@ -6,6 +6,7 @@ import Image from '@/components/common/Image'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
+import { useTabletLayout } from '@/utils/hooks'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { formatPlayCount } from '@/utils'
 import { navigations } from '@/navigation'
@@ -28,6 +29,10 @@ export default forwardRef<SingerListType, {}>((props, ref) => {
   const t = useI18n()
   const [list, setList] = useState<SingerItem[]>([])
   const [status, setStatus] = useState<Status>('idle')
+  // 平板横屏多列；手机和手机横屏保持整行
+  const { contentWidth } = useTabletLayout()
+  const rowNum = contentWidth >= 1080 ? 3 : contentWidth >= 620 ? 2 : 1
+  const itemWidth = (rowNum == 3 ? '33.3333%' : rowNum == 2 ? '50%' : '100%') as `${number}%`
   const textRef = useRef('')
   const isUnmountedRef = useRef(false)
 
@@ -87,7 +92,7 @@ export default forwardRef<SingerListType, {}>((props, ref) => {
   const renderItem: FlatListProps<SingerItem>['renderItem'] = ({ item }) => (
     <TouchableOpacity
       activeOpacity={0.5}
-      style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}
+      style={{ ...styles.item, width: itemWidth, borderBottomColor: theme['c-border-background'] }}
       onPress={() => { handleOpenDetail(item) }}
     >
       <Image
@@ -117,8 +122,10 @@ export default forwardRef<SingerListType, {}>((props, ref) => {
 
   return (
     <FlatList
+      key={`singer-${rowNum}`}
       data={list}
       style={styles.list}
+      numColumns={rowNum}
       keyExtractor={item => item.mid}
       renderItem={renderItem}
       onEndReachedThreshold={0.6}

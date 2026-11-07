@@ -158,7 +158,7 @@ export default memo(({ componentId }: {
   }, [activeId, musicInfo, onPageSelected, refreshComment, setHotTotal, setNewTotal, tabs, theme, toggleTab])
 
   return (
-    <PageContent>
+    <PageContent componentId={componentId}>
       {
         musicInfo == null
           ? null

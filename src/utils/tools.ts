@@ -11,6 +11,7 @@ import { scaleSizeH, scaleSizeW, setSpText } from './pixelRatio'
 import { toOldMusicInfo } from './index'
 import { stringMd5 } from 'react-native-quick-md5'
 import { windowSizeTools } from '@/utils/windowSizeTools'
+import { isWideLayout, TABLET_RAIL_WIDTH } from '@/utils/layout'
 
 
 // https://stackoverflow.com/a/47349998
@@ -557,12 +558,16 @@ export type RowInfoType = 'full' | 'medium'
 
 export const getRowInfo = (type: RowInfoType = 'full'): RowInfo => {
   const win = windowSizeTools.getSize()
-  let isMultiRow = isHorizontalMode(win.width, win.height)
-  if (type == 'medium' && win.width / win.height < 1.8) isMultiRow = false
-  // console.log('getRowInfo')
+  // 平板横屏左侧导航条占掉一列，列表按剩下的宽度算列数
+  const width = win.width - (isWideLayout(win.width, win.height) ? TABLET_RAIL_WIDTH : 0)
+  let rowNum: number | undefined
+  if (!(type == 'medium' && win.width / win.height < 1.8)) {
+    rowNum = width >= 1080 ? 3 : width >= 620 ? 2 : undefined
+  }
+  // console.log('getRowInfo', width, rowNum)
   return {
-    rowNum: isMultiRow ? 2 : undefined,
-    rowWidth: isMultiRow ? '50%' : '100%',
+    rowNum,
+    rowWidth: rowNum == 3 ? '33.3333%' : rowNum == 2 ? '50%' : '100%',
   }
 }
 

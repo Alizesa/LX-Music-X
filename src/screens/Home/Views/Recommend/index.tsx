@@ -6,7 +6,7 @@ import ImageBackground from '@/components/common/ImageBackground'
 import IconAction from '@/components/common/IconAction'
 import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMusicLoginModal'
 import { useTheme } from '@/store/theme/hook'
-import { useWindowSize } from '@/utils/hooks'
+import { useTabletLayout } from '@/utils/hooks'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { LIST_IDS, QQ_DAILY_RECOMMEND_ID, QQ_HEART_RADAR_PLAYLIST_ID } from '@/config/constant'
@@ -69,17 +69,16 @@ const getCardSide = (width: number) => (width - H_PADDING * 2 - CARD_GAP * 2 - C
  * 手势响应），不会连带触发卡片的 onPress —— 所以每日推荐能「按钮播放、卡片展开列表」。
  * 不传 subtitle 就只显示标题（猜你喜欢的小字去掉了）。
  */
-const SquareCard = ({ title, subtitle, cover, onPress, disabled, action }: {
+const SquareCard = ({ title, subtitle, cover, onPress, disabled, action, side }: {
   title: string
   subtitle?: string
   cover?: string | null
   onPress: () => void
   disabled?: boolean
   action?: ReactNode
+  /** 卡片边长。手机两列可滑，平板横屏三列铺开 */
+  side: number
 }) => {
-  const windowSize = useWindowSize()
-  const side = getCardSide(windowSize.width)
-
   return (
     <TouchableOpacity style={{ ...styles.card, width: side, height: side, opacity: disabled ? 0.6 : 1 }} activeOpacity={0.85} disabled={disabled} onPress={onPress}>
       {
@@ -109,6 +108,22 @@ const SquareCard = ({ title, subtitle, cover, onPress, disabled, action }: {
 export default () => {
   const t = useI18n()
   const theme = useTheme()
+  const { isWide, contentWidth } = useTabletLayout()
+  // 平板横屏内容更宽：边距放大、推荐卡一行三张、歌单铺成网格
+  const hPadding = isWide ? 24 : H_PADDING
+  const availableWidth = contentWidth - hPadding * 2
+  const cardsPerRow = isWide ? 3 : 2
+  const cardSide = isWide
+    ? Math.min((availableWidth - CARD_GAP * (cardsPerRow - 1)) / cardsPerRow, 430)
+    : getCardSide(contentWidth)
+  const playlistColumns = isWide
+    ? Math.max(3, Math.min(6, Math.floor((availableWidth + CARD_GAP) / (150 + CARD_GAP))))
+    : 1
+  const playlistCardWidth = isWide
+    ? (availableWidth - CARD_GAP * (playlistColumns - 1)) / playlistColumns
+    : scaleSizeW(104)
+  const similarColumns = isWide ? 2 : 1
+  const similarItemWidth: `${number}%` = isWide ? '50%' : '100%'
   const loginRef = useRef<QQMusicLoginModalType>(null)
   const [cookie, setCookie] = useState('')
   const [daily, setDaily] = useState<Songs>([])
@@ -442,13 +457,13 @@ export default () => {
     <View style={styles.container}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{ paddingHorizontal: hPadding, paddingBottom: 16 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh() }} colors={[theme['c-primary']]} />}
       >
         {
           loggedIn
             ? null
-            : <TouchableOpacity style={{ ...styles.loginCard, backgroundColor: theme['c-button-background'] }} onPress={() => loginRef.current?.show()}>
+            : <TouchableOpacity style={{ ...styles.loginCard, maxWidth: 620, alignSelf: 'center', backgroundColor: theme['c-button-background'] }} onPress={() => loginRef.current?.show()}>
                 <Text color={theme['c-button-font']}>{t('qq_login')}</Text>
                 <Text size={12} color={theme['c-button-font']} style={styles.loginHint}>{t('qq_login_hint')}</Text>
               </TouchableOpacity>
@@ -465,12 +480,14 @@ export default () => {
             title={t('qq_daily_recommend')}
             subtitle={t('mine_song_count', { num: daily.length })}
             cover={daily[0]?.meta.picUrl}
+            side={cardSide}
             onPress={() => { void openDaily() }}
             action={<IconAction overlay icon="play" onPress={() => { void playDaily() }} />}
           />
           <SquareCard
             title={t('qq_guess_you_like')}
             cover={guess[0]?.meta.picUrl}
+            side={cardSide}
             onPress={() => { void playGuess() }}
             disabled={playing}
             action={<IconAction overlay icon="refresh" onPress={() => { void refreshGuess() }} disabled={refreshingGuess} />}
@@ -479,6 +496,7 @@ export default () => {
             title={t('qq_heart_radar')}
             subtitle={t('mine_song_count', { num: radar.length })}
             cover={radar[0]?.meta.picUrl}
+            side={cardSide}
             onPress={() => { void openRadar() }}
             action={<IconAction overlay icon="play" onPress={() => { void playRadar() }} />}
           />
@@ -494,18 +512,31 @@ export default () => {
                 </View>
                 {
                   playlists.length
-                    ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList} {...horizontalScrollProps}>
-                        {
-                          playlists.map(item => (
-                            <TouchableOpacity key={item.id} style={styles.playlistCard} activeOpacity={0.8} onPress={() => { openPlaylist(item) }}>
-                              {item.cover
-                                ? <Image url={item.cover} style={styles.playlistCover} />
-                                : <View style={{ ...styles.playlistCover, backgroundColor: theme['c-primary-background'] }} />}
-                              <Text style={styles.playlistName} size={12} numberOfLines={2}>{item.name}</Text>
-                            </TouchableOpacity>
-                          ))
-                        }
-                      </ScrollView>
+                    ? isWide
+                      ? <View style={styles.playlistGrid}>
+                          {
+                            playlists.map(item => (
+                              <TouchableOpacity key={item.id} style={{ width: playlistCardWidth }} activeOpacity={0.8} onPress={() => { openPlaylist(item) }}>
+                                {item.cover
+                                  ? <Image url={item.cover} style={{ width: playlistCardWidth, height: playlistCardWidth, borderRadius: 8 }} />
+                                  : <View style={{ width: playlistCardWidth, height: playlistCardWidth, borderRadius: 8, backgroundColor: theme['c-primary-background'] }} />}
+                                <Text style={styles.playlistName} size={12} numberOfLines={2}>{item.name}</Text>
+                              </TouchableOpacity>
+                            ))
+                          }
+                        </View>
+                      : <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList} {...horizontalScrollProps}>
+                          {
+                            playlists.map(item => (
+                              <TouchableOpacity key={item.id} style={styles.playlistCard} activeOpacity={0.8} onPress={() => { openPlaylist(item) }}>
+                                {item.cover
+                                  ? <Image url={item.cover} style={styles.playlistCover} />
+                                  : <View style={{ ...styles.playlistCover, backgroundColor: theme['c-primary-background'] }} />}
+                                <Text style={styles.playlistName} size={12} numberOfLines={2}>{item.name}</Text>
+                              </TouchableOpacity>
+                            ))
+                          }
+                        </ScrollView>
                     : null
                 }
               </>
@@ -516,24 +547,26 @@ export default () => {
           similar.songs.length
             ? <>
                 <Text style={styles.sectionTitle} size={15} numberOfLines={1}>{similarTitle}</Text>
-                {
-                  similar.songs.map((song, index) => (
-                    <TouchableOpacity
-                      key={`${song.id}-${index}`}
-                      style={{ ...styles.songRow, borderBottomColor: theme['c-border-background'] }}
-                      activeOpacity={0.7}
-                      onPress={() => { void playSongs('qq_similar', similar.songs, index) }}
-                    >
-                      {song.meta.picUrl
-                        ? <Image url={song.meta.picUrl} style={styles.songPic} />
-                        : <View style={{ ...styles.songPic, backgroundColor: theme['c-primary-background'] }} />}
-                      <View style={styles.songInfo}>
-                        <Text numberOfLines={1}>{song.name}</Text>
-                        <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{song.singer}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))
-                }
+                <View style={styles.similarGrid}>
+                  {
+                    similar.songs.map((song, index) => (
+                      <TouchableOpacity
+                        key={`${song.id}-${index}`}
+                        style={{ ...styles.songRow, width: similarItemWidth, paddingRight: similarColumns > 1 ? 12 : 0, borderBottomColor: theme['c-border-background'] }}
+                        activeOpacity={0.7}
+                        onPress={() => { void playSongs('qq_similar', similar.songs, index) }}
+                      >
+                        {song.meta.picUrl
+                          ? <Image url={song.meta.picUrl} style={styles.songPic} />
+                          : <View style={{ ...styles.songPic, backgroundColor: theme['c-primary-background'] }} />}
+                        <View style={styles.songInfo}>
+                          <Text numberOfLines={1}>{song.name}</Text>
+                          <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{song.singer}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))
+                  }
+                </View>
               </>
             : null
         }
@@ -562,6 +595,9 @@ const styles = createStyle({
   cardFooter: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', padding: 10 },
   cardText: { flex: 1, paddingRight: 8 },
   sectionTitle: { paddingTop: 20, paddingBottom: 10 },
+  // 平板横屏：歌单和相似推荐用网格铺满宽度
+  playlistGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: CARD_GAP },
+  similarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   hList: { paddingRight: 8 },
   playlistCard: { width: scaleSizeW(104), marginRight: 10 },
   playlistCover: { width: scaleSizeW(104), height: scaleSizeW(104), borderRadius: 8 },
