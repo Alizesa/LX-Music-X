@@ -10,6 +10,7 @@ import { isRequestCancelled, requestMsg } from '@/utils/message'
 
 import {
   buildLyricInfo,
+  getPlayQuality,
   handleGetOnlineLyricInfo,
   handleGetOnlineMusicUrl,
   handleGetOnlinePicUrl,
@@ -68,7 +69,7 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
 
   //   // return Promise.reject(new Error('该歌曲没有可播放的音频'))
   // }
-  const targetQuality = quality ?? settingState.setting['player.playQuality']
+  const targetQuality = quality ?? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
   const cachedUrl = await getStoreMusicUrl(musicInfo, targetQuality)
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
@@ -85,7 +86,7 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel: registerCancel, validateUrl, rejectedUrls }).then(({ url, quality: actualQuality, musicInfo: targetMusicInfo, isFromCache }) => {
     assertActive()
     if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, actualQuality, url)
-    void saveMusicUrl(musicInfo, targetQuality, url)
+    void saveMusicUrl(musicInfo, actualQuality, url)
     return url
   })
 }

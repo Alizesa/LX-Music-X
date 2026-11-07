@@ -33,7 +33,7 @@ export default () => {
       }
       if (!nextInfo || nextInfo.musicInfo.id == playerState.playMusicInfo.musicInfo?.id) return
       const buffered = await TrackPlayer.getBufferedPosition()
-      if (generation != revision || !playerState.isPlay || global.lx.isPlayedStop) return
+      if (generation != revision || !playerState.isPlay || global.lx.isPlayedStop || Date.now() - stableSince < 3000) return
       const { nowPlayTime, maxPlayTime } = playerState.progress
       if (buffered - nowPlayTime < 10 && !(maxPlayTime > 0 && buffered >= maxPlayTime - 0.5)) return
       const promise = preloadMusic(nextInfo.musicInfo)
@@ -57,6 +57,7 @@ export default () => {
     keepPreloadFor(playerState.playMusicInfo.musicInfo)
   }
   const pause = () => {
+    revision++
     stableSince = Date.now()
     const current = playerState.playMusicInfo.musicInfo
     if (current && hasPreloadMusic(current)) keepPreloadFor(current)

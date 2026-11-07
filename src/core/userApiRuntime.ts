@@ -10,7 +10,11 @@ import { fetchData } from '@/core/init/userApi/request'
 const qualities: LX.Quality[] = ['flac24bit', 'flac', '320k', '128k']
 let nextRuntimeId = 0
 
-const selectQuality = (preferred: LX.Quality, supported: LX.Quality[], musicInfo: LX.Music.MusicInfoOnline) => {
+const selectQuality = (preferred: LX.Quality, supported: LX.Quality[], musicInfo: LX.Music.MusicInfoOnline, allowFallback: boolean) => {
+  if (!allowFallback) {
+    if (!supported.includes(preferred)) throw new Error('Unsupported music quality')
+    return preferred
+  }
   const quality = qualities.slice(Math.max(0, qualities.indexOf(preferred)))
     .find(item => supported.includes(item) && (item == '128k' || musicInfo.meta._qualitys[item]))
   if (!quality) throw new Error('Unsupported music quality')
@@ -19,7 +23,7 @@ const selectQuality = (preferred: LX.Quality, supported: LX.Quality[], musicInfo
 
 /** 常用音源复用已有运行环境；备用音源按请求隔离，结束时释放脚本和全部 HTTP 请求。 */
 export const requestUserApiMusicUrl = async(apiId: string, musicInfo: LX.Music.MusicInfoOnline, preferredQuality: LX.Quality,
-  onCancel?: (cancel: () => void) => void): Promise<{ url: string, type: LX.Quality }> => {
+  onCancel?: (cancel: () => void) => void, allowQualityFallback = true): Promise<{ url: string, type: LX.Quality }> => {
   let disposed = false
   let cancelRequest: (() => void) | undefined
   let removeListener: (() => void) | undefined
@@ -42,9 +46,10 @@ export const requestUserApiMusicUrl = async(apiId: string, musicInfo: LX.Music.M
     if (apiId == settingState.setting['common.apiSource']) {
       if (!await global.lx.apiInitPromise[0]) throw new Error('Source initialization failed')
       assertActive()
+      if (apiId != settingState.setting['common.apiSource']) throw new Error(requestMsg.cancelRequest)
       const api = global.lx.apis[musicInfo.source]
       if (!api?.getMusicUrl) throw new Error('Unsupported music source')
-      const type = selectQuality(preferredQuality, global.lx.qualityList[musicInfo.source] ?? [], musicInfo)
+      const type = selectQuality(preferredQuality, global.lx.qualityList[musicInfo.source] ?? [], musicInfo, allowQualityFallback)
       const request = api.getMusicUrl(toOldMusicInfo(musicInfo), type)
       cancelRequest = request.canceleFn
       const result = await request.promise
@@ -101,7 +106,7 @@ export const requestUserApiMusicUrl = async(apiId: string, musicInfo: LX.Music.M
     assertActive()
     const source = initializedInfo.sources?.[musicInfo.source]
     if (!source?.actions.includes('musicUrl')) throw new Error('Unsupported music source')
-    const type = selectQuality(preferredQuality, source.qualitys, musicInfo)
+    const type = selectQuality(preferredQuality, source.qualitys, musicInfo, allowQualityFallback)
     const result = new Promise<string>((resolve, reject) => { resolveUrl = resolve; rejectUrl = reject })
     cancelRequest = () => { sendAction('cancelRequest', requestKey, id) }
     sendAction('request', { requestKey, data: { source: musicInfo.source, action: 'musicUrl', info: { type, musicInfo: toOldMusicInfo(musicInfo) } } }, id)

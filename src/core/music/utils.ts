@@ -12,7 +12,7 @@ import BackgroundTimer from 'react-native-background-timer'
 import { apis } from '@/utils/musicSdk/api-source'
 import { getQQMusicUrlByAccount } from '@/core/qqMusicUrl'
 import { QQ_LYRIC_CACHE_VERSION } from '@/config/constant'
-import { getEnabledMusicSourceIds, getMusicUrlByPriority, isMusicUrlFailed, type ValidateMusicUrl } from './sourcePriority'
+import { getEnabledMusicSourceIds, getMusicUrlByPriority, isMusicUrlFailed, markMusicUrlFailed, type MusicUrlRequestOptions, type ValidateMusicUrl } from './sourcePriority'
 
 
 const getOtherSourcePromises = new Map()
@@ -163,26 +163,50 @@ export const getCachedLyricInfo = async(musicInfo: LX.Music.MusicInfo, allowStal
   return null
 }
 
-export const getOnlineOtherSourceMusicUrlByLocal = async(musicInfo: LX.Music.MusicInfoLocal, isRefresh: boolean): Promise<{
+export const getOnlineOtherSourceMusicUrlByLocal = async(musicInfo: LX.Music.MusicInfoLocal, isRefresh: boolean, options: MusicUrlRequestOptions = {}): Promise<{
   url: string
   quality: LX.Quality
   isFromCache: boolean
 }> => {
+  let cancelled = false
+  let cancelRequest: (() => void) | undefined
+  options.onCancel?.(() => { cancelled = true; cancelRequest?.() })
+  const assertActive = () => { if (cancelled) throw new Error(requestMsg.cancelRequest) }
+  assertActive()
   if (!await global.lx.apiInitPromise[0]) throw new Error('source init failed')
+  assertActive()
 
-  const quality = '128k'
+  const quality = options.quality ?? '128k'
 
   const cachedUrl = await getStoreMusicUrl(musicInfo, quality)
-  if (cachedUrl && !isRefresh) return { url: cachedUrl, quality, isFromCache: true }
+  assertActive()
+  if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !options.rejectedUrls?.has(cachedUrl)) {
+    try {
+      if (/^https?:\/\//i.test(cachedUrl)) await options.validateUrl?.(cachedUrl)
+      assertActive()
+      return { url: cachedUrl, quality, isFromCache: true }
+    } catch (error) {
+      assertActive()
+      if (isRequestCancelled(error)) throw error
+      markMusicUrlFailed(cachedUrl)
+    }
+  }
 
   let reqPromise
   try {
-    reqPromise = apis('local').getMusicUrl(toOldMusicInfo(musicInfo), null).promise
+    const request = apis('local').getMusicUrl(toOldMusicInfo(musicInfo), options.quality ?? null)
+    const cancel = request.canceleFn ?? request.cancelHttp
+    if (typeof cancel == 'function') cancelRequest = cancel as () => void
+    reqPromise = request.promise
   } catch (err: any) {
     reqPromise = Promise.reject(err)
   }
 
-  return reqPromise.then(({ url }: { url: string }) => {
+  return reqPromise.then(async({ url }: { url: string }) => {
+    assertActive()
+    if (isMusicUrlFailed(url) || options.rejectedUrls?.has(url)) throw new Error('Audio resource already failed')
+    if (/^https?:\/\//i.test(url)) await options.validateUrl?.(url)
+    assertActive()
     return { url, quality, isFromCache: false }
   })
 }
@@ -282,7 +306,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
 
   let reqPromise
   try {
-    reqPromise = getMusicUrlByPriority({ musicInfo, quality: itemQuality, onCancel, validateUrl, rejectedUrls })
+    reqPromise = getMusicUrlByPriority({ musicInfo, quality: itemQuality, onCancel, validateUrl, rejectedUrls, allowQualityFallback: quality == null })
   } catch (err: any) {
     reqPromise = Promise.reject(err)
   }
@@ -326,10 +350,11 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   isFromCache: boolean
 }> => {
   const targetQuality = quality ?? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
-  // 没开会员的账号只有标准音质这一档（设置里那一项就是给这种情况用的）：账号取链按这一档走，
+  // 播放时，没开会员的账号只按标准音质取链（设置里那一项就是给这种情况用的），
   // 不再逐档往下试无损/320k —— 每试一档就是一次 vkey 请求，非会员账号那些尝试注定落空。
   // 开了会员（或没开这个设置）时按 targetQuality 走：上限就是用户选的那一档，不越过它往上试。
-  const accountQuality = settingState.setting['player.noVipStandardQuality'] ? '128k' : targetQuality
+  // 下载显式传入 quality，必须保留指定音质，拿不到时尝试后续音源。
+  const accountQuality = quality ?? (settingState.setting['player.noVipStandardQuality'] ? '128k' : targetQuality)
   const order = urlSourceOrder ?? (settingState.setting['player.urlSource'] === 'source' ? 'sourceFirst' : 'accountFirst')
   // 对外只注册一次取消句柄，账号结束到音源初始化之间也不能丢失取消状态。
   let cancelled = false
@@ -375,6 +400,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
       const result = await getMusicUrlByPriority({
         musicInfo,
         quality: quality ?? settingState.setting['player.playQuality'],
+        allowQualityFallback: quality == null,
         onCancel: registerCancel,
         validateUrl,
         rejectedUrls,

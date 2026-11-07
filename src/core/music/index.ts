@@ -47,9 +47,9 @@ export const getMusicUrl = async({
   rejectedUrls?: ReadonlySet<string>
 }): Promise<string> => {
   if ('progress' in musicInfo) {
-    return getDownloadMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource })
+    return getDownloadMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource, quality, urlSourceOrder, onCancel, validateUrl, rejectedUrls })
   } else if (musicInfo.source == 'local') {
-    return getLocalMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource })
+    return getLocalMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource, quality, urlSourceOrder, onCancel, validateUrl, rejectedUrls })
   } else {
     if (!isRefresh) {
       const localMusicInfo = await findLocalMusicInfo(musicInfo)

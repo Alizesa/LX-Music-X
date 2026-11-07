@@ -18,51 +18,65 @@ import { stat } from '@/utils/fs'
 import { ensureLocalMatchIndex, findLocalMatchRow, localIndexRowToMusicInfo } from '@/utils/localMatchIndex'
 import { patchLocalMusicMeta } from '@/core/localList'
 import { LIST_IDS } from '@/config/constant'
+import { isRequestCancelled, requestMsg } from '@/utils/message'
+import { type MusicUrlRequestOptions } from './sourcePriority'
 
-const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handler: (infos: LX.Music.MusicInfoOnline[]) => Promise<T>) => {
+const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handler: (infos: LX.Music.MusicInfoOnline[]) => Promise<T>, assertActive: () => void = () => {}) => {
+  const search = async(info: LX.Music.MusicInfoLocal, isRefresh = false) => {
+    assertActive()
+    const infos = await getOtherSource(info, isRefresh)
+    assertActive()
+    return infos
+  }
+  const handleFailure = (error: unknown) => {
+    assertActive()
+    if (isRequestCancelled(error)) throw error
+  }
   let result: LX.Music.MusicInfoOnline[] = []
-  result = await getOtherSource(musicInfo)
-  if (result.length) try { return await handler(result) } catch {}
+  result = await search(musicInfo)
+  if (result.length) try { return await handler(result) } catch (error) { handleFailure(error) }
   if (musicInfo.name.includes('-')) {
     const [name, singer] = musicInfo.name.split('-').map(val => val.trim())
-    result = await getOtherSource({
+    result = await search({
       ...musicInfo,
       name,
       singer,
     }, true)
-    if (result.length) try { return await handler(result) } catch {}
-    result = await getOtherSource({
+    if (result.length) try { return await handler(result) } catch (error) { handleFailure(error) }
+    result = await search({
       ...musicInfo,
       name: singer,
       singer: name,
     }, true)
-    if (result.length) try { return await handler(result) } catch {}
+    if (result.length) try { return await handler(result) } catch (error) { handleFailure(error) }
   }
+  assertActive()
   let fileName = (await stat(musicInfo.meta.filePath).catch(() => ({ name: null }))).name ?? musicInfo.meta.filePath.split(/\/|\\/).at(-1)
+  assertActive()
   if (fileName) {
     fileName = fileName.substring(0, fileName.lastIndexOf('.'))
     if (fileName != musicInfo.name) {
       if (fileName.includes('-')) {
         const [name, singer] = fileName.split('-').map(val => val.trim())
-        result = await getOtherSource({
+        result = await search({
           ...musicInfo,
           name,
           singer,
         }, true)
-        if (result.length) try { return await handler(result) } catch {}
-        result = await getOtherSource({
+        if (result.length) try { return await handler(result) } catch (error) { handleFailure(error) }
+        result = await search({
           ...musicInfo,
           name: singer,
           singer: name,
         }, true)
       } else {
-        result = await getOtherSource({
+        result = await search({
           ...musicInfo,
           name: fileName,
           singer: '',
         }, true)
       }
-      if (result.length) try { return await handler(result) } catch {}
+      if (result.length) try { return await handler(result) } catch (error) { handleFailure(error) }
     }
   }
 
@@ -83,37 +97,54 @@ export const findLocalMusicInfo = async(musicInfo: LX.Music.MusicInfoOnline): Pr
   return row ? localIndexRowToMusicInfo(row) : undefined
 }
 
-export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
+export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {}, onCancel, ...options }: {
   musicInfo: LX.Music.MusicInfoLocal
   isRefresh: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
   allowToggleSource?: boolean
-}): Promise<string> => {
+} & MusicUrlRequestOptions): Promise<string> => {
+  let cancelled = false
+  let currentCancel: (() => void) | undefined
+  onCancel?.(() => { cancelled = true; currentCancel?.() })
+  const assertActive = () => { if (cancelled) throw new Error(requestMsg.cancelRequest) }
+  const registerCancel = (cancel: () => void) => {
+    currentCancel = cancel
+    if (cancelled) cancel()
+  }
+  const requestOptions = { ...options, onCancel: registerCancel }
+  assertActive()
   if (!isRefresh) {
     const path = await getLocalFilePath(musicInfo)
+    assertActive()
     // console.log(path)
     if (path) return path
   }
 
   try {
-    return await getOnlineOtherSourceMusicUrlByLocal(musicInfo, isRefresh).then(({ url, quality, isFromCache }) => {
+    return await getOnlineOtherSourceMusicUrlByLocal(musicInfo, isRefresh, requestOptions).then(({ url, quality, isFromCache }) => {
+      assertActive()
       if (!isFromCache) void saveMusicUrl(musicInfo, quality, url)
       return url
     })
-  } catch {}
+  } catch (error) {
+    assertActive()
+    if (isRequestCancelled(error)) throw error
+  }
 
   if (!allowToggleSource) throw new Error('failed')
 
   onToggleSource()
   return getOtherSourceByLocal(musicInfo, async(otherSource) => {
-    return getOnlineOtherSourceMusicUrl({ musicInfos: [...otherSource], onToggleSource, isRefresh }).then(({ url, quality: targetQuality, musicInfo: targetMusicInfo, isFromCache }) => {
+    assertActive()
+    return getOnlineOtherSourceMusicUrl({ musicInfos: [...otherSource], onToggleSource, isRefresh, ...requestOptions }).then(({ url, quality: targetQuality, musicInfo: targetMusicInfo, isFromCache }) => {
+      assertActive()
       // saveLyric(musicInfo, data.lyricInfo)
       if (!isFromCache) void saveMusicUrl(targetMusicInfo, targetQuality, url)
 
       // TODO: save url ?
       return url
     })
-  })
+  }, assertActive)
 }
 
 export const getPicUrl = async({ musicInfo, listId, isRefresh, skipFilePic, onToggleSource = () => {} }: {

@@ -7,19 +7,20 @@ import {
   getLyricInfo as getOnlineLyricInfo,
 } from './online'
 import { buildLyricInfo, getCachedLyricInfo } from './utils'
+import { type MusicUrlRequestOptions } from './sourcePriority'
 
-export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
+export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {}, ...options }: {
   musicInfo: LX.Download.ListItem
   isRefresh: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
   allowToggleSource?: boolean
-}): Promise<string> => {
+} & MusicUrlRequestOptions): Promise<string> => {
   // if (!isRefresh) {
   //   const path = await getDownloadFilePath(musicInfo, appSetting['download.savePath'])
   //   if (path) return path
   // }
 
-  return getOnlineMusicUrl({ musicInfo: musicInfo.metadata.musicInfo, isRefresh, onToggleSource, allowToggleSource })
+  return getOnlineMusicUrl({ musicInfo: musicInfo.metadata.musicInfo, isRefresh, onToggleSource, allowToggleSource, ...options })
 }
 
 export const getPicUrl = async({ musicInfo, isRefresh, listId, onToggleSource = () => {} }: {

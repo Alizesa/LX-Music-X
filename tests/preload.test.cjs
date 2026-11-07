@@ -288,7 +288,7 @@ test('cancelled cache lookups cannot start validation or source requests', async
     '@/utils/data': { getMusicUrl: () => gate.promise }, '@/core/list': {},
     '@/store/setting/state': { default: { setting: settings() } }, '@/utils/message': message,
     './sourcePriority': { isMusicUrlFailed: () => false },
-    './utils': { handleGetOnlineMusicUrl: async() => { requests++ } },
+    './utils': { getPlayQuality: quality => quality, handleGetOnlineMusicUrl: async() => { requests++ } },
   })
   const pending = api.getMusicUrl({ musicInfo: song('one'), isRefresh: false, onCancel: fn => { cancel = fn }, validateUrl: async() => { validations++ } })
   const rejection = assert.rejects(pending, /cancelled/)
@@ -305,7 +305,7 @@ test('a late source response after cancellation is never persisted to the URL ca
   const api = load('src/core/music/online.ts', {
     '@/utils/data': { getMusicUrl: async() => '', saveMusicUrl: async(...args) => writes.push(args) }, '@/core/list': {},
     '@/store/setting/state': { default: { setting: settings() } }, '@/utils/message': message,
-    './sourcePriority': {}, './utils': { handleGetOnlineMusicUrl: () => gate.promise },
+    './sourcePriority': {}, './utils': { getPlayQuality: quality => quality, handleGetOnlineMusicUrl: () => gate.promise },
   })
   const pending = api.getMusicUrl({ musicInfo: song('one'), isRefresh: false, onCancel: fn => { cancel = fn } })
   const rejection = assert.rejects(pending, /cancelled/)
@@ -322,10 +322,10 @@ const schedulerHarness = () => {
   const player = { isPlay: true, playMusicInfo: { musicInfo: song('current') }, progress: { nowPlayTime: 5, maxPlayTime: 180 } }
   let now = 1000, buffered = 30, selections = 0, bufferReads = 0, resetRandom = 0
   let next = { musicInfo: song('next'), isTempPlay: false, listId: 'queue' }, selecting
-  let prepared, paused = false
+  let prepared, bufferedGate, paused = false
   const calls = []
   const api = load('src/core/init/player/preloadNextMusic.ts', {
-    'react-native-track-player': { default: { getBufferedPosition: async() => { bufferReads++; return buffered } } },
+    'react-native-track-player': { default: { getBufferedPosition: async() => { bufferReads++; if (bufferedGate) await bufferedGate.promise; return buffered } } },
     '@/store/player/state': { default: player }, '@/store/setting/state': { default: { setting } }, '@/utils/message': message,
     '@/plugins/player/preload': { canPreloadAudio: () => true },
     '@/core/player/player': {
@@ -343,7 +343,8 @@ const schedulerHarness = () => {
   api.default()
   return { app, state, setting, player, calls, selections: () => selections, bufferReads: () => bufferReads, resetRandom: () => resetRandom,
     tick: async(ms = 3000) => { now += ms; state.emit('playProgressChanged', {}); await flush() },
-    buffer: value => { buffered = value }, setNext: value => { next = value }, setSelecting: value => { selecting = value } }
+    buffer: value => { buffered = value }, setNext: value => { next = value }, setSelecting: value => { selecting = value },
+    setBufferedGate: value => { bufferedGate = value } }
 }
 
 test('scheduler waits for stable playback and enough buffer, then avoids repeated selection or polling', async() => {
@@ -407,7 +408,7 @@ const timers = () => {
     fire: async ms => { for (const [key, entry] of [...entries]) if (entry.ms === ms) { entries.delete(key); entry.fn() }; await flush() }, entries }
 }
 
-const runtimeHarness = ({ autoReply = true, autoInit = true, primary } = {}) => {
+const runtimeHarness = ({ autoReply = true, autoInit = true, primary, apiReady = Promise.resolve(true) } = {}) => {
   const setting = settings(), clock = timers(), handlers = new Map(), loaded = [], destroyed = [], sent = [], http = []
   const info = id => ({ id, name: id, sources: { tx: { type: 'music', actions: ['musicUrl'], qualitys: ['128k', '320k'] } } })
   const api = load('src/core/userApiRuntime.ts', {
@@ -427,7 +428,7 @@ const runtimeHarness = ({ autoReply = true, autoInit = true, primary } = {}) => 
       },
     },
   }, { global: { lx: {
-    apiInitPromise: [Promise.resolve(true)],
+    apiInitPromise: [apiReady],
     qualityList: { tx: ['128k', '320k'] },
     apis: { tx: { getMusicUrl: primary ?? (() => ({ canceleFn() {}, promise: Promise.resolve({ url: 'https://audio.test/main' }) })) } },
   } } })
@@ -569,4 +570,108 @@ test('native playback errors allow all selected backup sources to be tried befor
   app.emit('playerError')
   await flush()
   assert.equal(requests.length, 5)
+})
+
+test('an explicit download quality cannot silently downgrade in the source runtime', async() => {
+  let requests = 0
+  const h = runtimeHarness({ primary: () => { requests++; return { canceleFn() {}, promise: Promise.resolve({ url: 'https://audio.test/main' }) } } })
+  await assert.rejects(h.api.requestUserApiMusicUrl('user_api_a', song('one'), 'flac', undefined, false), /Unsupported music quality/)
+  assert.equal(requests, 0)
+  assert.equal((await h.api.requestUserApiMusicUrl('user_api_a', song('one'), 'flac')).type, '320k')
+})
+
+test('exact quality failures advance to another source without blocking playback quality fallback', async() => {
+  const h = priorityHarness(async(id, music, quality, onCancel, allowFallback) => {
+    if (id === 'user_api_a' && !allowFallback) throw new Error('Unsupported music quality')
+    return { url: `https://audio.test/${id}`, type: id === 'user_api_a' ? '320k' : quality }
+  })
+  assert.equal((await h.get({ quality: 'flac', allowQualityFallback: false })).quality, 'flac')
+  assert.deepEqual(h.calls, ['user_api_a', 'user_api_b'])
+  assert.equal((await h.get({ quality: 'flac' })).quality, '320k')
+  assert.deepEqual(h.calls, ['user_api_a', 'user_api_b', 'user_api_a'])
+})
+
+test('a downgraded playback URL is cached only under its actual quality', async() => {
+  const writes = []
+  const setting = { ...settings(), 'player.playQuality': 'flac' }
+  const api = load('src/core/music/online.ts', {
+    '@/utils/data': { getMusicUrl: async() => '', saveMusicUrl: async(...args) => writes.push(args) }, '@/core/list': {},
+    '@/store/setting/state': { default: { setting } }, '@/utils/message': message, './sourcePriority': {},
+    './utils': { getPlayQuality: quality => quality, handleGetOnlineMusicUrl: async() => ({ musicInfo: song('one'), url: 'https://audio.test/128k', quality: '128k' }) },
+  })
+  assert.equal(await api.getMusicUrl({ musicInfo: song('one'), isRefresh: false }), 'https://audio.test/128k')
+  assert.deepEqual(writes.map(([, quality]) => quality), ['128k'])
+})
+
+test('switching the primary source during initialization cannot redirect an old request to the new runtime', async() => {
+  const ready = deferred()
+  let requests = 0
+  const h = runtimeHarness({ apiReady: ready.promise, primary: () => { requests++; return { canceleFn() {}, promise: Promise.resolve({ url: 'wrong-source' }) } } })
+  const pending = h.api.requestUserApiMusicUrl('user_api_a', song('one'), '320k')
+  const rejection = assert.rejects(pending, /cancelled/)
+  h.setting['common.apiSource'] = 'user_api_b'
+  ready.resolve(true)
+  await rejection
+  assert.equal(requests, 0)
+})
+
+test('a buffer query started before pause cannot start preloading immediately after resume', async() => {
+  const h = schedulerHarness()
+  const gate = deferred()
+  h.setBufferedGate(gate)
+  await h.tick()
+  h.player.isPlay = false
+  h.app.emit('pause')
+  h.player.isPlay = true
+  h.app.emit('playerPlaying')
+  gate.resolve()
+  await flush()
+  assert.deepEqual(h.calls, [])
+  await h.tick()
+  assert.deepEqual(h.calls, ['next'])
+})
+
+test('legacy download items retain cancellation through the online fallback', async() => {
+  const gate = deferred()
+  const download = load('src/core/music/download.ts', {
+    './utils': {}, './online': { getMusicUrl: options => {
+      options.onCancel?.(() => gate.reject(new Error('cancelled')))
+      return gate.promise
+    } },
+  })
+  const api = load('src/core/music/index.ts', {
+    './online': {}, './download': download, './local': {}, '@/utils/music': {}, '@/config/constant': {},
+  })
+  let cancel
+  const pending = api.getMusicUrl({ musicInfo: { id: 'download', progress: {}, metadata: { musicInfo: song('one') } }, onCancel: fn => { cancel = fn } })
+  const rejection = assert.rejects(pending, /cancelled/)
+  assert.equal(typeof cancel, 'function')
+  cancel()
+  await rejection
+})
+
+test('cancelling a missing local file stops source requests without searching more song names', async() => {
+  const gate = deferred()
+  let searches = 0, writes = 0
+  const api = load('src/core/music/local.ts', {
+    '@/utils/data': { saveMusicUrl: async() => { writes++ } }, '@/core/list': {},
+    '@/utils/music': { getLocalFilePath: async() => null }, '@/utils/localMediaMetadata': {}, '@/utils/fs': {},
+    '@/utils/localMatchIndex': {}, '@/core/localList': {}, '@/config/constant': {}, '@/utils/message': message,
+    './utils': {
+      getOnlineOtherSourceMusicUrlByLocal: (music, refresh, options) => {
+        options.onCancel(() => gate.reject(new Error('cancelled')))
+        return gate.promise
+      },
+      getOtherSource: async() => { searches++; return [] },
+    },
+  })
+  let cancel
+  const pending = api.getMusicUrl({ musicInfo: { id: 'local', source: 'local', name: 'Singer - Song', meta: { filePath: '/missing.mp3' } }, isRefresh: false,
+    onCancel: fn => { cancel = fn } })
+  const rejection = assert.rejects(pending, /cancelled/)
+  await flush()
+  cancel()
+  await rejection
+  assert.equal(searches, 0)
+  assert.equal(writes, 0)
 })
