@@ -10,7 +10,7 @@ import settingState from '@/store/setting/state'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import BackgroundTimer from 'react-native-background-timer'
 import { apis } from '@/utils/musicSdk/api-source'
-import { getQQMusicUrlByAccount } from '@/core/qqMusicUrl'
+import { getQQMusicUrlByAccount, validateCachedQQMusicUrl } from '@/core/qqMusicUrl'
 import { QQ_LYRIC_CACHE_VERSION } from '@/config/constant'
 import { getEnabledMusicSourceIds, getMusicUrlByPriority, isMusicUrlFailed, markMusicUrlFailed, type MusicUrlRequestOptions, type ValidateMusicUrl } from './sourcePriority'
 
@@ -297,6 +297,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
   const cachedUrl = await getStoreMusicUrl(musicInfo, itemQuality)
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
+      await validateCachedQQMusicUrl(musicInfo, cachedUrl, itemQuality, onCancel)
       await validateUrl?.(cachedUrl)
       return { url: cachedUrl, musicInfo, quality: itemQuality, isFromCache: true }
     } catch (error) {

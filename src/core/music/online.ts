@@ -7,6 +7,7 @@ import { updateListMusics } from '@/core/list'
 import settingState from '@/store/setting/state'
 import { isMusicUrlFailed, markMusicUrlFailed, type ValidateMusicUrl } from './sourcePriority'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
+import { validateCachedQQMusicUrl } from '@/core/qqMusicUrl'
 
 import {
   buildLyricInfo,
@@ -74,6 +75,8 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
+      await validateCachedQQMusicUrl(musicInfo, cachedUrl, targetQuality, registerCancel)
+      assertActive()
       await validateUrl?.(cachedUrl)
       assertActive()
       return cachedUrl

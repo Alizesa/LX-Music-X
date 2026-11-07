@@ -38,9 +38,10 @@ const response = (purl, extra = {}) => ({
   code: 0, req_1: { code: 0, data: { sip: ['https://audio.example/'], midurlinfo: [{ result: 0, purl }], ...extra } },
 })
 const standard = 'https://audio.example/M500media.mp3'
+const fullAudio = url => ({ readable: true, durationMs: 180000, mime: /\.flac(?:[?#]|$)/i.test(url) ? 'audio/flac' : 'audio/mpeg' })
 
 // Use the actual authenticated request builder as well as the account URL resolver.
-const harness = ({ ticket = () => response('M500media.mp3'), probe = () => ({ readable: true }), cookie = 'uin=123; qm_keyst=Q_KEY', timers = { setTimeout, clearTimeout } } = {}) => {
+const harness = ({ ticket = () => response('M500media.mp3'), probe = fullAudio, cookie = 'uin=123; qm_keyst=Q_KEY', timers = { setTimeout, clearTimeout } } = {}) => {
   const requests = []
   const probes = []
   let cancelledTickets = 0
@@ -74,7 +75,7 @@ const harness = ({ ticket = () => response('M500media.mp3'), probe = () => ({ re
       },
     },
   })
-  return { requests, probes, account, getCancelledTickets: () => cancelledTickets, resolve: (track = song, preferred = '128k', max = '128k', options) => playback.getQQMusicUrlByAccount(track, preferred, max, options) }
+  return { requests, probes, account, playback, getCancelledTickets: () => cancelledTickets, resolve: (track = song, preferred = '128k', max = '128k', options) => playback.getQQMusicUrlByAccount(track, preferred, max, options) }
 }
 
 test('empty App ticket falls back to a genuine web request with matching comm and UA', async() => {
@@ -109,11 +110,11 @@ test('App network failure still attempts the web ticket once', async() => {
   assert.equal(h.requests.length, 2)
 })
 
-test('a full App URL avoids extra web tickets and duration requests', async() => {
+test('a full App URL is inspected and avoids extra web tickets', async() => {
   const h = harness()
   assert.equal((await h.resolve()).url, standard)
   assert.equal(h.requests.length, 1)
-  assert.deepEqual(h.probes, [{ url: standard, inspect: false }])
+  assert.deepEqual(h.probes, [{ url: standard, inspect: true }])
   assert.deepEqual(Array.from(h.requests[0].body.req_1.param.filename), ['M500media.mp3', 'M500mediamedia.mp3'])
 })
 
@@ -130,38 +131,59 @@ test('src redirect with matching audio duration is accepted as full playback', a
 test('a real 30 second preview falls back to a full web URL', async() => {
   const h = harness({
     ticket: param => response(`M500media.mp3${param.platform === '23' ? '?src=trial' : ''}`),
-    probe: () => ({ readable: true, durationMs: 30000, mime: 'audio/mpeg' }),
+    probe: url => ({ ...fullAudio(url), durationMs: url.includes('src=trial') ? 30000 : 180000 }),
   })
   assert.equal((await h.resolve()).url, standard)
   assert.equal(h.requests.length, 2)
 })
 
+test('an unmarked account preview falls back to a verified full web URL', async() => {
+  const h = harness({
+    ticket: param => response(`M500media.mp3?channel=${param.platform}`),
+    probe: url => ({ ...fullAudio(url), durationMs: url.endsWith('23') ? 30000 : 180000 }),
+  })
+  assert.equal((await h.resolve()).url, `${standard}?channel=20`)
+  assert.equal(h.requests.length, 2)
+  assert.ok(h.probes.every(probe => probe.inspect))
+})
+
 test('previews, unknown durations and wrong audio formats never pass as a complete song', async() => {
-  for (const media of [
-    { readable: true, durationMs: 30000, mime: 'audio/mpeg' },
-    { readable: true, mime: 'audio/mpeg' },
-    { readable: true, durationMs: 180000, mime: 'audio/aac' },
-  ]) {
-    const h = harness({ ticket: () => response('M500media.mp3?src=trial'), probe: () => media })
-    assert.equal(await h.resolve(), null)
-    assert.equal(h.requests.length, 2)
+  for (const suffix of ['', '?src=trial']) {
+    for (const media of [
+      { readable: true, durationMs: 30000, mime: 'audio/mpeg' },
+      { readable: true, mime: 'audio/mpeg' },
+      { readable: true, durationMs: 0, mime: 'audio/mpeg' },
+      { readable: true, durationMs: 180000, mime: 'audio/aac' },
+    ]) {
+      const h = harness({ ticket: () => response(`M500media.mp3${suffix}`), probe: () => media })
+      assert.equal(await h.resolve(), null)
+      assert.equal(h.requests.length, 2)
+    }
   }
-  const missingDuration = harness({ ticket: () => response('M500media.mp3?src=trial') })
-  assert.equal(await missingDuration.resolve({ ...song, interval: null }), null)
-  assert.equal(missingDuration.probes.length, 0)
+})
+
+test('missing song duration falls back without unverified playback or ticket requests', async() => {
+  for (const interval of [null, '', '00:00', 'unknown']) {
+    const h = harness()
+    assert.equal(await h.resolve({ ...song, interval }), null)
+    assert.equal(h.requests.length, 0)
+    assert.equal(h.probes.length, 0)
+  }
 })
 
 test('duration validation follows the MusicOne tolerance of 2 seconds or 2 percent', async() => {
-  for (const [interval, actual, full] of [
-    ['03:00', 183600, true], ['03:00', 183601, false],
-    ['00:45', 43000, true], ['00:45', 42999, false],
-    ['01:00:00', 3600000, true],
-  ]) {
-    const h = harness({
-      ticket: () => response('M500media.mp3?src=redirect'),
-      probe: () => ({ readable: true, durationMs: actual, mime: 'audio/mpeg' }),
-    })
-    assert.equal(Boolean(await h.resolve({ ...song, interval })), full)
+  for (const suffix of ['', '?src=redirect']) {
+    for (const [interval, actual, full] of [
+      ['03:00', 183600, true], ['03:00', 183601, false],
+      ['00:45', 43000, true], ['00:45', 42999, false],
+      ['00:30', 30000, true], ['01:00:00', 3600000, true],
+    ]) {
+      const h = harness({
+        ticket: () => response(`M500media.mp3${suffix}`),
+        probe: () => ({ readable: true, durationMs: actual, mime: 'audio/mpeg' }),
+      })
+      assert.equal(Boolean(await h.resolve({ ...song, interval })), full)
+    }
   }
 })
 
@@ -170,16 +192,17 @@ test('a later full wifiurl wins over an earlier preview', async() => {
     ticket: () => response('', {
       midurlinfo: [{ result: 0, purl: 'M500media.mp3?src=trial', wifiurl: 'M500media.mp3' }],
     }),
+    probe: url => ({ ...fullAudio(url), durationMs: url.includes('src=trial') ? 30000 : 180000 }),
   })
   assert.equal((await h.resolve()).url, standard)
-  assert.equal(h.probes[0].inspect, false)
+  assert.equal(h.probes[0].inspect, true)
   assert.equal(h.requests.length, 1)
 })
 
 test('a failed CDN advances to the next HTTPS candidate within the account', async() => {
   const h = harness({
     ticket: () => response('http://bad.example/M500media.mp3', { sip: ['https://bad.example/', '//audio.example/'] }),
-    probe: url => ({ readable: url === standard }),
+    probe: url => ({ ...fullAudio(url), readable: url === standard }),
   })
   assert.equal((await h.resolve()).url, standard)
   assert.deepEqual(h.probes.map(probe => probe.url), ['https://bad.example/M500media.mp3', standard])
@@ -189,7 +212,7 @@ test('a failed CDN advances to the next HTTPS candidate within the account', asy
 test('an unreadable App URL falls back to the web URL', async() => {
   const h = harness({
     ticket: param => response(`M500media.mp3?channel=${param.platform}`),
-    probe: url => ({ readable: url.endsWith('channel=20') }),
+    probe: url => ({ ...fullAudio(url), readable: url.endsWith('channel=20') }),
   })
   assert.equal((await h.resolve()).url, `${standard}?channel=20`)
   assert.equal(h.requests.length, 2)
@@ -391,7 +414,7 @@ test('a responsive CDN wins while the first candidate is stuck, cancelling loser
     ticket: () => response('M500media.mp3', { sip: ['https://stuck.example/', 'https://good.example/'] }),
     probe: (url, _inspect, { signal }) => url.includes('stuck')
       ? abort.withAbort(new Promise(() => {}), signal)
-      : { readable: true },
+      : fullAudio(url),
   })
   assert.equal((await h.resolve()).url, 'https://good.example/M500media.mp3')
   assert.equal(h.requests.length, 1)
@@ -420,7 +443,7 @@ test('a batch deadline reaches the web fallback even when App media never settle
     ticket: param => response(`M500media.mp3?channel=${param.platform}`),
     probe: (url, _inspect, { signal }) => url.endsWith('23')
       ? abort.withAbort(new Promise(() => {}), signal)
-      : { readable: true },
+      : fullAudio(url),
   })
   assert.equal((await h.resolve()).url, `${standard}?channel=20`)
   assert.equal(h.requests.length, 2)
@@ -459,7 +482,7 @@ test('account-wide timeout aborts a stuck ticket and permits source fallback', a
   assert.equal(h.getCancelledTickets(), 1)
 })
 
-const onlineHarness = (h, apiReady = Promise.resolve(true)) => {
+const onlineHarness = (h, apiReady = Promise.resolve(true), data = {}) => {
   let sourceCalls = 0
   const pipeline = load('src/core/music/utils.ts', {
     './sourcePriority': {
@@ -485,25 +508,123 @@ const onlineHarness = (h, apiReady = Promise.resolve(true)) => {
         },
       },
     },
-    '@/utils/data': {},
+    '@/utils/data': data,
     '@/utils': { toOldMusicInfo: music => music },
     '@/utils/tools': {},
     '@/store/setting/state': { default: { setting: { 'player.noVipStandardQuality': true, 'player.urlSource': 'account' } } },
     '@/utils/message': message,
     '@/utils/musicSdk/api-source': {},
-    '@/core/qqMusicUrl': { getQQMusicUrlByAccount: h.resolve },
+    '@/core/qqMusicUrl': { ...h.playback, getQQMusicUrlByAccount: h.resolve },
   })
   return {
+    pipeline,
     resolve: options => pipeline.handleGetOnlineMusicUrl({ musicInfo: song, quality: '128k', allowToggleSource: false, onToggleSource() {}, ...options }),
     sourceCalls: () => sourceCalls,
   }
 }
 
+test('unmarked previews in both account channels fall back to the selected source', async() => {
+  const h = harness({ probe: url => ({ ...fullAudio(url), durationMs: 30000 }) })
+  const online = onlineHarness(h)
+  assert.equal((await online.resolve({ isRefresh: false })).url, 'https://source.example/song.mp3')
+  assert.equal(h.requests.length, 2)
+  assert.ok(h.probes.every(probe => probe.inspect))
+  assert.equal(online.sourceCalls(), 1)
+})
+
+const cachedQQUrl = 'https://isure.stream.qqmusic.qq.com/M500media.mp3?vkey=cached'
+const cachedOnlineHarness = (h, cachedUrl = cachedQQUrl) => {
+  const failed = new Set()
+  const writes = []
+  const data = {
+    getMusicUrl: async() => cachedUrl,
+    saveMusicUrl: async(music, quality, url) => { writes.push({ music, quality, url }); cachedUrl = url },
+  }
+  const online = onlineHarness(h, Promise.resolve(true), data)
+  const api = load('src/core/music/online.ts', {
+    '@/utils/data': data,
+    '@/core/list': {},
+    '@/store/setting/state': { default: { setting: { 'player.playQuality': '128k' } } },
+    '@/utils/message': message,
+    '@/core/qqMusicUrl': h.playback,
+    './utils': online.pipeline,
+    './sourcePriority': { isMusicUrlFailed: url => failed.has(url), markMusicUrlFailed: url => { failed.add(url) } },
+  })
+  return {
+    failed,
+    writes,
+    online,
+    resolve: options => api.getMusicUrl({ musicInfo: song, quality: '128k', isRefresh: false, allowToggleSource: false, ...options }),
+  }
+}
+
+test('cached QQ previews are rejected before playback or preloading can reuse them', async() => {
+  const h = harness({ probe: url => ({ ...fullAudio(url), durationMs: url === cachedQQUrl ? 30000 : 180000 }) })
+  const cache = cachedOnlineHarness(h)
+  const validated = []
+  assert.equal(await cache.resolve({ validateUrl: async url => { validated.push(url) } }), standard)
+  assert.deepEqual(h.probes[0], { url: cachedQQUrl, inspect: true })
+  assert.ok(cache.failed.has(cachedQQUrl))
+  assert.deepEqual(validated, [standard])
+  assert.equal(cache.writes[0].url, standard)
+  assert.equal(h.requests.length, 1)
+})
+
+test('account selection and full cache hits reuse the same native media metadata', async() => {
+  let calls = 0
+  const media = load('src/utils/nativeModules/remoteAudio.ts', {
+    'react-native': { NativeModules: { UtilsModule: { startRemoteAudioProbe: async(_id, url) => { calls++; return fullAudio(url) } } } },
+  })
+  const h = harness({ ticket: () => response(cachedQQUrl, { sip: [] }), probe: media.probeRemoteAudio })
+  const cache = cachedOnlineHarness(h, '')
+  assert.equal(await cache.resolve(), cachedQQUrl)
+  assert.equal(await cache.resolve(), cachedQQUrl)
+  assert.equal(calls, 1)
+  assert.equal(h.requests.length, 1)
+  assert.equal(cache.writes.length, 1)
+})
+
+test('other source cache URLs do not trigger QQ account media checks', async() => {
+  const h = harness()
+  const cache = cachedOnlineHarness(h, 'https://source.example/song.mp3')
+  assert.equal(await cache.resolve(), 'https://source.example/song.mp3')
+  assert.equal(h.probes.length, 0)
+  assert.equal(h.requests.length, 0)
+})
+
+test('cancelling a cached QQ duration check stops native IO without fallback', async() => {
+  const media = mediaHarness()
+  const h = harness({ probe: media.probe })
+  const cache = cachedOnlineHarness(h)
+  let cancel
+  const result = cache.resolve({ onCancel: fn => { cancel = fn } })
+  await flush()
+  assert.equal(media.started.length, 1)
+  cancel()
+  await assert.rejects(result, { message: message.requestMsg.cancelRequest })
+  assert.deepEqual(media.cancelled, [media.started[0].id])
+  assert.equal(h.requests.length, 0)
+  assert.equal(cache.online.sourceCalls(), 0)
+  assert.equal(cache.writes.length, 0)
+  assert.equal(cache.failed.size, 0)
+})
+
+test('cross-platform fallback also rejects cached QQ previews', async() => {
+  const h = harness({ probe: url => ({ ...fullAudio(url), durationMs: 30000 }) })
+  const online = onlineHarness(h, Promise.resolve(true), { getMusicUrl: async() => cachedQQUrl })
+  const result = await online.pipeline.getOnlineOtherSourceMusicUrl({
+    musicInfos: [song], quality: '128k', isRefresh: false, onToggleSource() {},
+  })
+  assert.equal(result.url, 'https://source.example/song.mp3')
+  assert.deepEqual(h.probes, [{ url: cachedQQUrl, inspect: true }])
+  assert.equal(online.sourceCalls(), 1)
+})
+
 test('the online player forwards forced refresh and reaches source after both tickets fail', async() => {
   let working = true
   let checks = 0
   const realMedia = load('src/utils/nativeModules/remoteAudio.ts', {
-    'react-native': { NativeModules: { UtilsModule: { startRemoteAudioProbe: async() => { checks++; return { readable: working } } } } },
+    'react-native': { NativeModules: { UtilsModule: { startRemoteAudioProbe: async() => { checks++; return { ...fullAudio(standard), readable: working } } } } },
   })
   const h = harness({ probe: realMedia.probeRemoteAudio })
   const online = onlineHarness(h)

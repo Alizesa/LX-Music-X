@@ -237,6 +237,7 @@ const cacheHarness = ({ cached = oldLyrics, edited, source = 'tx', fetchLyrics =
     },
   })
   const online = load('src/core/music/online.ts', {
+    '@/core/qqMusicUrl': {},
     './sourcePriority': {},
     '@/utils/message': message,
     '@/utils/data': data,

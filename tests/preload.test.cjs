@@ -311,6 +311,7 @@ test('cancelled cache lookups cannot start validation or source requests', async
   const gate = deferred()
   let cancel, requests = 0, validations = 0
   const api = load('src/core/music/online.ts', {
+    '@/core/qqMusicUrl': {},
     '@/utils/data': { getMusicUrl: () => gate.promise }, '@/core/list': {},
     '@/store/setting/state': { default: { setting: settings() } }, '@/utils/message': message,
     './sourcePriority': { isMusicUrlFailed: () => false },
@@ -329,6 +330,7 @@ test('a late source response after cancellation is never persisted to the URL ca
   const gate = deferred(), writes = []
   let cancel
   const api = load('src/core/music/online.ts', {
+    '@/core/qqMusicUrl': {},
     '@/utils/data': { getMusicUrl: async() => '', saveMusicUrl: async(...args) => writes.push(args) }, '@/core/list': {},
     '@/store/setting/state': { default: { setting: settings() } }, '@/utils/message': message,
     './sourcePriority': {}, './utils': { getPlayQuality: quality => quality, handleGetOnlineMusicUrl: () => gate.promise },
@@ -621,6 +623,7 @@ test('a downgraded playback URL is cached only under its actual quality', async(
   const writes = []
   const setting = { ...settings(), 'player.playQuality': 'flac' }
   const api = load('src/core/music/online.ts', {
+    '@/core/qqMusicUrl': {},
     '@/utils/data': { getMusicUrl: async() => '', saveMusicUrl: async(...args) => writes.push(args) }, '@/core/list': {},
     '@/store/setting/state': { default: { setting } }, '@/utils/message': message, './sourcePriority': {},
     './utils': { getPlayQuality: quality => quality, handleGetOnlineMusicUrl: async() => ({ musicInfo: song('one'), url: 'https://audio.test/128k', quality: '128k' }) },

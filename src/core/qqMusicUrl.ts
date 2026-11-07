@@ -1,5 +1,5 @@
 import { getQQMusicSession, getQQMusicUin, postAuthedMusicu, QQMusicSessionExpiredError } from './qqMusic'
-import { probeRemoteAudio } from '@/utils/nativeModules/remoteAudio'
+import { probeRemoteAudio, type RemoteAudioInfo } from '@/utils/nativeModules/remoteAudio'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { throwIfAborted, withAbort } from '@/utils/abort'
 import BackgroundTimer from 'react-native-background-timer'
@@ -31,7 +31,7 @@ const buildTryOrder = (preferredQuality: LX.Quality | undefined, maxQuality: LX.
 // 固定 guid，和 tx SDK 的 comm 用同一个
 const GUID = '1F70E520B2EAA7D25E11760783C53CA9'
 
-// src 表示可能重定向到试听，仍须检查真实媒体时长。
+// src 只用于候选排序；不带它的地址也可能返回试听。
 const TRIAL_RXP = /[?&]src=/i
 
 const buildFilenames = (prefix: string, extension: string, songMid: string, mediaMid: string): string[] =>
@@ -57,7 +57,38 @@ const buildUrlCandidates = (purls: string[], sips: string[]): string[] => {
 
 const getDurationMs = (interval: string | null): number => {
   if (!interval || !/^\d+(?::\d{1,2}){1,2}$/.test(interval)) return 0
-  return interval.split(':').reduce((seconds, part) => seconds * 60 + Number(part), 0) * 1000
+  const durationMs = interval.split(':').reduce((seconds, part) => seconds * 60 + Number(part), 0) * 1000
+  return Number.isFinite(durationMs) ? durationMs : 0
+}
+
+const isCompleteAudio = (media: RemoteAudioInfo, quality: LX.Quality, expectedMs: number): boolean => {
+  const expectedMime = quality === 'flac' || quality === 'flac24bit' ? 'audio/flac' : 'audio/mpeg'
+  const actualMs = media.durationMs ?? 0
+  // MusicOne 的容差：2 秒或歌曲时长的 2%，取较大值。短歌曲按自身时长核对。
+  return media.readable && media.mime === expectedMime && expectedMs > 0 && actualMs > 0 &&
+    Math.abs(actualMs - expectedMs) <= Math.max(2000, expectedMs / 50)
+}
+
+/** 旧缓存没有账号来源标记；QQ CDN 地址也要核对，避免已缓存的试听绕过取链检查。 */
+export const validateCachedQQMusicUrl = async(
+  musicInfo: LX.Music.MusicInfoOnline,
+  url: string,
+  quality: LX.Quality,
+  onCancel?: (cancel: () => void) => void,
+): Promise<void> => {
+  if (musicInfo.source !== 'tx' || !/^https?:\/\/(?:[\w-]+\.)*qq\.com(?::\d+)?\//i.test(url)) return
+  const controller = new AbortController()
+  try {
+    onCancel?.(() => { controller.abort() })
+    throwIfAborted(controller.signal)
+    const expectedMs = getDurationMs(musicInfo.interval)
+    if (!QUALITY_SPEC[quality] || !expectedMs) throw new Error('QQ Music audio duration unavailable')
+    const media = await probeRemoteAudio(url, true, { signal: controller.signal })
+    throwIfAborted(controller.signal)
+    if (!isCompleteAudio(media, quality, expectedMs)) throw new Error('QQ Music audio is incomplete')
+  } finally {
+    controller.abort()
+  }
 }
 
 interface AccountUrlOptions {
@@ -86,7 +117,7 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
   const candidates = buildUrlCandidates(purls, sips)
   // 先试普通直链，避免第一项是试听时漏掉后面的完整地址。
   candidates.sort((a, b) => Number(TRIAL_RXP.test(a)) - Number(TRIAL_RXP.test(b)))
-  const selected = candidates.filter(url => !TRIAL_RXP.test(url) || expectedMs > 0).slice(0, 6)
+  const selected = candidates.slice(0, 6)
   if (!selected.length) return null
   // 每个响应最多探测 6 个候选、同时 3 个，整批含时长检查最多 5 秒。
   return new Promise<string | null>((resolve, reject) => {
@@ -110,15 +141,8 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
       while (next < selected.length) {
         if (done) return
         const url = selected[next++]
-        const inspectDuration = TRIAL_RXP.test(url)
-        const media = await probeRemoteAudio(url, inspectDuration, { signal: controller.signal, isRefresh, timeoutMs: 5000 })
-        if (done || !media.readable) continue
-        const expectedMime = quality === 'flac' || quality === 'flac24bit' ? 'audio/flac' : 'audio/mpeg'
-        const actualMs = media.durationMs ?? 0
-        // MusicOne 的容差：2 秒或歌曲时长的 2%，取较大值。
-        if (!inspectDuration || (media.mime === expectedMime && actualMs > 0 && Math.abs(actualMs - expectedMs) <= Math.max(2000, expectedMs / 50))) {
-          finish(url)
-        }
+        const media = await probeRemoteAudio(url, true, { signal: controller.signal, isRefresh, timeoutMs: 5000 })
+        if (!done && isCompleteAudio(media, quality, expectedMs)) finish(url)
       }
     }
     void Promise.all(Array.from({ length: Math.min(3, selected.length) }, worker))
@@ -163,7 +187,7 @@ export interface QQAccountUrl {
  * 用 QQ 账号直取播放地址。
  *
  * 账号能拿到完整音频时直接使用，只有无法取得完整音频才回落用户音源。
- * 带 src 的地址会核对实际音频时长，不以 URL 参数判断会员权限。
+ * 所有地址都核对实际音频时长与格式，不以 URL 参数判断是否完整。
  *
  * 每档先试 App，再试网页兼容票（platform 20），均不可用才降档。
  * 空地址、不可读地址、试听或网络异常都会尝试网页票；登录/业务错误停止账号重试。
@@ -180,7 +204,9 @@ export const getQQMusicUrlByAccount = async(
 ): Promise<QQAccountUrl | null> => {
   const meta = musicInfo.meta
   const songMid = String(meta.songId ?? '').trim()
-  if (!songMid) return null
+  const expectedMs = getDurationMs(musicInfo.interval)
+  // 无法比较完整时长时直接交给音源，避免取回试听后误当作完整音频。
+  if (!songMid || !expectedMs) return null
   const controller = new AbortController()
   const { signal } = controller
   let timedOut = false
@@ -198,7 +224,6 @@ export const getQQMusicUrlByAccount = async(
     const order = buildTryOrder(preferredQuality, maxQuality)
       .filter(quality => options.allowQualityFallback !== false || quality === (preferredQuality ?? maxQuality))
     const mediaMid = String(meta.strMediaMid ?? '').trim()
-    const expectedMs = getDurationMs(musicInfo.interval)
     for (const quality of order) {
       const spec = QUALITY_SPEC[quality]
       if (!spec) continue
