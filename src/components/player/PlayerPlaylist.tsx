@@ -1,5 +1,5 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Animated, Dimensions, FlatList, PanResponder, TouchableOpacity, View } from 'react-native'
+import { Animated, Dimensions, FlatList, PanResponder, StyleSheet, TouchableOpacity, View } from 'react-native'
 import Popup, { type PopupType } from '@/components/common/Popup'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
@@ -12,6 +12,8 @@ import { getPlayQueue } from '@/core/player/playQueue'
 import { LIST_IDS, LIST_ITEM_HEIGHT } from '@/config/constant'
 import { scaleSizeH } from '@/utils/pixelRatio'
 import { createStyle } from '@/utils/tools'
+import { useTabletLayout } from '@/utils/hooks'
+import { TABLET_PLAYER_BOTTOM_GAP, TABLET_PLAYER_MAX_WIDTH, TABLET_PLAYER_WIDTH } from '@/utils/layout'
 
 export interface PlayerPlaylistType {
   show: () => void
@@ -45,7 +47,7 @@ const ITEM_HEIGHT = scaleSizeH(LIST_ITEM_HEIGHT)
 // 给了 initialScrollIndex（且 > 0）时，渲染窗口会被 pendingScrollUpdateCount 钉在
 // [index, index + 它) 这一段上、并跳过初始那段，所以它得够一屏才不会在可视区里留下空行；
 // 反过来，队列长度不超过它时整条队列本来就都在初始段里，钉了反而会留白。
-// 面板最高占屏幕 78%，按屏幕高度折算行数再多留两行。
+// 手机面板最高占屏幕 78%，按屏幕高度折算行数再多留两行；平板按收窄后的面板高度计算。
 const INITIAL_ROWS = Math.ceil(Dimensions.get('screen').height / ITEM_HEIGHT) + 2
 
 // 必须 memo：队列动辄几百首，虚拟列表一次就会补进来一批单元格，
@@ -131,6 +133,9 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   const playInfo = usePlayInfo()
   const playMusicInfo = usePlayMusicInfo()
   const theme = useTheme()
+  const { isWide, height } = useTabletLayout()
+  const tabletMaxHeight = Math.min(height * 0.65, 560)
+  const initialRows = isWide ? Math.ceil(tabletMaxHeight / ITEM_HEIGHT) + 2 : INITIAL_ROWS
 
   // 临时歌曲插在当前曲目之后（没有在播的歌曲、或当前曲目已不在队列里时插到最前面）。
   // 这样当前曲目的行号仍然等于它在队列里的下标，面板定位那套计算不受影响。
@@ -166,12 +171,12 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   useImperativeHandle(ref, () => ({
     show() {
       const list = getPlayQueue()
-      // 队列长到初始渲染段（[0, INITIAL_ROWS)）装不下，才值得让虚拟列表「从当前项起渲染」；
-      // 装得下时钉了只有坏处：窗口被钉在 [index, index + INITIAL_ROWS) 上、初始那段又不渲染，
+      // 队列长到初始渲染段（[0, initialRows)）装不下，才值得让虚拟列表「从当前项起渲染」；
+      // 装得下时钉了只有坏处：窗口被钉在 [index, index + initialRows) 上、初始那段又不渲染，
       // 当前曲目以上那几行就成了空白；而内容短到滚不动时，连一次能解开这个钉死的滚动事件
       // 都产生不出来（拖也没用，原生根本没有可滚的余量），空白就一直挂在那里。不钉的话
       // 初始那段本来就盖住整条队列，一行都不会缺。
-      setPinWindow(list.length > INITIAL_ROWS)
+      setPinWindow(list.length > initialRows)
       const index = playInfo.playerPlayIndex > 0 && playInfo.playerPlayIndex < list.length ? playInfo.playerPlayIndex : 0
       setQueue([...list])
       setTempList([...playerState.tempPlayList])
@@ -281,7 +286,13 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   if (!visible) return null
 
   return (
-    <Popup ref={popupRef} title={global.i18n.t('player_playlist')} onHide={() => { setVisible(false) }} position="bottom">
+    <Popup
+      ref={popupRef}
+      title={global.i18n.t('player_playlist')}
+      onHide={() => { setVisible(false) }}
+      position="bottom"
+      contentStyle={isWide ? [tabletStyles.panel, { maxHeight: tabletMaxHeight }] : undefined}
+    >
       <View style={styles.toolbar}>
         <Text size={12} color={theme['c-font-label']}>{rows.length}</Text>
         <TouchableOpacity style={styles.clearButton} onPress={() => { void clearQueue() }}>
@@ -303,7 +314,7 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
         style={styles.list}
         getItemLayout={(_, index) => ({ length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index })}
         // 钉窗口那段的范围（见上面的说明），给足一屏
-        initialNumToRender={INITIAL_ROWS}
+        initialNumToRender={initialRows}
         // 队列不长时不给 initialScrollIndex（只定位，不钉窗口，见 show()）
         initialScrollIndex={pinWindow && initialIndex > 0 ? initialIndex : undefined}
         contentOffset={{ x: 0, y: initialIndex * ITEM_HEIGHT }}
@@ -353,6 +364,18 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
       />
     </Popup>
   )
+})
+
+const tabletStyles = StyleSheet.create({
+  panel: {
+    alignSelf: 'center',
+    width: TABLET_PLAYER_WIDTH,
+    maxWidth: TABLET_PLAYER_MAX_WIDTH,
+    minHeight: 0,
+    marginBottom: TABLET_PLAYER_BOTTOM_GAP,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
 })
 
 const styles = createStyle({

@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react'
-import { View, TouchableOpacity } from 'react-native'
+import { View, TouchableOpacity, type StyleProp, type ViewStyle } from 'react-native'
 
 import Modal, { type ModalType } from './Modal'
 import { Icon } from '@/components/common/Icon'
@@ -54,6 +54,7 @@ export interface PopupProps {
   closeBtn?: boolean
   position?: 'top' | 'left' | 'right' | 'bottom'
   title?: string
+  contentStyle?: StyleProp<ViewStyle>
   children: React.ReactNode
 }
 
@@ -68,6 +69,7 @@ export default forwardRef<PopupType, PopupProps>(({
   closeBtn = true,
   position = 'bottom',
   title = '',
+  contentStyle,
   children,
 }: PopupProps, ref) => {
   const theme = useTheme()
@@ -171,7 +173,7 @@ export default forwardRef<PopupType, PopupProps>(({
   return (
     <Modal onHide={onHide} keyHide={keyHide} bgHide={bgHide} bgColor="rgba(50,50,50,.2)" ref={modalRef}>
       <View style={{ ...styles.centeredView, ...centeredViewStyle, paddingBottom: keyboardShown ? keyboardHeight : 0 }}>
-        <View style={{ ...styles.modalView, ...modalViewStyle, backgroundColor: theme['c-content-background'] }} onStartShouldSetResponder={() => true}>
+        <View style={[styles.modalView, modalViewStyle, { backgroundColor: theme['c-content-background'] }, contentStyle]} onStartShouldSetResponder={() => true}>
           <View style={styles.header}>
             <Text size={13} style={styles.title} numberOfLines={1}>{title}</Text>
             {closeBtnComponent}

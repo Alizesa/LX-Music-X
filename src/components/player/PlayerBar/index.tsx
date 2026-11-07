@@ -10,10 +10,10 @@ import { createStyle, setColorAlpha } from '@/utils/tools'
 // import { useSettingValue } from '@/store/setting/hook'
 import { useTheme } from '@/store/theme/hook'
 import { useSettingValue } from '@/store/setting/hook'
+import { TABLET_PLAYER_BOTTOM_GAP, TABLET_PLAYER_MAX_WIDTH, TABLET_PLAYER_WIDTH } from '@/utils/layout'
 
 const TABLET_BAR_HEIGHT = 60 * global.lx.fontSize
-const TABLET_BAR_BOTTOM_GAP = 10
-export const TABLET_PLAYER_BAR_INSET = TABLET_BAR_HEIGHT + TABLET_BAR_BOTTOM_GAP
+export const TABLET_PLAYER_BAR_INSET = TABLET_BAR_HEIGHT + TABLET_PLAYER_BOTTOM_GAP
 
 
 export default memo(() => {
@@ -50,12 +50,12 @@ export default memo(() => {
 const tabletStyles = StyleSheet.create({
   container: {
     alignSelf: 'center',
-    width: '60%',
-    maxWidth: 640,
+    width: TABLET_PLAYER_WIDTH,
+    maxWidth: TABLET_PLAYER_MAX_WIDTH,
     height: TABLET_BAR_HEIGHT,
     flexShrink: 0,
     marginHorizontal: 0,
-    marginBottom: TABLET_BAR_BOTTOM_GAP,
+    marginBottom: TABLET_PLAYER_BOTTOM_GAP,
     paddingVertical: 4 * global.lx.fontSize,
     paddingLeft: 4 * global.lx.fontSize,
   },

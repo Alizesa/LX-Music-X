@@ -10,6 +10,11 @@
  */
 export const TABLET_RAIL_WIDTH = 88
 
+// 悬浮播放条和当前播放列表共用尺寸，始终相对整个窗口居中。
+export const TABLET_PLAYER_WIDTH = '60%'
+export const TABLET_PLAYER_MAX_WIDTH = 640
+export const TABLET_PLAYER_BOTTOM_GAP = 10
+
 export const isWideLayout = (width: number, height: number): boolean => {
   return width >= 900 && width / height > 1.2
 }
