@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 import { TouchableOpacity, View } from 'react-native'
 import PageContent from '@/components/PageContent'
 import StatusBar from '@/components/common/StatusBar'
@@ -115,7 +116,10 @@ export default ({ componentId, info }: Props) => {
   const t = useI18n()
   const listRef = useRef<OnlineListType>(null)
   const songsRef = useRef<LX.Music.MusicInfoOnline[]>([])
-  const loadedRef = useRef(false)
+  const visible = useScreenVisible()
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
+  const requestVersion = useRef(0)
   // 头图上那个收藏角标的状态。初始值来自进页面时带的 subscribed，点完就地翻转
   const [collected, setCollected] = useState(info.subscribed === true)
   const [collecting, setCollecting] = useState(false)
@@ -155,6 +159,8 @@ export default ({ componentId, info }: Props) => {
   }, [collecting, collected, info])
 
   const load = useCallback(async(force: boolean) => {
+    if (!visibleRef.current) return
+    const version = ++requestVersion.current
     listRef.current?.setStatus('refreshing')
     try {
       let songs: LX.Music.MusicInfoOnline[]
@@ -215,11 +221,13 @@ export default ({ componentId, info }: Props) => {
           void cachePlaylistSongs(info.id, songs, cacheVersion)
         }
       }
+      if (version !== requestVersion.current || !visibleRef.current) return
       songsRef.current = songs
       listRef.current?.setList(songs)
       // 取歌是一次拿全的，没有分页，所以直接标记到底
       listRef.current?.setStatus('end')
     } catch (error: unknown) {
+      if (version !== requestVersion.current || !visibleRef.current) return
       listRef.current?.setStatus('error')
       toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     }
@@ -227,17 +235,16 @@ export default ({ componentId, info }: Props) => {
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.qqPlaylist, componentId)
-    // 「我喜欢」的完整数组只在页面打开期间占内存；返回/卸载后释放，心形走 id 集合
-    if (info.liked) retainQQMusicLikedSongs('screen:qqLiked')
-    // 守卫要同步置位：依赖变化重跑时，上一次的请求可能还没回来
-    if (!loadedRef.current) {
-      loadedRef.current = true
-      void load(false)
-    }
+    if (!visible) return
+    const reason = `screen:qqLiked:${componentId}`
+    if (info.liked) retainQQMusicLikedSongs(reason)
+    void load(false)
     return () => {
-      if (info.liked) releaseQQMusicLikedSongs('screen:qqLiked')
+      requestVersion.current += 1
+      songsRef.current = []
+      if (info.liked) releaseQQMusicLikedSongs(reason)
     }
-  }, [componentId, load, info.liked])
+  }, [componentId, load, info.liked, visible])
 
   // 点某一首就从那首开始放。每日推荐要打自己的临时列表 id，位置记忆靠它认队列
   // （见 core/qqMusicDailyPosition）；红心雷达也用自己的 id，免得和别的列表串位置记忆。
@@ -266,6 +273,7 @@ export default ({ componentId, info }: Props) => {
       <SimpleHeader componentId={componentId} title={info.name} />
       <OnlineList
         ref={listRef}
+        releaseOnHide
         onPlayList={playFrom}
         onRefresh={() => { void load(true) }}
         onLoadMore={() => { listRef.current?.setStatus('end') }}

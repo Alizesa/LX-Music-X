@@ -1,4 +1,4 @@
-import { useRef, forwardRef, useImperativeHandle } from 'react'
+import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import { View } from 'react-native'
 // import LoadingMask, { LoadingMaskType } from '@/components/common/LoadingMask'
 import List, { type ListProps, type ListType, type Status, type RowInfoType } from './List'
@@ -7,6 +7,7 @@ import MultipleModeBar, { type MultipleModeBarType, type SelectMode } from './Mu
 import { clearMusicUrl, handleAddToPlayQueue, handleDislikeMusic, handlePlay, handlePlayLater, handleShare } from './listAction'
 import { createStyle, toast } from '@/utils/tools'
 import { addTasks } from '@/core/download'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 export interface OnlineListProps {
   onRefresh: ListProps['onRefresh']
@@ -16,6 +17,7 @@ export interface OnlineListProps {
   ListHeaderComponent?: ListProps['ListHeaderComponent']
   checkHomePagerIdle?: boolean
   rowType?: RowInfoType
+  releaseOnHide?: boolean
 }
 export interface OnlineListType {
   setList: (list: LX.Music.MusicInfoOnline[], isAppend?: boolean, showSource?: boolean) => void
@@ -30,10 +32,15 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
   ListHeaderComponent,
   checkHomePagerIdle = false,
   rowType,
+  releaseOnHide = false,
 }, ref) => {
   const listRef = useRef<ListType>(null)
   const multipleModeBarRef = useRef<MultipleModeBarType>(null)
   const listMenuRef = useRef<ListMenuType>(null)
+  const visible = useScreenVisible()
+  useEffect(() => {
+    if (releaseOnHide && !visible) multipleModeBarRef.current?.exitSelectMode()
+  }, [releaseOnHide, visible])
 
   useImperativeHandle(ref, () => ({
     setList(list, isAppend = false, showSource = false) {
@@ -81,6 +88,7 @@ export default forwardRef<OnlineListType, OnlineListProps>(({
           ListHeaderComponent={ListHeaderComponent}
           checkHomePagerIdle={checkHomePagerIdle}
           rowType={rowType}
+          releaseOnHide={releaseOnHide}
         />
         <MultipleModeBar
           ref={multipleModeBarRef}

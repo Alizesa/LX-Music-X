@@ -120,6 +120,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
       orientationEventListener = new OrientationEventListener(reactContext, SensorManager.SENSOR_DELAY_NORMAL) {
         @Override
         public void onOrientationChanged(int orientation) {
+          if (windowManager == null || textView == null) return;
           Display display = windowManager.getDefaultDisplay();
           int rotation = display.getRotation();
           if(rotation != mLastRotation){
@@ -141,7 +142,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private void removeOrientationEvent() {
     if (orientationEventListener == null) return;
     orientationEventListener.disable();
-    // orientationEventListener = null;
+    orientationEventListener = null;
   }
 
   private int getLayoutParamsFlags() {
@@ -922,16 +923,19 @@ public class LyricView extends Activity implements View.OnTouchListener {
   }
 
   public void destroyView() {
+    fixViewPositionHandler.removeCallbacksAndMessages(null);
+    removeOrientationEvent();
     if (textView == null) return;
     // 摘不下来也照样丢掉引用，不然这个「僵尸」会一直留着，之后所有设置都改不动
     removeViewFromWindow();
     textView = null;
-    removeOrientationEvent();
   }
 
   public void destroy() {
     destroyView();
     windowManager = null;
     layoutParams = null;
+    currentLyric = "";
+    currentExtendedLyrics = new ArrayList<>();
   }
 }

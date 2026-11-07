@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useMemo, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { FlatList, Platform, RefreshControl, TouchableOpacity, View, type FlatListProps } from 'react-native'
 
 import Text from '@/components/common/Text'
@@ -10,6 +10,8 @@ import { createStyle } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
 import { type AlbumItem } from '@/store/singer/state'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
+import { useListScrollRestore } from '@/utils/hooks/useListScrollRestore'
 
 const MIN_WIDTH = scaleSizeW(110)
 const GAP = scaleSizeW(20)
@@ -20,6 +22,7 @@ export interface AlbumListProps {
   onRefresh: () => void
   onLoadMore: () => void
   onOpenDetail: (item: AlbumItem, index: number) => void
+  releaseOnHide?: boolean
 }
 
 export interface AlbumListType {
@@ -27,24 +30,37 @@ export interface AlbumListType {
   setStatus: (val: Status) => void
 }
 
-export default forwardRef<AlbumListType, AlbumListProps>(({ onRefresh, onLoadMore, onOpenDetail }, ref) => {
+export default forwardRef<AlbumListType, AlbumListProps>(({ onRefresh, onLoadMore, onOpenDetail, releaseOnHide = false }, ref) => {
   const [currentList, setList] = useState<AlbumItem[]>([])
   const [status, setStatus] = useState<Status>('idle')
   const { onLayout, width } = useLayout()
   const theme = useTheme()
   const t = useI18n()
+  const screenVisible = useScreenVisible()
+  const visible = !releaseOnHide || screenVisible
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
+  const listRef = useRef<FlatList<AlbumItem>>(null)
+  const scrollRestore = useListScrollRestore(listRef, visible, currentList.length > 0)
+  useEffect(() => {
+    if (visible) return
+    setList([])
+    setStatus('idle')
+  }, [visible])
 
   useImperativeHandle(ref, () => ({
     setList(list) {
+      if (!visibleRef.current) return
       setList(list)
     },
     setStatus(val) {
+      if (!visibleRef.current) return
       setStatus(val)
     },
   }))
 
   const handleLoadMore = () => {
-    if (status != 'idle') return
+    if (!visible || status != 'idle') return
     onLoadMore()
   }
 
@@ -99,6 +115,8 @@ export default forwardRef<AlbumListType, AlbumListProps>(({ onRefresh, onLoadMor
           ? null
           : (
             <FlatList
+              ref={listRef}
+              {...scrollRestore}
               key={String(rowInfo.num)}
               style={styles.list}
               columnWrapperStyle={{ justifyContent: 'space-evenly' }}

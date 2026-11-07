@@ -16,11 +16,13 @@ import { type PathItem } from './components/ListItem'
 
 const parentDirInfo = new Map<string, string>()
 const caches = new Map<string, PathItem[]>()
+let cacheGeneration = 0
 
 const handleReadDir = async(path: string, dirOnly: boolean, filter?: string[], isRefresh = false) => {
   const filterRxp = filter?.length ? new RegExp(`\\.(${filter.join('|')})$`, 'i') : null
   const cacheKey = `${path}_${dirOnly ? 'true' : 'false'}_${filter ? filter.toString() : 'null'}`
   if (!isRefresh && caches.has(cacheKey)) return caches.get(cacheKey)!
+  const generation = cacheGeneration
   return readDir(path).then(paths => {
     // console.log('read')
     // prevPath = path
@@ -62,7 +64,7 @@ const handleReadDir = async(path: string, dirOnly: boolean, filter?: string[], i
         return false
       }
     }), ...fileList]
-    caches.set(cacheKey, list)
+    if (generation === cacheGeneration) caches.set(cacheKey, list)
     return list
   })
 }
@@ -70,6 +72,7 @@ const handleReadDir = async(path: string, dirOnly: boolean, filter?: string[], i
 // 目录内容是按次浏览用的，不跨会话保留：用户在文件选择器里翻过的每个目录
 // （可能有成千上万个文件）没有理由一直占着内存。关闭选择器时清掉
 const clearPathCache = () => {
+  cacheGeneration++
   parentDirInfo.clear()
   caches.clear()
 }
@@ -97,13 +100,35 @@ export default forwardRef<ListType, ListProps>(({
   const [path, setPath] = useState('')
   const [list, setList] = useState<PathItem[]>([])
   const isUnmountedRef = useRef(true)
+  const visibleRef = useRef(false)
+  const readingRef = useRef(false)
+  const requestVersion = useRef(0)
   const readOptions = useRef<ReadOptions>(initReadOptions as ReadOptions)
   const [isReading, setIsReading] = useState(false)
   const modalRef = useRef<ModalType>(null)
   const theme = useTheme()
 
+  const release = () => {
+    if (!visibleRef.current) return
+    visibleRef.current = false
+    requestVersion.current++
+    readingRef.current = false
+    setIsReading(false)
+    setList([])
+    clearPathCache()
+    onHide()
+  }
+  const handleHide = () => {
+    modalRef.current?.setVisible(false)
+    release()
+  }
+
   useImperativeHandle(ref, () => ({
     show(title, dir = '', dirOnly = false, filter) {
+      requestVersion.current += 1
+      readingRef.current = false
+      visibleRef.current = true
+      setList([])
       readOptions.current = {
         title,
         dirOnly,
@@ -118,8 +143,7 @@ export default forwardRef<ListType, ListProps>(({
       else void readDir(externalStorageDirectoryPath, dirOnly, filter)
     },
     hide() {
-      modalRef.current?.setVisible(false)
-      clearPathCache()
+      handleHide()
     },
   }))
 
@@ -127,26 +151,33 @@ export default forwardRef<ListType, ListProps>(({
     isUnmountedRef.current = false
     return () => {
       isUnmountedRef.current = true
+      visibleRef.current = false
+      requestVersion.current++
       clearPathCache()
     }
   }, [])
 
   const readDir = async(newPath: string, dirOnly: boolean, filter?: string[], isRefresh?: boolean, isOpen?: boolean): Promise<PathItem[]> => {
-    if (isReading) return []
+    if (readingRef.current || !visibleRef.current) return []
+    const version = ++requestVersion.current
+    readingRef.current = true
     setIsReading(true)
     return handleReadDir(newPath, dirOnly, filter, isRefresh).then(list => {
-      if (isUnmountedRef.current) return []
+      if (isUnmountedRef.current || !visibleRef.current || version !== requestVersion.current) return []
       if (!isOpen && newPath != path && newPath.startsWith(path)) parentDirInfo.set(newPath, path)
       setList(list)
       setPath(newPath)
       return list
     }).catch((err: any) => {
+      if (isUnmountedRef.current || !visibleRef.current || version !== requestVersion.current) return []
       toast(`Read dir error: ${err.message as string}`, 'long')
       // console.log('prevPath', prevPath)
       // if (isReadingDir.current) return
       // setPath(prevPath)
       return []
     }).finally(() => {
+      if (isUnmountedRef.current || version !== requestVersion.current) return
+      readingRef.current = false
       setIsReading(false)
     })
   }
@@ -174,16 +205,10 @@ export default forwardRef<ListType, ListProps>(({
     }
   }
 
-  const handleHide = () => {
-    modalRef.current?.setVisible(false)
-    clearPathCache()
-    onHide()
-  }
-
   // const dirList = useMemo(() => [parentDir, ...list], [list, parentDir])
 
   return (
-    <Modal ref={modalRef} bgHide={false} statusBarPadding={false}>
+    <Modal ref={modalRef} onHide={release} bgHide={false} statusBarPadding={false}>
       <View style={{ ...styles.container, backgroundColor: theme['c-content-background'] }}>
         <Header
           onRefreshDir={async(path) => readDir(path, readOptions.current.dirOnly, readOptions.current.filter, true)}

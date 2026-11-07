@@ -14,6 +14,7 @@ import { scaleSizeH } from '@/utils/pixelRatio'
 import { createStyle } from '@/utils/tools'
 import { useTabletLayout } from '@/utils/hooks'
 import { TABLET_PLAYER_BOTTOM_GAP, TABLET_PLAYER_MAX_WIDTH, TABLET_PLAYER_WIDTH } from '@/utils/layout'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 export interface PlayerPlaylistType {
   show: () => void
@@ -128,8 +129,10 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   const pendingInitialScrollRef = useRef(false)
   const initialScrollDoneRef = useRef(false)
   const [visible, setVisible] = useState(false)
-  const [queue, setQueue] = useState<LX.Player.PlayQueueItem[]>([...getPlayQueue()])
-  const [tempList, setTempList] = useState<LX.Player.PlayMusicInfo[]>([...playerState.tempPlayList])
+  const screenVisible = useScreenVisible()
+  const showFrame = useRef<number | null>(null)
+  const [queue, setQueue] = useState<LX.Player.PlayQueueItem[]>([])
+  const [tempList, setTempList] = useState<LX.Player.PlayMusicInfo[]>([])
   const playInfo = usePlayInfo()
   const playMusicInfo = usePlayMusicInfo()
   const theme = useTheme()
@@ -140,11 +143,11 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   // 临时歌曲插在当前曲目之后（没有在播的歌曲、或当前曲目已不在队列里时插到最前面）。
   // 这样当前曲目的行号仍然等于它在队列里的下标，面板定位那套计算不受影响。
   const insertAt = playInfo.playerPlayIndex >= 0 && playInfo.playerPlayIndex < queue.length ? playInfo.playerPlayIndex + 1 : 0
-  const rows = useMemo<PlaylistRow[]>(() => [
+  const rows = useMemo<PlaylistRow[]>(() => !visible || !screenVisible ? [] : [
     ...queue.slice(0, insertAt).map((item, index): PlaylistRow => ({ kind: 'queue', key: item.queueId, index, item })),
     ...tempList.map((item, index): PlaylistRow => ({ kind: 'temp', key: `temp_${index}_${item.musicInfo.id}`, index, item })),
     ...queue.slice(insertAt).map((item, index): PlaylistRow => ({ kind: 'queue', key: item.queueId, index: insertAt + index, item })),
-  ], [tempList, queue, insertAt])
+  ], [tempList, queue, insertAt, visible, screenVisible])
 
   // 挂载时的目标位置，靠 contentOffset 给：原生属性，挂载当帧就位，看不到滚动过程。
   // RN 的 VirtualizedList 在 _onContentSizeChange 里那次自我修正（scrollToIndex）
@@ -168,8 +171,26 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   // （initialScrollIndex）是两件事，队列不长时只是不该钉，该定的位还是要定。
   const [pinWindow, setPinWindow] = useState(false)
 
+  const handleHide = useCallback(() => {
+    if (showFrame.current != null) cancelAnimationFrame(showFrame.current)
+    showFrame.current = null
+    setVisible(false)
+    setQueue([])
+    setTempList([])
+  }, [])
+
+  useEffect(() => {
+    if (screenVisible) return
+    popupRef.current?.setVisible(false)
+    handleHide()
+  }, [screenVisible, handleHide])
+  useEffect(() => () => {
+    if (showFrame.current != null) cancelAnimationFrame(showFrame.current)
+  }, [])
+
   useImperativeHandle(ref, () => ({
     show() {
+      if (!screenVisible) return
       const list = getPlayQueue()
       // 队列长到初始渲染段（[0, initialRows)）装不下，才值得让虚拟列表「从当前项起渲染」；
       // 装得下时钉了只有坏处：窗口被钉在 [index, index + initialRows) 上、初始那段又不渲染，
@@ -188,23 +209,31 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
       pendingInitialScrollRef.current = index > 0
       initialScrollDoneRef.current = false
       setVisible(true)
-      requestAnimationFrame(() => popupRef.current?.setVisible(true))
+      if (showFrame.current != null) cancelAnimationFrame(showFrame.current)
+      showFrame.current = requestAnimationFrame(() => {
+        showFrame.current = null
+        popupRef.current?.setVisible(true)
+      })
     },
   }))
 
   useEffect(() => {
+    if (!visible || !screenVisible) return
     const handleUpdate = (nextQueue: LX.Player.PlayQueueItem[]) => { setQueue(nextQueue) }
+    handleUpdate([...getPlayQueue()])
     global.app_event.on('playQueueUpdate', handleUpdate)
     return () => { global.app_event.off('playQueueUpdate', handleUpdate) }
-  }, [])
+  }, [visible, screenVisible])
 
   useEffect(() => {
+    if (!visible || !screenVisible) return
     // 面板打开期间临时列表也会变：一首稍后播放的歌曲播完（或用户点了它）就会被移出列表。
     // 事件参数是 {...array} 这样的普通对象，拿不到数组本身，所以直接从 state 里取快照。
     const handleUpdate = () => { setTempList([...playerState.tempPlayList]) }
+    handleUpdate()
     global.state_event.on('playTempPlayListChanged', handleUpdate)
     return () => { global.state_event.off('playTempPlayListChanged', handleUpdate) }
-  }, [])
+  }, [visible, screenVisible])
 
   // 传的是队列下标：临时歌曲插在当前曲目之后，所以当前曲目的行号仍等于它，
   // 下面这套定位计算不用为临时歌曲做任何偏移
@@ -289,7 +318,7 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
     <Popup
       ref={popupRef}
       title={global.i18n.t('player_playlist')}
-      onHide={() => { setVisible(false) }}
+      onHide={handleHide}
       position="bottom"
       contentStyle={isWide ? [tabletStyles.panel, { maxHeight: tabletMaxHeight }] : undefined}
     >

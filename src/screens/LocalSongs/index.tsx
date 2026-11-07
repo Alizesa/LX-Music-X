@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FlatList, TouchableOpacity, View } from 'react-native'
 import PageContent from '@/components/PageContent'
 import StatusBar from '@/components/common/StatusBar'
@@ -18,6 +18,8 @@ import settingState from '@/store/setting/state'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle, toast } from '@/utils/tools'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
+import { useListScrollRestore } from '@/utils/hooks/useListScrollRestore'
 
 // 一次并行读多少个文件的元数据。读一个文件的开销不小，全量 Promise.all 在几百首的
 // 目录上会把内存顶上去，分批更稳
@@ -31,21 +33,38 @@ export default ({ componentId }: { componentId: string }) => {
   const theme = useTheme()
   const [list, setList] = useState<LX.Music.MusicInfoLocal[]>([])
   const [importing, setImporting] = useState(false)
+  const visible = useScreenVisible()
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
+  const version = useRef(0)
+  const listRef = useRef<FlatList<LX.Music.MusicInfoLocal>>(null)
+  const scrollRestore = useListScrollRestore(listRef, visible, list.length > 0)
 
   const load = useCallback(async() => {
-    setList((await getListMusics(LIST_IDS.LOCAL)) as LX.Music.MusicInfoLocal[])
+    if (!visibleRef.current) return
+    const request = ++version.current
+    const songs = await getListMusics(LIST_IDS.LOCAL)
+    if (request === version.current && visibleRef.current) setList(songs as LX.Music.MusicInfoLocal[])
   }, [])
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.localSongs, componentId)
-    // 页面打开期间持有完整列表；离开后交给 core/localList 判断是否释放
-    void retainLocalList('screen:localSongs').then(list => {
-      setList(list as LX.Music.MusicInfoLocal[])
+    if (!visible) {
+      setList([])
+      return
+    }
+    const request = ++version.current
+    const reason = `screen:localSongs:${componentId}`
+    void retainLocalList(reason).then(list => {
+      if (request === version.current) setList(list as LX.Music.MusicInfoLocal[])
     }).catch(error => {
       console.warn('[LocalSongs] load local list failed:', error instanceof Error ? error.message : error)
     })
-    return () => { releaseLocalList('screen:localSongs') }
-  }, [componentId])
+    return () => {
+      version.current += 1
+      releaseLocalList(reason)
+    }
+  }, [componentId, visible])
 
   const importSongs = useCallback(async() => {
     if (importing) return
@@ -101,8 +120,13 @@ export default ({ componentId }: { componentId: string }) => {
         }
       />
       <FlatList
+        ref={listRef}
+        {...scrollRestore}
         style={styles.list}
         data={list}
+        initialNumToRender={12}
+        windowSize={5}
+        maxToRenderPerBatch={8}
         keyExtractor={item => item.id}
         ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{t('local_songs_empty')}</Text>}
         renderItem={({ item }) => (

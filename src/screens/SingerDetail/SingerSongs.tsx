@@ -3,55 +3,54 @@ import OnlineList, { type OnlineListType, type OnlineListProps } from '@/compone
 import { getSingerDetail, getSingerSongs } from '@/core/singer'
 import singerState, { type SingerInfo } from '@/store/singer/state'
 import { handlePlay } from './listAction'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 export default ({ mid, onInfoLoaded }: {
   mid: string
   onInfoLoaded: (info: SingerInfo) => void
 }) => {
   const listRef = useRef<OnlineListType>(null)
-  const isUnmountedRef = useRef(false)
+  const visible = useScreenVisible()
+  const version = useRef(0)
   // setStatus 是异步的，光靠 status 判不住重复请求
   const loadingRef = useRef(false)
 
   const load = useCallback(async(page: number, isRefresh = false) => {
-    if (loadingRef.current) return
+    if (!visible || loadingRef.current) return
+    const request = ++version.current
     loadingRef.current = true
     try {
       if (page <= 1) {
         // 歌手信息和第一页歌曲是同一个接口，一次请求全拿到
         const record = await getSingerDetail(mid, isRefresh)
-        if (isUnmountedRef.current) return
-        requestAnimationFrame(() => {
-          onInfoLoaded(record.info)
-          listRef.current?.setList(record.songs.list)
-          listRef.current?.setStatus(record.songs.maxPage <= 1 ? 'end' : 'idle')
-        })
+        if (request !== version.current) return
+        onInfoLoaded(record.info)
+        listRef.current?.setList(record.songs.list)
+        listRef.current?.setStatus(record.songs.maxPage <= record.songs.page ? 'end' : 'idle')
       } else {
         const songs = await getSingerSongs(mid, page)
-        if (isUnmountedRef.current) return
-        requestAnimationFrame(() => {
-          listRef.current?.setList(songs.list)
-          listRef.current?.setStatus(songs.maxPage <= page ? 'end' : 'idle')
-        })
+        if (request !== version.current) return
+        listRef.current?.setList(songs.list)
+        listRef.current?.setStatus(songs.maxPage <= songs.page ? 'end' : 'idle')
       }
     } catch (err) {
       console.log(err)
-      if (isUnmountedRef.current) return
+      if (request !== version.current) return
       listRef.current?.setStatus('error')
     } finally {
-      loadingRef.current = false
+      if (request === version.current) loadingRef.current = false
     }
-  }, [mid, onInfoLoaded])
+  }, [mid, onInfoLoaded, visible])
 
   useEffect(() => {
-    isUnmountedRef.current = false
+    if (!visible) return
     listRef.current?.setStatus('loading')
     void load(1)
     return () => {
-      isUnmountedRef.current = true
+      version.current += 1
+      loadingRef.current = false
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [load, visible])
 
   const handlePlayList: OnlineListProps['onPlayList'] = (index) => {
     void handlePlay(mid, singerState.singers[mid]?.songs.list ?? [], index)
@@ -70,6 +69,7 @@ export default ({ mid, onInfoLoaded }: {
   return (
     <OnlineList
       ref={listRef}
+      releaseOnHide
       onPlayList={handlePlayList}
       onRefresh={handleRefresh}
       onLoadMore={handleLoadMore}

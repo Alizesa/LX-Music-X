@@ -23,6 +23,11 @@ const searchHistoryListKey = storageDataPrefix.searchHistoryList
 export const getSearchResultCache = async<T>(key: string) => getData<T>(storageDataPrefix.searchResultsCache + key)
 export const saveSearchResultCache = async(key: string, value: unknown) => saveData(storageDataPrefix.searchResultsCache + key, value)
 export const removeSearchResultCache = async(key: string) => removeData(storageDataPrefix.searchResultsCache + key)
+export const getBrowseDetailCacheIndex = async() => await getData<Record<string, number>>(storageDataPrefix.browseDetailCacheIndex) ?? {}
+export const saveBrowseDetailCacheIndex = async(index: Record<string, number>) => saveDataDirect(storageDataPrefix.browseDetailCacheIndex, index)
+export const getBrowseDetailCache = async<T>(key: string) => getData<T>(storageDataPrefix.browseDetailCacheItem + key)
+export const saveBrowseDetailCache = async(key: string, value: unknown) => saveData(storageDataPrefix.browseDetailCacheItem + key, value)
+export const removeBrowseDetailCaches = async(keys: string[]) => removeDataMultiple(keys.map(key => storageDataPrefix.browseDetailCacheItem + key))
 const listPrefix = storageDataPrefix.list
 const dislikeListPrefix = storageDataPrefix.dislikeList
 const userApiPrefix = storageDataPrefix.userApi

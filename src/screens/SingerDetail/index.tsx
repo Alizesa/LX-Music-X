@@ -18,6 +18,7 @@ import { releaseSingerRecord, retainSingerRecord } from '@/store/singer/action'
 import Header from './Header'
 import SingerSongs from './SingerSongs'
 import SingerAlbums from './SingerAlbums'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 const TABS = ['song', 'album'] as const
 type TabId = typeof TABS[number]
@@ -30,6 +31,7 @@ export default ({ componentId, info }: { componentId: string, info: SingerDetail
   const pagerViewRef = useRef<PagerView>(null)
   const [activeId, setActiveId] = useState<TabId>('song')
   const [singerInfo, setSingerInfo] = useState<SingerInfo | null>(null)
+  const visible = useScreenVisible()
   // 没打开过的 tab 不挂载，进页面就只发歌手信息那一条请求
   const initedRef = useRef<Record<TabId, boolean>>({ song: true, album: false })
 
@@ -37,11 +39,15 @@ export default ({ componentId, info }: { componentId: string, info: SingerDetail
     setComponentId(COMPONENT_IDS.singerDetail, componentId)
   }, [componentId])
 
-  // 页面打开期间保住这位歌手的记录，离开后交给 LRU 决定是否淘汰
+  // 只在可见时占用整表；翻页结果已落盘，返回时恢复而不重拉。
   useEffect(() => {
+    if (!visible) {
+      setSingerInfo(null)
+      return
+    }
     retainSingerRecord(info.mid)
     return () => { releaseSingerRecord(info.mid) }
-  }, [info.mid])
+  }, [info.mid, visible])
 
   const toggleTab = useCallback((id: TabId) => {
     setActiveId(id)

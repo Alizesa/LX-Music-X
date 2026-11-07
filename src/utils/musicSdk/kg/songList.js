@@ -3,6 +3,38 @@ import { decodeName, formatPlayTime, sizeFormate, dateFormat, formatPlayCount } 
 import infSign from './vendors/infSign.min'
 import { signatureParams } from './util'
 
+const shareCache = new Map()
+const SHARE_CACHE_MAX = 16
+const SHARE_CACHE_MAX_SONGS = 3000
+let cacheGeneration = 0
+
+export const clearSongListCache = () => {
+  cacheGeneration++
+  shareCache.clear()
+}
+const getShareCache = key => {
+  const value = shareCache.get(key)
+  if (value !== undefined) {
+    shareCache.delete(key)
+    shareCache.set(key, value)
+  }
+  return value
+}
+const rememberShare = (key, value, generation) => {
+  if (generation !== cacheGeneration || value == null) return
+  // 超大歌单交给调用方使用，不再留一份 SDK 缓存。
+  if (Array.isArray(value) && value.length > SHARE_CACHE_MAX_SONGS) return
+  shareCache.delete(key)
+  shareCache.set(key, value)
+  let songs = [...shareCache.values()].reduce((sum, entry) => sum + (Array.isArray(entry) ? entry.length : 0), 0)
+  while (shareCache.size > SHARE_CACHE_MAX || songs > SHARE_CACHE_MAX_SONGS) {
+    const oldest = shareCache.keys().next().value
+    const entry = shareCache.get(oldest)
+    songs -= Array.isArray(entry) ? entry.length : 0
+    shareCache.delete(oldest)
+  }
+}
+
 const handleSignature = (id, page, limit) => new Promise((resolve, reject) => {
   infSign({ appid: 1058, type: 0, module: 'playlist', page, pagesize: limit, specialid: id }, null, {
     useH5: !0,
@@ -15,7 +47,7 @@ const handleSignature = (id, page, limit) => new Promise((resolve, reject) => {
 
 export default {
   listDetailLimit: 10000,
-  cache: new Map(),
+  cache: shareCache,
   regExps: {
     listData: /global\.data = (\[.+\]);/,
     listInfo: /global = {[\s\S]+?name: "(.+)"[\s\S]+?pic: "(.+)"[\s\S]+?};/,
@@ -443,7 +475,9 @@ export default {
   },
 
   async getListInfoByChain(chain) {
-    if (this.cache.has(chain)) return this.cache.get(chain)
+    const cached = getShareCache(chain)
+    if (cached !== undefined) return cached
+    const generation = cacheGeneration
     const { body } = await httpFetch(`https://m.kugou.com/share/?chain=${chain}&id=${chain}`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1',
@@ -451,13 +485,15 @@ export default {
     }).promise
     let result = body.match(/var\sphpParam\s=\s({.+?});/)
     if (result) result = JSON.parse(result[1])
-    this.cache.set(chain, result)
+    rememberShare(chain, result, generation)
     return result
   },
 
   async getUserListDetailByPcChain(chain) {
-    let key = `${chain}_pc_list`
-    if (this.cache.has(key)) return this.cache.get(key)
+    const key = `${chain}_pc_list`
+    const cached = getShareCache(key)
+    if (cached !== undefined) return cached
+    const generation = cacheGeneration
     const { body } = await httpFetch(`http://www.kugou.com/share/${chain}.html`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
@@ -465,8 +501,8 @@ export default {
     }).promise
     let result = body.match(/var\sdataFromSmarty\s=\s(\[.+?\])/)
     if (result) result = JSON.parse(result[1])
-    this.cache.set(chain, result)
     result = await this.getMusicInfos(result)
+    rememberShare(key, result, generation)
     // console.log(info, songInfo)
     return result
   },

@@ -42,6 +42,7 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
   private int listenerCount = 0;
   private boolean trimRegistered = false;
   private long lastTrimEventAt = 0;
+  private BroadcastReceiver screenReceiver;
 
   UtilsEvent utilsEvent;
 
@@ -49,7 +50,6 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
     super(reactContext);
     this.reactContext = reactContext;
     utilsEvent = new UtilsEvent(reactContext);
-    registerScreenBroadcastReceiver();
   }
 
   @Override
@@ -99,6 +99,7 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
   @Override
   public void initialize() {
     super.initialize();
+    registerScreenBroadcastReceiver();
     if (trimRegistered) return;
     reactContext.registerComponentCallbacks(this);
     trimRegistered = true;
@@ -107,6 +108,12 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
   @Override
   public void invalidate() {
     audioProbes.close();
+    if (screenReceiver != null) {
+      try {
+        reactContext.unregisterReceiver(screenReceiver);
+      } catch (IllegalArgumentException ignored) {}
+      screenReceiver = null;
+    }
     if (trimRegistered) {
       try {
         reactContext.unregisterComponentCallbacks(this);
@@ -131,7 +138,9 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
   }
 
   @Override
-  public void onLowMemory() {}
+  public void onLowMemory() {
+    onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE);
+  }
 
   @Override
   public void onConfigurationChanged(Configuration newConfig) {}
@@ -154,14 +163,16 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
   }
 
   private void registerScreenBroadcastReceiver() {
+    if (screenReceiver != null) return;
     final IntentFilter theFilter = new IntentFilter();
     /** System Defined Broadcast */
     theFilter.addAction(Intent.ACTION_SCREEN_ON);
     theFilter.addAction(Intent.ACTION_SCREEN_OFF);
 
-    BroadcastReceiver screenOnOffReceiver = new BroadcastReceiver() {
+    screenReceiver = new BroadcastReceiver() {
       @Override
       public void onReceive(Context context, Intent intent) {
+        if (!reactContext.hasActiveReactInstance()) return;
         String strAction = intent.getAction();
 
         WritableMap params = Arguments.createMap();
@@ -180,7 +191,7 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
       }
     };
 
-    reactContext.registerReceiver(screenOnOffReceiver, theFilter);
+    reactContext.registerReceiver(screenReceiver, theFilter);
   }
 
   @ReactMethod

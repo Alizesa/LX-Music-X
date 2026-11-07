@@ -12,6 +12,7 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
+import com.facebook.react.bridge.UiThreadUtil;
 
 public class LyricModule extends ReactContextBaseJavaModule {
   private final ReactApplicationContext reactContext;
@@ -41,6 +42,15 @@ public class LyricModule extends ReactContextBaseJavaModule {
   @Override
   public String getName() {
     return "LyricModule";
+  }
+
+  @Override
+  public void invalidate() {
+    Lyric current = lyric;
+    lyric = null;
+    // 悬浮窗口的移除要在 UI 线程完成，同时注销广播并停止歌词定时器。
+    if (current != null) UiThreadUtil.runOnUiThread(current::destroy);
+    super.invalidate();
   }
 
 //  @Override

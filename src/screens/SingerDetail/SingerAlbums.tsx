@@ -1,44 +1,45 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { getSingerAlbums } from '@/core/singer'
 import singerState, { type AlbumItem } from '@/store/singer/state'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
 import AlbumList, { type AlbumListType } from './AlbumList'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 export default ({ mid }: { mid: string }) => {
   const listRef = useRef<AlbumListType>(null)
-  const isUnmountedRef = useRef(false)
+  const visible = useScreenVisible()
+  const version = useRef(0)
   // setStatus 是异步的，光靠 status 判不住重复请求
   const loadingRef = useRef(false)
 
-  const load = async(page: number, isRefresh = false) => {
-    if (loadingRef.current) return
+  const load = useCallback(async(page: number, isRefresh = false) => {
+    if (!visible || loadingRef.current) return
+    const request = ++version.current
     loadingRef.current = true
     try {
       const info = await getSingerAlbums(mid, page, isRefresh)
-      if (isUnmountedRef.current) return
-      requestAnimationFrame(() => {
-        listRef.current?.setList(info.list)
-        listRef.current?.setStatus(info.maxPage <= page ? 'end' : 'idle')
-      })
+      if (request !== version.current) return
+      listRef.current?.setList(info.list)
+      listRef.current?.setStatus(info.maxPage <= info.page ? 'end' : 'idle')
     } catch (err) {
       console.log(err)
-      if (isUnmountedRef.current) return
+      if (request !== version.current) return
       listRef.current?.setStatus('error')
     } finally {
-      loadingRef.current = false
+      if (request === version.current) loadingRef.current = false
     }
-  }
+  }, [mid, visible])
 
   useEffect(() => {
-    isUnmountedRef.current = false
+    if (!visible) return
     listRef.current?.setStatus('loading')
     void load(1)
     return () => {
-      isUnmountedRef.current = true
+      version.current += 1
+      loadingRef.current = false
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [load, visible])
 
   const handleRefresh = () => {
     listRef.current?.setStatus('refreshing')
@@ -64,6 +65,7 @@ export default ({ mid }: { mid: string }) => {
   return (
     <AlbumList
       ref={listRef}
+      releaseOnHide
       onRefresh={handleRefresh}
       onLoadMore={handleLoadMore}
       onOpenDetail={handleOpenDetail}

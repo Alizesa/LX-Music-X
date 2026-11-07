@@ -99,6 +99,7 @@ const syncLikedCountToPlaylistCache = async(count: number) => {
 
 const setLikedSongs = (songs: LX.Music.MusicInfoOnline[] | null) => {
   likedSongs = songs
+  if (songs) maybeReleaseLikedSongs()
   likedIds = songs ? new Set(songs.map(song => song.id)) : null
   if (likedIds) void syncLikedCountToPlaylistCache(likedIds.size)
   global.app_event.qqMusicLikedUpdated()

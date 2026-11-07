@@ -1,9 +1,10 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
 import OnlineList, { type OnlineListType, type OnlineListProps } from '@/components/OnlineList'
 import { getAlbumSongs } from '@/core/singer'
 import singerState, { type AlbumDetailParams } from '@/store/singer/state'
 import Header from './Header'
 import { handlePlay } from './listAction'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 export interface MusicListType {
   loadList: (mid: string) => void
@@ -11,22 +12,27 @@ export interface MusicListType {
 
 export default forwardRef<MusicListType, { params: AlbumDetailParams }>(({ params }, ref) => {
   const listRef = useRef<OnlineListType>(null)
-  const isUnmountedRef = useRef(false)
+  const visible = useScreenVisible()
+  const version = useRef(0)
+  const loadingRef = useRef(false)
 
-  const load = async(page: number, isRefresh = false) => {
+  const load = useCallback(async(page: number, isRefresh = false) => {
+    if (!visible || loadingRef.current) return
+    const request = ++version.current
+    loadingRef.current = true
     try {
       const info = await getAlbumSongs(params.mid, page, isRefresh)
-      if (isUnmountedRef.current) return
-      requestAnimationFrame(() => {
-        listRef.current?.setList(info.list)
-        listRef.current?.setStatus(info.maxPage <= page ? 'end' : 'idle')
-      })
+      if (request !== version.current) return
+      listRef.current?.setList(info.list)
+      listRef.current?.setStatus(info.maxPage <= info.page ? 'end' : 'idle')
     } catch (err) {
       console.log(err)
-      if (isUnmountedRef.current) return
+      if (request !== version.current) return
       listRef.current?.setStatus('error')
+    } finally {
+      if (request === version.current) loadingRef.current = false
     }
-  }
+  }, [params.mid, visible])
 
   useImperativeHandle(ref, () => ({
     loadList() {
@@ -36,11 +42,14 @@ export default forwardRef<MusicListType, { params: AlbumDetailParams }>(({ param
   }))
 
   useEffect(() => {
-    isUnmountedRef.current = false
+    if (!visible) return
+    listRef.current?.setStatus('loading')
+    void load(1)
     return () => {
-      isUnmountedRef.current = true
+      version.current += 1
+      loadingRef.current = false
     }
-  }, [])
+  }, [load, visible])
 
   const handlePlayList: OnlineListProps['onPlayList'] = (index) => {
     void handlePlay(params.mid, singerState.albumSongs[params.mid]?.list ?? [], index)
@@ -62,6 +71,7 @@ export default forwardRef<MusicListType, { params: AlbumDetailParams }>(({ param
   return (
     <OnlineList
       ref={listRef}
+      releaseOnHide
       onPlayList={handlePlayList}
       onRefresh={handleRefresh}
       onLoadMore={handleLoadMore}

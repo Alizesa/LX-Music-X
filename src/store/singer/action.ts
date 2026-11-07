@@ -78,7 +78,11 @@ export const releaseSingerRecord = (mid: string) => {
   const count = singerHolds.get(mid)
   if (count == null) return
   if (count > 1) singerHolds.set(mid, count - 1)
-  else singerHolds.delete(mid)
+  else {
+    singerHolds.delete(mid)
+    delete state.singers[mid]
+    singerOrder.delete(mid)
+  }
   schedulePrune()
 }
 export const retainAlbumRecord = (mid: string) => {
@@ -88,7 +92,11 @@ export const releaseAlbumRecord = (mid: string) => {
   const count = albumHolds.get(mid)
   if (count == null) return
   if (count > 1) albumHolds.set(mid, count - 1)
-  else albumHolds.delete(mid)
+  else {
+    albumHolds.delete(mid)
+    delete state.albumSongs[mid]
+    albumOrder.delete(mid)
+  }
   schedulePrune()
 }
 
@@ -117,6 +125,13 @@ const getRecord = (mid: string, name = ''): SingerRecord => {
   touchSinger(mid)
   schedulePrune()
   return (state.singers[mid] = createSingerRecord(mid, name))
+}
+
+const getAlbumRecord = (mid: string): PageInfo<LX.Music.MusicInfoOnline> => {
+  touchAlbum(mid)
+  if (state.albumSongs[mid]) return state.albumSongs[mid]
+  schedulePrune()
+  return (state.albumSongs[mid] = { list: [], total: 0, page: 0, maxPage: 1, limit: 30 })
 }
 
 /** 翻页时接口偶尔把同一条重复给回来，按 id/mid 去一下重 */
@@ -150,6 +165,7 @@ const setPageInfo = <T, R extends { list: T[], total: number, limit: number, all
 }
 
 export default {
+  getAlbumRecord,
   getRecord(mid: string, name = '') {
     return getRecord(mid, name)
   },

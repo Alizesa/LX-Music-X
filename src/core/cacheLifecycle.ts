@@ -6,6 +6,7 @@ import { releaseIdleSingerCaches } from '@/store/singer/action'
 import { clearOtherSourceCache } from '@/core/music/utils'
 import { releaseIdleDownloadCaches } from '@/core/download'
 import { releaseIdleSearchCaches } from '@/core/search/cache'
+import { clearSongListCache } from '@/utils/musicSdk/kg/songList'
 
 /**
  * 可重建内存缓存的统一释放入口。
@@ -18,6 +19,7 @@ export const releaseIdleCaches = () => {
   releaseIdleSonglistCaches() // 歌单详情/广场列表
   releaseIdleSingerCaches() // 歌手/专辑详情
   clearOtherSourceCache() // 换源结果
+  clearSongListCache()
   releaseIdleDownloadCaches()
   void releaseIdleSearchCaches()
 }

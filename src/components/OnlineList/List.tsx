@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react'
+import { useMemo, useRef, useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { FlatList, type FlatListProps, RefreshControl, View } from 'react-native'
 
 // import { useMusicList } from '@/store/list/hook'
@@ -13,6 +13,8 @@ import { useI18n } from '@/lang'
 import Text from '@/components/common/Text'
 import { handlePlay } from './listAction'
 import { useSettingValue } from '@/store/setting/hook'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
+import { useListScrollRestore } from '@/utils/hooks/useListScrollRestore'
 
 type FlatListType = FlatListProps<LX.Music.MusicInfoOnline>
 
@@ -31,6 +33,7 @@ export interface ListProps {
   ListHeaderComponent?: FlatListType['ListEmptyComponent']
   checkHomePagerIdle: boolean
   rowType?: RowInfoType
+  releaseOnHide: boolean
 }
 export interface ListType {
   setList: (list: LX.Music.MusicInfoOnline[], isAppend: boolean, showSource: boolean) => void
@@ -55,10 +58,15 @@ const List = forwardRef<ListType, ListProps>(({
   ListHeaderComponent,
   checkHomePagerIdle,
   rowType,
+  releaseOnHide,
 }, ref) => {
   // const t = useI18n()
   const theme = useTheme()
-  const flatListRef = useRef<FlatList>(null)
+  const flatListRef = useRef<FlatList<LX.Music.MusicInfoOnline>>(null)
+  const screenVisible = useScreenVisible()
+  const visible = !releaseOnHide || screenVisible
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
   const [currentList, setList] = useState<LX.Music.MusicInfoOnline[]>([])
   const [showSource, setShowSource] = useState(false)
   const isMultiSelectModeRef = useRef(false)
@@ -71,11 +79,23 @@ const List = forwardRef<ListType, ListProps>(({
   const rowInfo = useRef(getRowInfo(rowType))
   const isShowAlbumName = useSettingValue('list.isShowAlbumName')
   const isShowInterval = useSettingValue('list.isShowInterval')
+  const scrollRestore = useListScrollRestore(flatListRef, visible, currentList.length > 0)
+  useEffect(() => {
+    if (visible) return
+    setList([])
+    selectedListRef.current = []
+    setSelectedList([])
+    isMultiSelectModeRef.current = false
+    prevSelectIndexRef.current = -1
+    setVisibleMultiSelect(false)
+    setStatus('idle')
+  }, [visible])
   // const currentListIdRef = useRef('')
   // console.log('render music list')
 
   useImperativeHandle(ref, () => ({
     setList(list, isAppend, showSource) {
+      if (!visibleRef.current) return
       setList(list)
       setShowSource(showSource)
       if (!isAppend && selectedListRef.current.length) setSelectedList(selectedListRef.current = [])
@@ -108,6 +128,7 @@ const List = forwardRef<ListType, ListProps>(({
       return currentList
     },
     setStatus(val) {
+      if (!visibleRef.current) return
       setStatus(val)
     },
   }))
@@ -175,7 +196,7 @@ const List = forwardRef<ListType, ListProps>(({
   }
 
   const handleLoadMore = () => {
-    if (status != 'idle') return
+    if (!visible || status != 'idle') return
     onLoadMore()
   }
 
@@ -234,6 +255,7 @@ const List = forwardRef<ListType, ListProps>(({
       ref={flatListRef}
       style={styles.list}
       data={currentList}
+      {...scrollRestore}
       numColumns={rowInfo.current.rowNum}
       horizontal={false}
       maxToRenderPerBatch={4}

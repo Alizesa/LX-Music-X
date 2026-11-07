@@ -6,6 +6,7 @@ import StatusBar from '@/components/common/StatusBar'
 import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS } from '@/config/constant'
 import { type ListInfoItem } from '@/store/songlist/state'
+import songlistState from '@/store/songlist/state'
 import { clearListDetail, releaseSonglistDetail, retainSonglistDetail } from '@/core/songlist'
 import PlayerBar from '@/components/player/PlayerBar'
 import { ListInfoContext } from './state'
@@ -29,7 +30,7 @@ export default ({ componentId, info }: { componentId: string, info: ListInfoItem
       isUnmountedRef.current = true
       releaseSonglistDetail(info.source, info.id)
       // 卸载后 store 里最后一份完整列表也放掉；重新进入会从缓存/网络重建
-      clearListDetail()
+      if (songlistState.listDetailInfo.id === info.id && songlistState.listDetailInfo.source === info.source) clearListDetail()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

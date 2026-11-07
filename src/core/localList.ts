@@ -11,7 +11,7 @@ import playerState from '@/store/player/state'
  * 用引用计数管理占用，没有占用且没在播放时延迟释放，避免连续操作反复读盘。
  */
 
-const holds = new Map<string, number>()
+const holds = new Map<string, Set<symbol>>()
 let releaseTimer: ReturnType<typeof setTimeout> | null = null
 // 合并连续下载完成这类操作，避免每首之间都丢一次缓存
 const RELEASE_DELAY = 3000
@@ -45,22 +45,30 @@ export const maybeRelease = () => {
 
 /** 占用完整列表并确保已加载。调用方必须配对 releaseLocalList */
 export const retainLocalList = async(reason: string, load = true): Promise<LX.Music.MusicInfo[]> => {
-  holds.set(reason, (holds.get(reason) ?? 0) + 1)
+  const token = Symbol(reason)
+  const leases = holds.get(reason) ?? new Set<symbol>()
+  leases.add(token)
+  holds.set(reason, leases)
+  if (releaseTimer) clearTimeout(releaseTimer)
+  releaseTimer = null
   if (!load) return allMusicList.get(LIST_IDS.LOCAL) ?? []
   try {
     return await getListMusics(LIST_IDS.LOCAL)
   } catch (error) {
-    // 加载失败要回滚占用，否则这个 reason 永远配不上 release，整表再也释放不了
-    releaseLocalList(reason)
+    // 只回滚本次占用：旧页面的读取失败不能减掉重新打开页面的占用。
+    if (leases.delete(token) && leases.size === 0 && holds.get(reason) === leases) holds.delete(reason)
     throw error
+  } finally {
+    // 关闭页面后的定时器可能早于慢读盘完成；数据写回后再安排一次释放。
+    maybeRelease()
   }
 }
 
 export const releaseLocalList = (reason: string) => {
-  const count = holds.get(reason)
-  if (count == null) return
-  if (count > 1) holds.set(reason, count - 1)
-  else holds.delete(reason)
+  const leases = holds.get(reason)
+  if (!leases) return
+  leases.delete(leases.values().next().value!)
+  if (!leases.size) holds.delete(reason)
   maybeRelease()
 }
 

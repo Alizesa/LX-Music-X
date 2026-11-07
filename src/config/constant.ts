@@ -109,6 +109,8 @@ export const storageDataPrefix = {
   ignoreVersionFailTipTimeKey: '@ignore_version_fail_tip_time',
   searchSetting: '@search_setting',
   searchResultsCache: '@search_results_cache__',
+  browseDetailCacheIndex: '@browse_detail_cache_index',
+  browseDetailCacheItem: '@browse_detail_cache_item__',
 
   fontSize: '@font_size',
 

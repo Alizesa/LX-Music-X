@@ -34,6 +34,8 @@ public class Lyric extends LyricPlayer {
   String lyricText = "";
   String translationText = "";
   String romaLyricText = "";
+  private BroadcastReceiver screenReceiver;
+  private boolean destroyed = false;
 
   Lyric(ReactApplicationContext reactContext, boolean isShowTranslation, boolean isShowRoma, float playbackRate) {
     this.reactAppContext = reactContext;
@@ -50,9 +52,10 @@ public class Lyric extends LyricPlayer {
     theFilter.addAction(Intent.ACTION_SCREEN_ON);
     theFilter.addAction(Intent.ACTION_SCREEN_OFF);
 
-    BroadcastReceiver screenOnOffReceiver = new BroadcastReceiver() {
+    screenReceiver = new BroadcastReceiver() {
       @Override
       public void onReceive(Context context, Intent intent) {
+        if (destroyed || !reactAppContext.hasActiveReactInstance()) return;
         String strAction = intent.getAction();
 
         switch (Objects.requireNonNull(strAction)) {
@@ -68,7 +71,27 @@ public class Lyric extends LyricPlayer {
       }
     };
 
-    reactAppContext.registerReceiver(screenOnOffReceiver, theFilter);
+    reactAppContext.registerReceiver(screenReceiver, theFilter);
+  }
+
+  public void destroy() {
+    if (destroyed) return;
+    destroyed = true;
+    if (screenReceiver != null) {
+      try {
+        reactAppContext.unregisterReceiver(screenReceiver);
+      } catch (IllegalArgumentException ignored) {}
+      screenReceiver = null;
+    }
+    isSendLyricTextEvent = false;
+    isRunPlayer = false;
+    pause();
+    hideDesktopLyric();
+    lyricText = "";
+    translationText = "";
+    romaLyricText = "";
+    super.setLyric("", new ArrayList<>());
+    lyricEvent = null;
   }
 
   // private void checkA2DPConnection(Context context) {

@@ -1,4 +1,4 @@
-import { useRef, useImperativeHandle, forwardRef, useState, type ComponentProps } from 'react'
+import { useRef, useImperativeHandle, forwardRef, useState, useEffect, useCallback, type ComponentProps } from 'react'
 import { ScrollView, TouchableOpacity, View } from 'react-native'
 import { useI18n } from '@/lang'
 import { type Position } from '@/components/common/Menu'
@@ -15,6 +15,7 @@ import { hasMusicUrlByMusic } from '@/utils/data'
 import { setMusicCollected } from '@/core/player/player'
 import { changeQQMusicPlaylistMembership, loadWritableQQMusicPlaylists, useQQMusicLiked } from '@/core/qqMusicFavorite'
 import { createStyle } from '@/utils/tools'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 export interface SelectInfo {
   musicInfo: LX.Music.MusicInfoOnline
@@ -22,7 +23,6 @@ export interface SelectInfo {
   index: number
   single: boolean
 }
-const initSelectInfo = {}
 
 const hasUrlCache = async(musicInfo: LX.Music.MusicInfo) => {
   return hasMusicUrlByMusic(musicInfo)
@@ -64,7 +64,9 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
   const t = useI18n()
   const theme = useTheme()
   const popupRef = useRef<PopupType>(null)
-  const selectInfoRef = useRef<SelectInfo>(initSelectInfo as SelectInfo)
+  const selectInfoRef = useRef<SelectInfo | null>(null)
+  const session = useRef(0)
+  const screenVisible = useScreenVisible()
   // 选中项放 state：面板里点完收藏要立刻反映到那一行（图标高亮 + 勾 + 文案变「取消收藏」）。
   // 收藏状态由 useQQMusicLiked 订阅，它会跟着账号数据变
   const [current, setCurrent] = useState<SelectInfo | null>(null)
@@ -74,7 +76,26 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
   const [playlists, setPlaylists] = useState<LX.QQMusic.PlaylistInfo[]>([])
   const [busy, setBusy] = useState(false)
 
-  const close = () => { popupRef.current?.setVisible(false) }
+  const handleHide = useCallback(() => {
+    session.current++
+    selectInfoRef.current = null
+    setCurrent(null)
+    setRows([])
+    setPlaylists([])
+    setMode('actions')
+    setBusy(false)
+  }, [])
+  const close = useCallback(() => {
+    popupRef.current?.setVisible(false)
+    handleHide()
+  }, [handleHide])
+  useEffect(() => {
+    if (!screenVisible) close()
+  }, [screenVisible, close])
+  useEffect(() => () => {
+    session.current++
+    selectInfoRef.current = null
+  }, [])
 
   const buildRows = (musicInfo: LX.Music.MusicInfoOnline): Row[] => {
     const next: Row[] = [{ action: 'play', label: t('play'), icon: 'play' }]
@@ -101,9 +122,13 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
 
   useImperativeHandle(ref, () => ({
     show(selectInfo) {
+      if (!screenVisible) return
+      const version = ++session.current
       selectInfoRef.current = selectInfo
       setCurrent(selectInfo)
       setMode('actions')
+      setPlaylists([])
+      setBusy(false)
       const next = buildRows(selectInfo.musicInfo)
       setRows(next)
       popupRef.current?.setVisible(true)
@@ -111,52 +136,57 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
       // 这期间可能已经关掉、又在另一首上打开了菜单（selectInfoRef 一直指向当前面板那首），
       // 那这份结果就属于上一首了，直接丢掉
       void hasUrlCache(selectInfo.musicInfo).then(hasCache => {
-        if (selectInfoRef.current.musicInfo.id != selectInfo.musicInfo.id) return
+        if (version !== session.current) return
         setRows(prev => prev.map(row => row.action == 'removeCache' ? { ...row, disabled: !hasCache } : row))
-      })
+      }).catch(() => {})
     },
   }))
 
   const toggleLike = async() => {
     const musicInfo = current?.musicInfo
     if (!musicInfo || busy) return
+    const version = session.current
     setBusy(true)
     try {
       // 提示、失败兜底、本地列表那套分流都在里面
       await setMusicCollected(musicInfo, !liked)
     } finally {
-      setBusy(false)
+      if (version === session.current) setBusy(false)
     }
   }
 
   const openPlaylistPicker = async(nextMode: Mode) => {
-    if (busy) return
+    if (busy || !selectInfoRef.current) return
+    const version = session.current
     setBusy(true)
     try {
       // 候选（自己创建的歌单）和「缓存里缺 dirId 就自己重拉一次」都在 core 里，
       // 播放详情页那个面板用的是同一份。列表拿到手再切，免得先闪一下「还没有自建歌单」
       const list = await loadWritableQQMusicPlaylists()
+      if (version !== session.current) return
       setPlaylists(list)
       setMode(nextMode)
     } finally {
-      setBusy(false)
+      if (version === session.current) setBusy(false)
     }
   }
 
   const changeMembership = async(playlist: LX.QQMusic.PlaylistInfo) => {
     const musicInfo = current?.musicInfo
     if (!musicInfo || busy) return
+    const version = session.current
     setBusy(true)
     try {
       // 成功与否的提示和缓存作废都在里面做掉了
-      if (await changeQQMusicPlaylistMembership(musicInfo, playlist, mode == 'add')) close()
+      if (await changeQQMusicPlaylistMembership(musicInfo, playlist, mode == 'add') && version === session.current) close()
     } finally {
-      setBusy(false)
+      if (version === session.current) setBusy(false)
     }
   }
 
   const handleMenuPress = (action: string) => {
     const selectInfo = selectInfoRef.current
+    if (!selectInfo) return
     switch (action) {
       case 'play':
         props.onPlay(selectInfo)
@@ -257,7 +287,7 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
     : t(mode == 'add' ? 'qq_playlist_add_to' : 'qq_playlist_remove_from')
 
   return (
-    <Popup ref={popupRef} title={title} position="bottom">
+    <Popup ref={popupRef} onHide={handleHide} title={title} position="bottom">
       {mode == 'actions' ? renderActions() : renderPlaylists()}
     </Popup>
   )
