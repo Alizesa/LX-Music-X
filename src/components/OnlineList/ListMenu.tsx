@@ -273,6 +273,8 @@ const styles = createStyle({
     borderBottomWidth: 1,
   },
   list: {
+    flexShrink: 1,
+    flexGrow: 0,
     maxHeight: 380,
   },
   cover: {

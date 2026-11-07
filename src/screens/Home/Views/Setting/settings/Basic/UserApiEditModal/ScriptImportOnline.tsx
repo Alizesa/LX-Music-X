@@ -8,6 +8,7 @@ import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { httpFetch } from '@/utils/request'
 import { handleImportScript } from './action'
+import { useTabletLayout } from '@/utils/hooks'
 
 interface UrlInputType {
   setText: (text: string) => void
@@ -16,6 +17,7 @@ interface UrlInputType {
 }
 const UrlInput = forwardRef<UrlInputType, {}>((props, ref) => {
   const theme = useTheme()
+  const { isWide } = useTabletLayout()
   const [text, setText] = useState('')
   const [placeholder, setPlaceholder] = useState('')
   const inputRef = useRef<InputType>(null)
@@ -39,7 +41,7 @@ const UrlInput = forwardRef<UrlInputType, {}>((props, ref) => {
       placeholder={placeholder}
       value={text}
       onChangeText={setText}
-      style={{ ...styles.input, backgroundColor: theme['c-primary-input-background'] }}
+      style={[styles.input, { backgroundColor: theme['c-primary-input-background'] }, isWide && { minWidth: 0 }]}
     />
   )
 })

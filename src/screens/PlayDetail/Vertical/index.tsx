@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useMemo, useEffect } from 'react'
-import { View, AppState } from 'react-native'
+import { View } from 'react-native'
 
 import Header from './components/Header'
 // import Aside from './components/Aside'
@@ -10,15 +10,14 @@ import Pic from './Pic'
 import Lyric from './Lyric'
 import Singer from './Singer'
 import { screenkeepAwake, screenUnkeepAwake } from '@/utils/nativeModules/utils'
-import commonState, { type InitState as CommonState } from '@/store/common/state'
 import { createStyle } from '@/utils/tools'
-import { VisibilityBoundary } from '@/utils/hooks/useScreenVisible'
+import { useScreenVisible, VisibilityBoundary } from '@/utils/hooks/useScreenVisible'
+import { PLAY_DETAIL_PAGES, type PlayDetailPagerProps } from '../page'
 // import { useTheme } from '@/store/theme/hook'
 
 // 三页的顺序就是 PagerView 里子节点的顺序：歌手那页在封面左边（往右划才划得到），
 // 封面仍然是打开播放详情页时停的那一页
 const SINGER_PAGE = 0
-const PIC_PAGE = 1
 const LYRIC_PAGE = 2
 
 const LyricPage = ({ activeIndex }: { activeIndex: number }) => {
@@ -36,47 +35,28 @@ const LyricPage = ({ activeIndex }: { activeIndex: number }) => {
 }
 
 // global.iskeep = false
-export default memo(({ componentId }: { componentId: string }) => {
+export default memo(({ componentId, initialPage, onPageChange }: PlayDetailPagerProps) => {
   // const theme = useTheme()
-  const [pageIndex, setPageIndex] = useState(PIC_PAGE)
-  const showLyricRef = useRef(false)
+  const initialPageIndex = useRef(PLAY_DETAIL_PAGES.indexOf(initialPage)).current
+  const [pageIndex, setPageIndex] = useState(initialPageIndex)
+  const awaitingInitialPage = useRef(true)
+  const visible = useScreenVisible()
 
   const onPageSelected = ({ nativeEvent }: PagerViewOnPageSelectedEvent) => {
+    const page = PLAY_DETAIL_PAGES[nativeEvent.position]
+    if (!page) return
+    // 原生 pager 挂载时可能先报告第 0 页，等目标页就位后再更新记忆和订阅。
+    if (awaitingInitialPage.current && nativeEvent.position !== initialPageIndex) return
+    awaitingInitialPage.current = false
     setPageIndex(nativeEvent.position)
-    showLyricRef.current = nativeEvent.position == LYRIC_PAGE
-    if (showLyricRef.current) {
-      screenkeepAwake()
-    } else {
-      screenUnkeepAwake()
-    }
+    onPageChange(page)
   }
 
   useEffect(() => {
-    let appstateListener = AppState.addEventListener('change', (state) => {
-      switch (state) {
-        case 'active':
-          if (showLyricRef.current && !commonState.componentIds.comment) screenkeepAwake()
-          break
-        case 'background':
-          screenUnkeepAwake()
-          break
-      }
-    })
-
-    const handleComponentIdsChange = (ids: CommonState['componentIds']) => {
-      if (ids.comment) screenUnkeepAwake()
-      else if (AppState.currentState == 'active') screenkeepAwake()
-    }
-
-    global.state_event.on('componentIdsUpdated', handleComponentIdsChange)
-
-    return () => {
-      global.state_event.off('componentIdsUpdated', handleComponentIdsChange)
-      appstateListener.remove()
-      screenUnkeepAwake()
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (!visible || pageIndex !== LYRIC_PAGE) return
+    screenkeepAwake()
+    return () => { screenUnkeepAwake() }
+  }, [visible, pageIndex])
 
   return (
     <>
@@ -84,15 +64,16 @@ export default memo(({ componentId }: { componentId: string }) => {
       <View style={styles.container}>
         <PagerView
           onPageSelected={onPageSelected}
-          // onPageScrollStateChanged={onPageScrollStateChanged}
-          // 默认停在封面页：歌手搜索那页在它左边，得往右划才划得到
-          initialPage={PIC_PAGE}
+          onPageScrollStateChanged={event => {
+            if (event.nativeEvent.pageScrollState === 'dragging') awaitingInitialPage.current = false
+          }}
+          initialPage={initialPageIndex}
           style={styles.pagerView}
         >
           <View key="singer" collapsable={false}>
             {/* 只有真翻到这一页才去搜（active）：PagerView 三页是一起挂上的，
                 挂载就查等于每次打开播放详情页都白打一次接口 */}
-            <Singer componentId={componentId} active={pageIndex == SINGER_PAGE} />
+            <Singer componentId={componentId} active={visible && pageIndex == SINGER_PAGE} />
           </View>
           <View key="pic" collapsable={false}>
             <Pic componentId={componentId} />

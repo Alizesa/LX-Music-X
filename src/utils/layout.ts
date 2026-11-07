@@ -15,6 +15,9 @@ export const TABLET_PLAYER_WIDTH = '60%'
 export const TABLET_PLAYER_MAX_WIDTH = 640
 export const TABLET_PLAYER_BOTTOM_GAP = 10
 
+export const TABLET_SETTINGS_MAX_WIDTH = 420
+export const TABLET_CONFIRM_MAX_WIDTH = 480
+
 export const isWideLayout = (width: number, height: number): boolean => {
   return width >= 900 && width / height > 1.2
 }

@@ -9,7 +9,7 @@ import { useTheme } from '@/store/theme/hook'
 import { getOpenStoragePath, saveOpenStoragePath } from '@/utils/data'
 import Button from '@/components/common/Button'
 import ButtonPrimary from '@/components/common/ButtonPrimary'
-import { useUnmounted } from '@/utils/hooks'
+import { useTabletLayout, useUnmounted } from '@/utils/hooks'
 import { Icon } from '@/components/common/Icon'
 import type { PathItem } from './ListItem'
 const filterFileName = /[\\:*?#"<>|]/
@@ -22,6 +22,7 @@ interface PathInputType {
 }
 const PathInput = forwardRef<PathInputType, {}>((props, ref) => {
   const theme = useTheme()
+  const { isWide } = useTabletLayout()
   const [text, setText] = useState('')
   const inputRef = useRef<InputType>(null)
 
@@ -46,7 +47,7 @@ const PathInput = forwardRef<PathInputType, {}>((props, ref) => {
       multiline
       numberOfLines={3}
       textAlignVertical='top'
-      style={{ ...styles.input, backgroundColor: theme['c-primary-input-background'] }}
+      style={[styles.input, { backgroundColor: theme['c-primary-input-background'] }, isWide && { minWidth: 0 }]}
     />
   )
 })

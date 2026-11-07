@@ -16,10 +16,8 @@ import Player from '../Vertical/Player'
 import Singer from '../Vertical/Singer'
 import Btn, { HEADER_HEIGHT } from '../Vertical/components/Btn'
 import TimeoutExitBtn from '../Vertical/components/TimeoutExitBtn'
+import { PLAY_DETAIL_PAGES as PAGES, type PlayDetailPage as Page, type PlayDetailPagerProps } from '../page'
 
-const PAGES = ['singer', 'cover', 'lyric'] as const
-type Page = typeof PAGES[number]
-const INITIAL_PAGE = 1
 const getPageKey = (page: Page) => page
 
 const Artwork = memo(() => {
@@ -45,7 +43,7 @@ const Artwork = memo(() => {
 })
 
 /** 三页共用一个滑动容器，每页半屏：歌手＋封面 ⇄ 封面＋歌词。 */
-export default memo(({ componentId }: { componentId: string }) => {
+export default memo(({ componentId, initialPage, onPageChange }: PlayDetailPagerProps) => {
   const theme = useTheme()
   const musicInfo = usePlayerMusicInfo()
   const statusBarHeight = useStatusbarHeight()
@@ -55,9 +53,10 @@ export default memo(({ componentId }: { componentId: string }) => {
   const windowSize = useWindowSize()
   const [viewportWidth, setViewportWidth] = useState(windowSize.width * 0.92)
   const pageWidth = viewportWidth / 2
-  const [firstPage, setFirstPage] = useState(INITIAL_PAGE)
-  const firstPageRef = useRef(INITIAL_PAGE)
-  const initialOffset = useRef({ x: pageWidth * INITIAL_PAGE, y: 0 })
+  const initialFirstPage = useRef(initialPage === 'singer' ? 0 : 1).current
+  const [firstPage, setFirstPage] = useState(initialFirstPage)
+  const firstPageRef = useRef(initialFirstPage)
+  const initialOffset = useRef({ x: pageWidth * initialFirstPage, y: 0 })
   const aligning = useRef(true)
   const alignFrame = useRef<number | null>(null)
   const lyricVisible = firstPage === 1
@@ -101,13 +100,15 @@ export default memo(({ componentId }: { componentId: string }) => {
     if (next === firstPageRef.current) return
     firstPageRef.current = next
     setFirstPage(next)
-  }, [pageWidth, viewportWidth])
+    // 只在真正换到另一对页面时更新记忆，恢复“封面＋歌词”不能覆盖原来的歌词页。
+    onPageChange(next === 0 ? 'singer' : 'cover')
+  }, [onPageChange, pageWidth, viewportWidth])
   const beginDrag = useCallback(() => {
     cancelAlignment()
     aligning.current = false
   }, [cancelAlignment])
   const enableSwipe = useCallback((enabled: boolean) => {
-    pagerRef.current?.getNativeScrollRef()?.setNativeProps({ scrollEnabled: enabled })
+    pagerRef.current?.setNativeProps({ scrollEnabled: enabled })
   }, [])
   const lockSwipe = useCallback(() => { enableSwipe(false) }, [enableSwipe])
   const unlockSwipe = useCallback(() => { enableSwipe(true) }, [enableSwipe])

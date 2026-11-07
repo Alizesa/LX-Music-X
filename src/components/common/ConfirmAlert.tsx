@@ -6,6 +6,8 @@ import { createStyle } from '@/utils/tools'
 import { useI18n } from '@/lang/index'
 import { useTheme } from '@/store/theme/hook'
 import Text from './Text'
+import { useTabletLayout } from '@/utils/hooks'
+import { TABLET_CONFIRM_MAX_WIDTH, TABLET_PLAYER_WIDTH } from '@/utils/layout'
 
 const styles = createStyle({
   main: {
@@ -90,6 +92,7 @@ export default forwardRef<ConfirmAlertType, ConfirmAlertProps>(({
 }: ConfirmAlertProps, ref) => {
   const theme = useTheme()
   const t = useI18n()
+  const { isWide } = useTabletLayout()
 
   const dialogRef = useRef<DialogType>(null)
 
@@ -105,7 +108,15 @@ export default forwardRef<ConfirmAlertType, ConfirmAlertProps>(({
   }
 
   return (
-    <Dialog onHide={onHide} keyHide={keyHide} bgHide={bgHide} closeBtn={closeBtn} title={title} ref={dialogRef}>
+    <Dialog
+      onHide={onHide}
+      keyHide={keyHide}
+      bgHide={bgHide}
+      closeBtn={closeBtn}
+      title={title}
+      ref={dialogRef}
+      contentStyle={isWide ? { width: TABLET_PLAYER_WIDTH, minWidth: 0, maxWidth: TABLET_CONFIRM_MAX_WIDTH, flexShrink: 1 } : undefined}
+    >
       <View style={styles.main}>
         <ScrollView style={styles.content} keyboardShouldPersistTaps={'always'}>
           {children ?? <Text>{text}</Text>}

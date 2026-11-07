@@ -3,11 +3,12 @@ import { View, TouchableOpacity, type StyleProp, type ViewStyle } from 'react-na
 
 import Modal, { type ModalType } from './Modal'
 import { Icon } from '@/components/common/Icon'
-import { useKeyboard } from '@/utils/hooks'
+import { useKeyboard, useTabletLayout } from '@/utils/hooks'
 import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import Text from './Text'
 import { useStatusbarHeight } from '@/store/common/hook'
+import { TABLET_PLAYER_BOTTOM_GAP, TABLET_PLAYER_MAX_WIDTH, TABLET_PLAYER_WIDTH, TABLET_SETTINGS_MAX_WIDTH } from '@/utils/layout'
 
 const styles = createStyle({
   centeredView: {
@@ -27,6 +28,7 @@ const styles = createStyle({
     borderTopRightRadius: 8,
   },
   title: {
+    flexShrink: 1,
     paddingLeft: 10,
     paddingRight: 25,
     paddingTop: 10,
@@ -75,6 +77,7 @@ export default forwardRef<PopupType, PopupProps>(({
   const theme = useTheme()
   const { keyboardShown, keyboardHeight } = useKeyboard()
   const statusBarHeight = useStatusbarHeight()
+  const { isWide } = useTabletLayout()
 
   const modalRef = useRef<ModalType>(null)
 
@@ -170,10 +173,30 @@ export default forwardRef<PopupType, PopupProps>(({
     }
   }, [position, statusBarHeight])
 
+  const tabletViewStyle = useMemo<StyleProp<ViewStyle>>(() => {
+    if (!isWide) return undefined
+    if (position === 'left' || position === 'right') {
+      return { width: '45%', minWidth: 0, maxWidth: TABLET_SETTINGS_MAX_WIDTH }
+    }
+    return {
+      alignSelf: 'center',
+      width: TABLET_PLAYER_WIDTH,
+      maxWidth: TABLET_PLAYER_MAX_WIDTH,
+      minHeight: 0,
+      marginTop: position === 'top' ? statusBarHeight + TABLET_PLAYER_BOTTOM_GAP : 0,
+      marginBottom: position === 'bottom' ? TABLET_PLAYER_BOTTOM_GAP : 0,
+      borderTopLeftRadius: 10,
+      borderTopRightRadius: 10,
+      borderBottomLeftRadius: 10,
+      borderBottomRightRadius: 10,
+      overflow: 'hidden',
+    }
+  }, [isWide, position, statusBarHeight])
+
   return (
     <Modal onHide={onHide} keyHide={keyHide} bgHide={bgHide} bgColor="rgba(50,50,50,.2)" ref={modalRef}>
       <View style={{ ...styles.centeredView, ...centeredViewStyle, paddingBottom: keyboardShown ? keyboardHeight : 0 }}>
-        <View style={[styles.modalView, modalViewStyle, { backgroundColor: theme['c-content-background'] }, contentStyle]} onStartShouldSetResponder={() => true}>
+        <View style={[styles.modalView, modalViewStyle, tabletViewStyle, { backgroundColor: theme['c-content-background'] }, contentStyle]} onStartShouldSetResponder={() => true}>
           <View style={styles.header}>
             <Text size={13} style={styles.title} numberOfLines={1}>{title}</Text>
             {closeBtnComponent}

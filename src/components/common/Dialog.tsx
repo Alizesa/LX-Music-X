@@ -1,5 +1,5 @@
 import { useImperativeHandle, forwardRef, useMemo, useRef } from 'react'
-import { View, TouchableHighlight } from 'react-native'
+import { View, TouchableHighlight, type StyleProp, type ViewStyle } from 'react-native'
 
 import Modal, { type ModalType } from './Modal'
 import { Icon } from '@/components/common/Icon'
@@ -40,6 +40,7 @@ const styles = createStyle({
     height: HEADER_HEIGHT,
   },
   title: {
+    flexShrink: 1,
     paddingLeft: 5,
     paddingRight: 25,
     lineHeight: HEADER_HEIGHT,
@@ -64,6 +65,7 @@ export interface DialogProps {
   title?: string
   children: React.ReactNode | React.ReactNode[]
   height?: number | `${number}%`
+  contentStyle?: StyleProp<ViewStyle>
 }
 
 export interface DialogType {
@@ -78,6 +80,7 @@ export default forwardRef<DialogType, DialogProps>(({
   title = '',
   children,
   height,
+  contentStyle,
 }: DialogProps, ref) => {
   const theme = useTheme()
   const { keyboardShown, keyboardHeight } = useKeyboard()
@@ -100,7 +103,7 @@ export default forwardRef<DialogType, DialogProps>(({
   return (
     <Modal onHide={onHide} keyHide={keyHide} bgHide={bgHide} bgColor="rgba(50,50,50,.3)" ref={modalRef}>
       <View style={{ ...styles.centeredView, paddingBottom: keyboardShown ? keyboardHeight : 0 }}>
-        <View style={{ ...styles.modalView, height, backgroundColor: theme['c-content-background'] }} onStartShouldSetResponder={() => true}>
+        <View style={[styles.modalView, { height, backgroundColor: theme['c-content-background'] }, contentStyle]} onStartShouldSetResponder={() => true}>
           <View style={{ ...styles.header, backgroundColor: theme['c-primary-light-100-alpha-100'] }}>
             <Text style={styles.title} size={13} color={theme['c-primary-light-1000']} numberOfLines={1}>{title}</Text>
             {closeBtnComponent}

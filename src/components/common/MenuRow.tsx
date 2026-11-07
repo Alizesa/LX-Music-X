@@ -27,7 +27,7 @@ export default ({ icon, label, disabled, onPress }: {
     >
       {/* 图标位宽度固定：没有图标的行（「不喜欢」）也留着，各行文案才对得齐 */}
       <View style={styles.iconWrap}>{icon}</View>
-      <Text size={15} numberOfLines={1}>{label}</Text>
+      <Text style={styles.label} size={15} numberOfLines={1}>{label}</Text>
     </TouchableOpacity>
   )
 }
@@ -44,5 +44,8 @@ const styles = createStyle({
     width: 26,
     height: 20,
     justifyContent: 'center',
+  },
+  label: {
+    flexShrink: 1,
   },
 })

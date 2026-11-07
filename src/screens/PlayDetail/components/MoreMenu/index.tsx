@@ -72,7 +72,7 @@ export default forwardRef<MoreMenuType>((_, ref) => {
   const renderBody = () => {
     if (mode == 'actions') {
       return (
-        <>
+        <ScrollView key="actions" style={styles.list} keyboardShouldPersistTaps="handled">
           {/* 跟列表行的三点菜单共用同一套行：图标位、行高、字号都一样 */}
           <MenuRow
             icon={<AddToPlaylistIcon size={18} color={theme['c-font']} />}
@@ -84,7 +84,7 @@ export default forwardRef<MoreMenuType>((_, ref) => {
             label={t('qq_playlist_remove_from')}
             onPress={() => { setMode('remove') }}
           />
-        </>
+        </ScrollView>
       )
     }
     if (!playlists.length) {
@@ -135,6 +135,8 @@ const styles = createStyle({
     borderBottomWidth: 1,
   },
   list: {
+    flexShrink: 1,
+    flexGrow: 0,
     maxHeight: 320,
   },
   cover: {
