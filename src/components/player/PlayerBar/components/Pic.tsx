@@ -16,9 +16,13 @@ const styles = StyleSheet.create({
     height: PIC_HEIGHT,
     borderRadius: 2,
   },
+  compactImage: {
+    width: 44 * global.lx.fontSize,
+    height: 44 * global.lx.fontSize,
+  },
 })
 
-export default () => {
+export default ({ compact = false }: { compact?: boolean }) => {
   const musicInfo = usePlayerMusicInfo()
   const handlePress = () => {
     // console.log('')
@@ -38,7 +42,7 @@ export default () => {
 
   return (
     <TouchableOpacity onPress={handlePress} activeOpacity={0.7} >
-      <Image url={musicInfo.pic} nativeID={NAV_SHEAR_NATIVE_IDS.playDetail_pic} style={styles.image} onError={handleError} />
+      <Image url={musicInfo.pic} nativeID={NAV_SHEAR_NATIVE_IDS.playDetail_pic} style={[styles.image, compact && styles.compactImage]} onError={handleError} />
     </TouchableOpacity>
   )
 }

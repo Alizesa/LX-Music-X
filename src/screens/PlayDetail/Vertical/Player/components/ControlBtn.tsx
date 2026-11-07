@@ -5,7 +5,7 @@ import { useTheme } from '@/store/theme/hook'
 import { playNext, playPrev, togglePlay } from '@/core/player/player'
 import { useIsPlay } from '@/store/player/hook'
 import { createStyle } from '@/utils/tools'
-import { useWindowSize } from '@/utils/hooks'
+import { useLayout, useWindowSize } from '@/utils/hooks'
 import { BTN_WIDTH } from './MoreBtn/Btn'
 import { useMemo } from 'react'
 
@@ -47,6 +47,7 @@ const MIN_SIZE = BTN_WIDTH * 1.2
 
 export default () => {
   const winSize = useWindowSize()
+  const { onLayout, width } = useLayout()
   const maxHeight = Math.max(winSize.height * 0.11, MIN_SIZE)
   const containerStyle = useMemo(() => {
     return {
@@ -54,19 +55,28 @@ export default () => {
       maxHeight,
     }
   }, [maxHeight])
-  const size = Math.min(Math.max(winSize.width * 0.33 * global.lx.fontSize * 0.4, MIN_SIZE), MAX_SIZE, maxHeight)
+  // 平板双栏里只占左侧的一部分宽度，按钮要按去掉内边距后的实际空间限宽。
+  const size = Math.min(Math.max(winSize.width * 0.33 * global.lx.fontSize * 0.4, MIN_SIZE), MAX_SIZE, maxHeight, width > 0 ? width / 3 : MAX_SIZE)
 
   return (
     <View style={containerStyle}>
-      <PrevBtn size={size} />
-      <TogglePlayBtn size={size}/>
-      <NextBtn size={size} />
+      <View style={styles.controls} onLayout={onLayout}>
+        <PrevBtn size={size} />
+        <TogglePlayBtn size={size}/>
+        <NextBtn size={size} />
+      </View>
     </View>
   )
 }
 
 
 const styles = createStyle({
+  controls: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+  },
   conatiner: {
     flexDirection: 'row',
     justifyContent: 'space-evenly',

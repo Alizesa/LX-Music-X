@@ -73,6 +73,7 @@ const styles = createStyle({
     height: '100%',
     paddingBottom: 20,
     alignItems: 'center',
+    justifyContent: 'space-evenly',
     borderRightWidth: 1,
   },
   item: {

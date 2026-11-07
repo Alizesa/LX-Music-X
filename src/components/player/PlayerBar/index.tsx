@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react'
-import { View } from 'react-native'
-import { useKeyboard } from '@/utils/hooks'
+import { StyleSheet, View } from 'react-native'
+import { useKeyboard, useTabletLayout } from '@/utils/hooks'
 
 import Pic from './components/Pic'
 import Title from './components/Title'
@@ -11,18 +11,23 @@ import { createStyle, setColorAlpha } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import { useSettingValue } from '@/store/setting/hook'
 
+const TABLET_BAR_HEIGHT = 60 * global.lx.fontSize
+const TABLET_BAR_BOTTOM_GAP = 10
+export const TABLET_PLAYER_BAR_INSET = TABLET_BAR_HEIGHT + TABLET_BAR_BOTTOM_GAP
+
 
 export default memo(() => {
   // const { onLayout, ...layout } = useLayout()
   const { keyboardShown } = useKeyboard()
+  const { isWide } = useTabletLayout()
   const theme = useTheme()
   const autoHidePlayBar = useSettingValue('common.autoHidePlayBar')
   // 背景单独调透明度（只作用在底色上，文字图标照旧不透明），调小就能透出后面的背景图
   const playBarOpacity = useSettingValue('theme.playBarOpacity')
 
   const playerComponent = useMemo(() => (
-    <View style={{ ...styles.container, backgroundColor: setColorAlpha(theme['c-content-background'], playBarOpacity) }}>
-      <Pic />
+    <View style={[styles.container, isWide && tabletStyles.container, { backgroundColor: setColorAlpha(theme['c-content-background'], playBarOpacity) }]}>
+      <Pic compact={isWide} />
       <View style={styles.center}>
         <Title />
         {/* <View style={{ ...styles.row, justifyContent: 'space-between' }}>
@@ -31,14 +36,29 @@ export default memo(() => {
         <PlayInfo />
       </View>
       <View style={styles.right}>
-        <ControlBtn />
+        <ControlBtn compact={isWide} />
       </View>
     </View>
-  ), [theme, playBarOpacity])
+  ), [theme, playBarOpacity, isWide])
 
   // console.log('render pb')
 
   return autoHidePlayBar && keyboardShown ? null : playerComponent
+})
+
+// 平板只按字号缩放高度，避免整个播放条随屏幕比例一起变大。
+const tabletStyles = StyleSheet.create({
+  container: {
+    alignSelf: 'center',
+    width: '60%',
+    maxWidth: 640,
+    height: TABLET_BAR_HEIGHT,
+    flexShrink: 0,
+    marginHorizontal: 0,
+    marginBottom: TABLET_BAR_BOTTOM_GAP,
+    paddingVertical: 4 * global.lx.fontSize,
+    paddingLeft: 4 * global.lx.fontSize,
+  },
 })
 
 
