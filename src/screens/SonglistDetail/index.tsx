@@ -36,7 +36,7 @@ export default ({ componentId, info }: { componentId: string, info: ListInfoItem
 
 
   return (
-    <PageContent componentId={componentId}>
+    <PageContent>
       <StatusBar />
       <ListInfoContext.Provider value={info}>
         <MusicList ref={musicListRef} componentId={componentId} />

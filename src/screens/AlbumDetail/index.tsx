@@ -25,7 +25,7 @@ export default ({ componentId, info }: { componentId: string, info: AlbumDetailP
   }, [info.mid])
 
   return (
-    <PageContent componentId={componentId}>
+    <PageContent>
       <StatusBar />
       <MusicList ref={musicListRef} params={info} />
       <PlayerBar />

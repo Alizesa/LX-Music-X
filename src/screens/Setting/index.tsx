@@ -17,7 +17,7 @@ export default ({ componentId }: { componentId: string }) => {
   }, [componentId])
 
   return (
-    <PageContent componentId={componentId}>
+    <PageContent>
       <StatusBar />
       <SimpleHeader componentId={componentId} title={t('nav_setting')} />
       <Setting />

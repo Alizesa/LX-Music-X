@@ -23,7 +23,7 @@ export default ({ componentId }: { componentId: string }) => {
   }, [componentId])
 
   return (
-    <PageContent componentId={componentId}>
+    <PageContent>
       <StatusBar />
       <SimpleHeader componentId={componentId} title={t('nav_search')} />
       {/* 歌曲/歌单/歌手/专辑 的类型切换。原来挂在首页顶栏上（搜索还是 pager 页的时候），

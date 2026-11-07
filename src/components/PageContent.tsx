@@ -2,19 +2,16 @@
 import { View } from 'react-native'
 import { useTheme } from '@/store/theme/hook'
 import ImageBackground from '@/components/common/ImageBackground'
-import { useTabletLayout, useWindowSize } from '@/utils/hooks'
+import { useWindowSize } from '@/utils/hooks'
 import { useMemo } from 'react'
 import { scaleSizeAbsHR } from '@/utils/pixelRatio'
 import { defaultHeaders } from './common/Image'
 import SizeView from './SizeView'
-import TabletNavRail from './TabletNavRail'
 import { useBgPic } from '@/store/common/hook'
 import { useSettingValue } from '@/store/setting/hook'
 
 interface Props {
   children: React.ReactNode
-  /** 首页需要传：左侧导航条据此判断当前是不是在栈底，决定切 tab 时要不要 popToRoot */
-  componentId?: string
 }
 
 const BLUR_RADIUS = Math.max(scaleSizeAbsHR(18), 10)
@@ -22,24 +19,15 @@ const BLUR_RADIUS = Math.max(scaleSizeAbsHR(18), 10)
 // 本地图片路径要补上 file:// 才能给 Image 用
 const toFileUri = (path: string) => path.startsWith('/') ? `file://${path}` : path
 
-export default ({ children, componentId }: Props) => {
+export default ({ children }: Props) => {
   const theme = useTheme()
   const windowSize = useWindowSize()
-  const { isWide } = useTabletLayout()
   const pic = useBgPic()
   const customBgImage = useSettingValue('theme.customBgImage')
   const bgOpacity = useSettingValue('theme.bgOpacity')
   const hideBgDark = useSettingValue('theme.hideBgDark')
   // 和主题自带背景一样，深色主题勾了「隐藏黑色主题背景」时自定义背景也一起隐藏
   const customBgUri = customBgImage && !(theme.isDark && hideBgDark) ? toFileUri(customBgImage) : ''
-
-  // 平板横屏用左侧导航条替换底部 tab；背景图仍然铺满整屏，导航条自己有不透明底色
-  const body = useMemo(() => (
-    <View style={{ flex: 1, flexDirection: 'row' }}>
-      {isWide ? <TabletNavRail componentId={componentId} /> : null}
-      <View style={{ flex: 1 }}>{children}</View>
-    </View>
-  ), [children, componentId, isWide])
 
   // 返回动画会先露出下层页面；背景随页面保留，避免等 didAppear 后重建图片时闪烁。
   const themeComponent = useMemo(() => (
@@ -52,10 +40,10 @@ export default ({ children, componentId }: Props) => {
       >
       </ImageBackground>
       <View style={{ flex: 1, flexDirection: 'column', backgroundColor: theme['c-main-background'] }}>
-        {body}
+        {children}
       </View>
     </View>
-  ), [body, theme, windowSize.height, windowSize.width])
+  ), [children, theme, windowSize.height, windowSize.width])
 
   const picComponent = useMemo(() => {
     // 自定义背景优先，其次是动态背景（播放封面）
@@ -78,11 +66,11 @@ export default ({ children, componentId }: Props) => {
           <View style={{ flex: 1, flexDirection: 'column', backgroundColor: theme['c-content-background'], opacity: bgOpacity }}></View>
         </ImageBackground>
         <View style={{ flex: 1, flexDirection: 'column' }}>
-          {body}
+          {children}
         </View>
       </View>
     )
-  }, [bgOpacity, body, customBgUri, pic, theme, windowSize.height, windowSize.width])
+  }, [bgOpacity, children, customBgUri, pic, theme, windowSize.height, windowSize.width])
 
   return (
     <>

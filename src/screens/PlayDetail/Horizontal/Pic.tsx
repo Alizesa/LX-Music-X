@@ -2,7 +2,7 @@ import { memo, useEffect, useState } from 'react'
 import { View } from 'react-native'
 // import { useLayout } from '@/utils/hooks'
 import { usePlayerMusicInfo } from '@/store/player/hook'
-import { useTabletLayout } from '@/utils/hooks'
+import { useWindowSize } from '@/utils/hooks'
 import { useNavigationComponentDidAppear } from '@/navigation'
 import { NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
 import { createStyle } from '@/utils/tools'
@@ -16,8 +16,7 @@ import commonState from '@/store/common/state'
 
 export default memo(({ componentId }: { componentId: string }) => {
   const musicInfo = usePlayerMusicInfo()
-  // 内容宽度要扣掉左侧导航条，否则封面比可用区域宽
-  const { contentWidth, height: winHeight } = useTabletLayout()
+  const { width: winWidth, height: winHeight } = useWindowSize()
   const statusBarHeight = useStatusbarHeight()
 
   const [animated, setAnimated] = useState(!!commonState.componentIds.playDetail)
@@ -30,7 +29,7 @@ export default memo(({ componentId }: { componentId: string }) => {
     setAnimated(true)
   })
 
-  let imgWidth = Math.min((contentWidth * 0.45 - marginLeft - BTN_WIDTH) * 0.76, (winHeight - statusBarHeight - HEADER_HEIGHT) * 0.62)
+  let imgWidth = Math.min((winWidth * 0.45 - marginLeft - BTN_WIDTH) * 0.76, (winHeight - statusBarHeight - HEADER_HEIGHT) * 0.62)
   imgWidth -= imgWidth * (global.lx.fontSize - 1) * 0.3
   let contentHeight = (winHeight - statusBarHeight - HEADER_HEIGHT) * 0.66
   contentHeight -= contentHeight * (global.lx.fontSize - 1) * 0.2

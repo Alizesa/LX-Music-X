@@ -29,7 +29,7 @@ import {
 } from '@/utils/data'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
-import { useTabletLayout } from '@/utils/hooks'
+import { useWindowSize } from '@/utils/hooks'
 import { useI18n } from '@/lang'
 
 interface Props {
@@ -63,9 +63,9 @@ const PlaylistHero = ({ name, subtitle, cover, onPlay, action }: {
   action?: ReactNode
 }) => {
   const t = useI18n()
-  const { contentWidth } = useTabletLayout()
+  const windowSize = useWindowSize()
   // 平板横屏内容很宽，头图不能跟着 0.52 一路涨到几百上千高，封顶 380
-  const height = Math.min(Math.round(contentWidth * 0.52), 380)
+  const height = Math.min(Math.round(windowSize.width * 0.52), 380)
   // 封面按自己的比例铺满宽度后的高度。头图这么扁，方形封面铺开是放不下的，
   // 超出的部分由容器从下面裁掉 —— 露出来的是封面上半截（歌名/歌手那块），
   // 而不是 cover 居中裁出来的中间那一条
@@ -85,7 +85,7 @@ const PlaylistHero = ({ name, subtitle, cover, onPlay, action }: {
               onLoad={({ nativeEvent }) => {
                 const size = nativeEvent?.source
                 if (!size?.width || !size?.height) return
-                setCoverHeight(Math.max(height, Math.round(contentWidth * size.height / size.width)))
+                setCoverHeight(Math.max(height, Math.round(windowSize.width * size.height / size.width)))
               }}
             />
           : null
@@ -261,7 +261,7 @@ export default ({ componentId, info }: Props) => {
   }, [info.daily, info.radar, playFrom])
 
   return (
-    <PageContent componentId={componentId}>
+    <PageContent>
       <StatusBar />
       <SimpleHeader componentId={componentId} title={info.name} />
       <OnlineList

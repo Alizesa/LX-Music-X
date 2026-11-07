@@ -4,7 +4,6 @@ import { FlatList, type FlatListProps, RefreshControl, View } from 'react-native
 // import { useMusicList } from '@/store/list/hook'
 import ListItem, { ITEM_HEIGHT } from './ListItem'
 import { createStyle, getRowInfo, type RowInfoType } from '@/utils/tools'
-import { useTabletLayout } from '@/utils/hooks'
 import type { Position } from './ListMenu'
 import type { SelectMode } from './MultipleModeBar'
 import { useTheme } from '@/store/theme/hook'
@@ -69,11 +68,7 @@ const List = forwardRef<ListType, ListProps>(({
   const selectedListRef = useRef<LX.Music.MusicInfoOnline[]>([])
   const [visibleMultiSelect, setVisibleMultiSelect] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
-  // 订阅窗口尺寸：旋转/分屏变化时列数要跟着重算
-  const { contentWidth } = useTabletLayout()
-  // contentWidth 只用于触发重算：getRowInfo 读的是 windowSizeTools 里的最新尺寸
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const rowInfo = useMemo(() => getRowInfo(rowType), [contentWidth, rowType])
+  const rowInfo = useRef(getRowInfo(rowType))
   const isShowAlbumName = useSettingValue('list.isShowAlbumName')
   const isShowInterval = useSettingValue('list.isShowInterval')
   // const currentListIdRef = useRef('')
@@ -194,14 +189,13 @@ const List = forwardRef<ListType, ListProps>(({
       onLongPress={handleLongPress}
       onShowMenu={onShowMenu}
       selectedList={selectedList}
-      rowInfo={rowInfo}
+      rowInfo={rowInfo.current}
       isShowAlbumName={isShowAlbumName}
       isShowInterval={isShowInterval}
     />
   )
   const getkey: FlatListType['keyExtractor'] = item => item.id
   const getItemLayout: FlatListType['getItemLayout'] = (data, index) => {
-    // FlatList 多列时这里的 index 已经是「行号」（内部 getItemCount 按行算），直接乘行高
     return { length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index }
   }
   const refreshControl = useMemo(() => (
@@ -237,12 +231,10 @@ const List = forwardRef<ListType, ListProps>(({
 
   return (
     <FlatList
-      // numColumns 变化必须重挂，否则 FlatList 会沿用旧列数
-      key={`cols-${rowInfo.rowNum ?? 1}`}
       ref={flatListRef}
       style={styles.list}
       data={currentList}
-      numColumns={rowInfo.rowNum}
+      numColumns={rowInfo.current.rowNum}
       horizontal={false}
       maxToRenderPerBatch={4}
       // updateCellsBatchingPeriod={80}

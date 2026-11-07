@@ -69,18 +69,18 @@ const getCardSide = (width: number, gap: number) => (width - H_PADDING * 2 - gap
  * 手势响应），不会连带触发卡片的 onPress —— 所以每日推荐能「按钮播放、卡片展开列表」。
  * 不传 subtitle 就只显示标题（猜你喜欢的小字去掉了）。
  */
-const SquareCard = ({ title, subtitle, cover, onPress, disabled, action, side }: {
+const RecommendCard = ({ title, subtitle, cover, onPress, disabled, action, width, height }: {
   title: string
   subtitle?: string
   cover?: string | null
   onPress: () => void
   disabled?: boolean
   action?: ReactNode
-  /** 卡片边长。手机两列可滑，平板横屏三列铺开 */
-  side: number
+  width: number
+  height: number
 }) => {
   return (
-    <TouchableOpacity style={{ ...styles.card, width: side, height: side, opacity: disabled ? 0.6 : 1 }} activeOpacity={0.85} disabled={disabled} onPress={onPress}>
+    <TouchableOpacity style={{ ...styles.card, width, height, opacity: disabled ? 0.6 : 1 }} activeOpacity={0.85} disabled={disabled} onPress={onPress}>
       {
         cover
           ? <ImageBackground style={styles.cardBg} source={{ uri: cover }} resizeMode="cover" />
@@ -116,9 +116,11 @@ export default () => {
   // createStyle 会缩放 gap，尺寸计算使用渲染时的同一份值。
   const cardGap = styles.cardRow.gap
   const playlistGap = styles.playlistGrid.gap
-  const cardSide = isWide
-    ? Math.min(Math.floor((availableWidth - cardGap * (cardsPerRow - 1)) / cardsPerRow), 430)
+  const cardWidth = isWide
+    ? Math.min(Math.floor((availableWidth - cardGap * (cardsPerRow - 1)) / cardsPerRow), 340)
     : getCardSide(contentWidth, cardGap)
+  // 平板横屏把卡片压扁到约 16:9，三张卡片不再占满首屏
+  const cardHeight = isWide ? Math.min(Math.round(cardWidth * 0.56), 200) : cardWidth
   const playlistColumns = isWide
     ? Math.max(3, Math.min(6, Math.floor((availableWidth + playlistGap) / (150 + playlistGap))))
     : 1
@@ -476,30 +478,33 @@ export default () => {
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.cardScroll}
-          contentContainerStyle={styles.cardRow}
+          contentContainerStyle={isWide ? { ...styles.cardRow, flexGrow: 1, justifyContent: 'center' } : styles.cardRow}
           {...horizontalScrollProps}
         >
-          <SquareCard
+          <RecommendCard
             title={t('qq_daily_recommend')}
             subtitle={t('mine_song_count', { num: daily.length })}
             cover={daily[0]?.meta.picUrl}
-            side={cardSide}
+            width={cardWidth}
+            height={cardHeight}
             onPress={() => { void openDaily() }}
             action={<IconAction overlay icon="play" onPress={() => { void playDaily() }} />}
           />
-          <SquareCard
+          <RecommendCard
             title={t('qq_guess_you_like')}
             cover={guess[0]?.meta.picUrl}
-            side={cardSide}
+            width={cardWidth}
+            height={cardHeight}
             onPress={() => { void playGuess() }}
             disabled={playing}
             action={<IconAction overlay icon="refresh" onPress={() => { void refreshGuess() }} disabled={refreshingGuess} />}
           />
-          <SquareCard
+          <RecommendCard
             title={t('qq_heart_radar')}
             subtitle={t('mine_song_count', { num: radar.length })}
             cover={radar[0]?.meta.picUrl}
-            side={cardSide}
+            width={cardWidth}
+            height={cardHeight}
             onPress={() => { void openRadar() }}
             action={<IconAction overlay icon="play" onPress={() => { void playRadar() }} />}
           />

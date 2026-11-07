@@ -1,11 +1,13 @@
 import { memo, useEffect } from 'react'
 import { View, AppState } from 'react-native'
 import { screenkeepAwake, screenUnkeepAwake } from '@/utils/nativeModules/utils'
+import StatusBar from '@/components/common/StatusBar'
 import MoreBtn from './MoreBtn'
 
 import Header from './components/Header'
 import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS } from '@/config/constant'
+import PageContent from '@/components/PageContent'
 import commonState, { type InitState as CommonState } from '@/store/common/state'
 
 import Pic from './Pic'
@@ -50,23 +52,26 @@ export default memo(({ componentId }: { componentId: string }) => {
   }, [])
 
   return (
-    <View style={{ ...styles.container, paddingTop: statusBarHeight }}>
-      <View style={styles.left}>
-        <Header />
-        <View style={styles.leftContent}>
-          <MoreBtn />
-          <Pic componentId={componentId} />
+    <PageContent>
+      <StatusBar />
+      <View style={{ ...styles.container, paddingTop: statusBarHeight }}>
+        <View style={styles.left}>
+          <Header />
+          <View style={styles.leftContent}>
+            <MoreBtn />
+            <Pic componentId={componentId} />
+          </View>
+          <Player />
+          {/* <View style={styles.controlBtn} nativeID="pageIndicator">
+            <MoreBtn />
+            <ControlBtn />
+          </View> */}
         </View>
-        <Player />
-        {/* <View style={styles.controlBtn} nativeID="pageIndicator">
-          <MoreBtn />
-          <ControlBtn />
-        </View> */}
+        <View style={styles.right}>
+          <Lyric />
+        </View>
       </View>
-      <View style={styles.right}>
-        <Lyric />
-      </View>
-    </View>
+    </PageContent>
   )
 })
 

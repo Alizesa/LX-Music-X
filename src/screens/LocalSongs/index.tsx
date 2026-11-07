@@ -18,7 +18,6 @@ import settingState from '@/store/setting/state'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle, toast } from '@/utils/tools'
-import { useTabletLayout } from '@/utils/hooks'
 
 // 一次并行读多少个文件的元数据。读一个文件的开销不小，全量 Promise.all 在几百首的
 // 目录上会把内存顶上去，分批更稳
@@ -32,9 +31,6 @@ export default ({ componentId }: { componentId: string }) => {
   const theme = useTheme()
   const [list, setList] = useState<LX.Music.MusicInfoLocal[]>([])
   const [importing, setImporting] = useState(false)
-  const { contentWidth } = useTabletLayout()
-  const rowNum = contentWidth >= 1080 ? 3 : contentWidth >= 620 ? 2 : 1
-  const itemWidth = (rowNum == 3 ? '33.3333%' : rowNum == 2 ? '50%' : '100%') as `${number}%`
 
   const load = useCallback(async() => {
     setList((await getListMusics(LIST_IDS.LOCAL)) as LX.Music.MusicInfoLocal[])
@@ -91,7 +87,7 @@ export default ({ componentId }: { componentId: string }) => {
   }, [importing, load, t])
 
   return (
-    <PageContent componentId={componentId}>
+    <PageContent>
       <StatusBar />
       <SimpleHeader
         componentId={componentId}
@@ -105,15 +101,13 @@ export default ({ componentId }: { componentId: string }) => {
         }
       />
       <FlatList
-        key={`local-${rowNum}`}
         style={styles.list}
         data={list}
-        numColumns={rowNum}
         keyExtractor={item => item.id}
         ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{t('local_songs_empty')}</Text>}
         renderItem={({ item }) => (
           <TouchableOpacity
-            style={{ ...styles.item, width: itemWidth, borderBottomColor: theme['c-border-background'] }}
+            style={{ ...styles.item, borderBottomColor: theme['c-border-background'] }}
             activeOpacity={0.7}
             onPress={() => { addTempPlayList([{ listId: null, musicInfo: item, isTop: true }]) }}
           >
