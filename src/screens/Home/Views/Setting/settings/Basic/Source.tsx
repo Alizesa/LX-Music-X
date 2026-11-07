@@ -158,8 +158,8 @@ const styles = createStyle({
   sourceInfo: { flex: 1 },
   sourceActions: { flexShrink: 0, marginLeft: 4 },
   sourceAction: {
-    width: scaleSizeW(30),
-    height: scaleSizeW(30),
+    width: 30,
+    height: 30,
     borderRadius: scaleSizeW(15),
     alignItems: 'center',
     justifyContent: 'center',

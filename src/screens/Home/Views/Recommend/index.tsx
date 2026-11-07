@@ -8,7 +8,6 @@ import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMu
 import { useTheme } from '@/store/theme/hook'
 import { useTabletLayout } from '@/utils/hooks'
 import { createStyle, toast } from '@/utils/tools'
-import { scaleSizeW } from '@/utils/pixelRatio'
 import { LIST_IDS, QQ_DAILY_RECOMMEND_ID, QQ_HEART_RADAR_PLAYLIST_ID } from '@/config/constant'
 import { setHomePagerHorizontalScroll } from '@/core/homePagerScroll'
 import { setTempList } from '@/core/list'
@@ -585,8 +584,8 @@ const styles = createStyle({
   sectionTitle: { paddingTop: 20, paddingBottom: 10 },
   similarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   hList: { paddingRight: 8 },
-  playlistCard: { width: scaleSizeW(104), marginRight: 10 },
-  playlistCover: { width: scaleSizeW(104), height: scaleSizeW(104), borderRadius: 8 },
+  playlistCard: { width: 104, marginRight: 10 },
+  playlistCover: { width: 104, height: 104, borderRadius: 8 },
   playlistName: { marginTop: 6 },
   songRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1 },
   songPic: { width: 44, height: 44, borderRadius: 3 },

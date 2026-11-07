@@ -3,7 +3,7 @@ import { memo } from 'react'
 import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import { ActivityIndicator, StyleSheet, type ActivityIndicatorProps } from 'react-native'
-import { setSpText } from '@/utils/pixelRatio'
+import { scaleSizeW } from '@/utils/pixelRatio'
 import Text from './Text'
 
 export interface LoadingProps extends Omit<ActivityIndicatorProps, 'size'> {
@@ -11,14 +11,15 @@ export interface LoadingProps extends Omit<ActivityIndicatorProps, 'size'> {
   label?: string
 }
 
-const LoadingLabel = ({ style, label, ...props }: LoadingProps) => {
+const LoadingLabel = ({ style, label, size = 15, ...props }: LoadingProps) => {
   return (
     <>
       <ActivityIndicator
         style={StyleSheet.compose(styles.loadingLabel, style)}
+        size={scaleSizeW(size)}
         {...props}
       />
-      <Text color={props.color} size={props.size! * 0.8}>{label}</Text>
+      <Text color={props.color} size={size * 0.8}>{label}</Text>
     </>
   )
 }
@@ -27,11 +28,11 @@ export default memo(({ size = 15, label, ...props }: LoadingProps) => {
   const theme = useTheme()
 
   return (
-    label ? <LoadingLabel color={theme['c-font-label']} size={setSpText(size)} label={label} {...props} />
+    label ? <LoadingLabel color={theme['c-font-label']} size={size} label={label} {...props} />
       : (
           <ActivityIndicator
             color={theme['c-font-label']}
-            size={setSpText(size)}
+            size={scaleSizeW(size)}
             {...props}
           />
         )

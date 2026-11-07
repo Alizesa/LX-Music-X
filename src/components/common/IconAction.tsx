@@ -45,8 +45,8 @@ export default ({ icon, onPress, disabled, overlay, children }: {
 
 const styles = createStyle({
   action: {
-    width: scaleSizeW(30),
-    height: scaleSizeW(30),
+    width: 30,
+    height: 30,
     borderRadius: scaleSizeW(15),
     justifyContent: 'center',
     alignItems: 'center',

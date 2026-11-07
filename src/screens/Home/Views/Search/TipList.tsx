@@ -9,7 +9,8 @@ import searchState, { type InitState as SearchState } from '@/store/search/state
 import { setSearchText, setTipList, setTipListInfo } from '@/core/search/search'
 import { debounce } from '@/utils'
 
-export const ITEM_HEIGHT = scaleSizeH(36)
+const ITEM_HEIGHT_RAW = 36
+export const ITEM_HEIGHT = scaleSizeH(ITEM_HEIGHT_RAW)
 
 export const debounceTipSearch = debounce((keyword: string, source: SearchState['temp_source'], callback: (list: string[]) => void) => {
   // console.log(reslutList)
@@ -124,7 +125,7 @@ export default forwardRef<TipListType, TipListProps>(({ onSearch }, ref) => {
 
 const styles = createStyle({
   item: {
-    height: ITEM_HEIGHT,
+    height: ITEM_HEIGHT_RAW,
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: 15,

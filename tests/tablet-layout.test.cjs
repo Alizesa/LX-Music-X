@@ -110,6 +110,111 @@ const toolsFor = (rn, globals) => {
   return { api, pixels }
 }
 
+// Capture the actual module-level styles. Remounting a screen does not recreate these modules.
+const styleModule = (file, rn, globals, utils) => {
+  const source = ts.createSourceFile(file, fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), ts.ScriptTarget.Latest, true)
+  const mocks = Object.fromEntries(source.statements.filter(ts.isImportDeclaration).map(statement => [statement.moduleSpecifier.text, {}]))
+  Object.assign(mocks, {
+    react: hooks().react,
+    'react-native': rn,
+    '@/utils/tools': utils.api,
+    '@/utils/pixelRatio': utils.pixels,
+    '@/utils/layout': load('src/utils/layout.ts'),
+    '@/config/constant': constants,
+    '@/store/theme/hook': theme,
+    '@/utils': { debounce: fn => fn },
+  })
+  const styles = {}
+  const create = rn.StyleSheet.create
+  rn.StyleSheet.create = value => { Object.assign(styles, value); return create(value) }
+  try {
+    return { exports: load(file, mocks, globals), styles }
+  } finally { rn.StyleSheet.create = create }
+}
+
+const startupLayout = (initial, fontSize = 1) => {
+  let metrics = { ...initial, fontScale: 1 }
+  const rn = native(metrics.width, metrics.height, metrics.scale)
+  rn.Dimensions.get = () => metrics
+  rn.PixelRatio.get = () => metrics.scale
+  rn.PixelRatio.getFontScale = () => metrics.fontScale
+  rn.PixelRatio.getPixelSizeForLayoutSize = value => Math.round(value * metrics.scale)
+  rn.StyleSheet.compose = (base, extra) => [base, extra]
+  const globals = { global: { lx: { fontSize } } }
+  const utils = toolsFor(rn, globals)
+  const recommend = styleModule('src/screens/Home/Views/Recommend/index.tsx', rn, globals, utils)
+  const picture = styleModule('src/components/player/PlayerBar/components/Pic.tsx', rn, globals, utils)
+  const buttons = styleModule('src/components/player/PlayerBar/components/ControlBtn.tsx', rn, globals, utils)
+  const bar = styleModule('src/components/player/PlayerBar/index.tsx', rn, globals, utils)
+  const action = styleModule('src/components/common/IconAction.tsx', rn, globals, utils)
+  return {
+    rn,
+    globals,
+    utils,
+    move(next) { metrics = { ...metrics, ...next } },
+    snapshot() {
+      return {
+        headerHeight: utils.pixels.scaleSizeH(50),
+        titleSize: utils.pixels.setSpText(22) * metrics.fontScale,
+        cardGap: recommend.styles.cardRow.gap,
+        cardFooterPadding: recommend.styles.cardFooter.paddingLeft,
+        playlistWidth: recommend.styles.playlistCard.width,
+        playlistCover: [recommend.styles.playlistCover.width, recommend.styles.playlistCover.height],
+        playerCover: [picture.styles.image.width, picture.styles.image.height],
+        controls: [buttons.styles.cotrolBtn.width, buttons.styles.cotrolBtn.height],
+        playerPadding: [bar.styles.container.paddingLeft, bar.styles.container.paddingVertical],
+        actionSize: [action.styles.action.width, action.styles.action.height],
+      }
+    },
+  }
+}
+
+test('landscape startup and small-window startup converge after the complete resize sequences', () => {
+  const landscape = { width: 1200, height: 800, scale: 2 }
+  const half = { width: 600, height: 800, scale: 2 }
+  const small = { width: 400, height: 720, scale: 2 }
+  for (const fontSize of [0.8, 1, 1.3]) {
+    const fromLandscape = startupLayout(landscape, fontSize)
+    const fromSmall = startupLayout(small, fontSize)
+    const expected = fromSmall.snapshot()
+    for (const size of [half, small]) fromLandscape.move(size)
+    for (const size of [half, landscape, small]) fromSmall.move(size)
+    assert.deepEqual(fromLandscape.snapshot(), expected, `landscape -> half -> small, font ${fontSize}`)
+    assert.deepEqual(fromSmall.snapshot(), expected, `small -> half -> landscape -> small, font ${fontSize}`)
+    assert.equal(expected.playlistWidth, 104 * fontSize)
+    assert.deepEqual(expected.playlistCover, [104 * fontSize, 104 * fontSize])
+    assert.deepEqual(expected.actionSize, [30 * fontSize, 30 * fontSize])
+    // Freeform configuration can change density without reloading the JS modules.
+    fromLandscape.move({ ...small, scale: 1.5 })
+    assert.deepEqual(fromLandscape.snapshot(), expected)
+  }
+})
+
+test('search suggestion row layout stays aligned with its rendered height at every app font size', () => {
+  for (const fontSize of [0.8, 1, 1.3]) {
+    const h = startupLayout({ width: 1200, height: 800, scale: 2 }, fontSize)
+    const tips = styleModule('src/screens/Home/Views/Search/TipList.tsx', h.rn, h.globals, h.utils)
+    assert.equal(tips.styles.item.height, tips.exports.ITEM_HEIGHT)
+    const search = styleModule('src/screens/Search/index.tsx', h.rn, h.globals, h.utils)
+    assert.equal(search.styles.typeBar.height, 40 * fontSize)
+  }
+})
+
+test('text and loading indicators apply app font size once and read the current system font scale', () => {
+  for (const fontSize of [0.8, 1, 1.3]) {
+    const h = startupLayout({ width: 1200, height: 800, scale: 2 }, fontSize)
+    const loading = styleModule('src/components/common/Loading.tsx', h.rn, h.globals, h.utils).exports.default
+    for (const fontScale of [1, 1.5, 2]) {
+      h.move({ fontScale })
+      assert.ok(Math.abs(h.utils.pixels.setSpText(17) * fontScale - 17 * fontSize) < 0.0001)
+      const wrapper = loading({ size: 20, label: 'Loading' })
+      const children = wrapper.type(wrapper.props).props.children
+      assert.equal(children[0].props.size, 20 * fontSize)
+      assert.ok(Math.abs(h.utils.pixels.setSpText(children[1].props.size) * fontScale - 16 * fontSize) < 0.0001)
+    }
+  }
+})
+
 test('bottom navigation keeps the same height across tablet, split-screen and phone launch sizes', () => {
   const viewports = [[1200, 800, 1.5], [1600, 900, 2], [600, 800, 2], [1200, 400, 2], [360, 640, 3]]
   for (const fontSize of [0.8, 1, 1.3]) {
