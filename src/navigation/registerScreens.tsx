@@ -1,5 +1,6 @@
 // @flow
 
+import { useEffect } from 'react'
 import { Navigation } from 'react-native-navigation'
 
 import {
@@ -18,6 +19,7 @@ import {
 } from '@/screens'
 import { Provider } from '@/store/Provider'
 import { ScreenVisibilityProvider } from '@/utils/hooks/useScreenVisible'
+import { removeComponentId } from '@/core/common'
 
 import {
   HOME_SCREEN,
@@ -40,9 +42,16 @@ import VersionModal from './components/VersionModal'
 import PactModal from './components/PactModal'
 
 function WrappedComponent(Component: any) {
-  return function inject(props: Record<string, any>) {
+  return function InjectedComponent(props: Record<string, any> & { componentId: string }) {
+    const { componentId } = props
+    useEffect(() => {
+      // Android 的 popTo/popToRoot 不会为中间页发送 screenPopped，卸载时补齐清理。
+      // 单页返回也可能先触发原生事件；removeComponentId 可安全重复调用。
+      return () => { removeComponentId(componentId) }
+    }, [componentId])
+
     return (
-      <ScreenVisibilityProvider componentId={props.componentId}>
+      <ScreenVisibilityProvider componentId={componentId}>
         <Provider>
           <Component
             {...props}

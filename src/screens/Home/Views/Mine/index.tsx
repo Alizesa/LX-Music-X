@@ -124,11 +124,14 @@ export default () => {
   const theme = useTheme()
   const t = useI18n()
   const { isWide, contentWidth } = useTabletLayout()
+  // 与实际渲染共用 createStyle 缩放后的间距。
+  const gridGap = styles.gridRow.gap
+  const gridWidth = contentWidth - styles.gridRow.paddingHorizontal * 2
   const playlistColumns = isWide
-    ? Math.max(3, Math.min(6, Math.floor((contentWidth - GRID_PADDING * 2 + GRID_GAP) / (150 + GRID_GAP))))
+    ? Math.max(3, Math.min(6, Math.floor((gridWidth + gridGap) / (150 + gridGap))))
     : 1
   const playlistCardWidth = isWide
-    ? (contentWidth - GRID_PADDING * 2 - GRID_GAP * (playlistColumns - 1)) / playlistColumns
+    ? Math.floor((gridWidth - gridGap * (playlistColumns - 1)) / playlistColumns)
     : 0
   const loginRef = useRef<QQMusicLoginModalType>(null)
   const phoneLoginRef = useRef<QQMusicPhoneLoginModalType>(null)

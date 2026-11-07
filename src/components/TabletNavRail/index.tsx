@@ -10,7 +10,7 @@ import { scaleSizeW } from '@/utils/pixelRatio'
 import { TABLET_RAIL_WIDTH } from '@/utils/layout'
 import { setNavActiveId } from '@/core/common'
 import commonState from '@/store/common/state'
-import { navigations, popToRoot } from '@/navigation'
+import { navigations, popTo, popToRoot } from '@/navigation'
 import { type NAV_ID_Type } from '@/config/constant'
 
 /**
@@ -58,16 +58,25 @@ export default ({ componentId }: { componentId?: string }) => {
   }, [activeId, componentId])
 
   const openSearch = useCallback(() => {
-    if (commonState.componentIds.search) return
+    const searchId = commonState.componentIds.search
+    // 搜索页可能还在详情页下面；返回原实例，保留搜索结果和滚动位置。
+    if (searchId) {
+      if (searchId != componentId) void popTo(searchId)
+      return
+    }
     const homeId = commonState.componentIds.home
     if (homeId) navigations.pushSearchScreen(homeId)
-  }, [])
+  }, [componentId])
 
   const openSetting = useCallback(() => {
-    if (commonState.componentIds.setting) return
+    const settingId = commonState.componentIds.setting
+    if (settingId) {
+      if (settingId != componentId) void popTo(settingId)
+      return
+    }
     const homeId = commonState.componentIds.home
     if (homeId) navigations.pushSettingScreen(homeId)
-  }, [])
+  }, [componentId])
 
   return (
     <View style={{

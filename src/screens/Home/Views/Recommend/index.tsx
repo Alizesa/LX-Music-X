@@ -60,7 +60,7 @@ const CARD_GAP = 10
 const CARD_PEEK = 20
 
 /** 一行两张、可横向滑动的推荐卡宽度（第三张只露出一截） */
-const getCardSide = (width: number) => (width - H_PADDING * 2 - CARD_GAP * 2 - CARD_PEEK) / 2
+const getCardSide = (width: number, gap: number) => (width - H_PADDING * 2 - gap * 2 - CARD_PEEK) / 2
 
 /**
  * 方形推荐卡。封面铺满，底部压一层暗色保证文字可读（没有渐变库，用纯色代替）。
@@ -113,14 +113,17 @@ export default () => {
   const hPadding = isWide ? 24 : H_PADDING
   const availableWidth = contentWidth - hPadding * 2
   const cardsPerRow = isWide ? 3 : 2
+  // createStyle 会缩放 gap，尺寸计算使用渲染时的同一份值。
+  const cardGap = styles.cardRow.gap
+  const playlistGap = styles.playlistGrid.gap
   const cardSide = isWide
-    ? Math.min((availableWidth - CARD_GAP * (cardsPerRow - 1)) / cardsPerRow, 430)
-    : getCardSide(contentWidth)
+    ? Math.min(Math.floor((availableWidth - cardGap * (cardsPerRow - 1)) / cardsPerRow), 430)
+    : getCardSide(contentWidth, cardGap)
   const playlistColumns = isWide
-    ? Math.max(3, Math.min(6, Math.floor((availableWidth + CARD_GAP) / (150 + CARD_GAP))))
+    ? Math.max(3, Math.min(6, Math.floor((availableWidth + playlistGap) / (150 + playlistGap))))
     : 1
   const playlistCardWidth = isWide
-    ? (availableWidth - CARD_GAP * (playlistColumns - 1)) / playlistColumns
+    ? Math.floor((availableWidth - playlistGap * (playlistColumns - 1)) / playlistColumns)
     : scaleSizeW(104)
   const similarColumns = isWide ? 2 : 1
   const similarItemWidth: `${number}%` = isWide ? '50%' : '100%'
