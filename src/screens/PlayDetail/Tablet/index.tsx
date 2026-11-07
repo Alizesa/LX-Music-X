@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { FlatList, StyleSheet, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native'
 import Image from '@/components/common/Image'
 import Text from '@/components/common/Text'
 import { NAV_SHEAR_NATIVE_IDS } from '@/config/constant'
@@ -8,13 +8,19 @@ import { useStatusbarHeight } from '@/store/common/hook'
 import { usePlayerMusicInfo } from '@/store/player/hook'
 import { useTheme } from '@/store/theme/hook'
 import { useWindowSize } from '@/utils/hooks'
-import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
+import { useScreenVisible, VisibilityBoundary } from '@/utils/hooks/useScreenVisible'
 import { screenkeepAwake, screenUnkeepAwake } from '@/utils/nativeModules/utils'
 import SettingPopup, { type SettingPopupType } from '../components/SettingPopup'
 import Lyric from '../Horizontal/Lyric'
 import Player from '../Vertical/Player'
+import Singer from '../Vertical/Singer'
 import Btn, { HEADER_HEIGHT } from '../Vertical/components/Btn'
 import TimeoutExitBtn from '../Vertical/components/TimeoutExitBtn'
+
+const PAGES = ['singer', 'cover', 'lyric'] as const
+type Page = typeof PAGES[number]
+const INITIAL_PAGE = 1
+const getPageKey = (page: Page) => page
 
 const Artwork = memo(() => {
   const { pic } = usePlayerMusicInfo()
@@ -38,19 +44,83 @@ const Artwork = memo(() => {
   )
 })
 
-/** 平板横屏：左侧封面、歌曲信息和完整播放控制，右侧独立滚动歌词。 */
+/** 三页共用一个滑动容器，每页半屏：歌手＋封面 ⇄ 封面＋歌词。 */
 export default memo(({ componentId }: { componentId: string }) => {
   const theme = useTheme()
   const musicInfo = usePlayerMusicInfo()
   const statusBarHeight = useStatusbarHeight()
   const visible = useScreenVisible()
   const popupRef = useRef<SettingPopupType>(null)
+  const pagerRef = useRef<FlatList<Page>>(null)
+  const windowSize = useWindowSize()
+  const [viewportWidth, setViewportWidth] = useState(windowSize.width * 0.92)
+  const pageWidth = viewportWidth / 2
+  const [firstPage, setFirstPage] = useState(INITIAL_PAGE)
+  const firstPageRef = useRef(INITIAL_PAGE)
+  const initialOffset = useRef({ x: pageWidth * INITIAL_PAGE, y: 0 })
+  const aligning = useRef(true)
+  const alignFrame = useRef<number | null>(null)
+  const lyricVisible = firstPage === 1
+
+  const cancelAlignment = useCallback(() => {
+    if (alignFrame.current != null) cancelAnimationFrame(alignFrame.current)
+    alignFrame.current = null
+  }, [])
+  const alignPager = useCallback(() => {
+    if (!aligning.current || pageWidth <= 0) return
+    cancelAlignment()
+    alignFrame.current = requestAnimationFrame(() => {
+      alignFrame.current = null
+      pagerRef.current?.scrollToOffset({ offset: firstPageRef.current * pageWidth, animated: false })
+    })
+  }, [cancelAlignment, pageWidth])
+
+  useLayoutEffect(() => {
+    // 旋转或调整窗口尺寸时按页重新定位，保留当前显示的那一对页面。
+    aligning.current = true
+    alignPager()
+    return cancelAlignment
+  }, [alignPager, cancelAlignment])
+
+  const handleViewportLayout = useCallback(({ nativeEvent: { layout } }: LayoutChangeEvent) => {
+    if (layout.width <= 0 || layout.width === viewportWidth) return
+    aligning.current = true
+    setViewportWidth(layout.width)
+  }, [viewportWidth])
+  const handleScroll = useCallback(({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (pageWidth <= 0) return
+    // 窗口变化时先忽略尚未匹配页宽的滚动事件，避免把原生的位置修正当成翻页。
+    if (Math.abs(nativeEvent.layoutMeasurement.width - viewportWidth) > 1) return
+    const offset = nativeEvent.contentOffset.x
+    // 初次布局可能先报告 0；真正定位完成前不能把未展示的歌手页当成可见。
+    if (aligning.current) {
+      if (Math.abs(offset - firstPageRef.current * pageWidth) > 1) return
+      aligning.current = false
+    }
+    const next = Math.max(0, Math.min(1, Math.round(offset / pageWidth)))
+    if (next === firstPageRef.current) return
+    firstPageRef.current = next
+    setFirstPage(next)
+  }, [pageWidth, viewportWidth])
+  const beginDrag = useCallback(() => {
+    cancelAlignment()
+    aligning.current = false
+  }, [cancelAlignment])
+  const enableSwipe = useCallback((enabled: boolean) => {
+    pagerRef.current?.getNativeScrollRef()?.setNativeProps({ scrollEnabled: enabled })
+  }, [])
+  const lockSwipe = useCallback(() => { enableSwipe(false) }, [enableSwipe])
+  const unlockSwipe = useCallback(() => { enableSwipe(true) }, [enableSwipe])
 
   useEffect(() => {
-    if (!visible) return
+    if (!visible) unlockSwipe()
+  }, [visible, unlockSwipe])
+
+  useEffect(() => {
+    if (!visible || !lyricVisible) return
     screenkeepAwake()
     return () => { screenUnkeepAwake() }
-  }, [visible])
+  }, [visible, lyricVisible])
 
   const back = () => { void pop(componentId) }
   const showSetting = () => { popupRef.current?.show() }
@@ -63,20 +133,68 @@ export default memo(({ componentId }: { componentId: string }) => {
         <TimeoutExitBtn />
         <Btn icon="slider" onPress={showSetting} />
       </View>
-      <View style={styles.panes}>
-        <View style={styles.leftPane}>
-          <View style={styles.leftContent}>
-            <Artwork />
-            <View style={styles.trackInfo}>
-              <Text style={styles.title} size={23} numberOfLines={2}>{musicInfo.name}</Text>
-              <Text style={styles.singer} size={14} color={theme['c-font-label']} numberOfLines={1}>{musicInfo.singer}</Text>
-            </View>
-            <Player />
-          </View>
-        </View>
-        <View style={styles.rightPane}>
-          <Lyric />
-        </View>
+      <View style={styles.viewport} onLayout={handleViewportLayout}>
+        <FlatList
+          ref={pagerRef}
+          data={PAGES}
+          horizontal
+          style={styles.pager}
+          contentContainerStyle={styles.pages}
+          keyExtractor={getPageKey}
+          extraData={firstPage}
+          contentOffset={initialOffset.current}
+          getItemLayout={(_, index) => ({ index, length: pageWidth, offset: index * pageWidth })}
+          snapToOffsets={[0, pageWidth]}
+          snapToAlignment="start"
+          decelerationRate="fast"
+          disableIntervalMomentum
+          showsHorizontalScrollIndicator={false}
+          bounces={false}
+          overScrollMode="never"
+          nestedScrollEnabled
+          removeClippedSubviews={false}
+          initialNumToRender={PAGES.length}
+          windowSize={3}
+          onScroll={handleScroll}
+          scrollEventThrottle={32}
+          onScrollBeginDrag={beginDrag}
+          onScrollEndDrag={handleScroll}
+          onMomentumScrollEnd={handleScroll}
+          onContentSizeChange={alignPager}
+          renderItem={({ item }) => {
+            switch (item) {
+              case 'singer':
+                return (
+                  <View style={[styles.page, { width: pageWidth }]}>
+                    <Singer componentId={componentId} active={visible && firstPage === 0} />
+                  </View>
+                )
+              case 'cover':
+                return (
+                  <View style={[styles.page, styles.coverPage, { width: pageWidth }]}>
+                    <View style={styles.coverContent}>
+                      <Artwork />
+                      <View style={styles.trackInfo}>
+                        <Text style={styles.title} size={23} numberOfLines={2}>{musicInfo.name}</Text>
+                        <Text style={styles.singer} size={14} color={theme['c-font-label']} numberOfLines={1}>{musicInfo.singer}</Text>
+                      </View>
+                      <View onTouchStart={lockSwipe} onTouchEnd={unlockSwipe} onTouchCancel={unlockSwipe}>
+                        <Player />
+                      </View>
+                    </View>
+                  </View>
+                )
+              case 'lyric':
+                return (
+                  <View style={[styles.page, styles.lyricPage, { width: pageWidth }]}>
+                    <VisibilityBoundary visible={lyricVisible}>
+                      <Lyric />
+                    </VisibilityBoundary>
+                  </View>
+                )
+            }
+          }}
+        />
       </View>
       <SettingPopup ref={popupRef} direction="horizontal" position="right" />
     </View>
@@ -94,19 +212,26 @@ const styles = StyleSheet.create({
   headerSpace: {
     flex: 1,
   },
-  panes: {
+  viewport: {
     flex: 1,
-    flexDirection: 'row',
-    paddingHorizontal: '4%',
-    paddingTop: 12,
-    paddingBottom: 12,
+    marginHorizontal: '4%',
+    marginVertical: 12,
+    overflow: 'hidden',
   },
-  leftPane: {
-    width: '46%',
-    alignItems: 'center',
+  pager: {
+    flex: 1,
+  },
+  pages: {
+    height: '100%',
+  },
+  page: {
+    height: '100%',
     paddingHorizontal: 16,
   },
-  leftContent: {
+  coverPage: {
+    alignItems: 'center',
+  },
+  coverContent: {
     flex: 1,
     width: '100%',
     maxWidth: 480,
@@ -130,9 +255,7 @@ const styles = StyleSheet.create({
   singer: {
     marginTop: 10,
   },
-  rightPane: {
-    flex: 1,
-    minWidth: 0,
+  lyricPage: {
     paddingLeft: 24,
     paddingRight: 12,
     position: 'relative',
