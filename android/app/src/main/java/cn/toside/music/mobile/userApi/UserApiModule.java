@@ -10,18 +10,16 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
 import java.lang.Thread;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class UserApiModule extends ReactContextBaseJavaModule {
-  private JavaScriptThread javaScriptThread;
+  private final ConcurrentHashMap<String, JavaScriptThread> runtimes = new ConcurrentHashMap<>();
   private final ReactApplicationContext reactContext;
-  private UtilsEvent utilsEvent;
 
   private int listenerCount = 0;
 
   UserApiModule(ReactApplicationContext reactContext) {
     super(reactContext);
-    this.javaScriptThread = null;
-    this.utilsEvent = null;
     this.reactContext = reactContext;
   }
 
@@ -49,11 +47,16 @@ public class UserApiModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void loadScript(ReadableMap data) {
-    if (this.utilsEvent == null) this.utilsEvent = new UtilsEvent(this.reactContext);
-    if (this.javaScriptThread != null) destroy();
+    loadScriptForRuntime("main", data);
+  }
+
+  @ReactMethod
+  public void loadScriptForRuntime(String runtimeId, ReadableMap data) {
+    destroyRuntime(runtimeId);
     Bundle info = Arguments.toBundle(data);
-    JavaScriptThread thread = this.javaScriptThread = new JavaScriptThread(this.reactContext, info);
-    thread.prepareHandler(new JsHandler(this.reactContext.getMainLooper(), this.utilsEvent));
+    JavaScriptThread thread = new JavaScriptThread(this.reactContext, info);
+    thread.prepareHandler(new JsHandler(this.reactContext.getMainLooper(), new UtilsEvent(this.reactContext, runtimeId)));
+    runtimes.put(runtimeId, thread);
     thread.getHandler().sendEmptyMessage(HandlerWhat.INIT);
     thread.setUncaughtExceptionHandler((t, ex) -> {
       // 用局部变量，别读字段：destroy 后字段已经是 null
@@ -71,7 +74,12 @@ public class UserApiModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public boolean sendAction(String action, String info) {
-    JavaScriptThread javaScriptThread = this.javaScriptThread;
+    return sendActionForRuntime("main", action, info);
+  }
+
+  @ReactMethod
+  public boolean sendActionForRuntime(String runtimeId, String action, String info) {
+    JavaScriptThread javaScriptThread = runtimes.get(runtimeId);
     if (javaScriptThread == null) return false;
     Handler jsHandler = javaScriptThread.getHandler();
     Message message = jsHandler.obtainMessage();
@@ -83,17 +91,21 @@ public class UserApiModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void destroy() {
-    JavaScriptThread javaScriptThread = this.javaScriptThread;
+    destroyRuntime("main");
+  }
+
+  @ReactMethod
+  public void destroyRuntime(String runtimeId) {
+    JavaScriptThread javaScriptThread = runtimes.remove(runtimeId);
     if (javaScriptThread == null) return;
     // 先摘掉引用拒绝新请求，再让脚本线程自己销毁上下文并退出。
     // 不能在这里直接 quit()：DESTROY 可能还没被消费，QuickJS 上下文就漏了
-    this.javaScriptThread = null;
     javaScriptThread.getHandler().sendEmptyMessage(HandlerWhat.DESTROY);
   }
 
   @Override
   public void invalidate() {
-    destroy();
+    for (String runtimeId : runtimes.keySet()) destroyRuntime(runtimeId);
     super.invalidate();
   }
 }

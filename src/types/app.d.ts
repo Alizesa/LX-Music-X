@@ -34,7 +34,7 @@ interface GlobalData {
   playerTrackId: string
 
   qualityList: LX.QualityList
-  apis: Partial<LX.UserApi.UserApiSources>
+  apis: Partial<Record<LX.Source, LX.UserApi.UserApiRuntimeSource>>
   apiInitPromise: [Promise<boolean>, boolean, (success: boolean) => void]
 
   jumpMyListPosition: boolean

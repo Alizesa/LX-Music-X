@@ -5,7 +5,8 @@ import { View } from 'react-native'
 import SubTitle from '../../components/SubTitle'
 import CheckBox from '@/components/common/CheckBox'
 import { createStyle } from '@/utils/tools'
-import { setApiSource } from '@/core/apiSource'
+import { setApiSource, setApiSourceOrder } from '@/core/apiSource'
+import { parseApiSourceOrder } from '@/utils/apiSourceOrder'
 import { useI18n } from '@/lang'
 import apiSourceInfo from '@/utils/musicSdk/api-source-info'
 import { useSettingValue } from '@/store/setting/hook'
@@ -24,32 +25,47 @@ const apiSourceList = apiSourceInfo.map(api => ({
 
 const useActive = (id: string) => {
   const activeLangId = useSettingValue('common.apiSource')
-  const isActive = useMemo(() => activeLangId == id, [activeLangId, id])
+  const sourceOrder = useSettingValue('common.apiSourceOrder')
+  const isActive = useMemo(() => id.startsWith('user_api')
+    ? parseApiSourceOrder(sourceOrder, activeLangId).includes(id)
+    : activeLangId == id, [activeLangId, id, sourceOrder])
   return isActive
 }
 
-const Item = ({ id, name, desc, statusLabel, change }: {
+const Item = ({ id, name, desc, statusLabel, change, priority = -1, total = 0, move }: {
   id: string
   name: string
   desc?: string
   statusLabel?: string
   change: (id: string) => void
+  priority?: number
+  total?: number
+  move?: (id: string, offset: number) => void
 }) => {
   const isActive = useActive(id)
   const theme = useTheme()
+  const t = useI18n()
   // const [toggleCheckBox, setToggleCheckBox] = useState(false)
   return (
-    <CheckBox marginBottom={5} check={isActive} onChange={() => { change(id) }} need>
-      <Text style={styles.sourceLabel}>
-        {name}
-        {
-          desc ? <Text style={styles.sourceDesc} color={theme['c-500']} size={13}>  {desc}</Text> : null
-        }
-        {
-          statusLabel ? <Text style={styles.sourceStatus} size={13}>  {statusLabel}</Text> : null
-        }
-      </Text>
-    </CheckBox>
+    <View style={styles.sourceRow}>
+      <View style={styles.sourceInfo}>
+        <CheckBox marginBottom={5} check={isActive} onChange={() => { change(id) }}>
+          <Text style={styles.sourceLabel}>
+            {priority >= 0 ? `${priority + 1}. ` : ''}{name}
+            {
+              desc ? <Text style={styles.sourceDesc} color={theme['c-500']} size={13}>  {desc}</Text> : null
+            }
+            {
+              statusLabel ? <Text style={styles.sourceStatus} size={13}>  {statusLabel}</Text> : null
+            }
+          </Text>
+        </CheckBox>
+      </View>
+      {priority >= 0 && move ? <View style={styles.sourceActions}>
+        <Button disabled={priority == 0} onPress={() => { move(id, -1) }}>{t('source_priority_up')}</Button>
+        <Button disabled={priority == total - 1} onPress={() => { move(id, 1) }}>{t('source_priority_down')}</Button>
+      </View> : null}
+    </View>
   )
 }
 
@@ -60,12 +76,24 @@ export default memo(() => {
     name: t(`setting_basic_source_${s.id}`) || s.name,
     id: s.id,
   })), [t])
-  const setApiSourceId = useCallback((id: string) => {
-    setApiSource(id)
-  }, [])
   const userApiListRaw = useUserApiList()
   const apiStatus = useStatus()
   const apiSourceSetting = useSettingValue('common.apiSource')
+  const sourceOrderSetting = useSettingValue('common.apiSourceOrder')
+  const sourceOrder = useMemo(() => parseApiSourceOrder(sourceOrderSetting, apiSourceSetting)
+    .filter(id => userApiListRaw.some(api => api.id == id)), [sourceOrderSetting, apiSourceSetting, userApiListRaw])
+  const setApiSourceId = useCallback((id: string) => {
+    if (!id.startsWith('user_api')) { setApiSource(id); return }
+    setApiSourceOrder(sourceOrder.includes(id) ? sourceOrder.filter(item => item != id) : [...sourceOrder, id])
+  }, [sourceOrder])
+  const moveSource = (id: string, offset: number) => {
+    const order = [...sourceOrder]
+    const index = order.indexOf(id)
+    const target = index + offset
+    if (index < 0 || target < 0 || target >= order.length) return
+    ;[order[index], order[target]] = [order[target], order[index]]
+    setApiSourceOrder(order)
+  }
   const userApiList = useMemo(() => {
     const getApiStatus = () => {
       let status
@@ -75,7 +103,8 @@ export default memo(() => {
 
       return status
     }
-    return userApiListRaw.map(api => {
+    const orderedApis = [...sourceOrder.map(id => userApiListRaw.find(api => api.id == id)!), ...userApiListRaw.filter(api => !sourceOrder.includes(api.id))]
+    return orderedApis.map(api => {
       const statusLabel = api.id == apiSourceSetting ? `[${getApiStatus()}]` : ''
       return {
         id: api.id,
@@ -88,7 +117,7 @@ export default memo(() => {
         // disabled: false,
       }
     })
-  }, [userApiListRaw, apiStatus, apiSourceSetting, t])
+  }, [userApiListRaw, apiStatus, apiSourceSetting, sourceOrder, t])
 
   const modalRef = useRef<UserApiEditModalType>(null)
   const handleShow = () => {
@@ -97,12 +126,14 @@ export default memo(() => {
 
   return (
     <SubTitle title={t('setting_basic_source')}>
+      <Text size={12}>{t('source_priority_tip')}</Text>
       <View style={styles.list}>
         {
           list.map(({ id, name }) => <Item name={name} id={id} key={id} change={setApiSourceId} />)
         }
         {
-          userApiList.map(({ id, name, desc, statusLabel }) => <Item name={name} desc={desc} statusLabel={statusLabel} id={id} key={id} change={setApiSourceId} />)
+          userApiList.map(({ id, name, desc, statusLabel }) => <Item name={name} desc={desc} statusLabel={statusLabel} id={id} key={id} change={setApiSourceId}
+            priority={sourceOrder.indexOf(id)} total={sourceOrder.length} move={moveSource} />)
         }
       </View>
       <View style={styles.btn}>
@@ -114,6 +145,9 @@ export default memo(() => {
 })
 
 const styles = createStyle({
+  sourceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  sourceInfo: { flex: 1 },
+  sourceActions: { flexDirection: 'row', flexShrink: 0 },
   list: {
     flexGrow: 0,
     flexShrink: 1,

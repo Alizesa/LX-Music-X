@@ -1,99 +1,95 @@
-import { getMusicUrl } from '@/core/music'
+import TrackPlayer from 'react-native-track-player'
 import { getNextPlayMusicInfo, resetRandomNextMusicInfo } from '@/core/player/player'
-import { checkUrl } from '@/utils/request'
-import { isUrl } from '@/utils/common'
+import { cancelPreload, hasPreloadMusic, isPreloadPaused, keepPreloadFor, pausePreload, preloadMusic } from '@/core/player/preload'
+import { canPreloadAudio } from '@/plugins/player/preload'
 import playerState from '@/store/player/state'
-import { isCached } from '@/plugins/player/utils'
-
-
-const preloadMusicInfo = {
-  isLoading: false,
-  preProgress: 0,
-  info: null as LX.Player.PlayMusicInfo | null,
-}
-// 切歌/暂停时递增；旧预加载在任意 await 返回后都要检查，不能写状态或继续发请求
-let preloadGeneration = 0
-let preloadCancel: (() => void) | null = null
-
-const resetPreloadInfo = () => {
-  preloadGeneration++
-  preloadCancel?.()
-  preloadCancel = null
-  preloadMusicInfo.preProgress = 0
-  preloadMusicInfo.info = null
-  preloadMusicInfo.isLoading = false
-}
-const setPreloadCancel = (generation: number, cancel: () => void) => {
-  if (generation !== preloadGeneration) {
-    cancel()
-    return
-  }
-  preloadCancel?.()
-  preloadCancel = cancel
-}
-const preloadNextMusicUrl = async(curTime: number) => {
-  if (preloadMusicInfo.isLoading || curTime - preloadMusicInfo.preProgress < 3) return
-  preloadMusicInfo.isLoading = true
-  const generation = preloadGeneration
-  console.log('preload next music url')
-  const info = await getNextPlayMusicInfo()
-  if (generation !== preloadGeneration) return
-  if (info) {
-    preloadMusicInfo.info = info
-    const url = await getMusicUrl({
-      musicInfo: info.musicInfo,
-      onCancel: cancel => { setPreloadCancel(generation, cancel) },
-    }).catch(() => '')
-    if (generation !== preloadGeneration) return
-    // 已下载 / 已导入的歌曲返回的是本地 URI（下载走 SAF，是 content://），不是可请求的
-    // 地址。把它交给 fetch，RN 会构造 status 为 0 的 Response 并抛 RangeError；而那个
-    // 异常是在 XHR 的回调里抛出的，不会变成 promise rejection，下面的 catch 接不住，
-    // 会直接冒到全局错误处理 —— 所以必须在这里挡掉，而不是靠 catch。
-    // 本地文件本来就在磁盘上，也无需再做预加载校验。
-    if (url && isUrl(url)) {
-      console.log('preload url', url)
-      const [cached, available] = await Promise.all([isCached(url), checkUrl(url).then(() => true).catch(() => false)])
-      if (generation !== preloadGeneration) return
-      if (!cached && !available) {
-        const url = await getMusicUrl({
-          musicInfo: info.musicInfo,
-          isRefresh: true,
-          onCancel: cancel => { setPreloadCancel(generation, cancel) },
-        }).catch(() => '')
-        console.log('preload url refresh', url)
-      }
-    }
-  }
-  if (generation === preloadGeneration) preloadMusicInfo.isLoading = false
-}
+import settingState from '@/store/setting/state'
+import { isRequestCancelled } from '@/utils/message'
 
 export default () => {
-  const setProgress = (time: number) => {
-    if (!playerState.musicInfo.id) return
-    preloadMusicInfo.preProgress = time
-  }
+  let revision = 0
+  let checking = false
+  let stableSince = Date.now()
+  let lastCheck = 0
+  let nextInfo: LX.Player.PlayMusicInfo | null | undefined
 
-  const handleSetPlayInfo = () => {
-    resetPreloadInfo()
-  }
-
-  const handleConfigUpdated: typeof global.state_event.configUpdated = (keys, settings) => {
-    if (!keys.includes('player.togglePlayMethod')) return
-    if (!preloadMusicInfo.info || preloadMusicInfo.info.isTempPlay) return
-    resetRandomNextMusicInfo()
-    resetPreloadInfo()
-    preloadMusicInfo.preProgress = playerState.progress.nowPlayTime
-  }
-
-  const handlePlayProgressChanged: typeof global.state_event.playProgressChanged = (progress) => {
-    const duration = progress.maxPlayTime
-    if (duration > 10 && duration - progress.nowPlayTime < 10 && !preloadMusicInfo.info) {
-      void preloadNextMusicUrl(progress.nowPlayTime)
+  // 使用已有的播放进度事件，不另开常驻轮询。确定下一首后，只有队列变化才重新选曲。
+  const check = async() => {
+    const setting = settingState.setting
+    const now = Date.now()
+    if (!setting['player.preloadNext'] || !canPreloadAudio() || !(Number(setting['player.cacheSize']) > 0) ||
+      !playerState.isPlay || global.lx.isPlayedStop || checking || now - stableSince < 3000 || now - lastCheck < 3000) return
+    if (nextInfo === null || (nextInfo && hasPreloadMusic(nextInfo.musicInfo) && !isPreloadPaused())) return
+    const generation = revision
+    lastCheck = now
+    checking = true
+    try {
+      if (nextInfo === undefined) {
+        const info = await getNextPlayMusicInfo()
+        if (generation != revision) return
+        // generation 已确认选曲期间队列未变化。
+        // eslint-disable-next-line require-atomic-updates
+        nextInfo = info
+      }
+      if (!nextInfo || nextInfo.musicInfo.id == playerState.playMusicInfo.musicInfo?.id) return
+      const buffered = await TrackPlayer.getBufferedPosition()
+      if (generation != revision || !playerState.isPlay || global.lx.isPlayedStop) return
+      const { nowPlayTime, maxPlayTime } = playerState.progress
+      if (buffered - nowPlayTime < 10 && !(maxPlayTime > 0 && buffered >= maxPlayTime - 0.5)) return
+      const promise = preloadMusic(nextInfo.musicInfo)
+      void promise?.catch(error => {
+        if (!isRequestCancelled(error)) console.log('[Preload] Next track is not ready:', error.message)
+      })
+    } catch (error) {
+      if (generation == revision) nextInfo = null
+    } finally {
+      // checking 在整个 await 期间阻止第二次检查进入。
+      // eslint-disable-next-line require-atomic-updates
+      checking = false
     }
   }
 
-  global.app_event.on('setProgress', setProgress)
-  global.app_event.on('musicToggled', handleSetPlayInfo)
-  global.state_event.on('configUpdated', handleConfigUpdated)
-  global.state_event.on('playProgressChanged', handlePlayProgressChanged)
+  const invalidate = () => {
+    revision++
+    nextInfo = undefined
+    lastCheck = 0
+    // 稍后播放在真正切歌前会先从列表移除；此时当前歌曲已更新，要保住交接中的任务。
+    keepPreloadFor(playerState.playMusicInfo.musicInfo)
+  }
+  const pause = () => {
+    stableSince = Date.now()
+    const current = playerState.playMusicInfo.musicInfo
+    if (current && hasPreloadMusic(current)) keepPreloadFor(current)
+    pausePreload()
+  }
+  const musicToggled = () => {
+    invalidate()
+    stableSince = Date.now()
+  }
+  const queueChanged = () => {
+    resetRandomNextMusicInfo()
+    invalidate()
+  }
+  const configUpdated: typeof global.state_event.configUpdated = (keys) => {
+    if (!keys.some(key => [
+      'player.preloadNext', 'player.cacheSize', 'player.playQuality', 'player.urlSource', 'player.noVipStandardQuality',
+      'player.togglePlayMethod', 'common.apiSourceOrder', 'common.apiSource',
+    ].includes(key))) return
+    if (keys.includes('player.togglePlayMethod')) resetRandomNextMusicInfo()
+    cancelPreload()
+    invalidate()
+  }
+
+  global.app_event.on('musicToggled', musicToggled)
+  global.app_event.on('playerPlaying', () => { stableSince = Date.now() })
+  global.app_event.on('playerWaiting', pause)
+  global.app_event.on('pause', pause)
+  global.app_event.on('stop', () => {
+    if (global.lx.isPlayedStop) cancelPreload()
+    else pause()
+  })
+  global.app_event.on('playQueueUpdate', queueChanged)
+  global.state_event.on('playTempPlayListChanged', invalidate)
+  global.state_event.on('configUpdated', configUpdated)
+  global.state_event.on('playProgressChanged', () => { void check() })
 }

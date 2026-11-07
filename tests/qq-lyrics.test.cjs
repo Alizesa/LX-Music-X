@@ -214,6 +214,7 @@ const cacheHarness = ({ cached = oldLyrics, edited, source = 'tx', fetchLyrics =
   })
   const setting = { default: { setting: { 'player.isS2t': false } } }
   const utils = load('src/core/music/utils.ts', {
+    './sourcePriority': {},
     '@/config/constant': constants,
     '@/utils/data': data,
     '@/store/setting/state': setting,
@@ -236,6 +237,8 @@ const cacheHarness = ({ cached = oldLyrics, edited, source = 'tx', fetchLyrics =
     },
   })
   const online = load('src/core/music/online.ts', {
+    './sourcePriority': {},
+    '@/utils/message': message,
     '@/utils/data': data,
     '@/core/list': {},
     '@/store/setting/state': setting,

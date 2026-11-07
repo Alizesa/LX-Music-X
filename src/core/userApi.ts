@@ -2,6 +2,7 @@ import { action, state } from '@/store/userApi'
 import { addUserApi, getUserApiScript, removeUserApi as removeUserApiFromStore, setUserApiAllowShowUpdateAlert as setUserApiAllowShowUpdateAlertFromStore } from '@/utils/data'
 import { destroy, loadScript } from '@/utils/nativeModules/userApi'
 import { log as writeLog } from '@/utils/log'
+import { getApiSourceOrder, setApiSourceOrder } from './apiSource'
 
 
 export const setUserApi = async(apiId: string) => {
@@ -33,8 +34,10 @@ export const importUserApi = async(script: string) => {
 }
 
 export const removeUserApi = async(ids: string[]) => {
+  const order = getApiSourceOrder()
   const list = await removeUserApiFromStore(ids)
   action.setUserApiList(list)
+  if (order.some(id => ids.includes(id))) setApiSourceOrder(order.filter(id => !ids.includes(id)))
 }
 
 export const setUserApiAllowShowUpdateAlert = async(id: string, enable: boolean) => {

@@ -11,8 +11,80 @@ const rootPath = path.join(__dirname, './')
 // 两个开关与对应图标，按钮行为在 src/plugins/player/service.ts 里接管。
 const METADATA_MANAGER = path.join(rootPath, 'node_modules/react-native-track-player/android/src/main/java/com/guichaguri/trackplayer/service/metadata/MetadataManager.java')
 const MEDIA_METADATA_DIR = path.join(rootPath, 'node_modules/react-native-local-media-metadata/android/src/main/java/com/localmediametadata')
+const TRACK_PLAYER_DIR = path.join(rootPath, 'node_modules/react-native-track-player/android/src/main/java/com/guichaguri/trackplayer')
 
 const patchs = [
+  [
+    path.join(TRACK_PLAYER_DIR, 'module/MusicModule.java'),
+    '    public void isCached(String url, final Promise callback) {',
+    `    public void preloadMusic(String requestId, String url, String userAgent, double maxBytes, final Promise callback) {
+        waitForConnection(() -> binder.getPlayback().preloadMusic(requestId, url, userAgent, maxBytes, callback));
+    }
+
+    @ReactMethod
+    public void cancelPreloadMusic(String requestId) {
+        waitForConnection(() -> binder.getPlayback().cancelPreloadMusic(requestId));
+    }
+
+    @ReactMethod
+    public void isCached(String url, final Promise callback) {`,
+  ],
+  [
+    path.join(TRACK_PLAYER_DIR, 'service/player/ExoPlayback.java'),
+    '    public abstract void isCached(String url, Promise promise);',
+    `    public void preloadMusic(String requestId, String url, String userAgent, double maxBytes, Promise promise) { promise.resolve(null); }
+
+    public void cancelPreloadMusic(String requestId) {}
+
+    public abstract void isCached(String url, Promise promise);`,
+  ],
+  [
+    path.join(TRACK_PLAYER_DIR, 'service/player/LocalPlayback.java'),
+    '    private SimpleCache cache;',
+    `    private SimpleCache cache;
+    private AudioPreloader audioPreloader;`,
+  ],
+  [
+    path.join(TRACK_PLAYER_DIR, 'service/player/LocalPlayback.java'),
+    '            cache = new SimpleCache(cacheDir, new LeastRecentlyUsedCacheEvictor(cacheMaxSize), db);',
+    `            AudioPreloader.awaitRelease();
+            cache = new SimpleCache(cacheDir, new LeastRecentlyUsedCacheEvictor(cacheMaxSize), db);
+            audioPreloader = new AudioPreloader(cache, cacheMaxSize);`,
+  ],
+  [
+    path.join(TRACK_PLAYER_DIR, 'service/player/LocalPlayback.java'),
+    '    public void isCached(String url, Promise promise) {',
+    `    @Override
+    public void preloadMusic(String requestId, String url, String userAgent, double maxBytes, Promise promise) {
+        if (audioPreloader == null) { promise.resolve(null); return; }
+        audioPreloader.preload(requestId, url, userAgent, maxBytes, promise);
+    }
+
+    @Override
+    public void cancelPreloadMusic(String requestId) {
+        if (audioPreloader != null) audioPreloader.cancel(requestId);
+    }
+
+    public void isCached(String url, Promise promise) {`,
+  ],
+  [
+    path.join(TRACK_PLAYER_DIR, 'service/player/LocalPlayback.java'),
+    '    public void clearCache(Promise promise) {',
+    `    public void clearCache(Promise promise) {
+        if (audioPreloader != null) { audioPreloader.clear(promise); return; }`,
+  ],
+  [
+    path.join(TRACK_PLAYER_DIR, 'service/player/LocalPlayback.java'),
+    `    public void destroy() {
+        super.destroy();`,
+    `    public void destroy() {
+        super.destroy();
+        if (audioPreloader != null) {
+            audioPreloader.release();
+            audioPreloader = null;
+            cache = null;
+        }`,
+  ],
   [
     path.join(MEDIA_METADATA_DIR, 'MediaFile.java'),
     '      ParcelFileDescriptor parcelFileDescriptor = context.getContentResolver().openFileDescriptor(dFile.getUri(), isWrite ? "rw" : "r");',
@@ -214,6 +286,7 @@ const toLF = str => str.replace(/\r\n/g, '\n')
   }
   try {
     await fs.promises.copyFile(path.join(rootPath, 'patches/MetadataWriter.java'), path.join(MEDIA_METADATA_DIR, 'MetadataWriter.java'))
+    await fs.promises.copyFile(path.join(rootPath, 'patches/AudioPreloader.java'), path.join(TRACK_PLAYER_DIR, 'service/player/AudioPreloader.java'))
   } catch (error) {
     process.exitCode = 1
     console.error('Installing MetadataWriter failed:', error.message)

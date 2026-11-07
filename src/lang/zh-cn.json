@@ -521,4 +521,9 @@
   ,"nav_history":"播放历史","search_type_singer":"歌手","setting_group_basic":"基础","setting_group_player":"播放","setting_group_search":"搜索与列表","setting_group_download":"下载","setting_group_data":"数据","setting_group_other":"其他","singer_tab_song":"歌曲","singer_tab_album":"专辑","download_bad_size":"文件大小异常（{size}，预期约 {expect}），可能下错了音质","singer_no_brief":"暂无歌手简介","singer_fans_count":"{num} 粉丝","singer_song_count":"{num} 首歌","singer_album_count":"{num} 张专辑","album_publish_date":"{date} 发行"
   ,"setting_lyric_desktop_enabled":"桌面歌词已开启","setting_lyric_desktop_disabled":"桌面歌词已关闭","search_type_album":"专辑","play_detail_album":"专辑"
   ,"download_url_source":"下载从哪里取链","player_url_source":"播放优先从哪里取链","url_source_script":"音源","url_source_account":"QQ 账号"
-  }
+, "source_priority_up": "上移"
+, "source_priority_down": "下移"
+, "source_priority_tip": "勾选音源并调整顺序，播放与下一首预加载会依次尝试，失败后自动使用下一个。"
+, "setting_player_preload_next": "预加载下一首"
+, "setting_player_preload_next_tip": "当前播放缓冲充足后缓存下一首，使用基本设置中的音源顺序及现有播放缓存容量。"
+}

@@ -27,6 +27,8 @@ declare global {
        * api id
        */
       'common.apiSource': string
+      /** 已勾选的自定义音源 ID，按优先级保存为 JSON；空字符串兼容旧单选设置 */
+      'common.apiSourceOrder': string
 
       /**
        * 音源名称类型，原名、别名
@@ -166,6 +168,8 @@ declare global {
        * 缓存大小设置 unit MiB
        */
       'player.cacheSize': string
+      /** 在当前歌曲缓冲充足时预缓存下一首 */
+      'player.preloadNext': boolean
 
       /**
        * 定时暂停播放-倒计时时间

@@ -7,6 +7,7 @@ import playerState from '@/store/player/state'
 import { setNowPlayTime } from '@/core/player/progress'
 import settingState from '@/store/setting/state'
 import { addPlayHistory } from '@/core/player/playHistory'
+import { parseApiSourceOrder } from '@/utils/apiSourceOrder'
 
 
 export default () => {
@@ -95,7 +96,8 @@ export default () => {
     if (!playerState.musicInfo.id) return
     clearLoadingTimeout()
     if (global.lx.isPlayedStop) return
-    if (playerState.playMusicInfo.musicInfo && retryNum < 2) { // 若音频URL无效则尝试刷新2次URL
+    const maxRetries = Math.max(2, parseApiSourceOrder(settingState.setting['common.apiSourceOrder'], settingState.setting['common.apiSource']).length)
+    if (playerState.playMusicInfo.musicInfo && retryNum < maxRetries) { // 为勾选的备用音源保留接替机会
       let musicInfo = playerState.playMusicInfo.musicInfo
       void getPosition().then((position) => {
         if (position) setNowPlayTime(position)

@@ -5,10 +5,11 @@ import {
 } from '@/utils/data'
 import { updateListMusics } from '@/core/list'
 import settingState from '@/store/setting/state'
+import { isMusicUrlFailed, markMusicUrlFailed, type ValidateMusicUrl } from './sourcePriority'
+import { isRequestCancelled, requestMsg } from '@/utils/message'
 
 import {
   buildLyricInfo,
-  getPlayQuality,
   handleGetOnlineLyricInfo,
   handleGetOnlineMusicUrl,
   handleGetOnlinePicUrl,
@@ -40,7 +41,7 @@ export const setPic = (datas: {
  */
 
 
-export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, onToggleSource = () => {}, urlSourceOrder, onCancel }: {
+export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, onToggleSource = () => {}, urlSourceOrder, onCancel, validateUrl, rejectedUrls }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality?: LX.Quality
   isRefresh: boolean
@@ -49,19 +50,41 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   /** 两条链的先后，见 core/music/utils.ts。不传按播放设置走 */
   urlSourceOrder?: LX.Music.UrlSourceOrder
   onCancel?: (cancel: () => void) => void
+  validateUrl?: ValidateMusicUrl
+  rejectedUrls?: ReadonlySet<string>
 }): Promise<string> => {
+  let cancelled = false
+  let currentCancel: (() => void) | undefined
+  onCancel?.(() => { cancelled = true; currentCancel?.() })
+  const assertActive = () => { if (cancelled) throw new Error(requestMsg.cancelRequest) }
+  const registerCancel = (cancel: () => void) => {
+    currentCancel = cancel
+    if (cancelled) cancel()
+  }
+  assertActive()
   // if (!musicInfo._types[type]) {
   //   // 兼容旧版酷我源搜索列表过滤128k音质的bug
   //   if (!(musicInfo.source == 'kw' && type == '128k')) throw new Error('该歌曲没有可播放的音频')
 
   //   // return Promise.reject(new Error('该歌曲没有可播放的音频'))
   // }
-  const targetQuality = quality ?? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
+  const targetQuality = quality ?? settingState.setting['player.playQuality']
   const cachedUrl = await getStoreMusicUrl(musicInfo, targetQuality)
-  if (cachedUrl && !isRefresh) return cachedUrl
+  assertActive()
+  if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
+    try {
+      await validateUrl?.(cachedUrl)
+      assertActive()
+      return cachedUrl
+    } catch (error) {
+      if (isRequestCancelled(error)) throw error
+      markMusicUrlFailed(cachedUrl)
+    }
+  }
 
-  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel }).then(({ url, quality: targetQuality, musicInfo: targetMusicInfo, isFromCache }) => {
-    if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, targetQuality, url)
+  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel: registerCancel, validateUrl, rejectedUrls }).then(({ url, quality: actualQuality, musicInfo: targetMusicInfo, isFromCache }) => {
+    assertActive()
+    if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, actualQuality, url)
     void saveMusicUrl(musicInfo, targetQuality, url)
     return url
   })

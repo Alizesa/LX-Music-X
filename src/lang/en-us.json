@@ -521,4 +521,9 @@
   ,"nav_history":"Play history","search_type_singer":"Singer","setting_group_basic":"Basic","setting_group_player":"Playback","setting_group_search":"Search & Lists","setting_group_download":"Downloads","setting_group_data":"Data","setting_group_other":"Other","singer_tab_song":"Songs","singer_tab_album":"Albums","download_bad_size":"File size looks wrong ({size}, expected about {expect})","singer_no_brief":"No introduction yet","singer_fans_count":"{num} fans","singer_song_count":"{num} songs","singer_album_count":"{num} albums","album_publish_date":"Released {date}"
   ,"setting_lyric_desktop_enabled":"Desktop lyric on","setting_lyric_desktop_disabled":"Desktop lyric off","search_type_album":"Album","play_detail_album":"Album"
   ,"download_url_source":"Resolve download URL from","player_url_source":"Prefer URL from","url_source_script":"Custom source","url_source_account":"QQ account"
-  }
+, "source_priority_up": "Move up"
+, "source_priority_down": "Move down"
+, "source_priority_tip": "Select and order sources for playback and next-track preloading. If one fails, the next is tried."
+, "setting_player_preload_next": "Preload the next track"
+, "setting_player_preload_next_tip": "Cache the next track when playback has enough buffer, using the source order in Basic settings and the existing playback cache limit."
+}

@@ -521,4 +521,9 @@
   ,"nav_history":"播放歷史","search_type_singer":"歌手","setting_group_basic":"基本","setting_group_player":"播放","setting_group_search":"搜尋與清單","setting_group_download":"下載","setting_group_data":"資料","setting_group_other":"其他","singer_tab_song":"歌曲","singer_tab_album":"專輯","download_bad_size":"檔案大小異常（{size}，預期約 {expect}），可能下錯了音質","singer_no_brief":"暫無歌手簡介","singer_fans_count":"{num} 粉絲","singer_song_count":"{num} 首歌","singer_album_count":"{num} 張專輯","album_publish_date":"{date} 發行"
   ,"setting_lyric_desktop_enabled":"桌面歌詞已開啟","setting_lyric_desktop_disabled":"桌面歌詞已關閉","search_type_album":"專輯","play_detail_album":"專輯"
   ,"download_url_source":"下載從哪裡取鏈","player_url_source":"播放優先從哪裡取鏈","url_source_script":"音源","url_source_account":"QQ 帳號"
-  }
+, "source_priority_up": "上移"
+, "source_priority_down": "下移"
+, "source_priority_tip": "勾選音源並調整順序，播放與下一首預載會依次嘗試，失敗後自動使用下一個。"
+, "setting_player_preload_next": "預載下一首"
+, "setting_player_preload_next_tip": "目前播放緩衝充足後快取下一首，使用基本設定中的音源順序及現有播放快取容量。"
+}

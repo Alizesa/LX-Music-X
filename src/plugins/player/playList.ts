@@ -8,7 +8,7 @@ import playerState from '@/store/player/state'
 
 const list: LX.Player.Track[] = []
 
-const defaultUserAgent = 'Mozilla/5.0 (Linux; Android 10; Pixel 3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Mobile Safari/537.36'
+export const defaultUserAgent = 'Mozilla/5.0 (Linux; Android 10; Pixel 3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Mobile Safari/537.36'
 const httpRxp = /^(https?:\/\/.+|\/.+)/
 
 export const state = {

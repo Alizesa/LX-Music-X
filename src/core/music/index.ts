@@ -20,6 +20,7 @@ import {
 } from './local'
 import { getLocalFilePath } from '@/utils/music'
 import { LIST_IDS } from '@/config/constant'
+import { type ValidateMusicUrl } from './sourcePriority'
 
 
 export const getMusicUrl = async({
@@ -30,6 +31,8 @@ export const getMusicUrl = async({
   allowToggleSource,
   urlSourceOrder,
   onCancel,
+  validateUrl,
+  rejectedUrls,
 }: {
   musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   isRefresh?: boolean
@@ -40,6 +43,8 @@ export const getMusicUrl = async({
   urlSourceOrder?: LX.Music.UrlSourceOrder
   /** 拿到可取消句柄时回调；调用方切歌/取消预加载时用它中断在途请求 */
   onCancel?: (cancel: () => void) => void
+  validateUrl?: ValidateMusicUrl
+  rejectedUrls?: ReadonlySet<string>
 }): Promise<string> => {
   if ('progress' in musicInfo) {
     return getDownloadMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource })
@@ -53,7 +58,7 @@ export const getMusicUrl = async({
         if (localPath) return localPath
       }
     }
-    return getOnlineMusicUrl({ musicInfo, isRefresh, quality, onToggleSource, allowToggleSource, urlSourceOrder, onCancel })
+    return getOnlineMusicUrl({ musicInfo, isRefresh, quality, onToggleSource, allowToggleSource, urlSourceOrder, onCancel, validateUrl, rejectedUrls })
   }
 }
 

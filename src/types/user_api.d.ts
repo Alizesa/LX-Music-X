@@ -11,6 +11,12 @@ declare namespace LX {
     }
 
     type UserApiSources = Record<LX.Source, UserApiSourceInfo>
+    interface UserApiRuntimeSource {
+      getMusicUrl?: (musicInfo: unknown, quality: LX.Quality) => {
+        canceleFn: () => void
+        promise: Promise<{ url: string, type: LX.Quality }>
+      }
+    }
 
 
     interface UserApiInfo {

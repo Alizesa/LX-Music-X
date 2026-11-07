@@ -444,6 +444,17 @@ test('account-wide timeout aborts a stuck ticket and permits source fallback', a
 const onlineHarness = (h, apiReady = Promise.resolve(true)) => {
   let sourceCalls = 0
   const pipeline = load('src/core/music/utils.ts', {
+    './sourcePriority': {
+      isMusicUrlFailed: () => false,
+      getMusicUrlByPriority: async({ musicInfo, quality, onCancel }) => {
+        let cancelled = false
+        onCancel?.(() => { cancelled = true })
+        await apiReady
+        if (cancelled) throw new Error(message.requestMsg.cancelRequest)
+        sourceCalls++
+        return { musicInfo, quality, url: 'https://source.example/song.mp3', isFromCache: false }
+      },
+    },
     __global: { lx: { apiInitPromise: [apiReady] } },
     '@/config/constant': load('src/config/constant.ts'),
     '@/utils/musicSdk': {

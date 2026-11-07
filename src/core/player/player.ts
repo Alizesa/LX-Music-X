@@ -32,6 +32,8 @@ import { addDislikeInfo } from '@/core/dislikeList'
 import { clearPlayQueue, getPlayQueue, insertPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
 import { parkRecommendQueue } from '@/core/qqMusicRecommendSession'
 import { releaseLocalList, retainLocalList } from '@/core/localList'
+import { cancelPreload, takePreloadedMusicUrl } from './preload'
+import { markMusicUrlFailed } from '@/core/music/sourcePriority'
 
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
@@ -100,6 +102,8 @@ const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, i
 }
 let musicUrlGeneration = 0
 let cancelMusicUrl: (() => void) | null = null
+let lastMusicUrl: { musicId: string, url: string } | null = null
+const failedPlaybackUrls = new Set<string>()
 
 const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, isRetryed = false): Promise<string | null> => {
   // this.musicInfo.url = await getMusicPlayUrl(targetSong, type)
@@ -107,6 +111,14 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
   const generation = ++musicUrlGeneration
   cancelMusicUrl?.()
   cancelMusicUrl = null
+  if (lastMusicUrl?.musicId != musicInfo.id || (!isRefresh && !isRetryed)) failedPlaybackUrls.clear()
+  if (isRefresh) {
+    cancelPreload()
+    if (lastMusicUrl?.musicId == musicInfo.id) {
+      failedPlaybackUrls.add(lastMusicUrl.url)
+      markMusicUrlFailed(lastMusicUrl.url)
+    }
+  }
   setStatusText(global.i18n.t('player__getting_url'))
   addLoadTimeout()
 
@@ -119,13 +131,16 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
 
   const setCancel = (cancel: () => void) => {
     if (generation === musicUrlGeneration) cancelMusicUrl = cancel
+    else cancel()
   }
-  return (toggleMusicInfo ? getMusicUrl({
+  const preloaded = isRefresh ? null : takePreloadedMusicUrl(musicInfo, setCancel)
+  return (preloaded ?? (toggleMusicInfo ? getMusicUrl({
     musicInfo: toggleMusicInfo,
     isRefresh,
     allowToggleSource: false,
     onCancel: setCancel,
-  }) : Promise.reject(new Error('not found'))).catch(async err => {
+    rejectedUrls: failedPlaybackUrls,
+  }) : Promise.reject(new Error('not found')))).catch(async err => {
     // 取消（切歌/重试）不是「换源失败」：否则会为同一首旧歌再打一次
     // 无法取消的请求，结果随后也会被 diffCurrentMusicInfo 丢掉
     if (isRequestCancelled(err) || generation !== musicUrlGeneration) throw err
@@ -137,9 +152,10 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
         setStatusText(global.i18n.t('toggle_source_try'))
       },
       onCancel: setCancel,
+      rejectedUrls: failedPlaybackUrls,
     })
   }).then(url => {
-    if (global.lx.isPlayedStop || diffCurrentMusicInfo(musicInfo)) return null
+    if (generation !== musicUrlGeneration || global.lx.isPlayedStop || diffCurrentMusicInfo(musicInfo)) return null
 
     return url
   }).catch(async err => {
@@ -172,6 +188,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   global.lx.gettingUrlId = createGettingUrlId(musicInfo)
   void getMusicPlayUrl(musicInfo, isRefresh).then((url) => {
     if (!url) return
+    lastMusicUrl = { musicId: musicInfo.id, url }
     setResource(musicInfo, url, playerState.progress.nowPlayTime)
   }).catch((err: any) => {
     console.log(err)

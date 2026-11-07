@@ -17,6 +17,7 @@ import { useI18n } from '@/lang'
 import PlayHistory from './PlayHistory'
 import IsNoVipStandardQuality from './IsNoVipStandardQuality'
 import UrlSource from './UrlSource'
+import PreloadNext from './PreloadNext'
 
 
 export default memo(() => {
@@ -36,6 +37,7 @@ export default memo(() => {
       <IsShowLyricRoma />
       <IsS2T />
       <MaxCache />
+      <PreloadNext />
       <PlayHighQuality />
       {/* 这一组是连着的：先选音质 → 再从哪条链取 → 最后声明账号有没有会员（只影响账号那条链） */}
       <UrlSource />
