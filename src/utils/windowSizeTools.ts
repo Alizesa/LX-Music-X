@@ -25,7 +25,8 @@ export const windowSizeTools = {
     this.listeners.push(handler)
 
     return () => {
-      this.listeners.splice(this.listeners.indexOf(handler), 1)
+      const index = this.listeners.indexOf(handler)
+      if (index >= 0) this.listeners.splice(index, 1)
     }
   },
   async init() {
@@ -55,10 +56,11 @@ export const windowSizeTools = {
     return size
   },
   setWindowSize(width: number, height: number) {
-    this.size = {
-      width: Math.round(width),
-      height: Math.round(height),
-    }
+    width = Math.round(width)
+    height = Math.round(height)
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
+    if (this.size.width === width && this.size.height === height) return
+    this.size = { width, height }
     for (const handler of this.listeners) handler(this.size)
   },
 }

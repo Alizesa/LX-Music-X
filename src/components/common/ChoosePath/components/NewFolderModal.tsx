@@ -6,7 +6,6 @@ import ConfirmAlert, { type ConfirmAlertType } from '@/components/common/Confirm
 import { createStyle, toast } from '@/utils/tools'
 import { mkdir } from '@/utils/fs'
 import { useTheme } from '@/store/theme/hook'
-import { useTabletLayout } from '@/utils/hooks'
 import type { PathItem } from './ListItem'
 const filterFileName = /[\\/:*?#"<>|]/
 
@@ -18,7 +17,6 @@ interface NameInputType {
 }
 const NameInput = forwardRef<NameInputType, {}>((props, ref) => {
   const theme = useTheme()
-  const { isWide } = useTabletLayout()
   const [text, setText] = useState('')
   const inputRef = useRef<InputType>(null)
 
@@ -40,7 +38,7 @@ const NameInput = forwardRef<NameInputType, {}>((props, ref) => {
       placeholder={global.i18n.t('create_new_folder_tip')}
       value={text}
       onChangeText={setText}
-      style={[styles.input, { backgroundColor: theme['c-primary-input-background'] }, isWide && { minWidth: 0 }]}
+      style={[styles.input, { backgroundColor: theme['c-primary-input-background'] }]}
     />
   )
 })
@@ -113,7 +111,8 @@ const styles = createStyle({
   input: {
     flexGrow: 1,
     flexShrink: 1,
-    minWidth: 240,
+    minWidth: 0,
+    maxWidth: '100%',
     borderRadius: 4,
     paddingTop: 2,
     paddingBottom: 2,

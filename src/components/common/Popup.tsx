@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react'
-import { View, TouchableOpacity, type StyleProp, type ViewStyle } from 'react-native'
+import { Platform, View, TouchableOpacity, type StyleProp, type ViewStyle } from 'react-native'
 
 import Modal, { type ModalType } from './Modal'
 import { Icon } from '@/components/common/Icon'
@@ -195,7 +195,7 @@ export default forwardRef<PopupType, PopupProps>(({
 
   return (
     <Modal onHide={onHide} keyHide={keyHide} bgHide={bgHide} bgColor="rgba(50,50,50,.2)" ref={modalRef}>
-      <View style={{ ...styles.centeredView, ...centeredViewStyle, paddingBottom: keyboardShown ? keyboardHeight : 0 }}>
+      <View style={{ ...styles.centeredView, ...centeredViewStyle, paddingBottom: Platform.OS === 'ios' && keyboardShown ? keyboardHeight : 0 }}>
         <View style={[styles.modalView, modalViewStyle, tabletViewStyle, { backgroundColor: theme['c-content-background'] }, contentStyle]} onStartShouldSetResponder={() => true}>
           <View style={styles.header}>
             <Text size={13} style={styles.title} numberOfLines={1}>{title}</Text>

@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
-import { View } from 'react-native'
+import { Platform, View } from 'react-native'
 import Modal, { type ModalType } from '@/components/common/Modal'
 import Input from '@/components/common/Input'
 import Button from '@/components/common/Button'
@@ -75,7 +75,7 @@ export default forwardRef<QQPlaylistEditModalType>((_, ref) => {
 
   return (
     <Modal ref={modalRef} bgColor="rgba(0,0,0,.35)" bgHide={false} keyHide={!busy}>
-      <View style={{ ...styles.centered, paddingBottom: keyboardShown ? keyboardHeight : 0 }}>
+      <View style={{ ...styles.centered, paddingBottom: Platform.OS === 'ios' && keyboardShown ? keyboardHeight : 0 }}>
         <View style={{ ...styles.dialog, backgroundColor: theme['c-content-background'] }}>
           <Text size={16} style={styles.title}>{t(mode == 'create' ? 'qq_playlist_create' : 'qq_playlist_rename')}</Text>
           <Input

@@ -1,5 +1,5 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Animated, Dimensions, FlatList, PanResponder, StyleSheet, TouchableOpacity, View } from 'react-native'
+import { Animated, FlatList, PanResponder, StyleSheet, TouchableOpacity, View } from 'react-native'
 import Popup, { type PopupType } from '@/components/common/Popup'
 import Text from '@/components/common/Text'
 import { Icon } from '@/components/common/Icon'
@@ -48,8 +48,7 @@ const ITEM_HEIGHT = scaleSizeH(LIST_ITEM_HEIGHT)
 // 给了 initialScrollIndex（且 > 0）时，渲染窗口会被 pendingScrollUpdateCount 钉在
 // [index, index + 它) 这一段上、并跳过初始那段，所以它得够一屏才不会在可视区里留下空行；
 // 反过来，队列长度不超过它时整条队列本来就都在初始段里，钉了反而会留白。
-// 手机面板最高占屏幕 78%，按屏幕高度折算行数再多留两行；平板按收窄后的面板高度计算。
-const INITIAL_ROWS = Math.ceil(Dimensions.get('screen').height / ITEM_HEIGHT) + 2
+// 手机/分屏按当前窗口高度折算行数再多留两行，平板按收窄后的面板高度计算。
 
 // 必须 memo：队列动辄几百首，虚拟列表一次就会补进来一批单元格，
 // 父组件每次渲染都重渲所有行的话这批渲染就很贵（卡顿）。
@@ -138,7 +137,7 @@ export default forwardRef<PlayerPlaylistType, {}>((props, ref) => {
   const theme = useTheme()
   const { isWide, height } = useTabletLayout()
   const tabletMaxHeight = Math.min(height * 0.65, 560)
-  const initialRows = isWide ? Math.ceil(tabletMaxHeight / ITEM_HEIGHT) + 2 : INITIAL_ROWS
+  const initialRows = Math.ceil((isWide ? tabletMaxHeight : height) / ITEM_HEIGHT) + 2
 
   // 临时歌曲插在当前曲目之后（没有在播的歌曲、或当前曲目已不在队列里时插到最前面）。
   // 这样当前曲目的行号仍然等于它在队列里的下标，面板定位那套计算不受影响。

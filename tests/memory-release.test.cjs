@@ -195,11 +195,12 @@ test('a late failed lease cannot release a new consumer with the same reason', a
 
 test('closed playlist panels hold no queue snapshots or listeners and reopen with fresh data', async() => {
   const h = hookHost(); const clock = timers(); const app = new EventEmitter(); const state = new EventEmitter()
+  let windowHeight = 800
   let queue = Array.from({ length: 3000 }, (_, i) => ({ queueId: `q${i}`, musicInfo: song(i) }))
   const player = { tempPlayList: [], playInfo: { playerPlayIndex: 0 }, playMusicInfo: { musicInfo: null } }
   const Panel = load('src/components/player/PlayerPlaylist.tsx', {
     react: h.react,
-    'react-native': { Dimensions: { get: () => ({ height: 800 }) }, StyleSheet: { create: value => value }, Animated: {} },
+    'react-native': { Dimensions: { get: () => ({ height: 800 }) }, StyleSheet: { create: value => value }, Animated: {}, FlatList: 'FlatList' },
     '@/components/common/Popup': { default: 'Popup' },
     '@/components/common/Text': { default: 'Text' },
     '@/components/common/Icon': { Icon: 'Icon' },
@@ -212,7 +213,7 @@ test('closed playlist panels hold no queue snapshots or listeners and reopen wit
     '@/config/constant': constants,
     '@/utils/pixelRatio': { scaleSizeH: value => value },
     '@/utils/tools': style,
-    '@/utils/hooks': { useTabletLayout: () => ({ isWide: false, height: 800 }) },
+    '@/utils/hooks': { useTabletLayout: () => ({ isWide: false, height: windowHeight }) },
     '@/utils/layout': {},
     '@/utils/hooks/useScreenVisible': { useScreenVisible: h.visible },
   }, { ...frames(clock), global: { app_event: app, state_event: state, lx: { fontSize: 1 }, i18n: { t: value => value } } }).default
@@ -238,6 +239,9 @@ test('closed playlist panels hold no queue snapshots or listeners and reopen wit
   panel.ref.current.show()
   panel.render()
   assert.ok(panel.frame.slots.some(slot => Array.isArray(slot.value) && slot.value[0]?.queueId === 'new'))
+  const initialRows = elements(panel.render(), 'FlatList')[0].props.initialNumToRender
+  windowHeight = 300
+  assert.ok(elements(panel.render(), 'FlatList')[0].props.initialNumToRender < initialRows)
   panel.frame.visible = false
   assert.equal(panel.render(), null)
   assert.equal(app.listenerCount('playQueueUpdate'), 0)
