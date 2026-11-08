@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { ScrollView, TouchableOpacity, View } from 'react-native'
 import Popup, { type PopupType } from '@/components/common/Popup'
 import Text from '@/components/common/Text'
@@ -8,8 +8,11 @@ import AddToPlaylistIcon from '@/components/common/AddToPlaylistIcon'
 import MenuRow from '@/components/common/MenuRow'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
-import { createStyle } from '@/utils/tools'
+import { createStyle, shareMusic, toast } from '@/utils/tools'
+import { clearMusicUrlByMusic, hasMusicUrlByMusic } from '@/utils/data'
 import playerState from '@/store/player/state'
+import settingState from '@/store/setting/state'
+import { addTasks } from '@/core/download'
 import { changeQQMusicPlaylistMembership, loadWritableQQMusicPlaylists } from '@/core/qqMusicFavorite'
 
 type Mode = 'actions' | 'add' | 'remove'
@@ -29,45 +32,105 @@ const currentMusicInfo = (): LX.Music.MusicInfo | null => {
 /**
  * 播放详情页三点弹出的功能页。
  *
- * 目前只有两项：把当前歌曲加进 / 移出自己创建的 QQ 歌单。
- * 两者都要挑歌单，所以先列动作、选中后再换成歌单列表（同一个 popup 里换内容，
- * 不再叠一层弹窗）。
+ * 歌曲操作沿用列表菜单的下载、分享和链接缓存逻辑。
+ * 添加 / 移出 QQ 歌单时，在同一个 popup 里切换到歌单列表。
  */
 export default forwardRef<MoreMenuType>((_, ref) => {
   const theme = useTheme()
   const t = useI18n()
   const popupRef = useRef<PopupType>(null)
+  const session = useRef(0)
+  const [musicInfo, setMusicInfo] = useState<LX.Music.MusicInfo | null>(null)
   const [mode, setMode] = useState<Mode>('actions')
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [busy, setBusy] = useState(false)
+  const [hasCache, setHasCache] = useState(false)
 
-  const loadPlaylists = async() => {
-    // 候选（自己创建的歌单）和「缓存里缺 dirId 就自己重拉一次」都在 core 里，
-    // 行菜单用的是同一份
-    setPlaylists(await loadWritableQQMusicPlaylists())
-  }
+  const handleHide = useCallback(() => {
+    session.current++
+    setMusicInfo(null)
+    setPlaylists([])
+    setBusy(false)
+    setHasCache(false)
+  }, [])
+
+  useEffect(() => () => {
+    session.current++
+  }, [])
 
   useImperativeHandle(ref, () => ({
     show() {
+      const current = currentMusicInfo()
+      if (!current) return
+      const version = ++session.current
+      // 打开后固定操作对象，自动切歌不会改变这个菜单对应的歌曲。
+      setMusicInfo(current)
       setMode('actions')
+      setPlaylists([])
+      setBusy(false)
+      setHasCache(false)
       popupRef.current?.setVisible(true)
-      void loadPlaylists()
+      if (current.source != 'local') {
+        void hasMusicUrlByMusic(current).then(hasCache => {
+          if (version === session.current) setHasCache(hasCache)
+        }).catch(() => {})
+      }
     },
   }))
 
+  const openPlaylistPicker = async(nextMode: 'add' | 'remove') => {
+    if (!musicInfo || busy) return
+    const version = session.current
+    setBusy(true)
+    try {
+      // 只有选择歌单操作才加载候选，下载、分享和清理缓存无需读取 QQ 歌单。
+      const list = await loadWritableQQMusicPlaylists()
+      if (version !== session.current) return
+      setPlaylists(list)
+      setMode(nextMode)
+    } catch (error: unknown) {
+      if (version === session.current) toast(error instanceof Error ? error.message : String(error), 'long')
+    } finally {
+      if (version === session.current) setBusy(false)
+    }
+  }
+
   const change = useCallback(async(playlist: Playlist) => {
-    if (busy) return
-    const musicInfo = currentMusicInfo()
-    if (!musicInfo) return
+    if (!musicInfo || busy) return
+    const version = session.current
     const add = mode == 'add'
     setBusy(true)
     try {
       // 提示和缓存作废都在里面做掉了
-      if (await changeQQMusicPlaylistMembership(musicInfo, playlist, add)) popupRef.current?.setVisible(false)
+      if (await changeQQMusicPlaylistMembership(musicInfo, playlist, add) && version === session.current) popupRef.current?.setVisible(false)
     } finally {
-      setBusy(false)
+      if (version === session.current) setBusy(false)
     }
-  }, [busy, mode])
+  }, [busy, mode, musicInfo])
+
+  const handleDownload = () => {
+    if (!musicInfo || musicInfo.source == 'local' || busy) return
+    popupRef.current?.setVisible(false)
+    void addTasks([musicInfo]).catch((error: unknown) => {
+      toast(error instanceof Error ? error.message : String(error), 'long')
+    })
+  }
+
+  const handleShare = () => {
+    if (!musicInfo || busy) return
+    popupRef.current?.setVisible(false)
+    shareMusic(settingState.setting['common.shareType'], settingState.setting['download.fileName'], musicInfo)
+  }
+
+  const handleClearCache = () => {
+    if (!musicInfo || musicInfo.source == 'local' || !hasCache || busy) return
+    popupRef.current?.setVisible(false)
+    void clearMusicUrlByMusic(musicInfo).then(() => {
+      toast(t('list_remove_cache_success_tip'))
+    }).catch((error: unknown) => {
+      toast(t('list_remove_cache_fail_tip', { msg: error instanceof Error ? error.message : String(error) }))
+    })
+  }
 
   const renderBody = () => {
     if (mode == 'actions') {
@@ -77,12 +140,32 @@ export default forwardRef<MoreMenuType>((_, ref) => {
           <MenuRow
             icon={<AddToPlaylistIcon size={18} color={theme['c-font']} />}
             label={t('qq_playlist_add_to')}
-            onPress={() => { setMode('add') }}
+            disabled={busy || !musicInfo}
+            onPress={() => { void openPlaylistPicker('add') }}
           />
           <MenuRow
             icon={<Icon name="remove" size={18} color={theme['c-font']} />}
             label={t('qq_playlist_remove_from')}
-            onPress={() => { setMode('remove') }}
+            disabled={busy || !musicInfo}
+            onPress={() => { void openPlaylistPicker('remove') }}
+          />
+          <MenuRow
+            icon={<Icon name="download-2" size={18} color={theme['c-font']} />}
+            label={t('download')}
+            disabled={busy || !musicInfo || musicInfo.source == 'local'}
+            onPress={handleDownload}
+          />
+          <MenuRow
+            icon={<Icon name="share" size={18} color={theme['c-font']} />}
+            label={t('copy_name')}
+            disabled={busy || !musicInfo}
+            onPress={handleShare}
+          />
+          <MenuRow
+            icon={<Icon name="eraser" size={18} color={theme['c-font']} />}
+            label={t('list_remove_cache')}
+            disabled={busy || !hasCache}
+            onPress={handleClearCache}
           />
         </ScrollView>
       )
@@ -119,7 +202,7 @@ export default forwardRef<MoreMenuType>((_, ref) => {
     : t(mode == 'add' ? 'qq_playlist_add_to' : 'qq_playlist_remove_from')
 
   return (
-    <Popup ref={popupRef} title={title} position="bottom">
+    <Popup ref={popupRef} onHide={handleHide} title={title} position="bottom">
       {renderBody()}
     </Popup>
   )
