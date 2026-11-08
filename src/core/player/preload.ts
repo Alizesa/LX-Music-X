@@ -21,6 +21,7 @@ interface PreloadTask {
   rejectedUrls: Set<string>
   cancelResolve?: () => void
   cancelCache?: () => void
+  onError?: (error: unknown) => void
 }
 let active: PreloadTask | null = null
 
@@ -33,14 +34,27 @@ const keyOf = (music: Music) => {
 const assertActive = (task: PreloadTask) => { if (task.cancelled) throw new Error(requestMsg.cancelRequest) }
 const stopCache = (task: PreloadTask) => {
   task.cacheGeneration++
-  task.cancelCache?.()
+  const cancel = task.cancelCache
   task.cancelCache = undefined
   task.filling = false
+  try { cancel?.() } catch {}
 }
 const cancelTask = (task: PreloadTask) => {
   task.cancelled = true
-  task.cancelResolve?.()
+  const cancel = task.cancelResolve
+  task.cancelResolve = undefined
+  task.onError = undefined
+  try { cancel?.() } catch {}
   stopCache(task)
+}
+
+const failTask = (task: PreloadTask, error: unknown) => {
+  // 交给前台或已作废的任务，由它自己的调用方处理，不能再唤醒旧的后台选曲。
+  if (active !== task || task.cancelled || task.claimed) return
+  active = null
+  const onError = task.onError
+  cancelTask(task)
+  onError?.(error)
 }
 
 export const cancelPreload = () => {
@@ -53,6 +67,7 @@ export const keepPreloadFor = (music: Music | null) => {
   if (!active) return
   if (!music || active.key != keyOf(music)) { cancelPreload(); return }
   active.claimed = true
+  active.onError = undefined
   if (active.url) stopCache(active)
 }
 
@@ -75,6 +90,7 @@ export const takePreloadedMusicUrl = (music: Music, onCancel: (cancel: () => voi
   }
   active = null
   task.claimed = true
+  task.onError = undefined
   if (task.url) stopCache(task)
   onCancel(() => { cancelTask(task) })
   return task.promise.then(url => { assertActive(task); return url })
@@ -121,11 +137,10 @@ const fillCache = async(task: PreloadTask): Promise<void> => {
     const setting = settingState.setting
     const count = parseApiSourceOrder(setting['common.apiSourceOrder'], setting['common.apiSource']).length + 1
     if (++task.recoveries <= count) {
-      task.promise = prepare(task, true)
+      startPrepare(task, true)
     } else {
-      task.promise = Promise.reject(new Error('Next track preload failed'))
+      failTask(task, new Error('Next track preload failed'))
     }
-    void task.promise.catch(() => {})
   } finally {
     if (generation == task.cacheGeneration) {
       task.filling = false
@@ -171,9 +186,18 @@ const prepare = async(task: PreloadTask, isRefresh = false): Promise<string> => 
   return url
 }
 
-export const preloadMusic = (musicInfo: Music): Promise<string> | null => {
+const startPrepare = (task: PreloadTask, isRefresh = false) => {
+  task.promise = prepare(task, isRefresh).catch(error => {
+    failTask(task, error)
+    throw error
+  })
+  void task.promise.catch(() => {})
+}
+
+export const preloadMusic = (musicInfo: Music, onError?: (error: unknown) => void): Promise<string> | null => {
   if (!settingState.setting['player.preloadNext'] || !canPreloadAudio() || !(Number(settingState.setting['player.cacheSize']) > 0)) return null
   if (active?.key == keyOf(musicInfo) && !active.cancelled) {
+    if (onError) active.onError = onError
     active.paused = false
     void fillCache(active)
     return active.promise
@@ -192,9 +216,9 @@ export const preloadMusic = (musicInfo: Music): Promise<string> | null => {
     cacheGeneration: 0,
     recoveries: 0,
     rejectedUrls: new Set(),
+    onError,
   }
   active = task
-  task.promise = prepare(task)
-  void task.promise.catch(() => {})
+  startPrepare(task)
   return task.promise
 }

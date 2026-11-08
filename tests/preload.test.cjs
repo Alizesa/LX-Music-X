@@ -360,6 +360,7 @@ const schedulerHarness = () => {
       default: {
         getPosition: async() => position,
         getBufferedPosition: async() => { bufferReads++; if (bufferedGate) await bufferedGate.promise; return buffered },
+        getDuration: async() => player.progress.maxPlayTime,
       },
     },
     'react-native-background-timer': {
