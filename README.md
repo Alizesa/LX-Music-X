@@ -1,99 +1,57 @@
-<p align="center"><a href="https://github.com/lyswhut/lx-music-mobile"><img width="200" src="https://github.com/lyswhut/lx-music-mobile/blob/master/doc/images/icon.png" alt="lx-music logo"></a></p>
+<p align="center"><a href="https://github.com/Alizesa/LX-Music-X"><img width="160" src="doc/images/icon.png" alt="LX Music X"></a></p>
 
 <h1 align="center">LX Music X</h1>
 
-<p align="center">LX Music 移动版的个人自用分支，仅构建 Android</p>
+<p align="center">基于 LX Music 移动版的 Android 音乐播放器</p>
 
-## 这是什么
+<p align="center"><a href="https://github.com/Alizesa/LX-Music-X/releases">版本发布</a> · <a href="https://github.com/Alizesa/LX-Music-X/issues">问题反馈</a> · <a href="https://github.com/lyswhut/lx-music-mobile">上游项目</a></p>
 
-[LX Music 移动版](https://github.com/lyswhut/lx-music-mobile) 的个人分支，按自己的使用习惯改的，只出 Android 包。
+LX Music X 是基于 [LX Music 移动版](https://github.com/lyswhut/lx-music-mobile) 开发的独立分支，面向 Android 手机和平板，围绕音乐浏览、播放控制、本地文件管理与界面适配进行扩展。
 
-- 应用 ID `io.github.alizesa.lxmusicx`，可与官方 LX Music 共存
-- 版本号跟随上游，以 `package.json` 为准（当前 1.9.2 / versionCode 79）
-- 最低 Android 5（minSdk 21）
+支持 Android 5.0 及以上版本，可与上游 LX Music 应用同时安装。
 
-保留上游的自定义源和多源搜索、换源能力。主界面已改为「首页 / 我的」，歌单收藏由 QQ 账号管理；本分支已移除设备间数据同步和旧本地歌单浏览入口。
+## 主要功能
 
-## 与上游的差异
+- **音乐浏览**：提供歌曲、歌手、专辑与歌单浏览，支持关键词搜索。
+- **播放控制**：提供播放队列管理、播放历史、桌面歌词、播放速度调节与定时关闭功能。
+- **本地音乐**：支持导入设备中的音频文件，统一管理与播放。
+- **任务管理**：支持保存目录设置、进度查看、暂停、恢复及失败重试。
+- **快捷操作**：可通过播放详情页的更多菜单分享歌曲信息、清理链接缓存。
+- **界面适配**：采用「首页 / 我的」导航，适配手机和平板；平板播放详情支持双页展示，可滑动切换歌手、封面和歌词页面。
 
-### 下载
+## 使用说明
 
-上游没有下载功能，这里补了一套。
+### 本地音乐
 
-- 原生下载器（Android WorkManager），支持暂停 / 恢复 / 重试 / 移除记录
-- **首次使用必须先授权目录**：进「下载管理」用系统文件选择器选一个公共目录，授予持久访问权限，否则无法开始下载
-- **下载音质是独立设置**，在下载管理页顶部，默认 320k，与播放音质互不影响
-  - 这样播放可以按流量情况随时调到 128k，下载仍是留档品质
-  - 请求的音质歌曲没有时会逐级降级（flac24bit → flac → 320k → 128k），而不是失败
-- 下载完成的文件会写入「本地音乐」列表（播放时的优先顺序见下文「本地资源优先」）
+在「本地音乐」页面选择导入目录，应用将扫描目录中的音频文件并加入列表。播放时优先使用匹配的本地文件。
 
-### 播放队列
+### 播放与显示
 
-播放列表以队列形式呈现（底部播放栏的列表按钮），可排序、可移除。
+从底部播放栏进入播放详情，可查看封面与歌词，并通过设置面板调整音量、播放速度和歌词显示样式。平板双页模式支持在歌手、封面与歌词页面之间滑动切换。
 
-### 外部歌单与推荐内容
+### 保存目录与任务
 
-- **歌单收藏**：QQ 歌单收藏写入当前账号，在「我的」查看；其他音源歌单可搜索和播放。旧版「QQ · 我喜欢」等在线歌单的本地副本会在升级后清理，备份导入、导出也会过滤这类副本。
-- **推荐内容**：「猜你喜欢」播到接近队列尾会自动续下一批；每日推荐和红心雷达按日缓存，并记住播放位置。
-- **本地缓存**：歌单与推荐内容优先读取持久缓存，缺少缓存、跨天推荐更新或手动刷新时联网。
+在「下载管理」中，通过系统文件选择器设置保存目录并授予目录访问权限。任务列表支持查看进度、暂停、恢复和失败重试。
 
-### 本地资源优先
+### 分享与缓存
 
-- 已下载或已导入的本地文件命中后**直接播放本地文件**，不再联网取址
-- 同一首歌存在多份本地文件时择优（优先已关联来源的那份，其次时长最接近的），而不是放弃本地退回在线
-- 只有本地文件不可用时才回退到在线取址；取址失败会延迟重试，避免对音源连发请求
+播放详情页的更多菜单支持分享歌曲名称、歌手等信息，分享方式可在设置中选择系统分享或复制到剪贴板。
 
-## 构建
+同一菜单中的「清理缓存」清除当前歌曲的播放链接缓存。音频、图片等资源缓存可在设置中的缓存管理区域清理。
 
-### GitHub Actions（推荐）
+## 相关资料
 
-- **推送到 `master`** 会自动构建签名 release APK，产物在 Actions 的 artifacts 里（名称为 `lx-music-x-android-r<构建号>`）
-- **推送 `v*` 标签**会额外创建 GitHub Release，附带各 ABI APK、通用 APK 和 `SHA256SUMS.txt`
-- 也可以在 Actions 页面手动触发
+- [LX Music 移动版](https://github.com/lyswhut/lx-music-mobile)
+- [上游常见问题](https://lyswhut.github.io/lx-music-doc/mobile/faq)
 
-需要配置以下 Secrets，缺任何一个都会在构建开始时明确报出缺哪个：
+上游文档供通用功能参考，本分支的功能与界面以实际版本为准。
 
-| Secret | 说明 |
-| --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | release keystore 的 base64 |
-| `ANDROID_KEYSTORE_ALIAS` | keystore 别名 |
-| `ANDROID_KEYSTORE_PASSWORD` | keystore 密码 |
-| `ANDROID_KEY_PASSWORD` | 密钥密码 |
+## 许可证与上游协议
 
-> 签名文件只应生成并保存一份。丢失后无法覆盖升级已发布的 APK，只能卸载重装。
+本项目基于 LX Music 移动版开发，沿用 [Apache License 2.0](LICENSE) 及上游补充协议；如有冲突，以上游补充协议为准。
 
-构建产物包含 `armeabi-v7a`、`arm64-v8a`、`x86`、`x86_64` 四个 ABI 以及一个通用包。
-
-### 本地构建
-
-需要先按[源码使用方法](https://lyswhut.github.io/lx-music-doc/mobile/use-source-code)配好 React Native 环境，然后在 `android/keystore.properties` 里填好签名信息（`assembleRelease` 在签名未配置时会直接报错）。
-
-```bash
-npm ci
-npm run pack          # 等价于 cd android && gradlew.bat assembleRelease
-```
-
-调试包用 `npm run dev`；其它脚本见 `package.json` 的 `scripts`。
-
-### 发布
-
-1. 改 `package.json` 的 `version` 与 `versionCode`
-2. 更新 `CHANGELOG.md`
-3. 打标签并推送：`git tag v1.9.0 && git push origin v1.9.0`
-
-## 上游资料
-
-- 桌面版：<https://github.com/lyswhut/lx-music-desktop>
-- 常见问题：<https://lyswhut.github.io/lx-music-doc/mobile/faq>
-- 播放列表机制：<https://lyswhut.github.io/lx-music-doc/mobile/faq/playlist>
-
-上游的原始发布地址只有 [GitHub](https://github.com/lyswhut/lx-music-mobile/releases)，其他渠道均为第三方转载，与上游项目无关。
-
-## 项目协议
-
-本分支是 [LX Music 移动版](https://github.com/lyswhut/lx-music-mobile) 的分支，沿用其 [Apache License 2.0](https://github.com/lyswhut/lx-music-mobile/blob/master/LICENSE) 许可证，以及上游在许可证之上补充的以下协议（如有冲突，以补充协议为准）。以下内容原样来自上游，未作改动。
-
----
+<details>
+<summary>上游补充协议原文</summary>
 
 *词语约定：本协议中的“本项目”指 LX Music（洛雪音乐）移动版项目；“使用者”指签署本协议的使用者；“官方音乐平台”指对本项目内置的包括酷我、酷狗、咪咕等音乐源的官方平台统称；“版权数据”指包括但不限于图像、音频、名字等在内的他人拥有所属版权的数据。*
 
@@ -138,3 +96,5 @@ npm run pack          # 等价于 cd android && gradlew.bat assembleRelease
 ### 九、接受协议
 
 9.1 若你使用了本项目，即代表你接受本协议。
+
+</details>
