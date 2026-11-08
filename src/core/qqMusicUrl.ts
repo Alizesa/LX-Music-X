@@ -61,11 +61,10 @@ const getDurationMs = (interval: string | null): number => {
   return Number.isFinite(durationMs) ? durationMs : 0
 }
 
-const isCompleteAudio = (media: RemoteAudioInfo, quality: LX.Quality, expectedMs: number): boolean => {
-  const expectedMime = quality === 'flac' || quality === 'flac24bit' ? 'audio/flac' : 'audio/mpeg'
+const isCompleteAudio = (media: RemoteAudioInfo, expectedMs: number): boolean => {
   const actualMs = media.durationMs ?? 0
   // MusicOne 的容差：2 秒或歌曲时长的 2%，取较大值。短歌曲按自身时长核对。
-  return media.readable && media.mime === expectedMime && expectedMs > 0 && actualMs > 0 &&
+  return media.readable && media.mime?.startsWith('audio/') === true && expectedMs > 0 && actualMs > 0 &&
     Math.abs(actualMs - expectedMs) <= Math.max(2000, expectedMs / 50)
 }
 
@@ -73,7 +72,6 @@ const isCompleteAudio = (media: RemoteAudioInfo, quality: LX.Quality, expectedMs
 export const validateQQMusicUrl = async(
   musicInfo: LX.Music.MusicInfoOnline,
   url: string,
-  quality: LX.Quality,
   onCancel?: (cancel: () => void) => void,
   isRefresh = false,
 ): Promise<void> => {
@@ -85,10 +83,11 @@ export const validateQQMusicUrl = async(
     onCancel?.(() => { controller.abort() })
     throwIfAborted(controller.signal)
     const expectedMs = getDurationMs(musicInfo.interval)
-    if (!QUALITY_SPEC[quality] || !expectedMs) throw new Error('QQ Music audio duration unavailable')
+    if (!expectedMs) throw new Error('QQ Music audio duration unavailable')
     const media = await probeRemoteAudio(url, true, { signal: controller.signal, isRefresh })
     throwIfAborted(controller.signal)
-    if (!isCompleteAudio(media, quality, expectedMs)) throw new Error('QQ Music audio is incomplete')
+    // 脚本的音质标签不代表容器格式，完整 AAC/M4A 等音频也可以正常播放。
+    if (!isCompleteAudio(media, expectedMs)) throw new Error('QQ Music audio is incomplete')
   } finally {
     controller.abort()
   }
@@ -106,6 +105,7 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
   const list: any[] = Array.isArray(data?.midurlinfo) ? data.midurlinfo : []
   const sips: string[] = Array.isArray(data?.sip) ? data.sip.filter((item: unknown) => typeof item === 'string') : []
   const spec = QUALITY_SPEC[quality]!
+  const expectedMime = spec.extension === 'flac' ? 'audio/flac' : 'audio/mpeg'
   const purls: string[] = []
   for (const info of list) {
     if (Number(info?.result ?? 0) !== 0) continue
@@ -145,7 +145,7 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
         if (done) return
         const url = selected[next++]
         const media = await probeRemoteAudio(url, true, { signal: controller.signal, isRefresh, timeoutMs: 5000 })
-        if (!done && isCompleteAudio(media, quality, expectedMs)) finish(url)
+        if (!done && media.mime === expectedMime && isCompleteAudio(media, expectedMs)) finish(url)
       }
     }
     void Promise.all(Array.from({ length: Math.min(3, selected.length) }, worker))

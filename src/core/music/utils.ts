@@ -307,7 +307,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
-      await validateQQMusicUrl(musicInfo, cachedUrl, itemQuality, registerCancel)
+      await validateQQMusicUrl(musicInfo, cachedUrl, registerCancel)
       assertActive()
       await validateUrl?.(cachedUrl)
       assertActive()

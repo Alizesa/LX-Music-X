@@ -129,11 +129,25 @@ test('a QQ CDN preview remains invalid when cached under another platform song',
 })
 
 test('unknown duration, unreadable data and wrong formats advance to the next selected source', async() => {
-  for (const invalid of [{ readable: true }, audio(0), audio(60000), audio(240000, 'text/html'), { readable: false }]) {
+  for (const invalid of [{ readable: true }, audio(0), audio(60000), audio(60000, 'audio/mp4a-latm'), audio(240000, 'text/html'), { readable: false }]) {
     const h = harness({ inspect: url => url === preview ? invalid : audio() })
     assert.equal(await h.preload.preloadMusic(song), full)
     assert.deepEqual(h.cacheReads.map(item => item.url), [full])
     assert.deepEqual(h.requests, ['user_api_a', 'user_api_b'])
+  }
+})
+
+test('full AAC and Opus source audio remains playable through fresh URLs, caching and preloading', async() => {
+  const url = 'https://audio.example/proxy/full'
+  for (const mime of ['audio/mp4a-latm', 'audio/aac', 'audio/opus']) {
+    for (const cachedUrl of [undefined, url]) {
+      const h = harness({ cachedUrl, inspect: () => audio(240000, mime), request: () => ({ url, type: '128k' }) })
+      assert.equal(await h.resolve(), url)
+      assert.equal(await h.preload.preloadMusic(song), url)
+      assert.deepEqual(h.cacheReads, [{ url, bytes: 256 * 1024 }])
+      assert.equal(h.probes.length, 1)
+      assert.equal(h.requests.length, cachedUrl ? 0 : 1)
+    }
   }
 })
 

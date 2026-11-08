@@ -29,6 +29,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Bounded, cancellable probes. Signed URLs are never logged or saved. */
 final class RemoteAudioProbe {
+  // Match src/plugins/player/playList.ts: proxies may serve different audio by User-Agent.
+  private static final String USER_AGENT = "Mozilla/5.0 (Linux; Android 10; Pixel 3) AppleWebKit/537.36 "
+      + "(KHTML, like Gecko) Chrome/79.0.3945.79 Mobile Safari/537.36";
   private final ConcurrentHashMap<String, Task> tasks = new ConcurrentHashMap<>();
   private final ThreadPoolExecutor workers = new ThreadPoolExecutor(
       4, 4, 10, TimeUnit.SECONDS, new LinkedBlockingQueue<>(12));
@@ -120,7 +123,7 @@ final class RemoteAudioProbe {
     connection.setInstanceFollowRedirects(true);
     connection.setRequestProperty("Range", "bytes=" + position + "-" + (position + size - 1));
     connection.setRequestProperty("Accept-Encoding", "identity");
-    connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+    connection.setRequestProperty("User-Agent", USER_AGENT);
     return connection;
   }
 
@@ -159,7 +162,7 @@ final class RemoteAudioProbe {
         Api23.configure(extractor, task, resolvedUrl, length);
       } else {
         // API 21/22 has no MediaDataSource; the task watchdog still bounds the wait.
-        extractor.setDataSource(resolvedUrl, Collections.emptyMap());
+        extractor.setDataSource(resolvedUrl, Collections.singletonMap("User-Agent", USER_AGENT));
       }
       task.check();
       for (int index = 0; index < extractor.getTrackCount(); index++) {

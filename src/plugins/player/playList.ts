@@ -8,6 +8,7 @@ import playerState from '@/store/player/state'
 
 const list: LX.Player.Track[] = []
 
+// 与 Android RemoteAudioProbe 的 USER_AGENT 保持一致，预加载也复用它。
 export const defaultUserAgent = 'Mozilla/5.0 (Linux; Android 10; Pixel 3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Mobile Safari/537.36'
 const httpRxp = /^(https?:\/\/.+|\/.+)/
 

@@ -75,7 +75,7 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
-      await validateQQMusicUrl(musicInfo, cachedUrl, targetQuality, registerCancel)
+      await validateQQMusicUrl(musicInfo, cachedUrl, registerCancel)
       assertActive()
       await validateUrl?.(cachedUrl)
       assertActive()

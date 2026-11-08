@@ -70,7 +70,7 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
       remember(sourceUrls, key, result.url)
       try {
         // 首次取链与缓存命中使用同一套完整性检查；预加载只能读取通过检查的音频。
-        await validateQQMusicUrl(musicInfo, result.url, result.type, registerCancel, isRefresh)
+        await validateQQMusicUrl(musicInfo, result.url, registerCancel, isRefresh)
         assertActive()
         await validateUrl?.(result.url)
       } catch (error) {
