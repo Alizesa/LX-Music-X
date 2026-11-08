@@ -8,6 +8,7 @@ import { setNowPlayTime } from '@/core/player/progress'
 import settingState from '@/store/setting/state'
 import { addPlayHistory } from '@/core/player/playHistory'
 import { parseApiSourceOrder } from '@/utils/apiSourceOrder'
+import { playbackLog, playbackLogId } from '@/utils/playbackLog'
 
 
 export default () => {
@@ -24,6 +25,7 @@ export default () => {
     loadingTimeout = BackgroundTimer.setTimeout(() => {
       loadingTimeout = null
       if (!isPlayRequested() || global.lx.isPlayedStop || playback !== playerState.playMusicInfo) return
+      playbackLog('player.buffer_timeout', () => ({ playId: playbackLogId(playback, 'play'), previousTimeoutMusicId: prevTimeoutId }))
       // 如果加载超时，则尝试刷新URL
       if (prevTimeoutId == playerState.musicInfo.id) {
         prevTimeoutId = null
@@ -108,6 +110,7 @@ export default () => {
       const current = recovery = { playback }
       const isCurrent = () => recovery === current && playerState.playMusicInfo === playback && isPlayRequested() && !global.lx.isPlayedStop
       retryNum++
+      playbackLog('player.retry', () => ({ playId: playbackLogId(playback, 'play'), retryNum, maxRetries }))
       void getPosition().then((position) => {
         if (isCurrent() && Number.isFinite(position) && position > 0) setNowPlayTime(position)
       }).catch(error => {

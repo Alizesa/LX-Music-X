@@ -31,6 +31,7 @@ const defaultSetting: LX.AppSetting = {
   'player.playbackRate': 1,
   'player.cacheSize': '1024',
   'player.preloadNext': true,
+  'player.debugLog': false,
   'player.timeoutExit': '',
   'player.timeoutExitPlayed': true,
   'player.isAutoCleanPlayedList': false,

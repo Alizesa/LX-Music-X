@@ -12,7 +12,7 @@ const load = (file, mocks = {}, globals = {}) => {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText)
   const context = { exports: {}, setTimeout, clearTimeout, console: { log() {} },
-    require(name) { assert.ok(Object.hasOwn(mocks, name), `Unexpected import ${name} in ${file}`); return mocks[name] }, ...globals }
+    require(name) { if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs'); assert.ok(Object.hasOwn(mocks, name), `Unexpected import ${name} in ${file}`); return mocks[name] }, ...globals }
   vm.runInNewContext(compiled.get(file), context, { filename: file })
   return context.exports
 }

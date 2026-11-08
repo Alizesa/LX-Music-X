@@ -90,6 +90,7 @@ const harness = async (options = {}) => {
     '@/plugins/player': plugin, '@/plugins/player/playList': playList, '@/store/player/state': { default: state }, '@/store/setting/state': { default: { setting } },
   }, { global: globals }).default(setting)
   load('src/plugins/player/service.ts', {
+    '@/store/player/state': { default: state },
     'react-native-track-player': nativeModule, './utils': plugin, '@/core/common': {}, './playList': playList,
     '@/core/player/player': player, '@/core/player/playMode': {}, '@/core/desktopLyric': {}, '@/lang': {}, '@/utils/tools': {}, '@/store/setting/state': { default: { setting } },
   }, { global: globals }).default()

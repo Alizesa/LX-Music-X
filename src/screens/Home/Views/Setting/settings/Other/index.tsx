@@ -5,6 +5,7 @@ import ResourceCache from './ResourceCache'
 import MetaCache from './MetaCache'
 import DislikeList from './DislikeList'
 import Log from './Log'
+import PlaybackLog from './PlaybackLog'
 // import MaxCache from './MaxCache'
 import { useI18n } from '@/lang'
 
@@ -17,6 +18,7 @@ export default memo(() => {
       <MetaCache />
       <DislikeList />
       <Log />
+      <PlaybackLog />
       {/* <MaxCache /> */}
     </Section>
   )

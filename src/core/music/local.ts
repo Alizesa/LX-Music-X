@@ -22,6 +22,7 @@ import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { type MusicUrlRequestOptions } from './sourcePriority'
 import { getMusicUrlCacheContext } from '@/utils/musicUrlCache'
 import settingState from '@/store/setting/state'
+import { playbackLog } from '@/utils/playbackLog'
 
 const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handler: (infos: LX.Music.MusicInfoOnline[]) => Promise<T>, assertActive: () => void = () => {}) => {
   const search = async(info: LX.Music.MusicInfoLocal, isRefresh = false) => {
@@ -120,8 +121,9 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
     const path = await getLocalFilePath(musicInfo)
     assertActive()
     // console.log(path)
-    if (path) return path
+    if (path) { playbackLog('url.local_hit', { ...options.trace, musicId: musicInfo.id }); return path }
   }
+  playbackLog('url.local_missing', { ...options.trace, musicId: musicInfo.id, isRefresh })
 
   try {
     return await getOnlineOtherSourceMusicUrlByLocal(musicInfo, isRefresh, requestOptions).then(({ url, quality, isFromCache }) => {

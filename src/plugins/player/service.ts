@@ -12,6 +12,8 @@ import { checkDesktopLyricOverlayPermission, hideDesktopLyric, showDesktopLyric 
 import { translate } from '@/lang'
 import { toast } from '@/utils/tools'
 import settingState from '@/store/setting/state'
+import playerState from '@/store/player/state'
+import { playbackLog, playbackLogId } from '@/utils/playbackLog'
 
 let isInitialized = false
 
@@ -112,6 +114,7 @@ const registerPlaybackService = async() => {
   // })
 
   TrackPlayer.addEventListener(TPEvent.PlaybackError, async(err: any) => {
+    playbackLog('native.player_error', () => ({ playId: playbackLogId(playerState.playMusicInfo, 'play'), error: err }))
     console.log('playback-error', err)
     global.app_event.error()
     global.app_event.playerError()
@@ -122,6 +125,14 @@ const registerPlaybackService = async() => {
   })
 
   TrackPlayer.addEventListener(TPEvent.PlaybackState, async info => {
+    playbackLog('native.player_state', () => ({
+      playId: playbackLogId(playerState.playMusicInfo, 'play'),
+      state: info.state,
+      isPlay: playerState.isPlay,
+      nativeMusicId: global.lx.playerTrackId?.split('__//')[0],
+      musicId: playerState.playMusicInfo.musicInfo?.id,
+      ignored: global.lx.gettingUrlId ? 'resolving_url' : isTempId() ? 'temporary_track' : false,
+    }))
     if (global.lx.gettingUrlId || isTempId()) return
     // let currentIsPlaying = false
 
@@ -156,8 +167,10 @@ const registerPlaybackService = async() => {
     // void updateMetaData(global.lx.store_playMusicInfo.musicInfo, currentIsPlaying)
   })
   TrackPlayer.addEventListener(TPEvent.PlaybackTrackChanged, async info => {
+    playbackLog('native.track_changed', () => ({ playId: playbackLogId(playerState.playMusicInfo, 'play'), previousIndex: info.track, nextIndex: info.nextTrack }))
     // console.log('PlaybackTrackChanged====>', info)
     global.lx.playerTrackId = await getCurrentTrackId()
+    playbackLog('native.track_resolved', () => ({ playId: playbackLogId(playerState.playMusicInfo, 'play'), nativeMusicId: global.lx.playerTrackId?.split('__//')[0], temporary: isEmpty() }))
     if (info.track == null) return
     if (global.lx.isPlayedStop) return handleExitApp('Timeout Exit')
 

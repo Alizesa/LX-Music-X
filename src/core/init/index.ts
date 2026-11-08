@@ -13,6 +13,7 @@ import settingState from '@/store/setting/state'
 import { checkUpdate } from '@/core/version'
 import { bootLog } from '@/utils/bootLog'
 import { cheatTip } from '@/utils/tools'
+import initPlaybackLog from './playbackLog'
 
 let isFirstPush = true
 const handlePushedHomeScreen = async() => {
@@ -40,6 +41,7 @@ export default async() => {
   commonActions.setFontSize(global.lx.fontSize)
   bootLog('Font size changed.')
   const setting = await initSetting()
+  initPlaybackLog(setting)
   bootLog('Setting inited.')
   // console.log(setting)
 

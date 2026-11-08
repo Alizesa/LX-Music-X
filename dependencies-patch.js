@@ -28,6 +28,7 @@ const patchs = [
 
     @ReactMethod
     public void isCached(String url, final Promise callback) {`,
+    '    public void preloadMusic(String requestId, String url, String userAgent, double maxBytes, final Promise callback) {',
   ],
   [
     path.join(TRACK_PLAYER_DIR, 'service/player/ExoPlayback.java'),
@@ -37,6 +38,7 @@ const patchs = [
     public void cancelPreloadMusic(String requestId) {}
 
     public abstract void isCached(String url, Promise promise);`,
+    '    public void preloadMusic(String requestId, String url, String userAgent, double maxBytes, Promise promise)',
   ],
   [
     path.join(TRACK_PLAYER_DIR, 'service/player/LocalPlayback.java'),
@@ -66,6 +68,33 @@ const patchs = [
     }
 
     public void isCached(String url, Promise promise) {`,
+    '    public void preloadMusic(String requestId, String url, String userAgent, double maxBytes, Promise promise)',
+  ],
+  [
+    path.join(TRACK_PLAYER_DIR, 'module/MusicModule.java'),
+    '    public void preloadMusic(String requestId, String url, String userAgent, double maxBytes, final Promise callback) {',
+    `    public void setPreloadDebugLogging(boolean enabled) {
+        com.guichaguri.trackplayer.service.player.PlaybackDebugLogger.setEnabled(getReactApplicationContext(), enabled);
+    }
+
+    @ReactMethod
+    public void preloadMusic(String requestId, String url, String userAgent, double maxBytes, final Promise callback) {`,
+  ],
+  [
+    path.join(TRACK_PLAYER_DIR, 'module/MusicModule.java'),
+    '        waitForConnection(() -> binder.getPlayback().preloadMusic(requestId, url, userAgent, maxBytes, callback));',
+    `        com.guichaguri.trackplayer.service.player.PlaybackDebugLogger.event(requestId, "received", "", 0, (long) maxBytes, 0);
+        waitForConnection(() -> binder.getPlayback().preloadMusic(requestId, url, userAgent, maxBytes, callback));`,
+  ],
+  [
+    path.join(TRACK_PLAYER_DIR, 'service/player/ExoPlayback.java'),
+    '    public void preloadMusic(String requestId, String url, String userAgent, double maxBytes, Promise promise) { promise.resolve(null); }',
+    '    public void preloadMusic(String requestId, String url, String userAgent, double maxBytes, Promise promise) { PlaybackDebugLogger.event(requestId, "unavailable", "unsupported_playback", 0, (long) maxBytes, 0); promise.resolve(null); }',
+  ],
+  [
+    path.join(TRACK_PLAYER_DIR, 'service/player/LocalPlayback.java'),
+    '        if (audioPreloader == null) { promise.resolve(null); return; }',
+    '        if (audioPreloader == null) { PlaybackDebugLogger.event(requestId, "unavailable", "cache_not_initialized", 0, (long) maxBytes, 0); promise.resolve(null); return; }',
   ],
   [
     path.join(TRACK_PLAYER_DIR, 'service/player/LocalPlayback.java'),
@@ -258,7 +287,7 @@ const toLF = str => str.replace(/\r\n/g, '\n')
 
 ;(async() => {
   let failed = false
-  for (const [filePath, fromStr, toStr] of patchs) {
+  for (const [filePath, fromStr, toStr, installedMarker] of patchs) {
     const label = filePath.replace(rootPath, '')
     const from = toLF(fromStr)
     const to = toLF(toStr)
@@ -266,7 +295,7 @@ const toLF = str => str.replace(/\r\n/g, '\n')
       const file = toLF(await fs.promises.readFile(filePath, 'utf8'))
       // 先看打过没：重复装依赖时会再打一次，覆盖内容里带着原代码，
       // 不先判重的话会一层层往上叠（字段、局部变量重复声明，直接编译不过）
-      if (file.includes(to)) {
+      if (file.includes(to) || (installedMarker && file.includes(installedMarker))) {
         console.log(`Skipped ${label} (already patched)`)
         continue
       }
@@ -287,6 +316,7 @@ const toLF = str => str.replace(/\r\n/g, '\n')
   try {
     await fs.promises.copyFile(path.join(rootPath, 'patches/MetadataWriter.java'), path.join(MEDIA_METADATA_DIR, 'MetadataWriter.java'))
     await fs.promises.copyFile(path.join(rootPath, 'patches/AudioPreloader.java'), path.join(TRACK_PLAYER_DIR, 'service/player/AudioPreloader.java'))
+    await fs.promises.copyFile(path.join(rootPath, 'patches/PlaybackDebugLogger.java'), path.join(TRACK_PLAYER_DIR, 'service/player/PlaybackDebugLogger.java'))
   } catch (error) {
     process.exitCode = 1
     console.error('Installing MetadataWriter failed:', error.message)

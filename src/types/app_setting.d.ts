@@ -170,6 +170,8 @@ declare global {
       'player.cacheSize': string
       /** 在当前歌曲缓冲充足时预缓存下一首 */
       'player.preloadNext': boolean
+      /** 保存播放与预加载诊断日志，重启后继续记录 */
+      'player.debugLog': boolean
 
       /**
        * 定时暂停播放-倒计时时间

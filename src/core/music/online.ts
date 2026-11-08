@@ -9,6 +9,7 @@ import { isMusicUrlFailed, markMusicUrlFailed, type ValidateMusicUrl } from './s
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { validateQQMusicUrl } from '@/core/qqMusicUrl'
 import { getMusicUrlCacheContext } from '@/utils/musicUrlCache'
+import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
 
 import {
   buildLyricInfo,
@@ -44,7 +45,7 @@ export const setPic = (datas: {
  */
 
 
-export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, onToggleSource = () => {}, urlSourceOrder, onCancel, validateUrl, rejectedUrls, cacheContext = getMusicUrlCacheContext(settingState.setting, urlSourceOrder) }: {
+export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, onToggleSource = () => {}, urlSourceOrder, onCancel, validateUrl, rejectedUrls, cacheContext = getMusicUrlCacheContext(settingState.setting, urlSourceOrder), trace }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality?: LX.Quality
   isRefresh: boolean
@@ -56,6 +57,7 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   validateUrl?: ValidateMusicUrl
   rejectedUrls?: ReadonlySet<string>
   cacheContext?: string
+  trace?: PlaybackLogContext
 }): Promise<string> => {
   let cancelled = false
   let currentCancel: (() => void) | undefined
@@ -73,24 +75,30 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   //   // return Promise.reject(new Error('该歌曲没有可播放的音频'))
   // }
   const targetQuality = quality ?? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
+  playbackLog('url.cache_lookup', () => ({ ...trace, musicId: musicInfo.id, quality: targetQuality }))
   const cachedUrl = await getStoreMusicUrl(musicInfo, targetQuality, cacheContext)
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
+      playbackLog('url.cache_validate', { ...trace, musicId: musicInfo.id })
       await validateQQMusicUrl(musicInfo, cachedUrl, registerCancel)
       assertActive()
       await validateUrl?.(cachedUrl)
       assertActive()
+      playbackLog('url.cache_hit', () => ({ ...trace, musicId: musicInfo.id, url: cachedUrl }))
       return cachedUrl
     } catch (error) {
+      playbackLog('url.cache_rejected', () => ({ ...trace, error }))
       assertActive()
       if (isRequestCancelled(error)) throw error
       markMusicUrlFailed(cachedUrl)
     }
   }
 
-  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel: registerCancel, validateUrl, rejectedUrls, cacheContext }).then(({ url, quality: actualQuality, musicInfo: targetMusicInfo, isFromCache }) => {
+  playbackLog('url.cache_miss', () => ({ ...trace, musicId: musicInfo.id, isRefresh }))
+  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel: registerCancel, validateUrl, rejectedUrls, cacheContext, trace }).then(({ url, quality: actualQuality, musicInfo: targetMusicInfo, isFromCache }) => {
     assertActive()
+    playbackLog('url.resolved', () => ({ ...trace, musicId: musicInfo.id, actualMusicId: targetMusicInfo.id, quality: actualQuality, url, isFromCache }))
     if (cacheContext !== getMusicUrlCacheContext(settingState.setting, urlSourceOrder)) return url
     if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, actualQuality, url, cacheContext)
     void saveMusicUrl(musicInfo, actualQuality, url, cacheContext)

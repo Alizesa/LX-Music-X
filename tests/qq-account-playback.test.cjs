@@ -13,6 +13,7 @@ const load = (file, mocks = {}) => {
     exports: {},
     AbortController,
     require: name => {
+      if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs')
       if (name === '@/utils/abort') return abort
       if (name === 'react-native-background-timer' && !Object.hasOwn(mocks, name)) return { default: { setTimeout, clearTimeout } }
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${name}`)

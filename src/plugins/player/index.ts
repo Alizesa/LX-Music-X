@@ -1,5 +1,6 @@
 import TrackPlayer from 'react-native-track-player'
 import { updateOptions, setVolume, setPlaybackRate, migratePlayerCache } from './utils'
+import { playbackLog } from '@/utils/playbackLog'
 
 let initializing: Promise<void> | null = null
 
@@ -14,6 +15,7 @@ const initial = async({ volume, playRate, cacheSize, isHandleAudioFocus, isEnabl
   if (global.lx.playerStatus.isInitialized) return
   global.lx.playerStatus.isIniting = true
   initializing = (async() => {
+    playbackLog('player.initialization_start', { cacheMiB: cacheSize, volume, playRate, isHandleAudioFocus, isEnableAudioOffload })
     await migratePlayerCache()
     try {
       await TrackPlayer.setupPlayer({
@@ -29,7 +31,9 @@ const initial = async({ volume, playRate, cacheSize, isHandleAudioFocus, isEnabl
       await setVolume(volume)
       await setPlaybackRate(playRate)
       global.lx.playerStatus.isInitialized = true
+      playbackLog('player.initialization_done')
     } catch (error) {
+      playbackLog('player.initialization_failed', { error })
       // 配置阶段失败也要清理已创建的原生播放器，让下一次初始化可以重试。
       await TrackPlayer.destroy().catch(() => {})
       throw error

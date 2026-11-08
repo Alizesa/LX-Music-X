@@ -21,6 +21,7 @@ import {
 import { getLocalFilePath } from '@/utils/music'
 import { LIST_IDS } from '@/config/constant'
 import { type ValidateMusicUrl } from './sourcePriority'
+import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
 
 
 export const getMusicUrl = async({
@@ -33,6 +34,7 @@ export const getMusicUrl = async({
   onCancel,
   validateUrl,
   rejectedUrls,
+  trace,
 }: {
   musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   isRefresh?: boolean
@@ -45,20 +47,22 @@ export const getMusicUrl = async({
   onCancel?: (cancel: () => void) => void
   validateUrl?: ValidateMusicUrl
   rejectedUrls?: ReadonlySet<string>
+  trace?: PlaybackLogContext
 }): Promise<string> => {
+  playbackLog('url.request', () => ({ ...trace, musicId: musicInfo.id, quality, isRefresh, urlSourceOrder }))
   if ('progress' in musicInfo) {
-    return getDownloadMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource, quality, urlSourceOrder, onCancel, validateUrl, rejectedUrls })
+    return getDownloadMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource, quality, urlSourceOrder, onCancel, validateUrl, rejectedUrls, trace })
   } else if (musicInfo.source == 'local') {
-    return getLocalMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource, quality, urlSourceOrder, onCancel, validateUrl, rejectedUrls })
+    return getLocalMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource, quality, urlSourceOrder, onCancel, validateUrl, rejectedUrls, trace })
   } else {
     if (!isRefresh) {
       const localMusicInfo = await findLocalMusicInfo(musicInfo)
       if (localMusicInfo) {
         const localPath = await getLocalFilePath(localMusicInfo)
-        if (localPath) return localPath
+        if (localPath) { playbackLog('url.local_hit', { ...trace, musicId: musicInfo.id }); return localPath }
       }
     }
-    return getOnlineMusicUrl({ musicInfo, isRefresh, quality, onToggleSource, allowToggleSource, urlSourceOrder, onCancel, validateUrl, rejectedUrls })
+    return getOnlineMusicUrl({ musicInfo, isRefresh, quality, onToggleSource, allowToggleSource, urlSourceOrder, onCancel, validateUrl, rejectedUrls, trace })
   }
 }
 

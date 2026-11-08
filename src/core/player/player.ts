@@ -33,6 +33,7 @@ import { parkRecommendQueue } from '@/core/qqMusicRecommendSession'
 import { releaseLocalList, retainLocalList } from '@/core/localList'
 import { cancelPreload, takePreloadedMusicUrl } from './preload'
 import { markMusicUrlFailed } from '@/core/music/sourcePriority'
+import { newPlaybackLogId, playbackLog, playbackLogId, registerPlaybackLogSnapshot } from '@/utils/playbackLog'
 
 // import { checkMusicFileAvailable } from '@renderer/utils/music'
 
@@ -120,8 +121,22 @@ interface PlaybackUrlRequest {
   initialization: Promise<boolean>
 }
 let latestUrlRequest: PlaybackUrlRequest | null = null
+registerPlaybackLogSnapshot('player', () => ({
+  playId: playbackLogId(playerState.playMusicInfo, 'play'),
+  musicId: playerState.playMusicInfo.musicInfo?.id,
+  isPlay: playerState.isPlay,
+  playRequested,
+  initialized: global.lx.playerStatus?.isInitialized,
+  listId: playerState.playInfo.playerListId,
+  index: playerState.playInfo.playerPlayIndex,
+  resolving: !!global.lx.gettingUrlId,
+  loadingResource: latestUrlRequest?.loading ?? false,
+  nativeMusicId: global.lx.playerTrackId?.split('__//')[0],
+  selectionGeneration,
+}))
 
-const invalidateMusicUrl = () => {
+const invalidateMusicUrl = (reason = 'playback_changed') => {
+  if (latestUrlRequest) playbackLog('player.request_invalidated', () => ({ playId: playbackLogId(latestUrlRequest!.playback, 'play'), reason, getting: latestUrlRequest!.getting, loading: latestUrlRequest!.loading }))
   musicUrlGeneration++
   latestUrlRequest = null
   const cancel = cancelMusicUrl
@@ -135,6 +150,9 @@ const invalidateMusicUrl = () => {
 }
 
 const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, isRetryed = false): Promise<string | null> => {
+  const startedAt = Date.now()
+  const trace = { playId: playbackLogId(playerState.playMusicInfo, 'play'), urlId: newPlaybackLogId('url') }
+  playbackLog('player.url_start', () => ({ ...trace, musicId: musicInfo.id, isRefresh, isRetryed }))
   // this.musicInfo.url = await getMusicPlayUrl(targetSong, type)
   // 切歌/重试时取消上一次仍在途的取链；旧请求返回后仍由 diffCurrentMusicInfo 丢弃结果
   const generation = ++musicUrlGeneration
@@ -162,13 +180,14 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
     if (generation === musicUrlGeneration) cancelMusicUrl = cancel
     else cancel()
   }
-  const preloaded = isRefresh ? null : takePreloadedMusicUrl(musicInfo, setCancel)
+  const preloaded = isRefresh ? null : takePreloadedMusicUrl(musicInfo, setCancel, trace.playId)
   return (preloaded ?? (toggleMusicInfo ? getMusicUrl({
     musicInfo: toggleMusicInfo,
     isRefresh,
     allowToggleSource: false,
     onCancel: setCancel,
     rejectedUrls: failedPlaybackUrls,
+    trace,
   }) : Promise.reject(new Error('not found')))).catch(async err => {
     // 取消（切歌/重试）不是「换源失败」：否则会为同一首旧歌再打一次
     // 无法取消的请求，结果随后也会被 diffCurrentMusicInfo 丢掉
@@ -182,12 +201,18 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
       },
       onCancel: setCancel,
       rejectedUrls: failedPlaybackUrls,
+      trace,
     })
   }).then(url => {
-    if (generation !== musicUrlGeneration || global.lx.isPlayedStop || diffCurrentMusicInfo(musicInfo)) return null
+    if (generation !== musicUrlGeneration || global.lx.isPlayedStop || diffCurrentMusicInfo(musicInfo)) {
+      playbackLog('player.url_discarded', () => ({ ...trace, generation, currentGeneration: musicUrlGeneration }))
+      return null
+    }
 
+    playbackLog('player.url_ready', () => ({ ...trace, url, elapsedMs: Date.now() - startedAt }))
     return url
   }).catch(async err => {
+    playbackLog('player.url_error', () => ({ ...trace, error: err, elapsedMs: Date.now() - startedAt }))
     // console.log('err', err.message)
     if (generation !== musicUrlGeneration || !playRequested || global.lx.isPlayedStop ||
       diffCurrentMusicInfo(musicInfo) ||
@@ -224,14 +249,19 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
     if (!url || !isCurrent()) return
     lastMusicUrl = { musicId: musicInfo.id, url }
     request.loading = true
+    playbackLog('player.resource_start', () => ({ playId: playbackLogId(playback, 'play'), musicId: musicInfo.id, url, position: playerState.progress.nowPlayTime }))
     setResource(musicInfo, url, playerState.progress.nowPlayTime, {
       isCurrent,
       shouldPlay: () => playRequested && !global.lx.isPlayedStop,
-      onReady() { request.loading = false },
+      onReady() {
+        request.loading = false
+        playbackLog('player.resource_ready', () => ({ playId: playbackLogId(playback, 'play'), playRequested }))
+      },
       onError(error) {
         request.loading = false
         if (!isCurrent()) return
         console.warn(error)
+        playbackLog('player.resource_error', () => ({ playId: playbackLogId(playback, 'play'), error }))
         global.app_event.error()
         if (playRequested) global.app_event.playerError()
       },
@@ -258,7 +288,7 @@ export const handleMusicSourceChange = () => {
   if (request.sourceConfig === sourceConfig() && request.initialization === global.lx.apiInitPromise[0]) return
   const musicInfo = playerState.playMusicInfo.musicInfo
   if (!musicInfo) return
-  invalidateMusicUrl()
+  invalidateMusicUrl('source_changed')
   setMusicUrl(musicInfo)
 }
 
@@ -343,6 +373,7 @@ const handlePlay = async() => {
   const playMusicInfo = playerState.playMusicInfo
   const musicInfo = playMusicInfo.musicInfo
   if (!musicInfo) return
+  playbackLog('player.selected', () => ({ playId: playbackLogId(playMusicInfo, 'play'), musicId: musicInfo.id, name: 'progress' in musicInfo ? musicInfo.metadata.musicInfo.name : musicInfo.name, restore: !!global.lx.restorePlayInfo }))
   const generation = selectionGeneration
   const isCurrent = () => playMusicInfo === playerState.playMusicInfo && generation === selectionGeneration
   invalidateMusicUrl()
@@ -418,7 +449,7 @@ export const playList = async(listId: string, index: number) => {
   try {
     if (!isCurrentSelection()) return
     const list = listId === LIST_IDS.PLAY_QUEUE ? getPlayQueue().map(item => item.musicInfo) : getList(listId)
-    if (!list[index]) return
+    if (!list[index]) { playbackLog('player.selection_rejected', { listId, index, reason: 'invalid_index' }); return }
     const prevListId = playerState.playInfo.playerListId
     let saved: Promise<void> | undefined
     if (listId != LIST_IDS.PLAY_QUEUE) {
@@ -806,6 +837,7 @@ export const playPrev = async(isAutoToggle = false): Promise<void> => {
  * 恢复播放
  */
 export const play = () => {
+  playbackLog('player.play_requested', () => ({ playId: playbackLogId(playerState.playMusicInfo, 'play'), musicId: playerState.playMusicInfo.musicInfo?.id }))
   if (playerState.playMusicInfo.musicInfo == null) return
   playRequested = true
   global.lx.isPlayedStop = false
@@ -824,6 +856,7 @@ export const play = () => {
  * 暂停播放
  */
 export const pause = async() => {
+  playbackLog('player.pause_requested', () => ({ playId: playbackLogId(playerState.playMusicInfo, 'play'), isPlay: playerState.isPlay }))
   const notify = playRequested || playerState.isPlay
   playRequested = false
   clearLoadTimeout()
@@ -837,9 +870,10 @@ export const pause = async() => {
  * 停止播放
  */
 export const stop = async() => {
+  playbackLog('player.stop_requested', () => ({ playId: playbackLogId(playerState.playMusicInfo, 'play') }))
   const generation = ++selectionGeneration
   playRequested = false
-  invalidateMusicUrl()
+  invalidateMusicUrl('stop')
   await setStop()
   setTimeout(() => {
     if (generation === selectionGeneration && !playRequested) global.app_event.stop()

@@ -1,5 +1,6 @@
 package com.guichaguri.trackplayer.service.player;
 
+import android.os.SystemClock;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.C;
 import androidx.media3.datasource.DataSpec;
@@ -29,11 +30,14 @@ public final class AudioPreloader {
 
     private static final class Task {
         final String id;
+        final long startedAt = SystemClock.elapsedRealtime();
         volatile boolean cancelled;
         Thread worker;
         Task(String id) { this.id = id; }
         synchronized void cancel() {
+            if (cancelled) return;
             cancelled = true;
+            PlaybackDebugLogger.event(id, "cancel_requested", "", 0, 0, SystemClock.elapsedRealtime() - startedAt);
             if (worker != null) worker.interrupt();
         }
     }
@@ -42,6 +46,7 @@ public final class AudioPreloader {
         this.cache = cache;
         // 给当前播放保留空间；超大音频只预取可容纳的部分。
         this.limit = Math.min(64L * 1024 * 1024, maxCacheSize / 2);
+        PlaybackDebugLogger.event("", "cache_initialized", "", 0, limit, 0);
     }
 
     public static void awaitRelease() {
@@ -52,16 +57,22 @@ public final class AudioPreloader {
     }
 
     public synchronized void preload(String id, String url, String userAgent, double maxBytes, Promise promise) {
-        if (closed || limit <= 0) { promise.resolve(null); return; }
+        if (closed || limit <= 0) {
+            PlaybackDebugLogger.event(id, "unavailable", closed ? "closed" : "budget_zero", 0, limit, 0);
+            promise.resolve(null);
+            return;
+        }
         if (active != null) active.cancel();
         Task task = new Task(id);
         active = task;
         long bytes = maxBytes > 0 ? Math.min(limit, (long) maxBytes) : limit;
+        PlaybackDebugLogger.event(id, "queued", "", 0, bytes, 0);
         executor.execute(() -> run(task, url, userAgent, bytes, promise));
     }
 
     private void run(Task task, String url, String userAgent, long bytes, Promise promise) {
         synchronized (task) { task.worker = Thread.currentThread(); }
+        PlaybackDebugLogger.event(task.id, "worker_started", "", 0, bytes, SystemClock.elapsedRealtime() - task.startedAt);
         try {
             if (task.cancelled) throw new IOException("cancelled");
             DefaultHttpDataSource.Factory upstream = new DefaultHttpDataSource.Factory()
@@ -79,20 +90,28 @@ public final class AudioPreloader {
                     .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE).createDataSource();
             long start = Math.max(0, cache.getCachedLength(url, 0, bytes));
             long knownLength = ContentMetadata.getContentLength(cache.getContentMetadata(url));
+            PlaybackDebugLogger.event(task.id, "cache_checked", "", start, bytes, SystemClock.elapsedRealtime() - task.startedAt);
             if (start < bytes && !(knownLength >= 0 && start >= knownLength)) {
                 // 显式限制读取量。CacheWriter 在有界请求失败时会重试无界请求，可能突破预取预算。
                 DataSpec spec = new DataSpec.Builder().setUri(url).setPosition(start)
                         .setFlags(DataSpec.FLAG_ALLOW_CACHE_FRAGMENTATION).build();
                 try {
                     if (task.cancelled) throw new IOException("cancelled");
+                    PlaybackDebugLogger.event(task.id, "read_open", "", start, bytes, SystemClock.elapsedRealtime() - task.startedAt);
                     source.open(spec);
+                    PlaybackDebugLogger.event(task.id, "read_started", "", start, bytes, SystemClock.elapsedRealtime() - task.startedAt);
                     byte[] buffer = new byte[32 * 1024];
                     long position = start;
+                    long lastProgress = SystemClock.elapsedRealtime();
                     while (position < bytes) {
                         if (task.cancelled) throw new IOException("cancelled");
                         int read = source.read(buffer, 0, (int) Math.min(buffer.length, bytes - position));
                         if (read == C.RESULT_END_OF_INPUT) break;
                         position += read;
+                        if (PlaybackDebugLogger.isEnabled() && SystemClock.elapsedRealtime() - lastProgress >= 5000) {
+                            lastProgress = SystemClock.elapsedRealtime();
+                            PlaybackDebugLogger.event(task.id, "read_progress", "", position, bytes, lastProgress - task.startedAt);
+                        }
                     }
                 } finally { source.close(); }
             }
@@ -100,15 +119,19 @@ public final class AudioPreloader {
             long cached = cache.getCachedBytes(url, 0, bytes);
             if (cached <= 0) throw new IOException("Empty audio resource");
             long length = ContentMetadata.getContentLength(cache.getContentMetadata(url));
+            boolean complete = length > 0 && cache.isCached(url, 0, length);
             WritableMap result = Arguments.createMap();
             result.putDouble("cachedBytes", cached);
-            result.putBoolean("complete", length > 0 && cache.isCached(url, 0, length));
+            result.putBoolean("complete", complete);
+            PlaybackDebugLogger.event(task.id, "ready", complete ? "complete" : cached >= bytes ? "budget_reached" : "partial", cached, bytes, SystemClock.elapsedRealtime() - task.startedAt);
             promise.resolve(result);
         } catch (Exception error) {
             if (!task.cancelled && error instanceof Cache.CacheException) {
                 // 磁盘缓存不可写不代表音源失效，前台仍可以正常串流播放。
+                PlaybackDebugLogger.event(task.id, "unavailable", "cache_io_error", 0, bytes, SystemClock.elapsedRealtime() - task.startedAt);
                 promise.resolve(null);
             } else {
+                PlaybackDebugLogger.event(task.id, task.cancelled ? "cancelled" : "failed", error.getClass().getSimpleName(), 0, bytes, SystemClock.elapsedRealtime() - task.startedAt);
                 promise.reject(task.cancelled ? "preload_cancelled" : "preload_failed", error.getMessage(), error);
             }
         } finally {
@@ -138,6 +161,7 @@ public final class AudioPreloader {
     public synchronized void release() {
         if (closed) return;
         closed = true;
+        PlaybackDebugLogger.event("", "cache_released", "", 0, limit, 0);
         if (active != null) active.cancel();
         // 先关闭读写任务，再释放缓存目录的锁；快速重新初始化也要等待这一步。
         pendingRelease = executor.submit(() -> cache.release());

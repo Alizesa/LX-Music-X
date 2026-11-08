@@ -4,6 +4,7 @@ import { resolveApiSourceOrder } from '@/utils/apiSourceOrder'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { requestUserApiMusicUrl } from '@/core/userApiRuntime'
 import { validateQQMusicUrl } from '@/core/qqMusicUrl'
+import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
 
 const COOLDOWN = 30_000
 const failedUrls = new Map<string, number>()
@@ -33,6 +34,7 @@ export interface MusicUrlRequestOptions {
   rejectedUrls?: ReadonlySet<string>
   /** 内部换源沿用同一次取址的缓存上下文。 */
   cacheContext?: string
+  trace?: PlaybackLogContext
 }
 export const getEnabledMusicSourceIds = () => {
   const setting = settingState.setting
@@ -40,7 +42,7 @@ export const getEnabledMusicSourceIds = () => {
 }
 
 /** 一轮只依次请求已勾选的脚本；失败冷却按歌曲/音质隔离，不误伤这个源的其他歌曲。 */
-export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, validateUrl, rejectedUrls, allowQualityFallback = true, isRefresh = false }: {
+export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, validateUrl, rejectedUrls, allowQualityFallback = true, isRefresh = false, trace }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality: LX.Quality
   onCancel?: (cancel: () => void) => void
@@ -49,8 +51,10 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
   /** 播放允许降级；下载显式指定音质时必须按原音质继续尝试备用源。 */
   allowQualityFallback?: boolean
   isRefresh?: boolean
+  trace?: PlaybackLogContext
 }): Promise<{ url: string, quality: LX.Quality, musicInfo: LX.Music.MusicInfoOnline, isFromCache: boolean }> => {
   const ids = getEnabledMusicSourceIds()
+  playbackLog('url.sources', () => ({ ...trace, musicId: musicInfo.id, sources: ids, quality, isRefresh }))
   let cancelled = false
   let currentCancel: (() => void) | undefined
   onCancel?.(() => { cancelled = true; currentCancel?.() })
@@ -62,19 +66,24 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
   for (const apiId of ids) {
     assertActive()
     const key = `${apiId}:${musicInfo.id}:${quality}:${allowQualityFallback ? 'fallback' : 'exact'}`
-    if ((failedSources.get(key) ?? 0) > Date.now()) continue
+    if ((failedSources.get(key) ?? 0) > Date.now()) { playbackLog('url.source_skip', { ...trace, apiId, reason: 'cooldown', until: failedSources.get(key) }); continue }
     const previousUrl = sourceUrls.get(key)
-    if (previousUrl && rejectedUrls?.has(previousUrl)) continue
+    if (previousUrl && rejectedUrls?.has(previousUrl)) { playbackLog('url.source_skip', { ...trace, apiId, reason: 'rejected_url' }); continue }
+    const startedAt = Date.now()
     try {
-      const result = await requestUserApiMusicUrl(apiId, musicInfo, quality, registerCancel, allowQualityFallback)
+      playbackLog('url.source_start', () => ({ ...trace, apiId, musicId: musicInfo.id, quality }))
+      const result = await requestUserApiMusicUrl(apiId, musicInfo, quality, registerCancel, allowQualityFallback, trace)
       assertActive()
       if (typeof result.url != 'string' || !/^https?:\/\//i.test(result.url) || isMusicUrlFailed(result.url) || rejectedUrls?.has(result.url)) throw new Error('Invalid music URL')
       remember(sourceUrls, key, result.url)
+      playbackLog('url.source_resolved', () => ({ ...trace, apiId, url: result.url, quality: result.type, elapsedMs: Date.now() - startedAt }))
       try {
         // 首次取链与缓存命中使用同一套完整性检查；预加载只能读取通过检查的音频。
+        playbackLog('url.validate_start', () => ({ ...trace, apiId, musicSource: musicInfo.source }))
         await validateQQMusicUrl(musicInfo, result.url, registerCancel, isRefresh)
         assertActive()
         await validateUrl?.(result.url)
+        playbackLog('url.validate_done', { ...trace, apiId })
       } catch (error) {
         assertActive()
         if (!isRequestCancelled(error)) markMusicUrlFailed(result.url)
@@ -84,6 +93,7 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
       failedSources.delete(key)
       return { url: result.url, quality: result.type, musicInfo, isFromCache: false }
     } catch (error) {
+      playbackLog('url.source_failed', () => ({ ...trace, apiId, error, elapsedMs: Date.now() - startedAt, cancelled: cancelled || isRequestCancelled(error) }))
       assertActive()
       if (isRequestCancelled(error)) throw error
       remember(failedSources, key, Date.now() + COOLDOWN)

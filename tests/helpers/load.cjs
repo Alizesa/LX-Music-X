@@ -14,6 +14,7 @@ const load = (file, mocks = {}, globals = {}) => {
     exports: {}, AbortController, Buffer, setTimeout, clearTimeout,
     console: { log() {}, warn() {}, error() {} },
     require: name => {
+      if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./playback-log.cjs')
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${file}: ${name}`)
       return mocks[name]
     },
