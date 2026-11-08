@@ -18,7 +18,9 @@ const remember = <T>(map: Map<string, T>, key: string, value: T) => {
 }
 
 export const isMusicUrlFailed = (url: string) => (failedUrls.get(url) ?? 0) > Date.now()
-export const markMusicUrlFailed = (url: string) => {
+const isAudioProbeFailure = (error: unknown) => (error as { isAudioProbeFailure?: boolean } | null)?.isAudioProbeFailure === true
+export const markMusicUrlFailed = (url: string, error?: unknown) => {
+  if (isAudioProbeFailure(error)) return
   if (!/^https?:\/\//i.test(url)) return
   const until = Date.now() + COOLDOWN
   remember(failedUrls, url, until)
@@ -86,17 +88,17 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
         playbackLog('url.validate_done', { ...trace, apiId })
       } catch (error) {
         assertActive()
-        if (!isRequestCancelled(error)) markMusicUrlFailed(result.url)
+        if (!isRequestCancelled(error)) markMusicUrlFailed(result.url, error)
         throw error
       }
       assertActive()
       failedSources.delete(key)
       return { url: result.url, quality: result.type, musicInfo, isFromCache: false }
     } catch (error) {
-      playbackLog('url.source_failed', () => ({ ...trace, apiId, error, elapsedMs: Date.now() - startedAt, cancelled: cancelled || isRequestCancelled(error) }))
+      playbackLog('url.source_failed', () => ({ ...trace, apiId, error, elapsedMs: Date.now() - startedAt, cancelled: cancelled || isRequestCancelled(error), cooldown: !cancelled && !isRequestCancelled(error) && !isAudioProbeFailure(error) }))
       assertActive()
       if (isRequestCancelled(error)) throw error
-      remember(failedSources, key, Date.now() + COOLDOWN)
+      if (!isAudioProbeFailure(error)) remember(failedSources, key, Date.now() + COOLDOWN)
     }
   }
   assertActive()

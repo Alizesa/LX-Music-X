@@ -182,7 +182,7 @@ export const getOnlineOtherSourceMusicUrlByLocal = async(musicInfo: LX.Music.Mus
     } catch (error) {
       assertActive()
       if (isRequestCancelled(error)) throw error
-      markMusicUrlFailed(cachedUrl)
+      markMusicUrlFailed(cachedUrl, error)
     }
   }
 
@@ -311,7 +311,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
     } catch (error) {
       assertActive()
       if (isRequestCancelled(error)) throw error
-      markMusicUrlFailed(cachedUrl)
+      markMusicUrlFailed(cachedUrl, error)
     }
   }
 

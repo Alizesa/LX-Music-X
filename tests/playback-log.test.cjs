@@ -139,6 +139,17 @@ test('an account candidate batch deadline is recorded before the web channel tak
   assert.equal(h.cancelled.length, 1)
 })
 
+test('per-song QQ response errors are distinct from an empty successful response or a media probe failure', async() => {
+  const h = audioDiagnosticsHarness({ response: () => ({ code: 0, req_1: { data: { midurlinfo: [{ result: 104003, purl: '' }] } } }) })
+  assert.equal(await h.qq.getQQMusicUrlByAccount(diagnosticSong, '128k', '128k'), null)
+  assert.deepEqual(h.channels, ['23', '20'])
+  assert.equal(h.probes.length, 0)
+  const candidates = (await h.entries()).filter(entry => entry.event === 'url.account_candidates').map(entry => entry.data)
+  assert.deepEqual(candidates.map(item => [item.platform, item.reason, item.resultCodes]), [
+    ['23', 'item_rejected', [104003]], ['20', 'item_rejected', [104003]],
+  ])
+})
+
 test('disabled logging does not evaluate payloads, create timers or touch disk', () => {
   const h = logHarness()
   let evaluated = 0

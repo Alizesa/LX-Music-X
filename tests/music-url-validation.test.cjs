@@ -167,6 +167,50 @@ test('unknown duration, unreadable data and wrong formats advance to the next se
   }
 })
 
+test('preload probe failures do not cool down every custom script before foreground playback', async() => {
+  for (const reason of ['byte_limit', 'metadata_error', 'timeout']) {
+    let recovered = false
+    const urls = ['user_api_a', 'user_api_b', 'user_api_c'].map(id => `https://audio.example/${id}`)
+    const h = harness({
+      request: id => ({ url: `https://audio.example/${id}`, type: '128k' }),
+      inspect: () => recovered ? audio() : { readable: true, reason },
+    })
+    h.setting['common.apiSourceOrder'] = '["user_api_a","user_api_b","user_api_c"]'
+    h.setting['player.urlSource'] = 'account'
+    h.setting['player.playQuality'] = '320k'
+    await assert.rejects(h.preload.preloadMusic(song), /toggle_source_failed/)
+    assert.deepEqual(h.requests, ['user_api_a', 'user_api_b', 'user_api_c'])
+    assert.ok(urls.every(url => !h.priority.isMusicUrlFailed(url)))
+    assert.equal(h.writes.length, 0)
+    assert.equal(h.cacheReads.length, 0)
+    recovered = true
+    // Foreground and preload must use the same quality/fallback key, as on the device.
+    assert.equal(await h.resolve({ quality: undefined }), urls[0])
+    assert.deepEqual(h.requests, ['user_api_a', 'user_api_b', 'user_api_c', 'user_api_a'])
+    assert.deepEqual(h.writes.map(item => item.url), [urls[0]])
+  }
+})
+
+test('a cached URL remains eligible for revalidation after a local metadata failure', async() => {
+  let recovered = false
+  const h = harness({ cachedUrl: full, inspect: () => recovered ? audio() : { readable: true, reason: 'byte_limit' } })
+  await assert.rejects(h.resolve(), /toggle_source_failed/)
+  assert.equal(h.priority.isMusicUrlFailed(full), false)
+  assert.deepEqual(h.requests, ['user_api_a', 'user_api_b'])
+  recovered = true
+  assert.equal(await h.resolve(), full)
+  assert.deepEqual(h.requests, ['user_api_a', 'user_api_b'])
+  assert.equal(h.writes.length, 0)
+})
+
+test('an actual HTTP rejection still cools down its source and URL', async() => {
+  const h = harness({ inspect: url => url === preview ? { readable: false, reason: 'http_error', httpStatus: 403 } : audio() })
+  assert.equal(await h.resolve(), full)
+  assert.equal(h.priority.isMusicUrlFailed(preview), true)
+  assert.equal((await h.priority.getMusicUrlByPriority({ musicInfo: song, quality: '128k', allowQualityFallback: false })).url, full)
+  assert.deepEqual(h.requests, ['user_api_a', 'user_api_b', 'user_api_b'])
+})
+
 test('full AAC and Opus source audio remains playable through fresh URLs, caching and preloading', async() => {
   const url = 'https://audio.example/proxy/full'
   for (const mime of ['audio/mp4a-latm', 'audio/aac', 'audio/opus']) {

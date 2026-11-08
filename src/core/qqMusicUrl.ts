@@ -76,12 +76,16 @@ const audioFailure = (media: RemoteAudioInfo, expectedMs: number, expectedMime?:
 
 class QQMusicAudioError extends Error {
   code: string
+  isAudioProbeFailure: boolean
   constructor(reason: string) {
     super(reason === 'duration_mismatch' ? 'QQ Music audio is incomplete'
       : reason === 'timeout' ? 'QQ Music audio probe timed out'
         : reason === 'duration_unavailable' || reason === 'metadata_unavailable' ? 'QQ Music audio duration unavailable'
           : `QQ Music audio probe failed (${reason})`)
     this.code = reason
+    // 探测能力或预算不足不能证明音源坏了，更不能让后台预加载把前台音源全部冷却。
+    this.isAudioProbeFailure = ['timeout', 'byte_limit', 'metadata_limit', 'invalid_metadata', 'metadata_error', 'metadata_unavailable',
+      'duration_unavailable', 'native_error', 'native_unavailable', 'busy', 'range_unsupported', 'invalid_range'].includes(reason)
   }
 }
 
@@ -166,7 +170,8 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
     candidates: candidates.length,
     selected: selected.length,
     resultCodes: list.slice(0, 6).map(info => Number(info?.result ?? 0)),
-    reason: selected.length ? 'checking' : returnedUrls ? 'quality_mismatch' : 'empty_urls',
+    reason: selected.length ? 'checking' : returnedUrls ? 'quality_mismatch'
+      : list.some(info => Number(info?.result ?? 0) !== 0) ? 'item_rejected' : 'empty_urls',
   }))
   if (!selected.length) return null
   // 每个响应最多探测 6 个候选、同时 3 个，整批含时长检查最多 5 秒。

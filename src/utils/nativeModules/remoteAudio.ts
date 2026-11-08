@@ -12,6 +12,13 @@ export interface RemoteAudioInfo {
   bytesRead?: number
   httpStatus?: number
   elapsedMs?: number
+  contentLength?: number
+  audioOffset?: number
+  largestRead?: number
+  headerKind?: string
+  method?: string
+  sampleRate?: number
+  bitDepth?: number
 }
 
 interface CachedProbe {

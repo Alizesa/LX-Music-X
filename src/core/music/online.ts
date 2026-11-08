@@ -91,7 +91,7 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
       playbackLog('url.cache_rejected', () => ({ ...trace, error }))
       assertActive()
       if (isRequestCancelled(error)) throw error
-      markMusicUrlFailed(cachedUrl)
+      markMusicUrlFailed(cachedUrl, error)
     }
   }
 

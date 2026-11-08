@@ -86,6 +86,11 @@ final class RemoteAudioProbe {
     volatile int requests;
     volatile int bytesRead;
     volatile int httpStatus;
+    volatile long contentLength = -1;
+    volatile long audioOffset;
+    volatile int largestRead;
+    volatile String headerKind;
+    volatile String method;
     volatile String failureReason;
 
     Task(String id, Promise promise, long timeoutMs) {
@@ -122,6 +127,11 @@ final class RemoteAudioProbe {
       result.putInt("requests", requests);
       result.putInt("bytesRead", bytesRead);
       if (httpStatus > 0) result.putInt("httpStatus", httpStatus);
+      if (contentLength >= 0) result.putDouble("contentLength", contentLength);
+      result.putDouble("audioOffset", audioOffset);
+      result.putInt("largestRead", largestRead);
+      if (headerKind != null) result.putString("headerKind", headerKind);
+      if (method != null) result.putString("method", method);
       result.putDouble("elapsedMs", SystemClock.elapsedRealtime() - started);
       // Resolve first: disposal of an Android network object must not delay JS fallback.
       promise.resolve(result);
@@ -177,6 +187,30 @@ final class RemoteAudioProbe {
     return total == count ? buffer : Arrays.copyOf(buffer, total);
   }
 
+  private static String headerKind(byte[] header, int size) {
+    if (size >= 4 && header[0] == 'f' && header[1] == 'L' && header[2] == 'a' && header[3] == 'C') return "flac";
+    if (size >= 2 && (header[0] & 255) == 255 && (header[1] & 0xe0) == 0xe0 && (header[1] & 6) != 0) return "mp3";
+    if (size >= 8 && header[4] == 'f' && header[5] == 't' && header[6] == 'y' && header[7] == 'p') return "mp4";
+    if (size >= 4 && header[0] == 'O' && header[1] == 'g' && header[2] == 'g' && header[3] == 'S') return "ogg";
+    return "unknown";
+  }
+
+  // STREAMINFO contains the sample count. As in MusicOne, no picture/comment blocks are needed.
+  private static boolean readFlacHeader(byte[] header, int size, WritableMap result) {
+    if (size < 42 || !"flac".equals(headerKind(header, size)) || (header[4] & 127) != 0 ||
+        header[5] != 0 || header[6] != 0 || header[7] != 34) return false;
+    long packed = 0;
+    for (int index = 18; index <= 25; index++) packed = (packed << 8) | (header[index] & 255L);
+    long sampleRate = (packed >>> 44) & 0xfffffL;
+    long samples = packed & 0xfffffffffL;
+    if (sampleRate == 0 || samples == 0) return false;
+    result.putString("mime", "audio/flac");
+    result.putDouble("durationMs", samples * 1000.0 / sampleRate);
+    result.putInt("sampleRate", (int) sampleRate);
+    result.putInt("bitDepth", (int) ((packed >>> 36) & 31) + 1);
+    return true;
+  }
+
   private static WritableMap read(Task task, String url, boolean inspectDuration) {
     WritableMap result = Arguments.createMap();
     HttpURLConnection connection = null;
@@ -185,7 +219,7 @@ final class RemoteAudioProbe {
     long length = -1;
     try {
       // Seed the extractor's range cache with this same read; do not request the head twice.
-      int count = inspectDuration && Build.VERSION.SDK_INT >= 23 ? BLOCK_SIZE : 1;
+      int count = inspectDuration ? (Build.VERSION.SDK_INT >= 23 ? BLOCK_SIZE : 42) : 1;
       connection = open(task, url, 0, count);
       int status = connection.getResponseCode();
       task.httpStatus = status;
@@ -198,6 +232,7 @@ final class RemoteAudioProbe {
       String range = connection.getHeaderField("Content-Range");
       String total = status == 206 && range != null ? range.substring(range.lastIndexOf('/') + 1) : connection.getHeaderField("Content-Length");
       try { length = Long.parseLong(total); } catch (Exception ignored) {}
+      task.contentLength = length;
       result.putBoolean("readable", true);
       task.check();
     } catch (Exception error) {
@@ -207,15 +242,21 @@ final class RemoteAudioProbe {
       task.connection = null;
     }
     if (!inspectDuration) return result;
+    task.headerKind = headerKind(head, head.length);
+    if (readFlacHeader(head, head.length, result)) {
+      task.method = "flac_header";
+      return result;
+    }
 
     MediaExtractor extractor = new MediaExtractor();
     try {
       task.check();
       if (Build.VERSION.SDK_INT >= 23) {
         // Own the HTTP reads so cancellation/deadline also covers MediaExtractor.
-        Api23.configure(extractor, task, resolvedUrl, length, head);
+        if (Api23.configure(extractor, task, resolvedUrl, length, head, result)) return result;
       } else {
         // API 21/22 has no MediaDataSource; the task watchdog still bounds the wait.
+        task.method = "media_extractor";
         extractor.setDataSource(resolvedUrl, Collections.singletonMap("User-Agent", USER_AGENT));
       }
       task.check();
@@ -243,11 +284,100 @@ final class RemoteAudioProbe {
 
   @TargetApi(23)
   private static final class Api23 {
-    static void configure(MediaExtractor extractor, Task task, String url, long length, byte[] head) throws IOException {
+    static boolean configure(MediaExtractor extractor, Task task, String url, long length, byte[] head, WritableMap result) throws IOException {
       RangeSource source = new RangeSource(task, url, length, head);
       task.source = source;
       task.check();
+      // MediaExtractor also parses ID3 pictures/comments while initializing an MP3.
+      // Present an audio-only view so large tags cannot exhaust the network budget.
+      source.skipId3();
+      byte[] audioHeader = new byte[42];
+      int size = source.readAt(0, audioHeader, 0, audioHeader.length);
+      task.headerKind = headerKind(audioHeader, size);
+      if (readFlacHeader(audioHeader, size, result)) {
+        task.method = "flac_header";
+        return true;
+      }
+      if ("mp3".equals(task.headerKind) && readMp3Duration(source, task, result)) return true;
+      task.method = "media_extractor";
       extractor.setDataSource(source);
+      return false;
+    }
+
+    private static int readInt(byte[] bytes, int offset) {
+      return ((bytes[offset] & 255) << 24) | ((bytes[offset + 1] & 255) << 16) |
+          ((bytes[offset + 2] & 255) << 8) | (bytes[offset + 3] & 255);
+    }
+
+    private static final int[] MPEG1_RATES = {0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320};
+    private static final int[] MPEG2_RATES = {0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160};
+    private static final int[] SAMPLE_RATES = {44100, 48000, 32000};
+
+    private static final class Mp3Frame {
+      final int header;
+      final int sampleRate;
+      final int size;
+      final int samples;
+      final int xingOffset;
+
+      Mp3Frame(int header, int version, int rateIndex, int sampleIndex) {
+        this.header = header;
+        sampleRate = SAMPLE_RATES[sampleIndex] / (version == 3 ? 1 : version == 2 ? 2 : 4);
+        int bitRate = (version == 3 ? MPEG1_RATES : MPEG2_RATES)[rateIndex];
+        samples = version == 3 ? 1152 : 576;
+        size = (version == 3 ? 144000 : 72000) * bitRate / sampleRate + ((header >>> 9) & 1);
+        boolean mono = ((header >>> 6) & 3) == 3;
+        xingOffset = 4 + (version == 3 ? (mono ? 17 : 32) : (mono ? 9 : 17));
+      }
+
+      static Mp3Frame parse(byte[] bytes) {
+        int header = readInt(bytes, 0);
+        int version = (header >>> 19) & 3;
+        int rateIndex = (header >>> 12) & 15;
+        int sampleIndex = (header >>> 10) & 3;
+        if ((header & 0xffe00000) != 0xffe00000 || version == 1 || ((header >>> 17) & 3) != 1 ||
+            rateIndex == 0 || rateIndex == 15 || sampleIndex == 3) return null;
+        return new Mp3Frame(header, version, rateIndex, sampleIndex);
+      }
+    }
+
+    // Use the same Xing/VBRI frame-count calculation as Android's MP3 extractor, without
+    // parsing artwork or building a seek table. Files without a frame count use MediaExtractor.
+    private static boolean readMp3Duration(RangeSource source, Task task, WritableMap result) throws IOException {
+      byte[] header = new byte[4];
+      if (source.readAt(0, header, 0, header.length) != header.length) return false;
+      Mp3Frame first = Mp3Frame.parse(header);
+      if (first == null) return false;
+      byte[] frame = new byte[first.size];
+      if (source.readAt(0, frame, 0, frame.length) != frame.length) return false;
+      long frames = 0;
+      String method = null;
+      int offset = first.xingOffset;
+      if (frame.length >= offset + 12) {
+        int signature = readInt(frame, offset);
+        if ((signature == 0x58696e67 || signature == 0x496e666f) && (readInt(frame, offset + 4) & 1) != 0) {
+          frames = readInt(frame, offset + 8) & 0xffffffffL;
+          method = "mp3_xing";
+        }
+      }
+      if (frames == 0 && frame.length >= 54 && readInt(frame, 36) == 0x56425249) {
+        frames = readInt(frame, 50) & 0xffffffffL;
+        method = "mp3_vbri";
+      }
+      if (frames < 4) return false;
+      // A sync-looking prefix alone is insufficient. Require four consecutive MPEG frames.
+      long position = first.size;
+      for (int index = 0; index < 3; index++) {
+        if (source.readAt(position, header, 0, header.length) != header.length) return false;
+        Mp3Frame next = Mp3Frame.parse(header);
+        if (next == null || (next.header & 0xfffe0c00) != (first.header & 0xfffe0c00)) return false;
+        position += next.size;
+      }
+      task.method = method;
+      result.putString("mime", "audio/mpeg");
+      result.putDouble("durationMs", frames * first.samples * 1000.0 / first.sampleRate);
+      result.putInt("sampleRate", first.sampleRate);
+      return true;
     }
 
     private static final class RangeSource extends MediaDataSource {
@@ -256,6 +386,7 @@ final class RemoteAudioProbe {
       final long length;
       // Sniffers repeatedly read small, overlapping headers. Keep up to four aligned windows.
       final LinkedHashMap<Long, byte[]> blocks = new LinkedHashMap<>(4, 0.75f, true);
+      long audioStart;
       volatile boolean closed;
 
       RangeSource(Task task, String url, long length, byte[] head) {
@@ -265,9 +396,39 @@ final class RemoteAudioProbe {
         blocks.put(0L, head);
       }
 
-      @Override public long getSize() { return length; }
+      @Override public long getSize() { return length < 0 ? -1 : length - audioStart; }
+
+      void skipId3() throws IOException {
+        byte[] header = new byte[10];
+        long position = 0;
+        for (int tags = 0; tags <= 8; tags++) {
+          int size = readOriginalAt(position, header, 0, header.length);
+          if (size < header.length || header[0] != 'I' || header[1] != 'D' || header[2] != '3') {
+            audioStart = position;
+            task.audioOffset = position;
+            return;
+          }
+          if (tags == 8) throw task.fail("metadata_limit");
+          int version = header[3] & 255;
+          if (version < 2 || version > 4 || (header[4] & 255) == 255) throw task.fail("invalid_metadata");
+          long tagSize = 0;
+          for (int index = 6; index < 10; index++) {
+            if ((header[index] & 128) != 0) throw task.fail("invalid_metadata");
+            tagSize = (tagSize << 7) | (header[index] & 127);
+          }
+          // ID3v2.4 size excludes its optional ten-byte footer as well as the header.
+          position += 10 + tagSize + (version == 4 && (header[5] & 16) != 0 ? 10 : 0);
+          if (length >= 0 && position >= length) throw task.fail("invalid_metadata");
+        }
+      }
 
       @Override public synchronized int readAt(long position, byte[] buffer, int offset, int size) throws IOException {
+        if (position < 0 || position > Long.MAX_VALUE - audioStart) throw task.fail("invalid_range");
+        task.largestRead = Math.max(task.largestRead, size);
+        return readOriginalAt(audioStart + position, buffer, offset, size);
+      }
+
+      private int readOriginalAt(long position, byte[] buffer, int offset, int size) throws IOException {
         task.check();
         if (closed) throw task.fail("cancelled");
         if (position < 0) throw task.fail("invalid_range");
