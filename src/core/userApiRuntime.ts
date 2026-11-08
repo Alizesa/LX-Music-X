@@ -44,9 +44,11 @@ export const requestUserApiMusicUrl = async(apiId: string, musicInfo: LX.Music.M
   const work = async() => {
     assertActive()
     if (apiId == settingState.setting['common.apiSource']) {
-      if (!await global.lx.apiInitPromise[0]) throw new Error('Source initialization failed')
+      const initialization = global.lx.apiInitPromise[0]
+      const initialized = await initialization
       assertActive()
-      if (apiId != settingState.setting['common.apiSource']) throw new Error(requestMsg.cancelRequest)
+      if (initialization !== global.lx.apiInitPromise[0] || apiId != settingState.setting['common.apiSource']) throw new Error(requestMsg.cancelRequest)
+      if (!initialized) throw new Error('Source initialization failed')
       const api = global.lx.apis[musicInfo.source]
       if (!api?.getMusicUrl) throw new Error('Unsupported music source')
       const type = selectQuality(preferredQuality, global.lx.qualityList[musicInfo.source] ?? [], musicInfo, allowQualityFallback)

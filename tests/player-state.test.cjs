@@ -83,7 +83,7 @@ const restoreHarness = () => {
     '@/core/player/playedList': {}, '@/core/player/tempPlayList': { clearTempPlayeList() {} },
     '@/core/music': { getPicPath: () => pic.promise, getLyricInfo: () => lyric.promise },
     '@/utils/message': {}, '@/utils/common': {}, './utils': {}, 'react-native-background-timer': { default: {} },
-    '@/utils/tools': { debounceBackgroundTimer: () => () => {} }, '@/config/constant': { LIST_IDS: { PLAY_QUEUE: 'queue' } },
+    '@/utils/tools': { debounceBackgroundTimer: () => Object.assign(() => {}, { cancel() {} }) }, '@/config/constant': { LIST_IDS: { PLAY_QUEUE: 'queue' } },
     '@/core/qqMusicFavorite': {}, '@/core/dislikeList': {}, './playQueue': { getPlayQueue: () => songs.map(musicInfo => ({ musicInfo })) },
     '@/core/qqMusicRecommendSession': {}, '@/core/localList': {}, './preload': {}, '@/core/music/sourcePriority': {},
   }, { global: appGlobal, setTimeout: fn => { timers.push(fn); return timers.length } })

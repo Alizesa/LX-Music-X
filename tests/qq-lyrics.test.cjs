@@ -214,6 +214,7 @@ const cacheHarness = ({ cached = oldLyrics, edited, source = 'tx', fetchLyrics =
   })
   const setting = { default: { setting: { 'player.isS2t': false } } }
   const utils = load('src/core/music/utils.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     './sourcePriority': {},
     '@/config/constant': constants,
     '@/utils/data': data,
@@ -237,6 +238,7 @@ const cacheHarness = ({ cached = oldLyrics, edited, source = 'tx', fetchLyrics =
     },
   })
   const online = load('src/core/music/online.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/core/qqMusicUrl': {},
     './sourcePriority': {},
     '@/utils/message': message,

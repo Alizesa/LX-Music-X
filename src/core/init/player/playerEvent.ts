@@ -1,4 +1,4 @@
-import { playNext, setMusicUrl } from '@/core/player/player'
+import { isPlayRequested, playNext, setMusicUrl } from '@/core/player/player'
 import { setStatusText } from '@/core/player/playStatus'
 import { getPosition, isEmpty, setStop } from '@/plugins/player'
 import { isActive } from '@/utils/tools'
@@ -14,19 +14,16 @@ export default () => {
   let retryNum = 0
   let prevTimeoutId: string | null = null
   let historyPlayback: typeof playerState.playMusicInfo | null = null
+  let recovery: { playback: typeof playerState.playMusicInfo } | null = null
 
   let loadingTimeout: number | null = null
   let delayNextTimeout: number | null = null
   const startLoadingTimeout = () => {
-    // console.log('start load timeout')
-    clearLoadingTimeout()
+    if (loadingTimeout != null) return
+    const playback = playerState.playMusicInfo
     loadingTimeout = BackgroundTimer.setTimeout(() => {
-      // if (global.lx.isPlayedStop) {
-      //   prevTimeoutId = null
-      //   setStatusText('')
-      //   return
-      // }
-
+      loadingTimeout = null
+      if (!isPlayRequested() || global.lx.isPlayedStop || playback !== playerState.playMusicInfo) return
       // 如果加载超时，则尝试刷新URL
       if (prevTimeoutId == playerState.musicInfo.id) {
         prevTimeoutId = null
@@ -52,18 +49,16 @@ export default () => {
   }
   const addDelayNextTimeout = () => {
     clearDelayNextTimeout()
+    const playback = playerState.playMusicInfo
     delayNextTimeout = BackgroundTimer.setTimeout(() => {
-      if (global.lx.isPlayedStop) {
-        setStatusText('')
-        return
-      }
+      delayNextTimeout = null
+      if (!isPlayRequested() || global.lx.isPlayedStop || playback !== playerState.playMusicInfo) return
       void playNext(true)
     }, 5000)
   }
 
   const handleLoadstart = () => {
-    console.log('handleLoadstart', playerState.isPlay)
-    if (global.lx.isPlayedStop || !playerState.isPlay) return
+    if (global.lx.isPlayedStop || !isPlayRequested()) return
     startLoadingTimeout()
     setStatusText(global.i18n.t('player__loading'))
   }
@@ -79,6 +74,7 @@ export default () => {
   const handlePlaying = () => {
     setStatusText('')
     clearLoadingTimeout()
+    clearDelayNextTimeout()
     const playback = playerState.playMusicInfo
     if (settingState.setting['player.isSavePlayHistory'] && playback.musicInfo && historyPlayback !== playback) {
       // 暂停/缓冲恢复也会触发 Playing，同一次播放只整理和保存一次历史。
@@ -96,40 +92,47 @@ export default () => {
   }
 
   const handleWating = () => {
+    if (!isPlayRequested() || global.lx.isPlayedStop) return
+    startLoadingTimeout()
     setStatusText(global.i18n.t('player__buffering'))
   }
 
   const handleError = () => {
     if (!playerState.musicInfo.id) return
     clearLoadingTimeout()
-    if (global.lx.isPlayedStop) return
+    if (global.lx.isPlayedStop || !isPlayRequested()) return
+    const playback = playerState.playMusicInfo
+    if (recovery?.playback === playback) return
     const maxRetries = Math.max(2, parseApiSourceOrder(settingState.setting['common.apiSourceOrder'], settingState.setting['common.apiSource']).length)
     if (playerState.playMusicInfo.musicInfo && retryNum < maxRetries) { // 为勾选的备用音源保留接替机会
-      let musicInfo = playerState.playMusicInfo.musicInfo
+      const current = recovery = { playback }
+      const isCurrent = () => recovery === current && playerState.playMusicInfo === playback && isPlayRequested() && !global.lx.isPlayedStop
+      retryNum++
       void getPosition().then((position) => {
-        if (position) setNowPlayTime(position)
+        if (isCurrent() && Number.isFinite(position) && position > 0) setNowPlayTime(position)
+      }).catch(error => {
+        console.warn(error)
       }).finally(() => {
-        // console.log(this.retryNum)
-        if (playerState.playMusicInfo.musicInfo !== musicInfo) return
-        retryNum++
-        setMusicUrl(playerState.playMusicInfo.musicInfo, true)
-        setStatusText(global.i18n.t('player__refresh_url'))
+        if (isCurrent()) {
+          setMusicUrl(playback.musicInfo!, true)
+          setStatusText(global.i18n.t('player__refresh_url'))
+        }
+        if (recovery === current) recovery = null
       })
       return
     }
-    if (!isEmpty()) void setStop()
-
-    if (isActive()) {
-      setStatusText(global.i18n.t('player__error'))
-      setTimeout(addDelayNextTimeout)
-    } else {
-      console.warn('error skip to next')
-      void playNext(true)
-    }
+    void (isEmpty() ? Promise.resolve() : setStop()).catch(console.warn).then(() => {
+      if (playback !== playerState.playMusicInfo || !isPlayRequested() || global.lx.isPlayedStop) return
+      if (isActive()) {
+        setStatusText(global.i18n.t('player__error'))
+        addDelayNextTimeout()
+      } else void playNext(true)
+    })
   }
 
   const handleSetPlayInfo = () => {
     retryNum = 0
+    recovery = null
     prevTimeoutId = null
     if (historyPlayback !== playerState.playMusicInfo) historyPlayback = null
     clearDelayNextTimeout()
@@ -150,4 +153,10 @@ export default () => {
   global.app_event.on('playerEmptied', handleEmpied)
   global.app_event.on('playerError', handleError)
   global.app_event.on('musicToggled', handleSetPlayInfo)
+  global.app_event.on('playerPause', clearLoadingTimeout)
+  global.app_event.on('pause', () => {
+    // Buffering 也会发布 pause；只有用户暂停才取消恢复计时。
+    if (!isPlayRequested()) handleEmpied()
+  })
+  global.app_event.on('stop', handleEmpied)
 }

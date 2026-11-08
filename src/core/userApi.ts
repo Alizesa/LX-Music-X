@@ -4,18 +4,25 @@ import { destroy, loadScript } from '@/utils/nativeModules/userApi'
 import { log as writeLog } from '@/utils/log'
 import { getApiSourceOrder, setApiSourceOrder } from './apiSource'
 
+let scriptGeneration = 0
 
 export const setUserApi = async(apiId: string) => {
+  const generation = ++scriptGeneration
+  destroy()
   global.lx.qualityList = {}
+  global.lx.apis = {}
   setUserApiStatus(false, 'initing')
 
   const target = state.list.find(api => api.id === apiId)
   if (!target) throw new Error('api not found')
   const script = await getUserApiScript(target.id)
+  if (generation !== scriptGeneration) return
   loadScript({ ...target, script })
 }
 
 export const destroyUserApi = () => {
+  scriptGeneration++
+  global.lx.apis = {}
   destroy()
 }
 

@@ -2,10 +2,16 @@ import { NativeEventEmitter, NativeModules } from 'react-native'
 
 const { UserApiModule } = NativeModules
 
-const loadedScripts = new Map<string, LX.UserApi.UserApiInfo>()
+const loadedScripts = new Map<string, { info: LX.UserApi.UserApiInfo, nativeId: string, generation: number }>()
+let nextGeneration = 0
 export const supportsIsolatedUserApi = () => typeof UserApiModule.loadScriptForRuntime == 'function'
+export const getScriptGeneration = (runtimeId = 'main') => loadedScripts.get(runtimeId)?.generation ?? 0
 export const loadScript = (info: LX.UserApi.UserApiInfo & { script: string }, runtimeId = 'main') => {
-  loadedScripts.set(runtimeId, info)
+  if (loadedScripts.has(runtimeId)) destroy(runtimeId)
+  const generation = ++nextGeneration
+  // 主音源也使用独立代次，旧线程排队中的 init/response 不能冒充新脚本。
+  const nativeId = runtimeId === 'main' && supportsIsolatedUserApi() ? `main_${generation}` : runtimeId
+  loadedScripts.set(runtimeId, { info, nativeId, generation })
   const data = {
     id: info.id,
     name: info.name,
@@ -15,8 +21,8 @@ export const loadScript = (info: LX.UserApi.UserApiInfo & { script: string }, ru
     homepage: info.homepage ?? '',
     script: info.script,
   }
-  if (runtimeId == 'main') UserApiModule.loadScript(data)
-  else UserApiModule.loadScriptForRuntime(runtimeId, data)
+  if (nativeId == 'main') UserApiModule.loadScript(data)
+  else UserApiModule.loadScriptForRuntime(nativeId, data)
 }
 
 export interface SendResponseParams {
@@ -36,8 +42,10 @@ export interface SendActions {
   cancelRequest: string
 }
 export const sendAction = <T extends keyof SendActions>(action: T, data: SendActions[T], runtimeId = 'main') => {
-  if (runtimeId == 'main') UserApiModule.sendAction(action, JSON.stringify(data))
-  else UserApiModule.sendActionForRuntime(runtimeId, action, JSON.stringify(data))
+  const nativeId = loadedScripts.get(runtimeId)?.nativeId
+  if (!nativeId) return
+  if (nativeId == 'main') UserApiModule.sendAction(action, JSON.stringify(data))
+  else UserApiModule.sendActionForRuntime(nativeId, action, JSON.stringify(data))
 }
 
 // export const clearAppCache = CacheModule.clearAppCache as () => Promise<void>
@@ -86,8 +94,9 @@ export const onScriptAction = (handler: (event: ActionsEvent) => void, runtimeId
   // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   const eventEmitter = new NativeEventEmitter(UserApiModule)
   const eventListener = eventEmitter.addListener('api-action', event => {
-    if ((event.runtimeId ?? 'main') != runtimeId) return
-    const loadScriptInfo = loadedScripts.get(runtimeId)
+    const script = loadedScripts.get(runtimeId)
+    if (!script || (event.runtimeId ?? 'main') != script.nativeId) return
+    const loadScriptInfo = script.info
     if (event.data) event.data = JSON.parse(event.data as string)
     if (event.action == 'init') {
       if (event.data.info) event.data.info = { ...loadScriptInfo, ...event.data.info }
@@ -104,7 +113,8 @@ export const onScriptAction = (handler: (event: ActionsEvent) => void, runtimeId
 }
 
 export const destroy = (runtimeId = 'main') => {
+  const nativeId = loadedScripts.get(runtimeId)?.nativeId ?? runtimeId
   loadedScripts.delete(runtimeId)
-  if (runtimeId == 'main') UserApiModule.destroy()
-  else UserApiModule.destroyRuntime(runtimeId)
+  if (nativeId == 'main') UserApiModule.destroy()
+  else UserApiModule.destroyRuntime(nativeId)
 }

@@ -3,6 +3,7 @@ import { DEFAULT_SETTING, LIST_IDS, storageDataPrefix, type NAV_ID_Type } from '
 import { isRemovedUserList } from './legacyList'
 import { throttle } from './common'
 import { getSecureItem, removeSecureItem, setSecureItem } from './nativeModules/secureStorage'
+import { type CachedMusicUrl } from './musicUrlCache'
 // import { gzip, ungzip } from '@/utils/nativeModules/gzip'
 // import { readFile, writeFile, temporaryDirectoryPath, unlink } from '@/utils/fs'
 // import { isNotificationsEnabled, openNotificationPermissionActivity, shareText } from '@/utils/nativeModules/utils'
@@ -322,8 +323,12 @@ export const hasMusicUrlByMusic = async(musicInfo: LX.Music.MusicInfo) => {
 export const clearMusicUrlByMusic = async(musicInfo: LX.Music.MusicInfo) => {
   await removeDataMultiple(qualitys.map(q => `${storageDataPrefix.musicUrl}${musicInfo.id}_${q}`))
 }
-export const getMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality) => getData<string>(`${storageDataPrefix.musicUrl}${musicInfo.id}_${type}`).then((url) => url ?? '')
-export const saveMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality, url: string) => saveData(`${storageDataPrefix.musicUrl}${musicInfo.id}_${type}`, url)
+export const getMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality, context: string) => {
+  const cached = await getData<CachedMusicUrl | string>(`${storageDataPrefix.musicUrl}${musicInfo.id}_${type}`)
+  // 旧字符串没有来源信息，首次使用重新取址；仍沿用原 key，避免按设置组合无限累积缓存。
+  return cached && typeof cached === 'object' && cached.context === context && typeof cached.url === 'string' ? cached.url : ''
+}
+export const saveMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality, url: string, context: string) => saveData(`${storageDataPrefix.musicUrl}${musicInfo.id}_${type}`, { url, context } satisfies CachedMusicUrl)
 export const clearMusicUrl = async(keys?: string[]) => {
   if (!keys) keys = (await getAllKeys()).filter(key => key.startsWith(storageDataPrefix.musicUrl))
   await removeDataMultiple(keys)

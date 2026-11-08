@@ -1,6 +1,6 @@
 import TrackPlayer, { Capability, Event, State } from 'react-native-track-player'
 import BackgroundTimer from 'react-native-background-timer'
-import { playMusic as handlePlayMusic } from './playList'
+import { playMusic as handlePlayMusic, type PlaybackRequest } from './playList'
 import { existsFile, moveFile, privateStorageDirectoryPath, temporaryDirectoryPath } from '@/utils/fs'
 import { toast } from '@/utils/tools'
 import { MUSIC_TOGGLE_MODE } from '@/config/constant'
@@ -108,17 +108,19 @@ export const isTempId = (trackId = global.lx.playerTrackId) => !trackId || tempI
 //   },
 // }
 
-const playMusic = ((fn: (musicInfo: LX.Player.PlayMusic, url: string, time: number) => void, delay = 800) => {
+const playMusic = ((fn: (musicInfo: LX.Player.PlayMusic, url: string, time: number, request: PlaybackRequest) => void, delay = 800) => {
   let delayTimer: number | null = null
   let isDelayRun = false
   let timer: number | null = null
   let _musicInfo: LX.Player.PlayMusic | null = null
   let _url = ''
   let _time = 0
-  return (musicInfo: LX.Player.PlayMusic, url: string, time: number) => {
+  let _request: PlaybackRequest | null = null
+  return (musicInfo: LX.Player.PlayMusic, url: string, time: number, request: PlaybackRequest) => {
     _musicInfo = musicInfo
     _url = url
     _time = time
+    _request = request
     if (timer) {
       BackgroundTimer.clearTimeout(timer)
       timer = null
@@ -133,27 +135,33 @@ const playMusic = ((fn: (musicInfo: LX.Player.PlayMusic, url: string, time: numb
         let musicInfo = _musicInfo
         let url = _url
         let time = _time
+        const request = _request!
         _musicInfo = null
         _url = ''
         _time = 0
+        _request = null
         isDelayRun = false
-        fn(musicInfo!, url, time)
+        if (request.isCurrent()) fn(musicInfo!, url, time, request)
       }, delay)
     } else {
       isDelayRun = true
-      fn(musicInfo, url, time)
+      _musicInfo = null
+      _url = ''
+      _time = 0
+      _request = null
+      if (request.isCurrent()) fn(musicInfo, url, time, request)
       delayTimer = BackgroundTimer.setTimeout(() => {
         delayTimer = null
         isDelayRun = false
       }, 500)
     }
   }
-})((musicInfo, url, time) => {
-  handlePlayMusic(musicInfo, url, time)
+})((musicInfo, url, time, request) => {
+  handlePlayMusic(musicInfo, url, time, request)
 })
 
-export const setResource = (musicInfo: LX.Player.PlayMusic, url: string, duration?: number) => {
-  playMusic(musicInfo, url, duration ?? 0)
+export const setResource = (musicInfo: LX.Player.PlayMusic, url: string, duration: number, request: PlaybackRequest) => {
+  playMusic(musicInfo, url, duration, request)
 }
 
 export const setPlay = async() => TrackPlayer.play()

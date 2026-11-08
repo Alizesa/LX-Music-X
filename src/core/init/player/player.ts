@@ -1,5 +1,5 @@
 import { addPlayedList, clearPlayedList } from '@/core/player/playedList'
-import { pause, playNext } from '@/core/player/player'
+import { handleMusicSourceChange, pause, playNext } from '@/core/player/player'
 import { setStatusText, setIsPlay } from '@/core/player/playStatus'
 // import { resetPlayerMusicInfo } from '@/core/player/playInfo'
 import { setStop } from '@/plugins/player'
@@ -45,6 +45,9 @@ export default async(setting: LX.AppSetting) => {
   }
 
   const handleConfigUpdated: typeof global.state_event.configUpdated = (keys, settings) => {
+    if (keys.some(key => ['common.apiSource', 'common.apiSourceOrder', 'player.playQuality', 'player.urlSource', 'player.noVipStandardQuality'].includes(key))) {
+      handleMusicSourceChange()
+    }
     if (keys.includes('player.togglePlayMethod')) {
       const newValue = settings['player.togglePlayMethod']
       if (playerState.playedList.length) clearPlayedList()
@@ -61,4 +64,5 @@ export default async(setting: LX.AppSetting) => {
   global.app_event.on('playerEnded', handleEnded)
   global.app_event.on('picUpdated', updatePic)
   global.state_event.on('configUpdated', handleConfigUpdated)
+  global.state_event.on('apiSourceUpdated', handleMusicSourceChange)
 }

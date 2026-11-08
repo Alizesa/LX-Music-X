@@ -20,6 +20,8 @@ import { patchLocalMusicMeta } from '@/core/localList'
 import { LIST_IDS } from '@/config/constant'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { type MusicUrlRequestOptions } from './sourcePriority'
+import { getMusicUrlCacheContext } from '@/utils/musicUrlCache'
+import settingState from '@/store/setting/state'
 
 const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handler: (infos: LX.Music.MusicInfoOnline[]) => Promise<T>, assertActive: () => void = () => {}) => {
   const search = async(info: LX.Music.MusicInfoLocal, isRefresh = false) => {
@@ -111,7 +113,8 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
     currentCancel = cancel
     if (cancelled) cancel()
   }
-  const requestOptions = { ...options, onCancel: registerCancel }
+  const cacheContext = options.cacheContext ?? getMusicUrlCacheContext(settingState.setting, options.urlSourceOrder)
+  const requestOptions = { ...options, cacheContext, onCancel: registerCancel }
   assertActive()
   if (!isRefresh) {
     const path = await getLocalFilePath(musicInfo)
@@ -123,7 +126,7 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
   try {
     return await getOnlineOtherSourceMusicUrlByLocal(musicInfo, isRefresh, requestOptions).then(({ url, quality, isFromCache }) => {
       assertActive()
-      if (!isFromCache) void saveMusicUrl(musicInfo, quality, url)
+      if (!isFromCache && cacheContext === getMusicUrlCacheContext(settingState.setting, options.urlSourceOrder)) void saveMusicUrl(musicInfo, quality, url, cacheContext)
       return url
     })
   } catch (error) {
@@ -139,7 +142,7 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
     return getOnlineOtherSourceMusicUrl({ musicInfos: [...otherSource], onToggleSource, isRefresh, ...requestOptions }).then(({ url, quality: targetQuality, musicInfo: targetMusicInfo, isFromCache }) => {
       assertActive()
       // saveLyric(musicInfo, data.lyricInfo)
-      if (!isFromCache) void saveMusicUrl(targetMusicInfo, targetQuality, url)
+      if (!isFromCache && cacheContext === getMusicUrlCacheContext(settingState.setting, options.urlSourceOrder)) void saveMusicUrl(targetMusicInfo, targetQuality, url, cacheContext)
 
       // TODO: save url ?
       return url

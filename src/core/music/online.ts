@@ -8,6 +8,7 @@ import settingState from '@/store/setting/state'
 import { isMusicUrlFailed, markMusicUrlFailed, type ValidateMusicUrl } from './sourcePriority'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { validateQQMusicUrl } from '@/core/qqMusicUrl'
+import { getMusicUrlCacheContext } from '@/utils/musicUrlCache'
 
 import {
   buildLyricInfo,
@@ -43,7 +44,7 @@ export const setPic = (datas: {
  */
 
 
-export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, onToggleSource = () => {}, urlSourceOrder, onCancel, validateUrl, rejectedUrls }: {
+export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, onToggleSource = () => {}, urlSourceOrder, onCancel, validateUrl, rejectedUrls, cacheContext = getMusicUrlCacheContext(settingState.setting, urlSourceOrder) }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality?: LX.Quality
   isRefresh: boolean
@@ -54,6 +55,7 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   onCancel?: (cancel: () => void) => void
   validateUrl?: ValidateMusicUrl
   rejectedUrls?: ReadonlySet<string>
+  cacheContext?: string
 }): Promise<string> => {
   let cancelled = false
   let currentCancel: (() => void) | undefined
@@ -71,7 +73,7 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   //   // return Promise.reject(new Error('该歌曲没有可播放的音频'))
   // }
   const targetQuality = quality ?? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
-  const cachedUrl = await getStoreMusicUrl(musicInfo, targetQuality)
+  const cachedUrl = await getStoreMusicUrl(musicInfo, targetQuality, cacheContext)
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
@@ -87,10 +89,11 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
     }
   }
 
-  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel: registerCancel, validateUrl, rejectedUrls }).then(({ url, quality: actualQuality, musicInfo: targetMusicInfo, isFromCache }) => {
+  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel: registerCancel, validateUrl, rejectedUrls, cacheContext }).then(({ url, quality: actualQuality, musicInfo: targetMusicInfo, isFromCache }) => {
     assertActive()
-    if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, actualQuality, url)
-    void saveMusicUrl(musicInfo, actualQuality, url)
+    if (cacheContext !== getMusicUrlCacheContext(settingState.setting, urlSourceOrder)) return url
+    if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, actualQuality, url, cacheContext)
+    void saveMusicUrl(musicInfo, actualQuality, url, cacheContext)
     return url
   })
 }

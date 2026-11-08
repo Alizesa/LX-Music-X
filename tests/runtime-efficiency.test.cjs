@@ -245,6 +245,7 @@ const sourceHarness = () => {
   const timers = clock(), requests = []
   let conversions = 0
   const api = load('src/core/music/utils.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/utils/musicSdk': { findMusic: info => { const gate = deferred(); requests.push({ info, ...gate }); return gate.promise } },
     '@/utils/data': {}, '@/utils': { toNewMusicInfo: value => { conversions++; return value } },
     '@/store/setting/state': {}, '@/utils/message': {}, 'react-native-background-timer': { default: timers },

@@ -20,8 +20,14 @@ const commit = async() => {
     sessionId = ''
     sourceFirstMusicId = undefined
   }
-  await savePlayQueue(queue)
+  const saved = savePlayQueue(queue)
   global.app_event.playQueueUpdate([...queue])
+  await saved
+}
+
+const updateQueueIndex = (index: number) => {
+  if (playerState.playInfo.playerListId !== LIST_IDS.PLAY_QUEUE) return
+  playerActions.updatePlayIndex(playerState.playMusicInfo.isTempPlay ? playerState.playInfo.playIndex : index, index)
 }
 
 export const initPlayQueue = async() => {
@@ -116,19 +122,27 @@ export const insertPlayQueue = async(index: number, list: LX.Player.PlayMusic[])
     sourceListId,
     musicInfo,
   })))
+  const currentIndex = playerState.playInfo.playerPlayIndex
+  if (currentIndex >= start) updateQueueIndex(currentIndex + list.length)
   await commit()
 }
 
 export const removePlayQueueItem = async(index: number) => {
   if (index < 0 || index >= queue.length) return
+  const currentIndex = playerState.playInfo.playerPlayIndex
   queue.splice(index, 1)
+  if (index <= currentIndex) updateQueueIndex(currentIndex > 0 ? Math.min(currentIndex - 1, queue.length - 1) : queue.length - 1)
   await commit()
 }
 
 export const movePlayQueueItem = async(from: number, to: number) => {
   if (from == to || from < 0 || to < 0 || from >= queue.length || to >= queue.length) return
+  const currentIndex = playerState.playInfo.playerPlayIndex
   const [item] = queue.splice(from, 1)
   queue.splice(to, 0, item)
+  if (from === currentIndex) updateQueueIndex(to)
+  else if (from < currentIndex && to >= currentIndex) updateQueueIndex(currentIndex - 1)
+  else if (from > currentIndex && to <= currentIndex) updateQueueIndex(currentIndex + 1)
   await commit()
 }
 

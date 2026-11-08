@@ -1,4 +1,4 @@
-import { type InitParams, onScriptAction, sendAction, type ResponseParams, type UpdateInfoParams, type RequestParams } from '@/utils/nativeModules/userApi'
+import { getScriptGeneration, type InitParams, onScriptAction, sendAction, type ResponseParams, type UpdateInfoParams, type RequestParams } from '@/utils/nativeModules/userApi'
 import { log, setUserApiList, setUserApiStatus } from '@/core/userApi'
 import settingState from '@/store/setting/state'
 import BackgroundTimer from 'react-native-background-timer'
@@ -9,8 +9,8 @@ import { requestMsg } from '@/utils/message'
 
 
 export default async(setting: LX.AppSetting) => {
-  const userApiRequestMap = new Map<string, { resolve: (value: ResponseParams['result']) => void, reject: (error: Error) => void, timeout: number }>()
-  const scriptRequestMap = new Map<string, { request: Promise<any>, abort: () => void }>()
+  const userApiRequestMap = new Map<string, { resolve: (value: ResponseParams['result']) => void, reject: (error: Error) => void, timeout: number, generation: number }>()
+  const scriptRequestMap = new Map<string, { request: Promise<any>, abort: () => void, generation: number }>()
 
   const cancelRequest = (requestKey: string, message: string) => {
     const target = scriptRequestMap.get(requestKey)
@@ -24,31 +24,36 @@ export default async(setting: LX.AppSetting) => {
     if (!target) return
     userApiRequestMap.delete(requestKey)
     BackgroundTimer.clearTimeout(target.timeout)
-    sendAction('cancelRequest', requestKey)
+    try { if (target.generation === getScriptGeneration()) sendAction('cancelRequest', requestKey) } catch {}
     target.reject(new Error(requestMsg.cancelRequest))
   }
   const sendScriptRequest = (requestKey: string, url: string, options: RequestParams['options']) => {
-    let req = fetchData(url, options)
+    const generation = getScriptGeneration()
+    const req = { ...fetchData(url, options), generation }
+    const isCurrent = () => generation === getScriptGeneration() && scriptRequestMap.get(requestKey) === req
     req.request.then(response => {
-      // console.log(response)
+      if (!isCurrent()) return
       sendAction('response', {
         error: null,
         requestKey,
         response,
       })
     }).catch(err => {
+      if (!isCurrent()) return
       sendAction('response', {
         error: err.message,
         requestKey,
         response: null,
       })
     }).finally(() => {
-      scriptRequestMap.delete(requestKey)
+      if (scriptRequestMap.get(requestKey) === req) scriptRequestMap.delete(requestKey)
     })
     scriptRequestMap.set(requestKey, req)
   }
   const sendUserApiRequest = async(data: LX.UserApi.UserApiRequestParams) => {
+    const generation = getScriptGeneration()
     const handleApiUpdate = () => {
+      if (generation === getScriptGeneration()) return
       const target = userApiRequestMap.get(data.requestKey)
       if (!target) return
       userApiRequestMap.delete(data.requestKey)
@@ -59,6 +64,7 @@ export default async(setting: LX.AppSetting) => {
       userApiRequestMap.set(data.requestKey, {
         resolve,
         reject,
+        generation,
         timeout: BackgroundTimer.setTimeout(() => {
           const target = userApiRequestMap.get(data.requestKey)
           if (!target) return
@@ -78,13 +84,14 @@ export default async(setting: LX.AppSetting) => {
     if (!target) return
     userApiRequestMap.delete(requestKey)
     BackgroundTimer.clearTimeout(target.timeout)
-    if (status) target.resolve(result)
+    if (target.generation !== getScriptGeneration()) target.reject(new Error(requestMsg.cancelRequest))
+    else if (status) target.resolve(result)
     else target.reject(new Error(errorMessage ?? 'failed'))
   }
   const handleStateChange = ({ status, errorMessage, info }: InitParams) => {
     // console.log(status, message, info)
-    setUserApiStatus(status, errorMessage)
     if (!info || info.id !== settingState.setting['common.apiSource']) return
+    setUserApiStatus(status, errorMessage)
     if (status) {
       if (info.sources) {
         let apis: any = {}
@@ -186,7 +193,6 @@ export default async(setting: LX.AppSetting) => {
         }
         global.lx.qualityList = qualitys
         global.lx.apis = apis
-        global.state_event.apiSourceUpdated(settingState.setting['common.apiSource'])
       }
     } else {
       if (errorMessage) {
@@ -221,6 +227,15 @@ export default async(setting: LX.AppSetting) => {
       })
     }
   }
+
+  global.state_event.on('apiSourceUpdated', () => {
+    const generation = getScriptGeneration()
+    for (const [key, request] of scriptRequestMap) {
+      if (request.generation === generation) continue
+      scriptRequestMap.delete(key)
+      try { request.abort() } catch {}
+    }
+  })
 
   onScriptAction((event) => {
     // console.log('script actuon: ', event)

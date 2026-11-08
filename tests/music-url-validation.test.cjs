@@ -46,6 +46,7 @@ const harness = ({ cachedUrl, inspect = url => audio(url === preview ? 60000 : 2
     saveMusicUrl: async(music, quality, url) => { writes.push({ music, quality, url }); cache.set(`${music.id}:${quality}`, url) },
   }
   const pipeline = load('src/core/music/utils.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/utils/musicSdk': {}, '@/utils/data': data, '@/utils': {},
     '@/store/setting/state': { default: { setting } }, '@/utils/message': message,
     'react-native-background-timer': { default: { setTimeout, clearTimeout } },
@@ -53,6 +54,7 @@ const harness = ({ cachedUrl, inspect = url => audio(url === preview ? 60000 : 2
     '@/config/constant': {}, './sourcePriority': priority,
   })
   const online = load('src/core/music/online.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/utils/data': data, '@/core/list': {}, '@/store/setting/state': { default: { setting } },
     '@/utils/message': message, '@/core/qqMusicUrl': qq, './utils': pipeline, './sourcePriority': priority,
   })

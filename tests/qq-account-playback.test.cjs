@@ -485,6 +485,7 @@ test('account-wide timeout aborts a stuck ticket and permits source fallback', a
 const onlineHarness = (h, apiReady = Promise.resolve(true), data = {}) => {
   let sourceCalls = 0
   const pipeline = load('src/core/music/utils.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     './sourcePriority': {
       isMusicUrlFailed: () => false,
       markMusicUrlFailed() {},
@@ -543,6 +544,7 @@ const cachedOnlineHarness = (h, cachedUrl = cachedQQUrl) => {
   }
   const online = onlineHarness(h, Promise.resolve(true), data)
   const api = load('src/core/music/online.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/utils/data': data,
     '@/core/list': {},
     '@/store/setting/state': { default: { setting: { 'player.playQuality': '128k' } } },

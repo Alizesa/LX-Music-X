@@ -31,6 +31,8 @@ export interface MusicUrlRequestOptions {
   onCancel?: (cancel: () => void) => void
   validateUrl?: ValidateMusicUrl
   rejectedUrls?: ReadonlySet<string>
+  /** 内部换源沿用同一次取址的缓存上下文。 */
+  cacheContext?: string
 }
 export const getEnabledMusicSourceIds = () => {
   const setting = settingState.setting

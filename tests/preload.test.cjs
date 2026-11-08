@@ -138,6 +138,7 @@ test('unselected and removed sources are never requested, including an explicit 
 test('with no selected scripts, account fallback does not trigger pointless cross-platform searches', async() => {
   let searches = 0
   const api = load('src/core/music/utils.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/utils/musicSdk': { default: {}, findMusic: async() => { searches++; return [] } },
     '@/utils/data': {}, '@/utils': {}, '@/store/setting/state': { default: { setting: settings() } },
     '@/utils/message': message, 'react-native-background-timer': { default: { setTimeout, clearTimeout } },
@@ -155,6 +156,7 @@ test('a lower-quality account result advances to the selected source for downloa
   const source = priorityHarness(async(id, music, quality) => ({ url: `https://audio.test/${id}`, type: quality }))
   const options = []
   const api = load('src/core/music/utils.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/utils/musicSdk': {}, '@/utils/data': {}, '@/utils': {},
     '@/store/setting/state': { default: { setting: { ...settings(), 'player.playQuality': 'flac' } } },
     '@/utils/message': message, 'react-native-background-timer': {}, '@/utils/musicSdk/api-source': {},
@@ -312,6 +314,7 @@ test('cancelled cache lookups cannot start validation or source requests', async
   const gate = deferred()
   let cancel, requests = 0, validations = 0
   const api = load('src/core/music/online.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/core/qqMusicUrl': {},
     '@/utils/data': { getMusicUrl: () => gate.promise }, '@/core/list': {},
     '@/store/setting/state': { default: { setting: settings() } }, '@/utils/message': message,
@@ -331,6 +334,7 @@ test('a late source response after cancellation is never persisted to the URL ca
   const gate = deferred(), writes = []
   let cancel
   const api = load('src/core/music/online.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/core/qqMusicUrl': {},
     '@/utils/data': { getMusicUrl: async() => '', saveMusicUrl: async(...args) => writes.push(args) }, '@/core/list': {},
     '@/store/setting/state': { default: { setting: settings() } }, '@/utils/message': message,
@@ -637,7 +641,7 @@ const playerLifecycleHarness = (preloadOptions = {}) => {
     '@/utils/common': { getRandom: () => 0 },
     './utils': playerUtils,
     'react-native-background-timer': { default: clock },
-    '@/utils/tools': { debounceBackgroundTimer: () => () => {} },
+    '@/utils/tools': { debounceBackgroundTimer: () => Object.assign(() => {}, { cancel() {} }) },
     '@/config/constant': constants,
     '@/core/qqMusicFavorite': {},
     '@/core/dislikeList': {},
@@ -858,8 +862,8 @@ test('a script cancellation cleanup error cannot leave the caller or timeout pen
 })
 
 test('native script events are routed to their runtime and retain that script metadata', () => {
-  const hub = new EventEmitter(), sent = []
-  const native = { loadScript() {}, loadScriptForRuntime() {}, destroy() {}, destroyRuntime() {},
+  const hub = new EventEmitter(), sent = [], loaded = []
+  const native = { loadScript() {}, loadScriptForRuntime: (id) => loaded.push(id), destroy() {}, destroyRuntime() {},
     sendAction: (...args) => sent.push(['main', ...args]), sendActionForRuntime: (...args) => sent.push(args) }
   const bridge = load('src/utils/nativeModules/userApi.ts', { 'react-native': {
     NativeModules: { UserApiModule: native },
@@ -873,7 +877,7 @@ test('native script events are routed to their runtime and retain that script me
   hub.emit('api-action', { runtimeId: 'backup', action: 'init', data: JSON.stringify({ status: true, info: {} }) })
   assert.equal(main.length, 0)
   assert.equal(backup[0].data.info.name, 'Backup')
-  hub.emit('api-action', { action: 'init', data: JSON.stringify({ status: true, info: {} }) })
+  hub.emit('api-action', { runtimeId: loaded[0], action: 'init', data: JSON.stringify({ status: true, info: {} }) })
   assert.equal(main[0].data.info.name, 'Primary')
   bridge.sendAction('cancelRequest', 'one', 'backup')
   assert.equal(sent[0][0], 'backup')
@@ -907,7 +911,7 @@ test('native playback errors allow all selected backup sources to be tried befor
   const player = { musicInfo: { id: 'one' }, playMusicInfo: { musicInfo: song('one') } }
   let stopped = 0
   const api = load('src/core/init/player/playerEvent.ts', {
-    '@/core/player/player': { playNext: async() => {}, setMusicUrl: (...args) => requests.push(args) },
+    '@/core/player/player': { isPlayRequested: () => true, playNext: async() => {}, setMusicUrl: (...args) => requests.push(args) },
     '@/core/player/playStatus': { setStatusText() {} },
     '@/plugins/player': { getPosition: async() => 0, isEmpty: () => false, setStop: async() => { stopped++ } },
     '@/utils/tools': { isActive: () => true }, 'react-native-background-timer': { default: clock },
@@ -951,6 +955,7 @@ test('a downgraded playback URL is cached only under its actual quality', async(
   const writes = []
   const setting = { ...settings(), 'player.playQuality': 'flac' }
   const api = load('src/core/music/online.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/core/qqMusicUrl': {},
     '@/utils/data': { getMusicUrl: async() => '', saveMusicUrl: async(...args) => writes.push(args) }, '@/core/list': {},
     '@/store/setting/state': { default: { setting } }, '@/utils/message': message, './sourcePriority': {},
@@ -1011,6 +1016,8 @@ test('cancelling a missing local file stops source requests without searching mo
   const gate = deferred()
   let searches = 0, writes = 0
   const api = load('src/core/music/local.ts', {
+    '@/store/setting/state': { default: { setting: settings() } },
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/utils/data': { saveMusicUrl: async() => { writes++ } }, '@/core/list': {},
     '@/utils/music': { getLocalFilePath: async() => null }, '@/utils/localMediaMetadata': {}, '@/utils/fs': {},
     '@/utils/localMatchIndex': {}, '@/core/localList': {}, '@/config/constant': {}, '@/utils/message': message,

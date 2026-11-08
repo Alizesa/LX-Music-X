@@ -7,6 +7,22 @@ import playerState from '@/store/player/state'
 
 
 const list: LX.Player.Track[] = []
+let playPromise = Promise.resolve()
+let actionId = 0
+
+export interface PlaybackRequest {
+  isCurrent: () => boolean
+  shouldPlay: () => boolean
+  onReady?: () => void
+  onError?: (error: unknown) => void
+}
+
+const serializePlayback = async(work: () => Promise<void>) => {
+  const promise = playPromise.then(work)
+  // 一次原生操作失败不能阻塞之后的切歌。
+  playPromise = promise.catch(() => {})
+  return promise
+}
 
 // 与 Android RemoteAudioProbe 的 USER_AGENT 保持一致，预加载也复用它。
 export const defaultUserAgent = 'Mozilla/5.0 (Linux; Android 10; Pixel 3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Mobile Safari/537.36'
@@ -139,7 +155,8 @@ export const updateMetaData = async(musicInfo: LX.Player.MusicInfo, isPlay: bool
   }
 }
 
-export const initTrackInfo = async(musicInfo: LX.Player.PlayMusic, mInfo: LX.Player.MusicInfo, isCurrent = () => true) => {
+export const initTrackInfo = async(musicInfo: LX.Player.PlayMusic, mInfo: LX.Player.MusicInfo, isCurrent = () => true) => serializePlayback(async() => {
+  if (!isCurrent()) return
   const tracks = buildTracks(musicInfo)
   await TrackPlayer.add(tracks).then(() => list.push(...tracks))
   if (!isCurrent()) return
@@ -147,52 +164,46 @@ export const initTrackInfo = async(musicInfo: LX.Player.PlayMusic, mInfo: LX.Pla
   if (!isCurrent()) return
   await TrackPlayer.skip(queue.findIndex(t => t.id == tracks[0].id))
   if (isCurrent()) delayUpdateMusicInfo(mInfo)
-}
+})
 
 
-const handlePlayMusic = async(musicInfo: LX.Player.PlayMusic, url: string, time: number) => {
+const handlePlayMusic = async(musicInfo: LX.Player.PlayMusic, url: string, time: number, request: PlaybackRequest) => {
 // console.log(tracks, time)
   const tracks = buildTracks(musicInfo, url)
   const track = tracks[0]
   // await updateMusicInfo(track)
   const currentTrackIndex = await TrackPlayer.getCurrentTrack()
+  if (!request.isCurrent()) return
   await TrackPlayer.add(tracks).then(() => list.push(...tracks))
+  if (!request.isCurrent()) return
   const queue = await TrackPlayer.getQueue() as LX.Player.Track[]
+  if (!request.isCurrent()) return
   await TrackPlayer.skip(queue.findIndex(t => t.id == track.id))
-
-  if (currentTrackIndex == null) {
-    if (!isTempTrack(track.id as string)) {
-      if (time) await TrackPlayer.seekTo(time)
-      if (global.lx.restorePlayInfo) {
-        await TrackPlayer.pause()
-        // let startupAutoPlay = settingState.setting['player.startupAutoPlay']
-        global.lx.restorePlayInfo = null
-
-      // TODO startupAutoPlay
-      // if (startupAutoPlay) store.dispatch(playerAction.playMusic())
-      } else {
-        await TrackPlayer.play()
-      }
-    }
-  } else {
-    await TrackPlayer.pause()
-    if (!isTempTrack(track.id as string)) {
-      await TrackPlayer.seekTo(time)
-      await TrackPlayer.play()
-    }
+  if (!request.isCurrent()) return
+  await TrackPlayer.pause()
+  if (!request.isCurrent()) return
+  if (time || currentTrackIndex != null) {
+    await TrackPlayer.seekTo(time)
+    if (!request.isCurrent()) return
   }
-
   if (queue.length > 2) {
-    void TrackPlayer.remove(Array(queue.length - 2).fill(null).map((_, i) => i)).then(() => list.splice(0, list.length - 2))
+    const count = queue.length - 2
+    await TrackPlayer.remove(Array.from({ length: count }, (_, i) => i))
+    list.splice(0, count)
   }
+  if (!request.isCurrent()) return
+  // 完成所有装载操作后再检查意图，清理旧队列期间的恢复/暂停也必须生效。
+  if (request.shouldPlay()) await TrackPlayer.play()
+  if (request.isCurrent()) request.onReady?.()
 }
-let playPromise = Promise.resolve()
-let actionId = Math.random()
-export const playMusic = (musicInfo: LX.Player.PlayMusic, url: string, time: number) => {
-  const id = actionId = Math.random()
-  void playPromise.finally(() => {
-    if (id != actionId) return
-    playPromise = handlePlayMusic(musicInfo, url, time)
+export const playMusic = (musicInfo: LX.Player.PlayMusic, url: string, time: number, request: PlaybackRequest) => {
+  const id = ++actionId
+  const isCurrent = () => id === actionId && request.isCurrent()
+  void serializePlayback(async() => {
+    if (!isCurrent()) return
+    await handlePlayMusic(musicInfo, url, time, { ...request, isCurrent })
+  }).catch(error => {
+    if (isCurrent()) request.onError?.(error)
   })
 }
 
