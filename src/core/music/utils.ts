@@ -10,7 +10,7 @@ import settingState from '@/store/setting/state'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import BackgroundTimer from 'react-native-background-timer'
 import { apis } from '@/utils/musicSdk/api-source'
-import { getQQMusicUrlByAccount, validateCachedQQMusicUrl } from '@/core/qqMusicUrl'
+import { getQQMusicUrlByAccount, validateQQMusicUrl } from '@/core/qqMusicUrl'
 import { QQ_LYRIC_CACHE_VERSION } from '@/config/constant'
 import { getEnabledMusicSourceIds, getMusicUrlByPriority, isMusicUrlFailed, markMusicUrlFailed, type MusicUrlRequestOptions, type ValidateMusicUrl } from './sourcePriority'
 
@@ -280,6 +280,15 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
   quality: LX.Quality
   isFromCache: boolean
 }> => {
+  let cancelled = false
+  let currentCancel: (() => void) | undefined
+  onCancel?.(() => { cancelled = true; currentCancel?.() })
+  const assertActive = () => { if (cancelled) throw new Error(requestMsg.cancelRequest) }
+  const registerCancel = (cancel: () => void) => {
+    currentCancel = cancel
+    if (cancelled) cancel()
+  }
+  assertActive()
   let musicInfo: LX.Music.MusicInfoOnline | null = null
   let itemQuality: LX.Quality | null = null
   // eslint-disable-next-line no-cond-assign
@@ -295,32 +304,39 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
   if (!musicInfo || !itemQuality) throw new Error(global.i18n.t('toggle_source_failed'))
 
   const cachedUrl = await getStoreMusicUrl(musicInfo, itemQuality)
+  assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
-      await validateCachedQQMusicUrl(musicInfo, cachedUrl, itemQuality, onCancel)
+      await validateQQMusicUrl(musicInfo, cachedUrl, itemQuality, registerCancel)
+      assertActive()
       await validateUrl?.(cachedUrl)
+      assertActive()
       return { url: cachedUrl, musicInfo, quality: itemQuality, isFromCache: true }
     } catch (error) {
+      assertActive()
       if (isRequestCancelled(error)) throw error
+      markMusicUrlFailed(cachedUrl)
     }
   }
 
   let reqPromise
   try {
-    reqPromise = getMusicUrlByPriority({ musicInfo, quality: itemQuality, onCancel, validateUrl, rejectedUrls, allowQualityFallback: quality == null })
+    reqPromise = getMusicUrlByPriority({ musicInfo, quality: itemQuality, onCancel: registerCancel, validateUrl, rejectedUrls, allowQualityFallback: quality == null, isRefresh })
   } catch (err: any) {
     reqPromise = Promise.reject(err)
   }
   // retryedSource.includes(musicInfo.source)
   // eslint-disable-next-line @typescript-eslint/promise-function-async
   return reqPromise.then(({ url, quality: actualQuality }: { url: string, quality: LX.Quality }) => {
+    assertActive()
     return { musicInfo, url, quality: actualQuality, isFromCache: false }
     // eslint-disable-next-line @typescript-eslint/promise-function-async
   }).catch((err: any) => {
+    assertActive()
     // 取消不是失败，不要继续换下一个源
     if (isRequestCancelled(err) || err.message == requestMsg.tooManyRequests) throw err
     console.log(err)
-    return getOnlineOtherSourceMusicUrl({ musicInfos, quality, onToggleSource, isRefresh, retryedSource, onCancel, validateUrl, rejectedUrls })
+    return getOnlineOtherSourceMusicUrl({ musicInfos, quality, onToggleSource, isRefresh, retryedSource, onCancel: registerCancel, validateUrl, rejectedUrls })
   })
 }
 
@@ -404,6 +420,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
       const result = await getMusicUrlByPriority({
         musicInfo,
         quality: quality ?? settingState.setting['player.playQuality'],
+        isRefresh,
         allowQualityFallback: quality == null,
         onCancel: registerCancel,
         validateUrl,

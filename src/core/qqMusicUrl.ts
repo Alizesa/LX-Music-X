@@ -69,21 +69,24 @@ const isCompleteAudio = (media: RemoteAudioInfo, quality: LX.Quality, expectedMs
     Math.abs(actualMs - expectedMs) <= Math.max(2000, expectedMs / 50)
 }
 
-/** 旧缓存没有账号来源标记；QQ CDN 地址也要核对，避免已缓存的试听绕过取链检查。 */
-export const validateCachedQQMusicUrl = async(
+/** QQ 歌曲的脚本直链、代理地址与缓存共用校验，必须在预读音频或接受链接前完成。 */
+export const validateQQMusicUrl = async(
   musicInfo: LX.Music.MusicInfoOnline,
   url: string,
   quality: LX.Quality,
   onCancel?: (cancel: () => void) => void,
+  isRefresh = false,
 ): Promise<void> => {
-  if (musicInfo.source !== 'tx' || !/^https?:\/\/(?:[\w-]+\.)*qq\.com(?::\d+)?\//i.test(url)) return
+  if (!/^https?:\/\//i.test(url)) return
+  // 代理地址没有 QQ 域名；跨平台换源后的缓存也可能没有 tx 来源标记。
+  if (musicInfo.source !== 'tx' && !/^https?:\/\/(?:[\w-]+\.)*qq\.com(?::\d+)?\//i.test(url)) return
   const controller = new AbortController()
   try {
     onCancel?.(() => { controller.abort() })
     throwIfAborted(controller.signal)
     const expectedMs = getDurationMs(musicInfo.interval)
     if (!QUALITY_SPEC[quality] || !expectedMs) throw new Error('QQ Music audio duration unavailable')
-    const media = await probeRemoteAudio(url, true, { signal: controller.signal })
+    const media = await probeRemoteAudio(url, true, { signal: controller.signal, isRefresh })
     throwIfAborted(controller.signal)
     if (!isCompleteAudio(media, quality, expectedMs)) throw new Error('QQ Music audio is incomplete')
   } finally {

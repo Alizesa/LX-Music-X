@@ -42,6 +42,7 @@ const priorityHarness = (request = async id => ({ url: `https://audio.test/${id}
   const calls = []
   let now = 1000
   const api = load('src/core/music/sourcePriority.ts', {
+    '@/core/qqMusicUrl': { validateQQMusicUrl: async() => {} },
     '@/store/setting/state': { default: { setting } },
     '@/store/userApi': { state: { list: ['a', 'b', 'c'].map(id => ({ id: `user_api_${id}` })) } },
     '@/utils/apiSourceOrder': order, '@/utils/message': message,

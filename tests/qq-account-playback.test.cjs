@@ -487,6 +487,7 @@ const onlineHarness = (h, apiReady = Promise.resolve(true), data = {}) => {
   const pipeline = load('src/core/music/utils.ts', {
     './sourcePriority': {
       isMusicUrlFailed: () => false,
+      markMusicUrlFailed() {},
       getMusicUrlByPriority: async({ musicInfo, quality, onCancel }) => {
         let cancelled = false
         onCancel?.(() => { cancelled = true })
@@ -584,10 +585,10 @@ test('account selection and full cache hits reuse the same native media metadata
   assert.equal(cache.writes.length, 1)
 })
 
-test('other source cache URLs do not trigger QQ account media checks', async() => {
+test('non-QQ songs with non-QQ cache URLs do not trigger QQ media checks', async() => {
   const h = harness()
   const cache = cachedOnlineHarness(h, 'https://source.example/song.mp3')
-  assert.equal(await cache.resolve(), 'https://source.example/song.mp3')
+  assert.equal(await cache.resolve({ musicInfo: { ...song, source: 'wy' } }), 'https://source.example/song.mp3')
   assert.equal(h.probes.length, 0)
   assert.equal(h.requests.length, 0)
 })
