@@ -9,6 +9,7 @@ export interface SearchResult {
   limit: number
   total: number
   source: LX.OnlineSource
+  failed?: boolean
 }
 
 
@@ -32,21 +33,22 @@ const handleSortList = (list: LX.Music.MusicInfoOnline[], keyword: string) => {
 
 
 const setLists = (results: SearchResult[], page: number, text: string): LX.Music.MusicInfoOnline[] => {
-  let pages = []
+  if (page === 1) state.maxPages = {}
   let totals = []
   let limit = 0
   let list = [] as LX.Music.MusicInfoOnline[]
   for (const source of results) {
+    // 请求失败不代表只有一页，保留已知页数，未知的音源下次仍有机会请求。
+    if (source.failed) continue
     state.maxPages[source.source] = source.allPage
     limit = Math.max(source.limit, limit)
     if (source.allPage < page) continue
     arrPush(list, source.list)
-    pages.push(source.allPage)
     totals.push(source.total)
   }
   list = handleSortList(list.map(s => toNewMusicInfo(s) as LX.Music.MusicInfoOnline), text)
   let listInfo = state.listInfos.all
-  listInfo.maxPage = Math.max(0, ...pages)
+  listInfo.maxPage = Math.max(0, ...Object.values(state.maxPages))
   const total = Math.max(0, ...totals)
   if (page == 1 || (total && list.length)) listInfo.total = total
   else listInfo.total = limit * page

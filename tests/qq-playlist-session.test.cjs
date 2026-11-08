@@ -156,6 +156,76 @@ const harness = ({
   }
 }
 
+const homeApi = (h, requests = {}, drop = async() => {}) => load('src/core/qqMusicHome.ts', {
+  './qqMusic': { ...h.account, ...requests },
+  '@/utils/data': h.data,
+  './qqMusicRecommendSession': { dropRecommendSession: drop },
+})
+
+for (const [method, requestMethod, cacheGetter, day] of [
+  ['refreshQQMusicHomeDaily', 'getQQMusicDailyPlaylist', 'getQQMusicDailyPlaylistCache', 'playlist'],
+  ['refreshQQMusicHomeGuess', 'getQQMusicDailyRecommendations', 'getQQMusicDailyRecommendCache', 'recommend'],
+  ['refreshQQMusicHomeRadar', 'getQQMusicHeartRadarSongs', 'getQQMusicHeartRadarCache', 'radar'],
+  ['refreshQQMusicHomePlaylists', 'getQQMusicRecommendedPlaylists', 'getQQMusicRecommendPlaylistsCache', null],
+]) {
+  for (const change of ['logout', 'switch account']) {
+    test(`${method} rejects an old response after ${change} without restoring cleared caches`, async() => {
+      const h = harness(), response = gate()
+      let dropped = 0
+      const home = homeApi(h, { [requestMethod]: async() => { await response.wait(); return [{ id: 'old-account-song' }] } }, async() => { dropped++ })
+      const session = await h.account.getQQMusicSession()
+      const pending = home[method](session)
+      const rejection = assert.rejects(pending, error => error instanceof h.account.QQMusicSessionExpiredError)
+      await response.entered
+      if (change === 'logout') await h.account.clearQQMusicSession()
+      else await h.account.saveQQMusicSession(cookieB)
+      response.release()
+      await rejection
+      const cached = await h.data[cacheGetter]()
+      assert.ok(cached == null || cached.length === 0)
+      assert.equal(dropped, 0)
+      if (day) assert.notEqual(await h.data.getQQMusicRefreshDay(day), new Date().toDateString())
+    })
+  }
+}
+
+test('logout waits for a home cache write and removes both its data and refresh-day marker', async() => {
+  const h = harness(), writing = gate()
+  const save = h.data.saveQQMusicDailyPlaylistCache
+  h.data.saveQQMusicDailyPlaylistCache = async songs => { await writing.wait(); await save(songs) }
+  const home = homeApi(h, { getQQMusicDailyPlaylist: async() => [{ id: 'old-account-song' }] })
+  const pending = home.refreshQQMusicHomeDaily(await h.account.getQQMusicSession())
+  const rejection = assert.rejects(pending, error => error instanceof h.account.QQMusicSessionExpiredError)
+  await writing.entered
+  let loggedOut = false
+  const logout = h.account.clearQQMusicSession().then(() => { loggedOut = true })
+  await flush()
+  assert.equal(loggedOut, false)
+  writing.release()
+  await Promise.all([logout, rejection])
+  assert.equal((await h.data.getQQMusicDailyPlaylistCache()).length, 0)
+  assert.notEqual(await h.data.getQQMusicRefreshDay('playlist'), new Date().toDateString())
+})
+
+test('a home refresh rejects an obsolete session before making a network request', async() => {
+  const h = harness()
+  const session = await h.account.getQQMusicSession()
+  await h.account.clearQQMusicSession()
+  let requests = 0
+  const home = homeApi(h, { getQQMusicDailyPlaylist: async() => { requests++; return [] } })
+  await assert.rejects(home.refreshQQMusicHomeDaily(session), error => error instanceof h.account.QQMusicSessionExpiredError)
+  assert.equal(requests, 0)
+})
+
+test('a current home refresh saves songs and the refresh-day marker', async() => {
+  const h = harness()
+  const home = homeApi(h, { getQQMusicDailyPlaylist: async() => [{ id: 'current-song' }] })
+  const songs = await home.refreshQQMusicHomeDaily(await h.account.getQQMusicSession())
+  assert.equal(songs[0].id, 'current-song')
+  assert.equal((await h.data.getQQMusicDailyPlaylistCache())[0].id, 'current-song')
+  assert.equal(await h.data.getQQMusicRefreshDay('playlist'), new Date().toDateString())
+})
+
 for (const change of ['logout', 'switch account']) {
   test(`collection cannot restore the old cache during ${change} cleanup`, async() => {
     const refresh = gate()

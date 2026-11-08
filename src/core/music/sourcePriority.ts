@@ -1,6 +1,6 @@
 import settingState from '@/store/setting/state'
 import { state as userApiState } from '@/store/userApi'
-import { parseApiSourceOrder } from '@/utils/apiSourceOrder'
+import { resolveApiSourceOrder } from '@/utils/apiSourceOrder'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { requestUserApiMusicUrl } from '@/core/userApiRuntime'
 
@@ -33,8 +33,7 @@ export interface MusicUrlRequestOptions {
 }
 export const getEnabledMusicSourceIds = () => {
   const setting = settingState.setting
-  return parseApiSourceOrder(setting['common.apiSourceOrder'], setting['common.apiSource'])
-    .filter(id => userApiState.list.some(api => api.id == id))
+  return resolveApiSourceOrder(setting['common.apiSourceOrder'], setting['common.apiSource'], userApiState.list)
 }
 
 /** 一轮只依次请求已勾选的脚本；失败冷却按歌曲/音质隔离，不误伤这个源的其他歌曲。 */

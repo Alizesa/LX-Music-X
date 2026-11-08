@@ -138,12 +138,14 @@ export const updateMetaData = async(musicInfo: LX.Player.MusicInfo, isPlay: bool
   }
 }
 
-export const initTrackInfo = async(musicInfo: LX.Player.PlayMusic, mInfo: LX.Player.MusicInfo) => {
+export const initTrackInfo = async(musicInfo: LX.Player.PlayMusic, mInfo: LX.Player.MusicInfo, isCurrent = () => true) => {
   const tracks = buildTracks(musicInfo)
   await TrackPlayer.add(tracks).then(() => list.push(...tracks))
+  if (!isCurrent()) return
   const queue = await TrackPlayer.getQueue() as LX.Player.Track[]
+  if (!isCurrent()) return
   await TrackPlayer.skip(queue.findIndex(t => t.id == tracks[0].id))
-  delayUpdateMusicInfo(mInfo)
+  if (isCurrent()) delayUpdateMusicInfo(mInfo)
 }
 
 

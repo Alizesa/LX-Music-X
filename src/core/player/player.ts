@@ -205,29 +205,30 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
 
 // 恢复上次播放的状态
 const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
-  const musicInfo = playerState.playMusicInfo.musicInfo
+  const playMusicInfo = playerState.playMusicInfo
+  const musicInfo = playMusicInfo.musicInfo
   if (!musicInfo) return
+  const isCurrent = () => playerState.playMusicInfo === playMusicInfo
 
   setTimeout(() => {
+    if (!isCurrent()) return
     global.app_event.setProgress(settingState.setting['player.isSavePlayTime'] ? restorePlayInfo.time : 0, restorePlayInfo.maxTime)
   })
 
-  const playMusicInfo = playerState.playMusicInfo
-
-  void initTrackInfo(musicInfo, playerState.musicInfo)
+  void initTrackInfo(musicInfo, playerState.musicInfo, isCurrent).catch(console.warn)
 
   void getPicPath({ musicInfo, listId: playMusicInfo.listId }).then((url: string) => {
     if (
-      musicInfo.id != playMusicInfo.musicInfo?.id ||
+      !isCurrent() ||
       playerState.musicInfo.pic == url ||
       playerState.loadErrorPicUrl == url
     ) return
     setMusicInfo({ pic: url })
     global.app_event.picUpdated()
-  })
+  }).catch(console.warn)
 
   void getLyricInfo({ musicInfo }).then((lyricInfo) => {
-    if (musicInfo.id != playMusicInfo.musicInfo?.id) return
+    if (!isCurrent()) return
     setMusicInfo({
       lrc: lyricInfo.lyric,
       tlrc: lyricInfo.tlyric,
@@ -238,7 +239,7 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
     global.app_event.lyricUpdated()
   }).catch((err) => {
     console.log(err)
-    if (musicInfo.id != playMusicInfo.musicInfo?.id) return
+    if (!isCurrent()) return
     setStatusText(global.i18n.t('lyric__load_error'))
   })
 

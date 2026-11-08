@@ -20,6 +20,13 @@ let session: LX.QQMusic.RecommendSession | null = null
 let loaded = false
 // 正在读盘的那次。同一次启动里连着点几下只读一次
 let loading: Promise<LX.QQMusic.RecommendSession | null> | null = null
+let revision = 0
+let writes: Promise<void> = Promise.resolve()
+
+const writeSession = async(write: () => Promise<void>) => {
+  writes = writes.then(write).catch(error => { onStorageError(error) })
+  await writes
+}
 
 const isSameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString()
 // 跨天的存档作废：推荐内容本来就该换新的一批
@@ -51,24 +58,29 @@ export const parkRecommendQueue = async() => {
   if (!isRecommendQueue()) return
   const songs = getPlayQueueMusic()
   if (!songs.length) return
-  session = {
+  revision++
+  const snapshot = session = {
     songs,
     sourceFirstMusicId: getPlayQueueSourceFirstMusicId(),
     index: Math.max(0, playerState.playInfo.playerPlayIndex),
     savedAt: Date.now(),
   }
   loaded = true
-  await saveQQMusicRecommendSession(session).catch(onStorageError)
+  await writeSession(async() => { await saveQQMusicRecommendSession(snapshot) })
 }
 
 const readSession = async(): Promise<LX.QQMusic.RecommendSession | null> => {
+  const version = revision
+  await writes
+  if (version !== revision) return session
   const saved = await getQQMusicRecommendSession().catch(onStorageError)
+  if (version !== revision) return session
   loaded = true
   // 读盘期间又切走了一次推荐队列（park 写了更新的一份），以内存里那份为准
   if (session) return session
   if (!saved?.songs.length) return null
   if (isExpired(saved)) {
-    await removeQQMusicRecommendSession().catch(onStorageError)
+    await dropRecommendSession()
     return null
   }
   session = saved
@@ -95,8 +107,9 @@ export const getRecommendSession = async(): Promise<LX.QQMusic.RecommendSession 
 
 /** 丢掉存档。手动点「刷新」拿到新一批推荐时用，跨天由 getRecommendSession 自己处理 */
 export const dropRecommendSession = async() => {
+  revision++
   session = null
   loaded = true
   loading = null
-  await removeQQMusicRecommendSession().catch(onStorageError)
+  await writeSession(removeQQMusicRecommendSession)
 }

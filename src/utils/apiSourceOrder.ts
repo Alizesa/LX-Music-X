@@ -8,3 +8,8 @@ export const parseApiSourceOrder = (value: string, legacyId: string): string[] =
   }
   return typeof legacyId == 'string' && legacyId.startsWith('user_api') ? [legacyId] : []
 }
+
+export const resolveApiSourceOrder = (value: string, legacyId: string, available: ReadonlyArray<{ id: string }>): string[] => {
+  const installed = new Set(available.map(api => api.id))
+  return parseApiSourceOrder(value, legacyId).filter(id => installed.has(id))
+}

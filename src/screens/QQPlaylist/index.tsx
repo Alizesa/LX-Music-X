@@ -15,7 +15,8 @@ import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS, LIST_IDS, QQ_HEART_RADAR_PLAYLIST_ID } from '@/config/constant'
 import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
-import { getQQMusicDailyPlaylist, getQQMusicHeartRadarSongs, getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
+import { getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
+import { refreshQQMusicHomeDaily, refreshQQMusicHomeRadar } from '@/core/qqMusicHome'
 import { getQQMusicLikedSongs, isQQMusicLikedSongsStale, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs, releaseQQMusicLikedSongs, retainQQMusicLikedSongs, toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
 import { cachePlaylistSongs, getCachedPlaylistSongs, getPlaylistSongsCacheVersion } from '@/core/qqMusicPlaylistSongsCache'
 import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist, playQQMusicHeartRadarPlaylist } from '@/core/qqMusicDailyPosition'
@@ -24,9 +25,6 @@ import {
   getQQMusicHeartRadarCache,
   getQQMusicPlaylistsCache,
   getQQMusicRefreshDay,
-  saveQQMusicDailyPlaylistCache,
-  saveQQMusicHeartRadarCache,
-  saveQQMusicRefreshDay,
 } from '@/utils/data'
 import { createStyle, toast } from '@/utils/tools'
 import { scaleSizeW } from '@/utils/pixelRatio'
@@ -169,34 +167,16 @@ export default ({ componentId, info }: Props) => {
         // 每日推荐/红心雷达读首页那份缓存。「今天刷过了」的记账一起写上，
         // 免得首页再为同一批多拉一次
         const isDaily = localKind === 'daily'
-        const fetchSongs = isDaily ? getQQMusicDailyPlaylist : getQQMusicHeartRadarSongs
+        const fetchSongs = isDaily ? refreshQQMusicHomeDaily : refreshQQMusicHomeRadar
         const readCache = isDaily ? getQQMusicDailyPlaylistCache : getQQMusicHeartRadarCache
-        const writeCache = isDaily ? saveQQMusicDailyPlaylistCache : saveQQMusicHeartRadarCache
         const refreshKind = isDaily ? 'playlist' : 'radar'
-        if (force) {
-          // 每日推荐/红心雷达都是当天固定的一批：今天已经拉过就直接用缓存，
-          // 下拉刷新也不重新洗牌（否则同一天里红心雷达会换一批歌）
-          const fetchedToday = await getQQMusicRefreshDay(refreshKind) == new Date().toDateString()
-          const cached = fetchedToday ? await readCache() : []
-          if (cached.length) {
-            songs = cached
-          } else {
-            const { cookie } = await getQQMusicSession()
-            if (!cookie) throw new Error(t('qq_not_logged_in'))
-            songs = await fetchSongs(cookie)
-            await writeCache(songs)
-            await saveQQMusicRefreshDay(refreshKind)
-          }
-        } else {
-          songs = await readCache()
-          if (!songs.length) {
-            // 缓存还没铺：首页那个入口进页面前会先拉一次，这里是兜底（比如从别处进来）
-            const { cookie } = await getQQMusicSession()
-            if (!cookie) throw new Error(t('qq_not_logged_in'))
-            songs = await fetchSongs(cookie)
-            await writeCache(songs)
-            await saveQQMusicRefreshDay(refreshKind)
-          }
+        // 当天固定的一批允许直接复用；取新数据时与首页共用会话校验和落盘。
+        const useCache = !force || await getQQMusicRefreshDay(refreshKind) == new Date().toDateString()
+        songs = useCache ? await readCache() : []
+        if (!songs.length) {
+          const session = await getQQMusicSession()
+          if (!session.cookie) throw new Error(t('qq_not_logged_in'))
+          songs = await fetchSongs(session)
         }
       } else if (info.liked) {
         // 「我喜欢」走持久缓存：全量要翻好几页，进页面不该重拉，只有下拉刷新才联网。

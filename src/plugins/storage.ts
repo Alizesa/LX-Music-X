@@ -7,6 +7,32 @@ const partKeyPrefixRxp = /^@___PART___/
 const partKeyArrPrefixRxp = /^@___PART_A___/
 const keySplit = ','
 const limit = 500000
+const partNamespace = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
+let partSequence = 0
+
+// 同一逻辑键的读取、覆盖和删除串行，读旧索引期间不能清理它引用的分片。
+const operations = new Map<string, Promise<void>>()
+let barrier: Promise<void> = Promise.resolve()
+const withKeys = async<T>(keys: readonly string[], work: () => Promise<T>): Promise<T> => {
+  const uniqueKeys = [...new Set(keys)]
+  const previous = [barrier]
+  for (const key of uniqueKeys) {
+    const pending = operations.get(key)
+    if (pending) previous.push(pending)
+  }
+  const result = Promise.all(previous).then(work)
+  const settled = result.then(() => {}, () => {})
+  for (const key of uniqueKeys) operations.set(key, settled)
+  void settled.then(() => {
+    for (const key of uniqueKeys) if (operations.get(key) === settled) operations.delete(key)
+  })
+  return result
+}
+const withAllKeys = async<T>(work: () => Promise<T>): Promise<T> => {
+  const result = Promise.all([barrier, ...operations.values()]).then(work)
+  barrier = result.then(() => {}, () => {})
+  return result
+}
 
 const buildData = (key: string, value: any, datas: Array<[string, string]>) => {
   let valueStr = JSON.stringify(value)
@@ -16,8 +42,9 @@ const buildData = (key: string, value: any, datas: Array<[string, string]>) => {
   }
 
   const partKeys = []
-  for (let i = 0, len = Math.floor(valueStr.length / limit); i <= len; i++) {
-    let partKey = `${partKeyArrPrefix}${key}${i}`
+  const version = `${partNamespace}_${++partSequence}`
+  for (let i = 0; i * limit < valueStr.length; i++) {
+    let partKey = `${partKeyArrPrefix}${key}__${version}_${i}`
     partKeys.push(partKey)
     datas.push([partKey, valueStr.substring(i * limit, (i + 1) * limit)])
   }
@@ -73,15 +100,38 @@ const handleGetData = async<T>(partKeys: string, key: string): Promise<T | null>
   })
 }
 
-export const saveData = async(key: string, value: any) => {
-  const datas: Array<[string, string]> = []
-  buildData(key, value, datas)
+const getPartKeys = (value: string | null, key: string): string[] => {
+  if (value == null) return []
+  if (partKeyPrefixRxp.test(value)) return value.replace(partKeyPrefixRxp, '').split(keySplit)
+  if (!partKeyArrPrefixRxp.test(value)) return []
+  const parsed = parseData<unknown>(value.replace(partKeyArrPrefixRxp, ''), key)
+  return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+}
 
+const replaceData = async(datas: Array<[string, any]>) => {
+  if (!datas.length) return
+  const unique = [...new Map(datas)]
+  const keys = unique.map(([key]) => key)
+  const values: Array<[string, string]> = []
+  for (const [key, value] of unique) buildData(key, value, values)
+  return withKeys(keys, async() => {
+    const previous = await readWithRetry(async() => AsyncStorage.multiGet(keys))
+    // Android multiSet 在同一个 SQLite 事务中提交新分片与索引；失败保留旧值。
+    await AsyncStorage.multiSet(values)
+    const oldParts = previous.flatMap(([key, value]) => getPartKeys(value, key))
+    if (oldParts.length) {
+      // 新值已提交，清理失败不能再向调用方报告「保存失败」。
+      await AsyncStorage.multiRemove(oldParts).catch((error: Error) => {
+        log.error('storage error[cleanup parts]:', error.message)
+      })
+    }
+  })
+}
+
+export const saveData = async(key: string, value: any) => {
   try {
-    await removeData(key)
-    await AsyncStorage.multiSet(datas)
+    await replaceData([[key, value]])
   } catch (e: any) {
-    // saving error
     log.error('storage error[saveData]:', key, e.message)
     throw e
   }
@@ -92,8 +142,9 @@ export const saveData = async(key: string, value: any) => {
  * 仅用于确定不会超过 500k 的小对象（例如歌单歌曲索引），单 key setItem 是原子的。
  */
 export const saveDataDirect = async(key: string, value: any) => {
+  const json = JSON.stringify(value)
   try {
-    await AsyncStorage.setItem(key, JSON.stringify(value))
+    await withKeys([key], async() => AsyncStorage.setItem(key, json))
   } catch (e: any) {
     log.error('storage error[saveDataDirect]:', key, e.message)
     throw e
@@ -108,14 +159,14 @@ export const saveDataMultipleDirect = async(datas: Array<[string, unknown]>) => 
     if (json.length > limit) throw new Error('Direct storage value is too large: ' + key)
     return [key, json]
   })
-  await AsyncStorage.multiSet(values)
+  await withKeys(values.map(([key]) => key), async() => AsyncStorage.multiSet(values))
 }
 
 export const removeDataMultipleDirect = async(keys: string[]) => {
-  if (keys.length) await AsyncStorage.multiRemove(keys)
+  if (keys.length) await withKeys(keys, async() => AsyncStorage.multiRemove(keys))
 }
 
-export const getData = async<T = unknown>(key: string): Promise<T | null> => {
+export const getData = async<T = unknown>(key: string): Promise<T | null> => withKeys([key], async() => {
   let value: string | null
   try {
     value = await readWithRetry(async() => AsyncStorage.getItem(key))
@@ -129,52 +180,11 @@ export const getData = async<T = unknown>(key: string): Promise<T | null> => {
     return handleGetData<T>(value, key)
   }
   return parseData<T>(value, key)
-}
+})
 
 export const removeData = async(key: string) => {
-  let value: string | null
   try {
-    value = await AsyncStorage.getItem(key)
-  } catch (e: any) {
-    // error reading value
-    log.error('storage error[removeData]:', key, e.message)
-    throw e
-  }
-  if (value) {
-    if (partKeyPrefixRxp.test(value)) {
-      let partKeys = value.replace(partKeyPrefixRxp, '').split(keySplit)
-      partKeys.push(key)
-      try {
-        await AsyncStorage.multiRemove(partKeys)
-      } catch (e: any) {
-        // remove error
-        log.error('storage error[removeData]:', key, e.message)
-        throw e
-      }
-      return
-    } else if (partKeyArrPrefixRxp.test(value)) {
-      let partKeys: string[] = []
-      try {
-        const parsed: unknown = JSON.parse(value.replace(partKeyArrPrefixRxp, ''))
-        if (Array.isArray(parsed)) partKeys = parsed.filter((item): item is string => typeof item === 'string')
-      } catch (e: any) {
-        // 引用本身损坏（例如写入途中被杀）：分片 key 已无从得知，只删主 key
-        log.error('storage error[removeData parse]:', key, e.message)
-      }
-      partKeys.push(key)
-      try {
-        await AsyncStorage.multiRemove(partKeys)
-      } catch (e: any) {
-        // remove error
-        log.error('storage error[removeData]:', key, e.message)
-        throw e
-      }
-      return
-    }
-  }
-
-  try {
-    await AsyncStorage.removeItem(key)
+    await removeDataMultiple([key])
   } catch (e: any) {
     // remove error
     log.error('storage error[removeData]:', key, e.message)
@@ -182,7 +192,7 @@ export const removeData = async(key: string) => {
   }
 }
 
-export const getAllKeys = async() => {
+export const getAllKeys = async() => withAllKeys(async() => {
   let keys
   try {
     keys = await AsyncStorage.getAllKeys()
@@ -193,10 +203,10 @@ export const getAllKeys = async() => {
   }
 
   return keys
-}
+})
 
 
-export const getDataMultiple = async<T extends readonly string[]>(keys: T) => {
+export const getDataMultiple = async<T extends readonly string[]>(keys: T) => withKeys(keys, async() => {
   type RawData = { [K in keyof T]: [T[K], string | null] }
   let datas: RawData
   try {
@@ -221,16 +231,11 @@ export const getDataMultiple = async<T extends readonly string[]>(keys: T) => {
   return Promise.all(promises).then(values => {
     return datas.map(([key], index) => ([key, values[index]])) as { [K in keyof T]: [T[K], unknown] }
   })
-}
+})
 
 export const saveDataMultiple = async(datas: Array<[string, any]>) => {
-  const allData: Array<[string, string]> = []
-  for (const [key, value] of datas) {
-    buildData(key, value, allData)
-  }
   try {
-    await removeDataMultiple(datas.map(k => k[0]))
-    await AsyncStorage.multiSet(allData)
+    await replaceData(datas)
   } catch (e: any) {
     // save error
     log.error('storage error[saveDataMultiple]:', e.message)
@@ -241,28 +246,11 @@ export const saveDataMultiple = async(datas: Array<[string, any]>) => {
 
 export const removeDataMultiple = async(keys: string[]) => {
   if (!keys.length) return
-  const datas = await AsyncStorage.multiGet(keys)
-  let allKeys = []
-  for (const [key, value] of datas) {
-    allKeys.push(key)
-    if (value) {
-      if (partKeyPrefixRxp.test(value)) {
-        allKeys.push(...value.replace(partKeyPrefixRxp, '').split(keySplit))
-      } else if (partKeyArrPrefixRxp.test(value)) {
-        try {
-          const parsed: unknown = JSON.parse(value.replace(partKeyArrPrefixRxp, ''))
-          if (Array.isArray(parsed)) {
-            allKeys.push(...parsed.filter((item): item is string => typeof item === 'string'))
-          }
-        } catch (e: any) {
-          // 坏引用：主 key 已在上面加入 allKeys，分片 key 无从得知，跳过
-          log.error('storage error[removeDataMultiple parse]:', key, e.message)
-        }
-      }
-    }
-  }
   try {
-    await AsyncStorage.multiRemove(allKeys)
+    await withKeys(keys, async() => {
+      const datas = await readWithRetry(async() => AsyncStorage.multiGet(keys))
+      await AsyncStorage.multiRemove(datas.flatMap(([key, value]) => [key, ...getPartKeys(value, key)]))
+    })
   } catch (e: any) {
     // remove error
     log.error('storage error[removeDataMultiple]:', e.message)
@@ -270,7 +258,7 @@ export const removeDataMultiple = async(keys: string[]) => {
   }
 }
 
-export const clearAll = async() => {
+export const clearAll = async() => withAllKeys(async() => {
   try {
     await AsyncStorage.clear()
   } catch (e: any) {
@@ -278,6 +266,6 @@ export const clearAll = async() => {
     log.error('storage error[clearAll]:', e.message)
     throw e
   }
-}
+})
 
 export { useAsyncStorage } from '@react-native-async-storage/async-storage'

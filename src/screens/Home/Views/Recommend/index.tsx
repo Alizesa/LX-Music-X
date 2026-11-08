@@ -13,15 +13,14 @@ import { setHomePagerHorizontalScroll } from '@/core/homePagerScroll'
 import { setTempList } from '@/core/list'
 import { playList } from '@/core/player/player'
 import {
-  getQQMusicDailyPlaylist,
-  getQQMusicDailyRecommendations,
-  getQQMusicHeartRadarSongs,
-  getQQMusicRecommendedPlaylists,
   getQQMusicSession,
   getQQMusicSimilarSongs,
+  isQQMusicSessionCurrent,
+  QQMusicSessionExpiredError,
+  type QQMusicSession,
 } from '@/core/qqMusic'
+import { refreshQQMusicHomeDaily, refreshQQMusicHomeGuess, refreshQQMusicHomePlaylists, refreshQQMusicHomeRadar } from '@/core/qqMusicHome'
 import { continueRecommendQueue, initQQMusicRecommendAutoRefresh, startRecommendQueue } from '@/core/qqMusicRecommend'
-import { dropRecommendSession } from '@/core/qqMusicRecommendSession'
 import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist, playQQMusicHeartRadarPlaylist } from '@/core/qqMusicDailyPosition'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
@@ -32,16 +31,12 @@ import {
   getQQMusicHeartRadarCache,
   getQQMusicRecommendPlaylistsCache,
   getQQMusicRefreshDay,
-  saveQQMusicDailyPlaylistCache,
-  saveQQMusicDailyRecommendCache,
-  saveQQMusicHeartRadarCache,
-  saveQQMusicRecommendPlaylistsCache,
-  saveQQMusicRefreshDay,
 } from '@/utils/data'
 import { useI18n } from '@/lang'
 
 type Songs = LX.Music.MusicInfoOnline[]
 type Playlist = LX.QQMusic.PlaylistInfo
+type HomeCacheKind = 'daily' | 'guess' | 'radar' | 'playlists'
 
 // 横向滑动块触摸期间同步关掉外层首页 PagerView 的横滑，否则手势会被它抢走
 const horizontalScrollProps = {
@@ -122,7 +117,9 @@ export default () => {
   const similarColumns = isWide ? 2 : 1
   const similarItemWidth: `${number}%` = isWide ? '50%' : '100%'
   const loginRef = useRef<QQMusicLoginModalType>(null)
-  const [cookie, setCookie] = useState('')
+  const [session, setSession] = useState<QQMusicSession | null>(null)
+  const mounted = useRef(true)
+  const cacheRevisions = useRef({ daily: 0, guess: 0, radar: 0, playlists: 0 })
   const [daily, setDaily] = useState<Songs>([])
   const [guess, setGuess] = useState<Songs>([])
   const [radar, setRadar] = useState<Songs>([])
@@ -136,7 +133,15 @@ export default () => {
   const [refreshingPlaylists, setRefreshingPlaylists] = useState(false)
   const refreshingPlaylistsRef = useRef(false)
 
-  const loggedIn = !!cookie
+  const loggedIn = !!session?.cookie
+  const isCurrent = useCallback(() => mounted.current && !!session?.cookie && isQQMusicSessionCurrent(session), [session])
+  const applyResult = useCallback(async<T,>(kind: HomeCacheKind, request: Promise<T>, update: (value: T) => void): Promise<T> => {
+    const value = await request
+    if (!isCurrent()) throw new QQMusicSessionExpiredError()
+    cacheRevisions.current[kind]++
+    update(value)
+    return value
+  }, [isCurrent])
 
   // 页面卸载时万一还按着横向列表，别把首页 PagerView 一直锁着
   useEffect(() => () => { setHomePagerHorizontalScroll(false) }, [])
@@ -146,29 +151,56 @@ export default () => {
   }, [loggedIn, playlists.length])
 
   useEffect(() => {
-    void getQQMusicSession().then(session => { setCookie(session.cookie) })
+    mounted.current = true
+    let revision = 0
     const handleAccountUpdate = () => {
-      void getQQMusicSession().then(session => { setCookie(session.cookie) })
+      const request = ++revision
+      setSession(null)
+      setDaily([])
+      setGuess([])
+      setRadar([])
+      setPlaylists([])
+      setSimilar({ title: '', seedName: '', songs: [] })
+      refreshingRef.current = refreshingGuessRef.current = refreshingPlaylistsRef.current = false
+      setRefreshing(false)
+      setRefreshingGuess(false)
+      setRefreshingPlaylists(false)
+      setPlaying(false)
+      void getQQMusicSession().then(current => {
+        if (mounted.current && request === revision && isQQMusicSessionCurrent(current)) setSession(current)
+      }).catch(console.warn)
     }
+    handleAccountUpdate()
     global.app_event.on('qqMusicAccountUpdated', handleAccountUpdate)
-    return () => { global.app_event.off('qqMusicAccountUpdated', handleAccountUpdate) }
+    return () => {
+      mounted.current = false
+      revision++
+      global.app_event.off('qqMusicAccountUpdated', handleAccountUpdate)
+    }
   }, [])
 
   useEffect(() => {
-    // 先铺缓存
-    void getQQMusicDailyPlaylistCache().then(setDaily)
-    void getQQMusicDailyRecommendCache().then(setGuess)
-    void getQQMusicHeartRadarCache().then(setRadar)
-    void getQQMusicRecommendPlaylistsCache().catch(() => null).then(cache => {
-      if (!cache?.list.length) return
-      setPlaylists(cache.list)
-    })
-  }, [])
+    if (!isCurrent()) return
+    let active = true
+    const restore = async<T,>(kind: HomeCacheKind, request: Promise<T>, update: (value: T) => void) => {
+      const revision = cacheRevisions.current[kind]
+      const value = await request
+      if (active && isCurrent() && revision === cacheRevisions.current[kind]) update(value)
+    }
+    void Promise.all([
+      restore('daily', getQQMusicDailyPlaylistCache(), setDaily),
+      restore('guess', getQQMusicDailyRecommendCache(), setGuess),
+      restore('radar', getQQMusicHeartRadarCache(), setRadar),
+      restore('playlists', getQQMusicRecommendPlaylistsCache(), cache => { setPlaylists(cache?.list ?? []) }),
+    ]).catch(console.warn)
+    return () => { active = false }
+  }, [isCurrent])
 
   // 相似推荐的种子取最近播放的第一首 QQ 歌曲
-  const loadSimilar = useCallback(async(activeCookie: string) => {
-    if (!activeCookie) return
+  const loadSimilar = useCallback(async(activeSession: QQMusicSession | null) => {
+    if (!activeSession?.cookie || !isQQMusicSessionCurrent(activeSession)) return
     const history = await getPlayHistory()
+    if (!mounted.current || !isQQMusicSessionCurrent(activeSession)) return
     const seed = history.find(item => {
       const info = 'metadata' in item.musicInfo ? item.musicInfo.metadata.musicInfo : item.musicInfo
       return info.source == 'tx' && !!info.meta.id
@@ -177,52 +209,32 @@ export default () => {
     const info = 'metadata' in seed.musicInfo ? seed.musicInfo.metadata.musicInfo : seed.musicInfo
     const seedId = (info.meta as LX.Music.MusicInfoOnline['meta'] & { id?: string }).id
     try {
-      const result = await getQQMusicSimilarSongs(activeCookie, seedId!)
-      if (!result.songs.length) return
+      const result = await getQQMusicSimilarSongs(activeSession.cookie, seedId!)
+      if (!mounted.current || !isQQMusicSessionCurrent(activeSession) || !result.songs.length) return
       setSimilar({ title: result.title, seedName: info.name, songs: result.songs })
     } catch {
       // 相似推荐失败不影响首页其它板块，静默跳过
     }
   }, [])
 
-  useEffect(() => { void loadSimilar(cookie) }, [cookie, loadSimilar])
+  useEffect(() => { void loadSimilar(session).catch(console.warn) }, [session, loadSimilar])
 
   /** 拉一份新的每日推荐：铺上、落盘、记下「今天刷过了」 */
-  const fetchDaily = useCallback(async() => {
-    const songs = await getQQMusicDailyPlaylist(cookie)
-    setDaily(songs)
-    await saveQQMusicDailyPlaylistCache(songs)
-    await saveQQMusicRefreshDay('playlist')
-    return songs
-  }, [cookie])
+  const fetchDaily = useCallback(async() => applyResult('daily', refreshQQMusicHomeDaily(session), setDaily), [session, applyResult])
 
   /** 拉一份新的猜你喜欢：铺上、落盘、作废上次那批的续播存档、记下「今天刷过了」 */
-  const fetchGuess = useCallback(async() => {
-    const songs = await getQQMusicDailyRecommendations(cookie)
-    if (!songs.length) throw new Error(t('qq_load_failed'))
-    setGuess(songs)
-    await saveQQMusicDailyRecommendCache(songs)
-    await saveQQMusicRefreshDay('recommend')
-    // 刷新就是要换一批：上次那批的续播存档作废，下次点「猜你喜欢」从新的这批开头放。
-    // 失败时不能丢——用户没拿到新列表，不该连续播也一起没了。
-    await dropRecommendSession()
-    return songs
-  }, [cookie, t])
+  const fetchGuess = useCallback(async() => applyResult('guess', refreshQQMusicHomeGuess(session), setGuess), [session, applyResult])
 
   /** 拉一份新的红心雷达：铺上、落盘、记下「今天刷过了」 */
-  const fetchRadar = useCallback(async() => {
-    const songs = await getQQMusicHeartRadarSongs(cookie)
-    setRadar(songs)
-    await saveQQMusicHeartRadarCache(songs)
-    await saveQQMusicRefreshDay('radar')
-    return songs
-  }, [cookie])
+  const fetchRadar = useCallback(async() => applyResult('radar', refreshQQMusicHomeRadar(session), setRadar), [session, applyResult])
 
   // 跨天自动刷新：首页铺完缓存后看一眼这份缓存是不是「今天刷的」，不是就自己去拉一次
   // （缓存空的时候记账也没有，同样落到这里）。每天首次进首页各一次请求，
   // 之后就不管了 —— 中途要看新的一批还是下拉/点刷新钮。失败保持旧内容，不打扰用户
   useEffect(() => {
-    if (!cookie) return
+    if (!isCurrent()) return
+    let active = true
+    const valid = () => active && isCurrent()
     const check = async() => {
       const [dailyDay, guessDay, radarDay] = await Promise.all([
         getQQMusicRefreshDay('playlist'),
@@ -231,7 +243,7 @@ export default () => {
       ])
       const today = new Date().toDateString()
       // 用户刚好在下拉刷新时别凑热闹
-      if (refreshingRef.current || refreshingGuessRef.current) return
+      if (!valid() || refreshingRef.current || refreshingGuessRef.current) return
       const failures: string[] = []
       // 占住手动刷新那两道闸：自动刷新自己在发请求的这段时间里，
       // 用户再下拉/点刷新钮也应该被挡住，否则同一批会请求两遍
@@ -242,9 +254,10 @@ export default () => {
         } catch (error) {
           failures.push(`每日推荐: ${error instanceof Error ? error.message : String(error)}`)
         } finally {
-          refreshingRef.current = false
+          if (valid()) refreshingRef.current = false
         }
       }
+      if (!valid()) return
       if (guessDay != today) {
         refreshingGuessRef.current = true
         try {
@@ -252,9 +265,10 @@ export default () => {
         } catch (error) {
           failures.push(`猜你喜欢: ${error instanceof Error ? error.message : String(error)}`)
         } finally {
-          refreshingGuessRef.current = false
+          if (valid()) refreshingGuessRef.current = false
         }
       }
+      if (!valid()) return
       if (radarDay != today) {
         try {
           await fetchRadar()
@@ -262,10 +276,11 @@ export default () => {
           failures.push(`红心雷达: ${error instanceof Error ? error.message : String(error)}`)
         }
       }
-      if (failures.length) console.warn('[QQMusic] 跨天自动刷新失败，先用旧内容:', failures.join('; '))
+      if (valid() && failures.length) console.warn('[QQMusic] 跨天自动刷新失败，先用旧内容:', failures.join('; '))
     }
-    void check()
-  }, [cookie, fetchDaily, fetchGuess, fetchRadar])
+    void check().catch(console.warn)
+    return () => { active = false }
+  }, [isCurrent, fetchDaily, fetchGuess, fetchRadar])
 
   const refresh = useCallback(async() => {
     // setRefreshing 要到下次渲染才生效，光靠 disabled 挡不住这个窗口内的第二次触发
@@ -281,14 +296,16 @@ export default () => {
       // 下拉不该顺手换掉用户正在看/正在听的那一批。
       await fetchDaily()
     } catch (error: unknown) {
-      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      if (isCurrent()) toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
-      refreshingRef.current = false
-      setRefreshing(false)
+      if (isCurrent()) {
+        refreshingRef.current = false
+        setRefreshing(false)
+      }
     }
     // 相似推荐是顺带算的，跟着下拉一起更新；它自己失败是静默的
-    void loadSimilar(cookie)
-  }, [cookie, fetchDaily, loadSimilar, loggedIn, t])
+    void loadSimilar(session).catch(console.warn)
+  }, [session, fetchDaily, loadSimilar, loggedIn, t, isCurrent])
 
   // 推荐歌单标题右侧那个刷新钮。每点一次换一批：游标往下走，取尽后回到开头
   const refreshPlaylists = useCallback(async() => {
@@ -303,16 +320,16 @@ export default () => {
     try {
       // 每次都向个性化音乐流重新要第一页（first_req_time=1），换一批歌单卡；
       // 和 MusicOne 首页刷新一致，不再自己维护 From 游标
-      const list = await getQQMusicRecommendedPlaylists(cookie)
-      setPlaylists(list)
-      await saveQQMusicRecommendPlaylistsCache({ list, nextFrom: 0 })
+      await applyResult('playlists', refreshQQMusicHomePlaylists(session), setPlaylists)
     } catch (error: unknown) {
-      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      if (isCurrent()) toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
-      refreshingPlaylistsRef.current = false
-      setRefreshingPlaylists(false)
+      if (isCurrent()) {
+        refreshingPlaylistsRef.current = false
+        setRefreshingPlaylists(false)
+      }
     }
-  }, [cookie, loggedIn, t])
+  }, [session, loggedIn, t, isCurrent, applyResult])
 
   // 猜你喜欢右下角那个刷新按钮。要换的一批就是重新拉一次推荐，并把上次那批的续播存档作废
   const refreshGuess = useCallback(async() => {
@@ -327,12 +344,14 @@ export default () => {
     try {
       await fetchGuess()
     } catch (error: unknown) {
-      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      if (isCurrent()) toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
-      refreshingGuessRef.current = false
-      setRefreshingGuess(false)
+      if (isCurrent()) {
+        refreshingGuessRef.current = false
+        setRefreshingGuess(false)
+      }
     }
-  }, [fetchGuess, loggedIn, t])
+  }, [fetchGuess, loggedIn, t, isCurrent])
 
   /**
    * 要用的那批每日推荐。缓存还没铺（新装、刚登录、上次拉取失败）时先联网拉一次 ——
@@ -340,7 +359,7 @@ export default () => {
    * 没登录才弹登录框；拉取失败提示一下就收工。
    */
   const ensureDailySongs = useCallback(async(): Promise<Songs | null> => {
-    if (daily.length) return daily
+    if (daily.length && isCurrent()) return daily
     if (!loggedIn) {
       loginRef.current?.show()
       return null
@@ -348,14 +367,14 @@ export default () => {
     try {
       return await fetchDaily()
     } catch (error: unknown) {
-      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      if (isCurrent()) toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
       return null
     }
-  }, [daily, fetchDaily, loggedIn, t])
+  }, [daily, fetchDaily, loggedIn, t, isCurrent])
 
   /** 红心雷达同样先用首页缓存；缓存没铺（新装、刚登录）时点卡片再联网拉 */
   const ensureRadarSongs = useCallback(async(): Promise<Songs | null> => {
-    if (radar.length) return radar
+    if (radar.length && isCurrent()) return radar
     if (!loggedIn) {
       loginRef.current?.show()
       return null
@@ -363,10 +382,10 @@ export default () => {
     try {
       return await fetchRadar()
     } catch (error: unknown) {
-      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      if (isCurrent()) toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
       return null
     }
-  }, [fetchRadar, loggedIn, radar, t])
+  }, [fetchRadar, loggedIn, radar, t, isCurrent])
 
   // 每日推荐整表播放。用 30 首的独立列表，不挂电台续播那套
   const playDaily = useCallback(async() => {
@@ -405,11 +424,11 @@ export default () => {
       initQQMusicRecommendAutoRefresh()
       await startRecommendQueue(songs, 0)
     } catch (error: unknown) {
-      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      if (isCurrent()) toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
-      setPlaying(false)
+      if (isCurrent()) setPlaying(false)
     }
-  }, [fetchGuess, guess, loggedIn, t])
+  }, [fetchGuess, guess, loggedIn, t, isCurrent])
 
   const playSongs = useCallback(async(listId: string, songs: Songs, index: number) => {
     await setTempList(listId, [...songs])
@@ -559,7 +578,7 @@ export default () => {
         }
       </ScrollView>
 
-      <QQMusicLoginModal ref={loginRef} onLoggedIn={() => { void getQQMusicSession().then(session => { setCookie(session.cookie) }) }} />
+      <QQMusicLoginModal ref={loginRef} />
     </View>
   )
 }

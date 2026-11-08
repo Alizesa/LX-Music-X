@@ -30,9 +30,6 @@ const handleSortList = (list: ListInfoItem[], keyword: string) => {
 }
 
 
-let maxTotals: Partial<Record<LX.OnlineSource, number>> = {
-
-}
 const setLists = (results: SearchResult[], page: number, text: string): ListInfoItem[] => {
   let totals = []
   let limit = 0
@@ -41,7 +38,6 @@ const setLists = (results: SearchResult[], page: number, text: string): ListInfo
   for (const source of results) {
     list.push(...source.list)
     totals.push(source.total)
-    maxTotals[source.source] = source.total
     const sourcePages = Math.ceil(source.total / source.limit)
     state.maxPages[source.source] = sourcePages
     pages.push(sourcePages)

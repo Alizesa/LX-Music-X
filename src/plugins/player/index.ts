@@ -1,20 +1,7 @@
 import TrackPlayer from 'react-native-track-player'
 import { updateOptions, setVolume, setPlaybackRate, migratePlayerCache } from './utils'
 
-// const listenEvent = () => {
-//   TrackPlayer.addEventListener('playback-error', err => {
-//     console.log('playback-error', err)
-//   })
-//   TrackPlayer.addEventListener('playback-state', info => {
-//     console.log('playback-state', info)
-//   })
-//   TrackPlayer.addEventListener('playback-track-changed', info => {
-//     console.log('playback-track-changed', info)
-//   })
-//   TrackPlayer.addEventListener('playback-queue-ended', info => {
-//     console.log('playback-queue-ended', info)
-//   })
-// }
+let initializing: Promise<void> | null = null
 
 const initial = async({ volume, playRate, cacheSize, isHandleAudioFocus, isEnableAudioOffload }: {
   volume: number
@@ -23,26 +10,35 @@ const initial = async({ volume, playRate, cacheSize, isHandleAudioFocus, isEnabl
   isHandleAudioFocus: boolean
   isEnableAudioOffload: boolean
 }) => {
-  if (global.lx.playerStatus.isIniting || global.lx.playerStatus.isInitialized) return
+  if (initializing) return initializing
+  if (global.lx.playerStatus.isInitialized) return
   global.lx.playerStatus.isIniting = true
-  console.log('Cache Size', cacheSize * 1024)
-  await migratePlayerCache()
-  await TrackPlayer.setupPlayer({
-    maxCacheSize: cacheSize * 1024,
-    // RNTP 的单位是秒；1000 秒（约 16 分钟）的前向缓冲没有必要，
-    // 默认 minBuffer 50 秒，这里取 60 秒，兼顾弱网和内存
-    maxBuffer: 60,
-    waitForBuffer: true,
-    handleAudioFocus: isHandleAudioFocus,
-    audioOffload: isEnableAudioOffload,
-    autoUpdateMetadata: false,
+  initializing = (async() => {
+    await migratePlayerCache()
+    try {
+      await TrackPlayer.setupPlayer({
+        maxCacheSize: cacheSize * 1024,
+        // RNTP 的单位是秒；默认 minBuffer 50 秒，前向缓冲留 60 秒。
+        maxBuffer: 60,
+        waitForBuffer: true,
+        handleAudioFocus: isHandleAudioFocus,
+        audioOffload: isEnableAudioOffload,
+        autoUpdateMetadata: false,
+      })
+      await updateOptions()
+      await setVolume(volume)
+      await setPlaybackRate(playRate)
+      global.lx.playerStatus.isInitialized = true
+    } catch (error) {
+      // 配置阶段失败也要清理已创建的原生播放器，让下一次初始化可以重试。
+      await TrackPlayer.destroy().catch(() => {})
+      throw error
+    }
+  })().finally(() => {
+    global.lx.playerStatus.isIniting = false
+    initializing = null
   })
-  global.lx.playerStatus.isInitialized = true
-  global.lx.playerStatus.isIniting = false
-  await updateOptions()
-  await setVolume(volume)
-  await setPlaybackRate(playRate)
-  // listenEvent()
+  return initializing
 }
 
 

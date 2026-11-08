@@ -151,7 +151,7 @@ const request = async(url: string, cookie: string, options: Record<string, any> 
   const result = await withAbort(pendingRequest.promise, signal, () => { pendingRequest.cancelHttp() })
   throwIfAborted(signal)
   if (result.statusCode < 200 || result.statusCode >= 300) throw new Error(`QQ Music HTTP ${result.statusCode}`)
-  const body = result.body as any
+  const body = result.body
   // 所有带票据的请求都从这里过，过期就在这一处识别并清理，不再逐个接口手写判断。
   // 只在确实带了完整票据(Cookie)时才判定：未登录的匿名请求同样会碰到过期码，
   // 那种情况不该被当成"登录失效"。
@@ -227,6 +227,16 @@ export interface QQMusicSession {
 
 export const isQQMusicSessionCurrent = (session: QQMusicSession) =>
   session.generation === sessionGeneration && pendingSessionChanges === 0
+
+/** 缓存写入与退出/换号共用队列；写到一半发生换号时，由随后排队的清理收尾。 */
+export const writeQQMusicSessionCache = async(session: QQMusicSession, write: () => Promise<void>): Promise<boolean> => {
+  if (!session.cookie || !isQQMusicSessionCurrent(session)) return false
+  return queueSessionWrite(async() => {
+    if (!isQQMusicSessionCurrent(session)) return false
+    await write()
+    return isQQMusicSessionCurrent(session)
+  })
+}
 
 // getQQMusicCookie 可能迁移旧版明文票据，读操作也必须和退出的删除排队。
 const readSessionCookie = async(generation: number) => {
@@ -584,22 +594,16 @@ export const getQQMusicSession = async(): Promise<QQMusicSession> => {
 export const updateQQMusicPlaylistsCache = async(
   session: QQMusicSession,
   update: (cached: LX.QQMusic.PlaylistInfo[]) => LX.QQMusic.PlaylistInfo[] | null,
-): Promise<boolean> => {
-  // 旧请求立即结束，不必等待正在进行的退出/换号清理。
-  if (!session.cookie || !isQQMusicSessionCurrent(session)) return false
-  return queueSessionWrite(async() => {
-    if (!isQQMusicSessionCurrent(session)) return false
-    const cached = await getQQMusicPlaylistsCache()
-    if (!isQQMusicSessionCurrent(session)) return false
-    const next = update(cached)
-    if (next === null) return true
-    await saveQQMusicPlaylistsCache(next)
-    // 写盘期间发生退出时，队列会随后清理；这里不能再发旧账号的成功通知。
-    if (!isQQMusicSessionCurrent(session)) return false
-    global.app_event.qqMusicPlaylistsUpdated()
-    return true
-  })
-}
+): Promise<boolean> => writeQQMusicSessionCache(session, async() => {
+  const cached = await getQQMusicPlaylistsCache()
+  if (!isQQMusicSessionCurrent(session)) return
+  const next = update(cached)
+  if (next === null) return
+  await saveQQMusicPlaylistsCache(next)
+  // 写盘期间发生退出时，队列会随后清理；这里不能再发旧账号的成功通知。
+  if (!isQQMusicSessionCurrent(session)) return
+  global.app_event.qqMusicPlaylistsUpdated()
+})
 
 export interface QQMusicUserSeed {
   nickname?: string

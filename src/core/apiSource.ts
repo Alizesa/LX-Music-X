@@ -6,12 +6,13 @@ import settingState from '@/store/setting/state'
 import { destroyUserApi, setUserApi } from './userApi'
 import apiSourceInfo from '@/utils/musicSdk/api-source-info'
 import { state as userApiState } from '@/store/userApi'
-import { parseApiSourceOrder } from '@/utils/apiSourceOrder'
+import { resolveApiSourceOrder } from '@/utils/apiSourceOrder'
 
-export const getApiSourceOrder = () => parseApiSourceOrder(
+export const getApiSourceOrder = () => resolveApiSourceOrder(
   settingState.setting['common.apiSourceOrder'],
   settingState.setting['common.apiSource'],
-).filter(id => userApiState.list.some(api => api.id == id))
+  userApiState.list,
+)
 
 export const setApiSourceOrder = (ids: string[]) => {
   const order = [...new Set(ids)].filter(id => userApiState.list.some(api => api.id == id))

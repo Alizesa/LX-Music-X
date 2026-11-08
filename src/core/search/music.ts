@@ -32,12 +32,16 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
     if (page === 1 && !isRefresh && await restoreSearchResult('music', sourceId, text, signal)) return listInfo.list
     if (signal.aborted) return null
     const key = `${page}__${text}`
+    if (!isRefresh && listInfo.key == key && listInfo.list.length) return listInfo.list
     if (sourceId == 'all') {
       let task = []
       let hadSuccess = false
       let requestError: Error | null = null
       for (const source of searchMusicState.sources) {
         if (source == 'all') continue
+        const maxPage = searchMusicState.maxPages[source]
+        // 页数只属于这份聚合搜索；首屏和新关键词必须重新询问所有音源。
+        if (page > 1 && listInfo.key === `${listInfo.page}__${text}` && maxPage != null && page > maxPage) continue
         const sdk = musicSdk[source]?.musicSearch
         const request = source === 'tx'
           ? musicSdk.tx.musicSearch.search(text, page, searchMusicState.listInfos.all.limit, signal)
@@ -49,6 +53,7 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
           requestError = error instanceof Error ? error : new Error(String(error))
           console.log(error)
           return {
+            failed: true,
             allPage: 1,
             limit: 30,
             list: [],
@@ -59,6 +64,7 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
       }
       return await Promise.all(task).then((results: SearchResult[]) => {
         if (signal.aborted) return null
+        if (!task.length) return listInfo.list
         // 全部请求失败不能当成空结果，否则刷新会错误删除仍可恢复的缓存。
         if (!hadSuccess) throw requestError ?? new Error('Search failed')
         setSearchText(text)
@@ -69,7 +75,6 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
         return list
       })
     } else {
-      if (!isRefresh && listInfo?.key == key && listInfo?.list.length) return listInfo?.list
       const sdk = musicSdk[sourceId]?.musicSearch
       const request = sourceId === 'tx' ? musicSdk.tx.musicSearch.search(text, page, listInfo.limit, signal) : sdk?.search(text, page, listInfo.limit)
       return await (request?.then((data: SearchResult) => {
