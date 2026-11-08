@@ -345,16 +345,31 @@ test('a late source response after cancellation is never persisted to the URL ca
 })
 
 const schedulerHarness = () => {
-  const app = new EventEmitter(), state = new EventEmitter()
+  const app = new EventEmitter(); const state = new EventEmitter()
   const setting = settings()
   const player = { isPlay: true, playMusicInfo: { musicInfo: song('current') }, progress: { nowPlayTime: 5, maxPlayTime: 180 } }
-  let now = 1000, buffered = 30, selections = 0, bufferReads = 0, resetRandom = 0
-  let next = { musicInfo: song('next'), isTempPlay: false, listId: 'queue' }, selecting
-  let prepared, bufferedGate, paused = false
+  let now = 1000; let buffered = 30; let selections = 0; let bufferReads = 0; let resetRandom = 0
+  let position = 5; let timerId = 0
+  const pendingTimers = new Map()
+  let next = { musicInfo: song('next'), isTempPlay: false, listId: 'queue' }; let selecting
+  let prepared; let bufferedGate; let paused = false
   const calls = []
   const api = load('src/core/init/player/preloadNextMusic.ts', {
-    'react-native-track-player': { default: { getBufferedPosition: async() => { bufferReads++; if (bufferedGate) await bufferedGate.promise; return buffered } } },
-    '@/store/player/state': { default: player }, '@/store/setting/state': { default: { setting } }, '@/utils/message': message,
+    'react-native-track-player': {
+      default: {
+        getPosition: async() => position,
+        getBufferedPosition: async() => { bufferReads++; if (bufferedGate) await bufferedGate.promise; return buffered },
+      },
+    },
+    'react-native-background-timer': {
+      default: {
+        setTimeout: (fn, delay) => { pendingTimers.set(++timerId, { fn, at: now + delay }); return timerId },
+        clearTimeout: id => pendingTimers.delete(id),
+      },
+    },
+    '@/store/player/state': { default: player },
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/message': message,
     '@/plugins/player/preload': { canPreloadAudio: () => true },
     '@/core/player/player': {
       getNextPlayMusicInfo: async() => { selections++; const value = next; if (selecting) await selecting.promise; return value },
@@ -363,16 +378,41 @@ const schedulerHarness = () => {
     '@/core/player/preload': {
       cancelPreload: () => { prepared = undefined },
       keepPreloadFor: music => { if (prepared !== music?.id) prepared = undefined },
-      pausePreload: () => { paused = true }, isPreloadPaused: () => paused,
+      pausePreload: () => { paused = true },
+      isPreloadPaused: () => paused,
       hasPreloadMusic: music => prepared === music.id,
       preloadMusic: async music => { calls.push(music.id); prepared = music.id; paused = false; return 'url' },
     },
   }, { Date: { now: () => now }, global: { lx: { isPlayedStop: false }, app_event: app, state_event: state } })
   api.default()
-  return { app, state, setting, player, calls, selections: () => selections, bufferReads: () => bufferReads, resetRandom: () => resetRandom,
-    tick: async(ms = 3000) => { now += ms; state.emit('playProgressChanged', {}); await flush() },
-    buffer: value => { buffered = value }, setNext: value => { next = value }, setSelecting: value => { selecting = value },
-    setBufferedGate: value => { bufferedGate = value } }
+  const tick = async(ms, emitProgress) => {
+    now += ms
+    if (emitProgress) state.emit('playProgressChanged', {})
+    for (const [id, timer] of [...pendingTimers]) {
+      if (timer.at > now) continue
+      pendingTimers.delete(id)
+      timer.fn()
+    }
+    await flush()
+  }
+  return {
+    app,
+    state,
+    setting,
+    player,
+    calls,
+    selections: () => selections,
+    bufferReads: () => bufferReads,
+    resetRandom: () => resetRandom,
+    tick: async(ms = 3000) => tick(ms, true),
+    elapse: async(ms = 3000) => tick(ms, false),
+    pendingTimers: () => pendingTimers.size,
+    position: value => { position = value },
+    buffer: value => { buffered = value },
+    setNext: value => { next = value },
+    setSelecting: value => { selecting = value },
+    setBufferedGate: value => { bufferedGate = value },
+  }
 }
 
 test('scheduler waits for stable playback and enough buffer, then avoids repeated selection or polling', async() => {
@@ -427,6 +467,292 @@ test('a queue update during asynchronous selection prevents the old next track f
   h.setSelecting(null)
   await h.tick()
   assert.deepEqual(h.calls, ['replacement'])
+})
+
+test('preloading continues across tracks without UI progress events and stops checking once prepared', async() => {
+  const h = schedulerHarness()
+  await h.elapse(2999)
+  assert.equal(h.calls.length, 0)
+  await h.elapse(1)
+  assert.deepEqual(h.calls, ['next'])
+  assert.equal(h.pendingTimers(), 0)
+  await h.elapse(30000)
+  assert.equal(h.selections(), 1)
+  assert.equal(h.bufferReads(), 1)
+
+  h.player.playMusicInfo.musicInfo = song('next')
+  h.app.emit('musicToggled')
+  h.player.isPlay = false
+  h.app.emit('pause')
+  h.setNext({ musicInfo: song('third'), listId: 'queue' })
+  h.player.isPlay = true
+  h.app.emit('playerPlaying')
+  await h.elapse()
+  assert.deepEqual(h.calls, ['next', 'third'])
+  assert.equal(h.pendingTimers(), 0)
+})
+
+test('background preloading measures remaining buffer against the native position, not stale UI progress', async() => {
+  const h = schedulerHarness()
+  h.position(45)
+  h.buffer(50)
+  await h.elapse()
+  assert.equal(h.player.progress.nowPlayTime, 5)
+  assert.equal(h.calls.length, 0)
+  assert.equal(h.pendingTimers(), 1)
+  h.buffer(60)
+  await h.elapse()
+  assert.deepEqual(h.calls, ['next'])
+  assert.equal(h.pendingTimers(), 0)
+})
+
+test('background checks stop on pause, waiting, errors and stop until playback becomes ready again', async() => {
+  for (const event of ['pause', 'playerWaiting', 'error', 'stop']) {
+    const h = schedulerHarness()
+    h.app.emit(event)
+    assert.equal(h.pendingTimers(), 0, event)
+    await h.elapse(30000)
+    await h.tick()
+    assert.equal(h.selections(), 0, event)
+    h.app.emit('playerPlaying')
+    await h.elapse(2999)
+    assert.equal(h.calls.length, 0, event)
+    await h.elapse(1)
+    assert.deepEqual(h.calls, ['next'], event)
+  }
+})
+
+test('disabling preloading or cache cancels background checks and re-enabling restores them', async() => {
+  for (const [key, disabled, enabled] of [['player.preloadNext', false, true], ['player.cacheSize', '0', '1024']]) {
+    const h = schedulerHarness()
+    h.setting[key] = disabled
+    h.state.emit('configUpdated', [key])
+    assert.equal(h.pendingTimers(), 0)
+    await h.elapse(30000)
+    assert.equal(h.selections(), 0)
+    h.setting[key] = enabled
+    h.state.emit('configUpdated', [key])
+    await h.elapse()
+    assert.deepEqual(h.calls, ['next'])
+    assert.equal(h.pendingTimers(), 0)
+  }
+})
+
+test('a cancelled buffer check cannot restart the timer after preloading is disabled', async() => {
+  const h = schedulerHarness()
+  const gate = deferred()
+  h.setBufferedGate(gate)
+  await h.elapse()
+  h.setting['player.preloadNext'] = false
+  h.state.emit('configUpdated', ['player.preloadNext'])
+  gate.resolve()
+  await flush()
+  assert.equal(h.calls.length, 0)
+  assert.equal(h.pendingTimers(), 0)
+})
+
+test('background checks stop when there is no next track and resume after a queue update', async() => {
+  const h = schedulerHarness()
+  h.setNext(null)
+  await h.elapse()
+  assert.equal(h.pendingTimers(), 0)
+  assert.equal(h.calls.length, 0)
+  h.setNext({ musicInfo: song('added'), listId: 'queue' })
+  h.app.emit('playQueueUpdate')
+  await h.elapse()
+  assert.deepEqual(h.calls, ['added'])
+  assert.equal(h.pendingTimers(), 0)
+})
+
+// Exercise the real player, store actions, progress publisher and preload scheduler together.
+// Native playback, storage and clocks are controlled; URL preparation uses preloadHarness above.
+const playerLifecycleHarness = (preloadOptions = {}) => {
+  const preload = preloadHarness(preloadOptions)
+  const eventBus = () => {
+    const emitter = new EventEmitter()
+    return new Proxy(emitter, {
+      get(target, key) {
+        const value = target[key]
+        return value === undefined ? (...args) => target.emit(key, ...args) : typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+  }
+  const app = eventBus(); const stateEvents = eventBus()
+  const state = load('src/store/player/state.ts').default
+  const appGlobal = { app_event: app, state_event: stateEvents, lx: { isPlayedStop: false }, i18n: { t: key => key } }
+  const setting = Object.assign(preload.setting, { 'player.togglePlayMethod': 'listLoop', 'player.playbackRate': 1 })
+  const constants = load('src/config/constant.ts')
+  const list = [song('current'), song('next'), song('third')]
+  const actions = load('src/store/player/action.ts', {
+    '@/utils': { arrPush: (array, items) => array.push(...items), arrUnshift: (array, items) => array.unshift(...items), formatPlayTime2: String },
+    './state': { default: state },
+  }, { global: appGlobal }).default
+  const progress = load('src/core/player/progress.ts', { '@/store/player/action': { default: actions } })
+  const info = load('src/core/player/playInfo.ts', {
+    '@/store/player/action': { default: actions },
+    '@/store/player/state': { default: state },
+    '@/utils/listManage': { getListMusicSync: () => list },
+    '@/core/player/progress': progress,
+    '@/config/constant': constants,
+    './playQueue': { getPlayQueueMusic: () => list },
+  }, { global: appGlobal })
+  const playerProxy = {}
+  const temp = load('src/core/player/tempPlayList.ts', {
+    '@/store/player/action': { default: actions }, '@/store/player/state': { default: state }, './player': playerProxy,
+  })
+  const played = { addPlayedList: actions.addPlayedList, clearPlayedList: actions.clearPlayedList, removePlayedList: actions.removePlayedList }
+  const playerUtils = load('src/core/player/utils.ts', {
+    './playedList': played,
+    '@/config/constant': constants,
+    '@/store/dislikeList': { state: { dislikeInfo: { names: new Set(), musicNames: new Set(), singerNames: new Set() } } },
+  })
+  let now = 1000; let timerId = 0; let position = 0; let screenChanged
+  const pendingTimers = new Map()
+  const addTimer = (fn, delay, interval) => { pendingTimers.set(++timerId, { fn, at: now + delay, interval }); return timerId }
+  const clock = {
+    setTimeout: (fn, delay) => addTimer(fn, delay),
+    clearTimeout: id => pendingTimers.delete(id),
+    setInterval: (fn, delay) => addTimer(fn, delay, delay),
+    clearInterval: id => pendingTimers.delete(id),
+  }
+  const native = {
+    isInitialized: () => true,
+    setStop: async() => {},
+    getDuration: async() => 180,
+    getPosition: async() => position,
+    setCurrentTime: async value => { position = value },
+  }
+  const player = load('src/core/player/player.ts', {
+    '@/plugins/player': native,
+    '@/core/player/playStatus': { setStatusText() {} },
+    '@/store/player/state': { default: state },
+    '@/store/setting/state': { default: { setting } },
+    '@/core/player/playInfo': info,
+    '@/core/player/playedList': played,
+    '@/core/player/tempPlayList': temp,
+    '@/core/music': {},
+    '@/utils/message': message,
+    '@/utils/common': { getRandom: () => 0 },
+    './utils': playerUtils,
+    'react-native-background-timer': { default: clock },
+    '@/utils/tools': { debounceBackgroundTimer: () => () => {} },
+    '@/config/constant': constants,
+    '@/core/qqMusicFavorite': {},
+    '@/core/dislikeList': {},
+    './playQueue': {},
+    '@/core/qqMusicRecommendSession': {},
+    '@/core/localList': {},
+    './preload': preload.api,
+    '@/core/music/sourcePriority': {},
+  }, { global: appGlobal })
+  Object.assign(playerProxy, player)
+  info.setPlayListId(constants.LIST_IDS.PLAY_QUEUE)
+  info.setPlayMusicInfo(constants.LIST_IDS.PLAY_QUEUE, list[0])
+  actions.setIsPlay(true)
+  app.on('pause', () => actions.setIsPlay(false))
+  load('src/core/init/player/playProgress.ts', {
+    '@/core/list': { updateListMusics: async() => {} },
+    '@/core/player/progress': progress,
+    '@/plugins/player': native,
+    '@/utils/common': { formatPlayTime2: String },
+    '@/utils/data': { savePlayInfo: async() => {} },
+    '@/utils/tools': { throttleBackgroundTimer: fn => fn },
+    'react-native-background-timer': { default: clock },
+    '@/store/player/state': { default: state },
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/nativeModules/utils': { onScreenStateChange: fn => { screenChanged = fn } },
+    'react-native': { AppState: { currentState: 'active', addEventListener() {} } },
+  }, { global: appGlobal }).default()
+  load('src/core/init/player/preloadNextMusic.ts', {
+    'react-native-track-player': { default: { getBufferedPosition: async() => 60, getPosition: native.getPosition } },
+    'react-native-background-timer': { default: clock },
+    '@/core/player/player': player,
+    '@/core/player/preload': preload.api,
+    '@/plugins/player/preload': { canPreloadAudio: () => true },
+    '@/store/player/state': { default: state },
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/message': message,
+  }, { global: appGlobal, Date: { now: () => now } }).default()
+  return {
+    preload,
+    state,
+    temp,
+    player,
+    play: () => { actions.setIsPlay(true); app.emit('play'); app.emit('playerPlaying') },
+    screen: value => screenChanged(value),
+    progressTimers: () => [...pendingTimers.values()].filter(timer => timer.interval != null).length,
+    advance: async(ms = 3000) => {
+      now += ms
+      for (const [id, timer] of [...pendingTimers]) {
+        if (!pendingTimers.has(id) || timer.at > now) continue
+        if (timer.interval == null) pendingTimers.delete(id)
+        else timer.at = now + timer.interval
+        timer.fn()
+      }
+      await flush()
+    },
+  }
+}
+
+test('screen-off playback prepares subsequent tracks even though the real progress publisher is stopped', async() => {
+  const h = playerLifecycleHarness()
+  h.play()
+  await flush()
+  h.screen('OFF')
+  await flush()
+  assert.equal(h.progressTimers(), 0)
+  await h.advance()
+  assert.equal(h.preload.resolutions[0].musicInfo.id, 'next')
+  assert.equal(h.state.progress.nowPlayTime, 0)
+  await h.player.playNext(true)
+  assert.equal(await h.preload.api.takePreloadedMusicUrl(song('next'), () => {}), 'https://audio.test/one')
+  h.play()
+  await flush()
+  await h.advance()
+  assert.deepEqual(h.preload.resolutions.map(options => options.musicInfo.id), ['next', 'third'])
+  assert.equal(h.progressTimers(), 0)
+  h.preload.api.cancelPreload()
+})
+
+for (const entry of ['automatic', 'selected']) {
+  for (const stage of ['resolving', 'reading', 'ready']) {
+    test(`temporary playback preserves the ${stage} preload through ${entry} queue consumption`, async() => {
+      const gate = stage === 'ready' ? null : deferred()
+      const h = playerLifecycleHarness(stage === 'resolving' ? { resolveGate: gate } : { cacheHeadGate: gate })
+      const music = song('temporary')
+      h.temp.addTempPlayList([{ listId: 'temporary-origin', musicInfo: music }])
+      const prepared = h.preload.api.preloadMusic(music)
+      await flush()
+      if (entry === 'automatic') await h.player.playNext(true)
+      else await h.player.playTempPlayMusic(0)
+      const playing = h.preload.api.takePreloadedMusicUrl(music, () => {})
+      assert.notEqual(playing, null)
+      gate?.resolve()
+      assert.equal(await playing, await prepared)
+      assert.equal(h.preload.cancelledResolve(), 0)
+      assert.equal(h.preload.resolutions.length, 1)
+      assert.equal(h.state.playMusicInfo.musicInfo.id, 'temporary')
+      assert.equal(h.state.playMusicInfo.isTempPlay, true)
+      assert.equal(h.state.tempPlayList.length, 0)
+      assert.equal(h.state.playInfo.playerPlayIndex, 0)
+    })
+  }
+}
+
+test('removing a temporary track without playing it still cancels its pending preload', async() => {
+  const gate = deferred()
+  const h = playerLifecycleHarness({ resolveGate: gate })
+  const music = song('temporary')
+  h.temp.addTempPlayList([{ listId: 'temporary-origin', musicInfo: music }])
+  const pending = h.preload.api.preloadMusic(music)
+  const rejection = assert.rejects(pending, /cancelled/)
+  await flush()
+  h.temp.removeTempPlayList(0)
+  gate.resolve()
+  await rejection
+  assert.equal(h.preload.cancelledResolve(), 1)
+  assert.equal(h.state.playMusicInfo.musicInfo.id, 'current')
+  assert.equal(h.preload.api.takePreloadedMusicUrl(music, () => {}), null)
 })
 
 const timers = () => {
