@@ -13,6 +13,7 @@ import { parseApiSourceOrder } from '@/utils/apiSourceOrder'
 export default () => {
   let retryNum = 0
   let prevTimeoutId: string | null = null
+  let historyPlayback: typeof playerState.playMusicInfo | null = null
 
   let loadingTimeout: number | null = null
   let delayNextTimeout: number | null = null
@@ -78,8 +79,14 @@ export default () => {
   const handlePlaying = () => {
     setStatusText('')
     clearLoadingTimeout()
-    if (settingState.setting['player.isSavePlayHistory'] && playerState.playMusicInfo.musicInfo) {
-      void addPlayHistory(playerState.playMusicInfo.musicInfo)
+    const playback = playerState.playMusicInfo
+    if (settingState.setting['player.isSavePlayHistory'] && playback.musicInfo && historyPlayback !== playback) {
+      // 暂停/缓冲恢复也会触发 Playing，同一次播放只整理和保存一次历史。
+      historyPlayback = playback
+      void addPlayHistory(playback.musicInfo).catch(error => {
+        if (historyPlayback === playback) historyPlayback = null
+        console.warn('[PlayHistory] save failed:', error instanceof Error ? error.message : error)
+      })
     }
   }
 
@@ -124,6 +131,7 @@ export default () => {
   const handleSetPlayInfo = () => {
     retryNum = 0
     prevTimeoutId = null
+    if (historyPlayback !== playerState.playMusicInfo) historyPlayback = null
     clearDelayNextTimeout()
     clearLoadingTimeout()
   }

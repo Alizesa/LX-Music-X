@@ -460,15 +460,27 @@ export const savePlayQueue = async(queue: LX.Player.PlayQueueItem[]) => saveData
 // （节流函数的实现会带着最后一次参数触发，所以不会丢最终状态）。
 // 所有读写都走下面这三个函数，没有别处直接碰这个 key。
 let playHistoryCache: LX.Player.PlayHistoryItem[] | null = null
+let playHistoryLoading: Promise<LX.Player.PlayHistoryItem[]> | null = null
+let playHistoryRevision = 0
 const savePlayHistoryThrottled = throttle((history: LX.Player.PlayHistoryItem[]) => {
   void saveData(playHistoryKey, history)
 }, 1000)
 export const getPlayHistory = async() => {
-  // eslint-disable-next-line require-atomic-updates
-  playHistoryCache ??= await getData<LX.Player.PlayHistoryItem[]>(playHistoryKey) ?? []
-  return playHistoryCache
+  if (playHistoryCache) return playHistoryCache
+  if (playHistoryLoading) return playHistoryLoading
+  const revision = playHistoryRevision
+  const loading = getData<LX.Player.PlayHistoryItem[]>(playHistoryKey).then(history => {
+    // 首页和历史页共用一次读盘；迟到的旧快照不能覆盖刚记录的新歌曲。
+    if (revision === playHistoryRevision) playHistoryCache = history ?? []
+    return playHistoryCache ?? history ?? []
+  }).finally(() => {
+    if (playHistoryLoading === loading) playHistoryLoading = null
+  })
+  playHistoryLoading = loading
+  return loading
 }
 export const savePlayHistory = async(history: LX.Player.PlayHistoryItem[]) => {
+  playHistoryRevision++
   playHistoryCache = history
   savePlayHistoryThrottled(history)
 }

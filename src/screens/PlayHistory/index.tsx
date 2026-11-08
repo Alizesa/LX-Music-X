@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FlatList, TouchableOpacity, View } from 'react-native'
 import PageContent from '@/components/PageContent'
 import StatusBar from '@/components/common/StatusBar'
@@ -13,6 +13,8 @@ import { getPlayHistory } from '@/utils/data'
 import { useTheme } from '@/store/theme/hook'
 import { useI18n } from '@/lang'
 import { createStyle } from '@/utils/tools'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
+import { useListScrollRestore } from '@/utils/hooks/useListScrollRestore'
 
 const formatDate = (timestamp: number) => {
   if (!timestamp) return ''
@@ -28,24 +30,50 @@ export default ({ componentId }: { componentId: string }) => {
   const t = useI18n()
   const theme = useTheme()
   const [local, setLocal] = useState<LX.Player.PlayHistoryItem[]>([])
+  const [ready, setReady] = useState(false)
+  const visible = useScreenVisible()
+  const listRef = useRef<FlatList<LX.Player.PlayHistoryItem>>(null)
+  const scrollRestore = useListScrollRestore(listRef, visible, ready)
 
   useEffect(() => {
     setComponentId(COMPONENT_IDS.playHistory, componentId)
-    void getPlayHistory().then(setLocal)
-    // 事件里已经带着最新的整份历史，别再回头读一次存储
-    const handleUpdate = (history: LX.Player.PlayHistoryItem[]) => { setLocal(history) }
-    global.app_event.on('playHistoryUpdate', handleUpdate)
-    return () => { global.app_event.off('playHistoryUpdate', handleUpdate) }
   }, [componentId])
+
+  useEffect(() => {
+    if (!visible) {
+      setLocal([])
+      setReady(false)
+      return
+    }
+    let active = true
+    let updated = false
+    // 事件里已经带着最新的整份历史，别再回头读一次存储
+    const handleUpdate = (history: LX.Player.PlayHistoryItem[]) => {
+      if (!active) return
+      updated = true
+      setLocal(history)
+      setReady(true)
+    }
+    global.app_event.on('playHistoryUpdate', handleUpdate)
+    void getPlayHistory().then(history => {
+      if (active && !updated) handleUpdate(history)
+    }).catch(console.warn)
+    return () => {
+      active = false
+      global.app_event.off('playHistoryUpdate', handleUpdate)
+    }
+  }, [visible])
 
   return (
     <PageContent>
       <StatusBar />
       <SimpleHeader componentId={componentId} title={t('nav_history')} />
       <FlatList
+        ref={listRef}
+        {...scrollRestore}
         style={styles.list}
         data={local}
-        keyExtractor={(item, index) => `${item.musicInfo.id}-${item.playedAt}-${index}`}
+        keyExtractor={item => `${item.musicInfo.id}-${item.playedAt}`}
         ListEmptyComponent={<Text style={styles.empty} color={theme['c-font-label']}>{t('setting_play_history_empty')}</Text>}
         renderItem={({ item }) => {
           // 播放历史里的条目可能是「下载列表」那种旧结构，取真实歌曲信息时要拆一层

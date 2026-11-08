@@ -94,6 +94,7 @@ const toolsFor = (rn, globals) => {
   const windows = { windowSizeTools: { getSize: () => rn.Dimensions.get('window') } }
   const pixels = load('src/utils/pixelRatio.ts', { 'react-native': rn, './windowSizeTools': windows }, globals)
   const api = load('src/utils/tools.ts', {
+    './scheduledTask': load('src/utils/scheduledTask.ts'),
     'react-native': rn,
     '@react-native-clipboard/clipboard': {},
     '@/config/constant': constants,

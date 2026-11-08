@@ -3,89 +3,41 @@ import { useEffect, useState } from 'react'
 import state, { type InitState } from './state'
 import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
-export const usePlayerMusicInfo = () => {
-  const [value, update] = useState(state.musicInfo)
+const events = {
+  musicInfo: 'playerMusicInfoChanged',
+  playMusicInfo: 'playMusicInfoChanged',
+  playInfo: 'playInfoChanged',
+  statusText: 'playStateTextChanged',
+  isPlay: 'playStateChanged',
+  progress: 'playProgressChanged',
+} as const
+
+const snapshot = <K extends keyof typeof events>(key: K): InitState[K] => {
+  const value = state[key]
+  // 部分 store 字段就地更新，React 需要独立快照才能识别变化。
+  return typeof value === 'object' ? { ...value } : value
+}
+
+/** 所有播放 UI 都随页面显隐订阅；回来时一次补齐隐藏期间的最新状态。 */
+const usePlayerValue = <K extends keyof typeof events>(key: K, autoUpdate = true) => {
+  const [value, update] = useState(() => snapshot(key))
   const visible = useScreenVisible()
-
-  useEffect(() => {
-    if (!visible) return
-    update(state.musicInfo)
-    global.state_event.on('playerMusicInfoChanged', update)
-    return () => {
-      global.state_event.off('playerMusicInfoChanged', update)
-    }
-  }, [visible])
-
-  return value
-}
-
-export const usePlayMusicInfo = () => {
-  const [value, update] = useState(state.playMusicInfo)
-
-  useEffect(() => {
-    global.state_event.on('playMusicInfoChanged', update)
-    return () => {
-      global.state_event.off('playMusicInfoChanged', update)
-    }
-  }, [])
-
-  return value
-}
-
-export const usePlayInfo = () => {
-  const [value, update] = useState(state.playInfo)
-
-  useEffect(() => {
-    global.state_event.on('playInfoChanged', update)
-    return () => {
-      global.state_event.off('playInfoChanged', update)
-    }
-  }, [])
-
-  return value
-}
-
-export const useStatusText = () => {
-  const [value, update] = useState(state.statusText)
-
-  useEffect(() => {
-    global.state_event.on('playStateTextChanged', update)
-    return () => {
-      global.state_event.off('playStateTextChanged', update)
-    }
-  }, [])
-
-  return value
-}
-
-export const useIsPlay = () => {
-  const [value, update] = useState(state.isPlay)
-
-  useEffect(() => {
-    global.state_event.on('playStateChanged', update)
-    return () => {
-      global.state_event.off('playStateChanged', update)
-    }
-  }, [])
-
-  return value
-}
-
-export const useProgress = (autoUpdate = true) => {
-  const [value, update] = useState(state.progress)
-  const visible = useScreenVisible()
-
   useEffect(() => {
     if (!autoUpdate || !visible) return
-    const handleUpdate = (progress: InitState['progress']) => {
-      if (isActive()) update(progress)
+    const handleUpdate = () => {
+      if (key !== 'progress' || isActive()) update(snapshot(key))
     }
-    update(state.progress)
-    global.state_event.on('playProgressChanged', handleUpdate)
-    return () => {
-      global.state_event.off('playProgressChanged', handleUpdate)
-    }
-  }, [autoUpdate, visible])
-
+    handleUpdate()
+    const event = events[key]
+    global.state_event.on(event, handleUpdate)
+    return () => { global.state_event.off(event, handleUpdate) }
+  }, [key, autoUpdate, visible])
   return value
 }
+
+export const usePlayerMusicInfo = () => usePlayerValue('musicInfo')
+export const usePlayMusicInfo = () => usePlayerValue('playMusicInfo')
+export const usePlayInfo = () => usePlayerValue('playInfo')
+export const useStatusText = () => usePlayerValue('statusText')
+export const useIsPlay = () => usePlayerValue('isPlay')
+export const useProgress = (autoUpdate = true) => usePlayerValue('progress', autoUpdate)

@@ -15,68 +15,58 @@ import { QQ_LYRIC_CACHE_VERSION } from '@/config/constant'
 import { getEnabledMusicSourceIds, getMusicUrlByPriority, isMusicUrlFailed, markMusicUrlFailed, type MusicUrlRequestOptions, type ValidateMusicUrl } from './sourcePriority'
 
 
-const getOtherSourcePromises = new Map()
+const getOtherSourcePromises = new Map<string, Promise<LX.Music.MusicInfoOnline[]>>()
 export const existTimeExp = /\[\d{1,2}:.*\d{1,4}\]/
-const otherSourceCache = new Map<LX.Music.MusicInfo | LX.Download.ListItem, LX.Music.MusicInfoOnline[]>()
+const otherSourceCache = new Map<string, LX.Music.MusicInfoOnline[]>()
+let otherSourceGeneration = 0
 
 /** 后台/设置页清理：换源结果可重建，直接丢 */
 export const clearOtherSourceCache = () => {
+  otherSourceGeneration++
   otherSourceCache.clear()
 }
 
 export const getOtherSource = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false): Promise<LX.Music.MusicInfoOnline[]> => {
-  // if (!isRefresh) {
-  //   const cachedInfo = await getOtherSourceFromStore(musicInfo.id)
-  //   if (cachedInfo.length) return cachedInfo
-  // }
-  if (otherSourceCache.has(musicInfo)) return otherSourceCache.get(musicInfo)!
-  let key: string
-  let searchMusicInfo: {
-    name: string
-    singer: string
-    source: string
-    albumName: string
-    interval: string
+  const music = 'progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo
+  const searchMusicInfo = {
+    name: music.name,
+    singer: music.singer,
+    source: music.source,
+    albumName: music.meta.albumName,
+    interval: music.interval ?? '',
   }
-  if ('progress' in musicInfo) {
-    key = `local_${musicInfo.id}`
-    searchMusicInfo = {
-      name: musicInfo.metadata.musicInfo.name,
-      singer: musicInfo.metadata.musicInfo.singer,
-      source: musicInfo.metadata.musicInfo.source,
-      albumName: musicInfo.metadata.musicInfo.meta.albumName,
-      interval: musicInfo.metadata.musicInfo.interval ?? '',
-    }
-  } else {
-    key = `${musicInfo.source}_${musicInfo.id}`
-    searchMusicInfo = {
-      name: musicInfo.name,
-      singer: musicInfo.singer,
-      source: musicInfo.source,
-      albumName: musicInfo.meta.albumName,
-      interval: musicInfo.interval ?? '',
-    }
+  // 同一首歌在队列、历史和下载里可能是不同对象，按匹配条件共享结果。
+  const key = JSON.stringify([music.id, searchMusicInfo])
+  const cached = otherSourceCache.get(key)
+  if (!isRefresh && cached) {
+    otherSourceCache.delete(key)
+    otherSourceCache.set(key, cached)
+    return cached
   }
-  if (getOtherSourcePromises.has(key)) return getOtherSourcePromises.get(key)
+  const pending = getOtherSourcePromises.get(key)
+  if (pending) return pending
 
+  const generation = otherSourceGeneration
   const promise = new Promise<LX.Music.MusicInfoOnline[]>((resolve, reject) => {
     let timeout: null | number = BackgroundTimer.setTimeout(() => {
       timeout = null
       reject(new Error('find music timeout'))
     }, 12_000)
     findMusic(searchMusicInfo).then((otherSource) => {
-      if (otherSourceCache.size > 10) otherSourceCache.clear()
+      // 已超时的结果不再转换/缓存，清理后的迟到请求也不能重新填满内存。
+      if (timeout === null) return
       const source = otherSource.map(toNewMusicInfo) as LX.Music.MusicInfoOnline[]
-      otherSourceCache.set(musicInfo, source)
+      if (generation === otherSourceGeneration) {
+        otherSourceCache.delete(key)
+        otherSourceCache.set(key, source)
+        if (otherSourceCache.size > 10) otherSourceCache.delete(otherSourceCache.keys().next().value!)
+      }
       resolve(source)
     }).catch(reject).finally(() => {
-      if (timeout) BackgroundTimer.clearTimeout(timeout)
+      if (timeout !== null) BackgroundTimer.clearTimeout(timeout)
     })
-  }).then((otherSource) => {
-    // if (otherSource.length) void saveOtherSourceFromStore(musicInfo.id, otherSource)
-    return otherSource
   }).finally(() => {
-    if (getOtherSourcePromises.has(key)) getOtherSourcePromises.delete(key)
+    if (getOtherSourcePromises.get(key) === promise) getOtherSourcePromises.delete(key)
   })
   getOtherSourcePromises.set(key, promise)
   return promise

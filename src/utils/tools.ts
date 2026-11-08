@@ -11,6 +11,7 @@ import { scaleSizeH, scaleSizeW, setSpText } from './pixelRatio'
 import { toOldMusicInfo } from './index'
 import { stringMd5 } from 'react-native-quick-md5'
 import { windowSizeTools } from '@/utils/windowSizeTools'
+import { createScheduledTask } from './scheduledTask'
 
 
 // https://stackoverflow.com/a/47349998
@@ -438,16 +439,7 @@ export const showImportTip = (type: string) => {
  * @returns
  */
 export function throttleBackgroundTimer<Args extends any[]>(fn: (...args: Args) => void | Promise<void>, delay = 100) {
-  let timer: number | null = null
-  let _args: Args
-  return (...args: Args) => {
-    _args = args
-    if (timer) return
-    timer = BackgroundTimer.setTimeout(() => {
-      timer = null
-      void fn(..._args)
-    }, delay)
-  }
+  return createScheduledTask(fn, delay, false, BackgroundTimer)
 }
 
 /**
@@ -457,16 +449,7 @@ export function throttleBackgroundTimer<Args extends any[]>(fn: (...args: Args) 
  * @returns
  */
 export function debounceBackgroundTimer<Args extends any[]>(fn: (...args: Args) => void | Promise<void>, delay = 100) {
-  let timer: number | null = null
-  let _args: Args
-  return (...args: Args) => {
-    _args = args
-    if (timer) BackgroundTimer.clearTimeout(timer)
-    timer = BackgroundTimer.setTimeout(() => {
-      timer = null
-      void fn(..._args)
-    }, delay)
-  }
+  return createScheduledTask(fn, delay, true, BackgroundTimer)
 }
 
 // eslint-disable-next-line @typescript-eslint/ban-types

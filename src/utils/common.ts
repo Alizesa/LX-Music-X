@@ -1,4 +1,5 @@
 // 非业务工具方法
+import { createScheduledTask } from './scheduledTask'
 
 /**
  * 获取两个数之间的随机整数，大于等于min，小于max
@@ -78,27 +79,8 @@ export const isUrl = (path: string) => /https?:\/\//.test(path)
  * @param delay 延迟
  * @returns
  */
-type Throttled<Args extends any[]> = ((...args: Args) => void) & {
-  /** 丢掉还没触发的那一次 */
-  cancel: () => void
-}
-export function throttle<Args extends any[]>(fn: (...args: Args) => void | Promise<void>, delay = 100): Throttled<Args> {
-  let timer: NodeJS.Timeout | null = null
-  let _args: Args
-  const throttled = ((...args: Args) => {
-    _args = args
-    if (timer) return
-    timer = setTimeout(() => {
-      timer = null
-      void fn(..._args)
-    }, delay)
-  }) as Throttled<Args>
-  throttled.cancel = () => {
-    if (!timer) return
-    clearTimeout(timer)
-    timer = null
-  }
-  return throttled
+export function throttle<Args extends any[]>(fn: (...args: Args) => void | Promise<void>, delay = 100) {
+  return createScheduledTask(fn, delay, false, { setTimeout, clearTimeout })
 }
 
 /**
@@ -108,16 +90,7 @@ export function throttle<Args extends any[]>(fn: (...args: Args) => void | Promi
  * @returns
  */
 export function debounce<Args extends any[]>(fn: (...args: Args) => void | Promise<void>, delay = 100) {
-  let timer: NodeJS.Timeout | null = null
-  let _args: Args
-  return (...args: Args) => {
-    _args = args
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(() => {
-      timer = null
-      void fn(..._args)
-    }, delay)
-  }
+  return createScheduledTask(fn, delay, true, { setTimeout, clearTimeout })
 }
 
 const fileNameRxp = /[\\/:*?#"<>|]/g
