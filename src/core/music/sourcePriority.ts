@@ -80,7 +80,7 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
       try {
         // 首次取链与缓存命中使用同一套完整性检查；预加载只能读取通过检查的音频。
         playbackLog('url.validate_start', () => ({ ...trace, apiId, musicSource: musicInfo.source }))
-        await validateQQMusicUrl(musicInfo, result.url, registerCancel, isRefresh)
+        await validateQQMusicUrl(musicInfo, result.url, registerCancel, isRefresh, { ...trace, apiId })
         assertActive()
         await validateUrl?.(result.url)
         playbackLog('url.validate_done', { ...trace, apiId })

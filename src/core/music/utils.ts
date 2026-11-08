@@ -303,7 +303,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
-      await validateQQMusicUrl(musicInfo, cachedUrl, registerCancel)
+      await validateQQMusicUrl(musicInfo, cachedUrl, registerCancel, false, trace)
       assertActive()
       await validateUrl?.(cachedUrl)
       assertActive()
@@ -399,6 +399,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
         isRefresh,
         onCancel: registerCancel,
         allowQualityFallback: quality == null,
+        trace,
       })
       assertActive()
       playbackLog('url.account_result', () => ({ ...trace, available: !!byAccount, quality: byAccount?.quality, elapsedMs: Date.now() - startedAt }))

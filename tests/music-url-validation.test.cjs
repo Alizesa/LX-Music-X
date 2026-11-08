@@ -97,6 +97,34 @@ test('preloading rejects a readable preview before writing audio bytes or handin
   assert.deepEqual(h.writes.map(item => item.url), [full])
 })
 
+test('account-first waits for the account, then each custom script and its audio check in the selected order', async() => {
+  const accountGate = deferred(), scriptGate = deferred(), probeGate = deferred()
+  const h = harness({
+    account: () => accountGate.promise,
+    request: id => id === 'user_api_b' ? scriptGate.promise : { url: full, type: '128k' },
+    inspect: url => url === preview ? probeGate.promise : audio(),
+  })
+  h.setting['player.urlSource'] = 'account'
+  h.setting['common.apiSourceOrder'] = '["user_api_b","user_api_a","user_api_c"]'
+  const pending = h.resolve()
+  await flush()
+  assert.deepEqual(h.requests, [])
+  accountGate.resolve(null)
+  await flush()
+  assert.deepEqual(h.requests, ['user_api_b'])
+  assert.equal(h.probes.length, 0)
+  // A script may try several internal channels before its one URL promise resolves.
+  scriptGate.resolve({ url: preview, type: '128k' })
+  await flush()
+  assert.deepEqual(h.requests, ['user_api_b'])
+  assert.deepEqual(h.probes.map(item => item.url), [preview])
+  probeGate.resolve(audio(60000))
+  assert.equal(await pending, full)
+  assert.deepEqual(h.requests, ['user_api_b', 'user_api_a'])
+  assert.deepEqual(h.probes.map(item => item.url), [preview, full])
+  assert.deepEqual(h.writes.map(item => item.url), [full])
+})
+
 test('QQ previews behind a proxy are checked on both fresh resolution and cached playback', async() => {
   const proxy = 'https://audio.example/proxy/song'
   for (const cachedUrl of [undefined, proxy]) {

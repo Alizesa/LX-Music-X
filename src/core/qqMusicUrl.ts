@@ -3,6 +3,7 @@ import { probeRemoteAudio, type RemoteAudioInfo } from '@/utils/nativeModules/re
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { throwIfAborted, withAbort } from '@/utils/abort'
 import BackgroundTimer from 'react-native-background-timer'
+import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
 
 // QQ 的取票接口按文件名前缀区分音质，扩展名跟着前缀走
 const QUALITY_SPEC: Partial<Record<LX.Quality, { prefix: string, extension: string }>> = {
@@ -61,11 +62,27 @@ const getDurationMs = (interval: string | null): number => {
   return Number.isFinite(durationMs) ? durationMs : 0
 }
 
-const isCompleteAudio = (media: RemoteAudioInfo, expectedMs: number): boolean => {
+const audioFailure = (media: RemoteAudioInfo, expectedMs: number, expectedMime?: string): string | undefined => {
+  if (media.reason) return media.reason
+  if (!media.readable) return 'unreadable'
+  if (!media.mime) return 'metadata_unavailable'
+  if (!media.mime.startsWith('audio/')) return 'not_audio'
   const actualMs = media.durationMs ?? 0
+  if (!(expectedMs > 0 && actualMs > 0)) return 'duration_unavailable'
   // MusicOne 的容差：2 秒或歌曲时长的 2%，取较大值。短歌曲按自身时长核对。
-  return media.readable && media.mime?.startsWith('audio/') === true && expectedMs > 0 && actualMs > 0 &&
-    Math.abs(actualMs - expectedMs) <= Math.max(2000, expectedMs / 50)
+  if (!(Math.abs(actualMs - expectedMs) <= Math.max(2000, expectedMs / 50))) return 'duration_mismatch'
+  if (expectedMime && media.mime !== expectedMime) return 'format_mismatch'
+}
+
+class QQMusicAudioError extends Error {
+  code: string
+  constructor(reason: string) {
+    super(reason === 'duration_mismatch' ? 'QQ Music audio is incomplete'
+      : reason === 'timeout' ? 'QQ Music audio probe timed out'
+        : reason === 'duration_unavailable' || reason === 'metadata_unavailable' ? 'QQ Music audio duration unavailable'
+          : `QQ Music audio probe failed (${reason})`)
+    this.code = reason
+  }
 }
 
 /** QQ 歌曲的脚本直链、代理地址与缓存共用校验，必须在预读音频或接受链接前完成。 */
@@ -74,6 +91,7 @@ export const validateQQMusicUrl = async(
   url: string,
   onCancel?: (cancel: () => void) => void,
   isRefresh = false,
+  trace?: PlaybackLogContext & { apiId?: string },
 ): Promise<void> => {
   if (!/^https?:\/\//i.test(url)) return
   // 代理地址没有 QQ 域名；跨平台换源后的缓存也可能没有 tx 来源标记。
@@ -83,11 +101,26 @@ export const validateQQMusicUrl = async(
     onCancel?.(() => { controller.abort() })
     throwIfAborted(controller.signal)
     const expectedMs = getDurationMs(musicInfo.interval)
-    if (!expectedMs) throw new Error('QQ Music audio duration unavailable')
+    if (!expectedMs) {
+      playbackLog('url.audio_check', () => ({ ...trace, musicId: musicInfo.id, expectedMs, reason: 'duration_unavailable', accepted: false }))
+      throw new QQMusicAudioError('duration_unavailable')
+    }
+    const startedAt = Date.now()
     const media = await probeRemoteAudio(url, true, { signal: controller.signal, isRefresh })
     throwIfAborted(controller.signal)
     // 脚本的音质标签不代表容器格式，完整 AAC/M4A 等音频也可以正常播放。
-    if (!isCompleteAudio(media, expectedMs)) throw new Error('QQ Music audio is incomplete')
+    const reason = audioFailure(media, expectedMs)
+    playbackLog('url.audio_check', () => ({
+      ...trace,
+      musicId: musicInfo.id,
+      url,
+      expectedMs,
+      probe: media,
+      reason: reason ?? 'complete',
+      accepted: !reason,
+      elapsedMs: Date.now() - startedAt,
+    }))
+    if (reason) throw new QQMusicAudioError(reason)
   } finally {
     controller.abort()
   }
@@ -98,19 +131,23 @@ interface AccountUrlOptions {
   onCancel?: (cancel: () => void) => void
   /** 下载必须保持指定音质；播放默认允许依次降档。 */
   allowQualityFallback?: boolean
+  trace?: PlaybackLogContext
 }
 
-const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal: AbortSignal, isRefresh: boolean): Promise<string | null> => {
+const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal: AbortSignal, isRefresh: boolean,
+  trace: PlaybackLogContext & { musicId: string, platform: string }): Promise<string | null> => {
   throwIfAborted(signal)
   const list: any[] = Array.isArray(data?.midurlinfo) ? data.midurlinfo : []
   const sips: string[] = Array.isArray(data?.sip) ? data.sip.filter((item: unknown) => typeof item === 'string') : []
   const spec = QUALITY_SPEC[quality]!
   const expectedMime = spec.extension === 'flac' ? 'audio/flac' : 'audio/mpeg'
   const purls: string[] = []
+  let returnedUrls = 0
   for (const info of list) {
     if (Number(info?.result ?? 0) !== 0) continue
     for (const raw of [info?.purl, info?.wifiurl]) {
       if (typeof raw !== 'string' || !raw.trim()) continue
+      returnedUrls++
       const purl = raw.trim()
       const filename = purl.split(/[?#]/)[0].split('/').pop()!.toLowerCase()
       // 服务端可能返回其他音质，不能把它标成请求的音质。
@@ -121,31 +158,57 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
   // 先试普通直链，避免第一项是试听时漏掉后面的完整地址。
   candidates.sort((a, b) => Number(TRIAL_RXP.test(a)) - Number(TRIAL_RXP.test(b)))
   const selected = candidates.slice(0, 6)
+  playbackLog('url.account_candidates', () => ({
+    ...trace,
+    quality,
+    expectedMs,
+    returnedUrls,
+    candidates: candidates.length,
+    selected: selected.length,
+    resultCodes: list.slice(0, 6).map(info => Number(info?.result ?? 0)),
+    reason: selected.length ? 'checking' : returnedUrls ? 'quality_mismatch' : 'empty_urls',
+  }))
   if (!selected.length) return null
   // 每个响应最多探测 6 个候选、同时 3 个，整批含时长检查最多 5 秒。
   return new Promise<string | null>((resolve, reject) => {
     const controller = new AbortController()
     let done = false
     let next = 0
-    const finish = (url: string | null, error?: unknown) => {
+    const startedAt = Date.now()
+    const finish = (url: string | null, error?: unknown, reason = url ? 'complete' : 'candidates_rejected') => {
       if (done) return
       done = true
+      playbackLog('url.account_candidates_done', () => ({ ...trace, quality, reason, available: !!url, attempted: next, elapsedMs: Date.now() - startedAt }))
       BackgroundTimer.clearTimeout(timer)
       signal.removeEventListener('abort', onAbort)
       controller.abort()
       if (error) reject(error)
       else resolve(url)
     }
-    const onAbort = () => { finish(null, new Error(requestMsg.cancelRequest)) }
-    const timer = BackgroundTimer.setTimeout(() => { finish(null) }, 5000)
+    const onAbort = () => { finish(null, new Error(requestMsg.cancelRequest), 'cancelled') }
+    const timer = BackgroundTimer.setTimeout(() => { finish(null, undefined, 'timeout') }, 5000)
     signal.addEventListener('abort', onAbort)
     if (signal.aborted) { onAbort(); return }
     const worker = async() => {
       while (next < selected.length) {
         if (done) return
         const url = selected[next++]
+        const probeStartedAt = Date.now()
         const media = await probeRemoteAudio(url, true, { signal: controller.signal, isRefresh, timeoutMs: 5000 })
-        if (!done && media.mime === expectedMime && isCompleteAudio(media, expectedMs)) finish(url)
+        if (done) return
+        const reason = audioFailure(media, expectedMs, expectedMime)
+        playbackLog('url.account_probe', () => ({
+          ...trace,
+          quality,
+          url,
+          expectedMs,
+          expectedMime,
+          probe: media,
+          reason: reason ?? 'complete',
+          accepted: !reason,
+          elapsedMs: Date.now() - probeStartedAt,
+        }))
+        if (!reason) finish(url)
       }
     }
     void Promise.all(Array.from({ length: Math.min(3, selected.length) }, worker))
@@ -209,7 +272,10 @@ export const getQQMusicUrlByAccount = async(
   const songMid = String(meta.songId ?? '').trim()
   const expectedMs = getDurationMs(musicInfo.interval)
   // 无法比较完整时长时直接交给音源，避免取回试听后误当作完整音频。
-  if (!songMid || !expectedMs) return null
+  if (!songMid || !expectedMs) {
+    playbackLog('url.account_skip', () => ({ ...options.trace, musicId: musicInfo.id, expectedMs, reason: !songMid ? 'missing_song_id' : 'duration_unavailable' }))
+    return null
+  }
   const controller = new AbortController()
   const { signal } = controller
   let timedOut = false
@@ -223,21 +289,30 @@ export const getQQMusicUrlByAccount = async(
     options.onCancel?.(() => { controller.abort() })
     throwIfAborted(signal)
     const { cookie } = await withAbort(getQQMusicSession(), signal)
-    if (!cookie) return null
+    if (!cookie) {
+      playbackLog('url.account_skip', () => ({ ...options.trace, musicId: musicInfo.id, reason: 'no_session' }))
+      return null
+    }
     const order = buildTryOrder(preferredQuality, maxQuality)
       .filter(quality => options.allowQualityFallback !== false || quality === (preferredQuality ?? maxQuality))
+    playbackLog('url.account_plan', () => ({ ...options.trace, musicId: musicInfo.id, expectedMs, qualities: order }))
     const mediaMid = String(meta.strMediaMid ?? '').trim()
     for (const quality of order) {
       const spec = QUALITY_SPEC[quality]
       if (!spec) continue
       const filenames = buildFilenames(spec.prefix, spec.extension, songMid, mediaMid)
       for (const platform of ['23', '20'] as const) {
+        const trace = { ...options.trace, musicId: musicInfo.id, platform }
+        const startedAt = Date.now()
         try {
+          playbackLog('url.account_channel_start', () => ({ ...trace, quality }))
           const data = await requestVkey(cookie, songMid, filenames, spec.prefix, platform, signal)
-          const url = await pickUrl(data, quality, expectedMs, signal, options.isRefresh ?? false)
+          playbackLog('url.account_channel_response', () => ({ ...trace, quality, elapsedMs: Date.now() - startedAt }))
+          const url = await pickUrl(data, quality, expectedMs, signal, options.isRefresh ?? false, trace)
           throwIfAborted(signal)
           if (url) return { url, quality }
         } catch (error) {
+          playbackLog('url.account_channel_failed', () => ({ ...trace, quality, error, elapsedMs: Date.now() - startedAt }))
           throwIfAborted(signal)
           if (isRequestCancelled(error) || error instanceof QQMusicSessionExpiredError || error instanceof QQMusicVkeyError) throw error
           console.warn(`[QQMusic] 账号取链请求失败: song=${songMid}, platform=${platform}, quality=${quality}`)
@@ -247,7 +322,10 @@ export const getQQMusicUrlByAccount = async(
     return null
   } catch (error) {
     // 超时允许音源接手，用户取消则必须终止整个播放请求。
-    if (timedOut && isRequestCancelled(error)) return null
+    if (timedOut && isRequestCancelled(error)) {
+      playbackLog('url.account_timeout', () => ({ ...options.trace, musicId: musicInfo.id }))
+      return null
+    }
     throw error
   } finally {
     BackgroundTimer.clearTimeout(timer)

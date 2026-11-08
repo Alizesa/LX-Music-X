@@ -47,6 +47,98 @@ const logHarness = () => {
   return { ...h, log, entries: async() => (await log.readPlaybackLogs()).split('\n').filter(Boolean).map(line => JSON.parse(line)) }
 }
 
+const diagnosticSong = { id: 'tx_diagnostic', source: 'tx', interval: '03:00', meta: { songId: 'diagnostic', strMediaMid: 'media' } }
+const diagnosticUrl = 'https://audio.test/M500media.mp3?vkey=private-value'
+const audioDiagnosticsHarness = ({ inspect = async() => ({ readable: true, mime: 'audio/mpeg', durationMs: 180000 }),
+  response = param => ({ code: 0, req_1: { data: { midurlinfo: [{ result: 0, purl: `${diagnosticUrl}&channel=${param.platform}` }] } } }),
+  cookie = 'uin=123; qm_keyst=private-value' } = {}) => {
+  const h = logHarness(), channels = [], cancelled = [], probes = []
+  const message = load('src/utils/message.ts')
+  const abort = load('src/utils/abort.ts', { './message': message })
+  const remote = load('src/utils/nativeModules/remoteAudio.ts', {
+    'react-native': { NativeModules: { UtilsModule: {
+      startRemoteAudioProbe: (_id, url) => { probes.push(url); return inspect(url) }, cancelRemoteAudioProbe: id => { cancelled.push(id) },
+    } } },
+    'react-native-background-timer': { default: h.clock }, '@/utils/abort': abort,
+  }, { Date: h.Date })
+  const qq = load('src/core/qqMusicUrl.ts', {
+    './qqMusic': {
+      getQQMusicSession: async() => ({ cookie }), getQQMusicUin: () => '123', QQMusicSessionExpiredError: class extends Error {},
+      postAuthedMusicu: async(_cookie, body) => { channels.push(body.req_1.param.platform); return response(body.req_1.param) },
+    },
+    '@/utils/nativeModules/remoteAudio': remote, '@/utils/message': message, '@/utils/abort': abort,
+    'react-native-background-timer': { default: h.clock }, '@/utils/playbackLog': h.log,
+  }, { Date: h.Date })
+  h.log.setPlaybackLogEnabled(true)
+  return { ...h, qq, channels, cancelled, probes }
+}
+
+test('audio diagnostics distinguish a probe deadline from an observed short preview', async() => {
+  const timeout = audioDiagnosticsHarness({ inspect: () => new Promise(() => {}) })
+  const failed = assert.rejects(timeout.qq.validateQQMusicUrl(diagnosticSong, diagnosticUrl, undefined, false,
+    { playId: 'play-one', urlId: 'url-one', apiId: 'user_api_a' }), { code: 'timeout', message: 'QQ Music audio probe timed out' })
+  await timeout.advance(5000)
+  await failed
+  const timedOut = (await timeout.entries()).find(entry => entry.event === 'url.audio_check').data
+  assert.equal(timedOut.reason, 'timeout')
+  assert.equal(timedOut.expectedMs, 180000)
+  assert.equal(timedOut.probe.elapsedMs, 5000)
+  assert.equal(timedOut.probe.durationMs, undefined)
+  assert.equal(timedOut.accepted, false)
+  assert.equal(timedOut.apiId, 'user_api_a')
+  assert.equal(timedOut.urlId, 'url-one')
+  assert.equal(timeout.cancelled.length, 1)
+
+  const preview = audioDiagnosticsHarness({ inspect: async() => ({ readable: true, mime: 'audio/mpeg', durationMs: 30000,
+    requests: 1, bytesRead: 65536, httpStatus: 206 }) })
+  await assert.rejects(preview.qq.validateQQMusicUrl(diagnosticSong, diagnosticUrl), { code: 'duration_mismatch', message: 'QQ Music audio is incomplete' })
+  const checked = (await preview.entries()).find(entry => entry.event === 'url.audio_check').data
+  assert.equal(checked.reason, 'duration_mismatch')
+  assert.equal(checked.expectedMs, 180000)
+  assert.deepEqual(checked.probe, { readable: true, mime: 'audio/mpeg', durationMs: 30000, requests: 1, bytesRead: 65536, httpStatus: 206 })
+  assert.equal(checked.accepted, false)
+  assert.equal((await preview.log.exportPlaybackLogs()).includes('private-value'), false)
+})
+
+test('account diagnostics show App preview rejection followed by a complete web candidate without credentials', async() => {
+  const h = audioDiagnosticsHarness({ inspect: async url => ({ readable: true, mime: 'audio/mpeg', durationMs: url.endsWith('23') ? 30000 : 180000 }) })
+  const result = await h.qq.getQQMusicUrlByAccount(diagnosticSong, '128k', '128k', { trace: { playId: 'play-one', urlId: 'url-one' } })
+  assert.equal(result.url, `${diagnosticUrl}&channel=20`)
+  assert.deepEqual(h.channels, ['23', '20'])
+  const entries = await h.entries()
+  const probes = entries.filter(entry => entry.event === 'url.account_probe').map(entry => entry.data)
+  assert.deepEqual(probes.map(probe => [probe.platform, probe.reason, probe.accepted]), [['23', 'duration_mismatch', false], ['20', 'complete', true]])
+  assert.ok(probes.every(probe => probe.playId === 'play-one' && probe.urlId === 'url-one' && probe.expectedMs === 180000))
+  assert.equal(JSON.stringify(entries).includes('private-value'), false)
+  assert.equal(JSON.stringify(entries).includes('M500media'), false)
+})
+
+test('account diagnostics explain missing login and empty channel responses without probing audio', async() => {
+  const loggedOut = audioDiagnosticsHarness({ cookie: '' })
+  assert.equal(await loggedOut.qq.getQQMusicUrlByAccount(diagnosticSong, '128k', '128k'), null)
+  assert.equal(loggedOut.channels.length, 0)
+  assert.equal((await loggedOut.entries()).find(entry => entry.event === 'url.account_skip').data.reason, 'no_session')
+
+  const empty = audioDiagnosticsHarness({ response: () => ({ code: 0, req_1: { data: { midurlinfo: [{ result: 0, purl: '' }] } } }) })
+  assert.equal(await empty.qq.getQQMusicUrlByAccount(diagnosticSong, '128k', '128k'), null)
+  assert.deepEqual(empty.channels, ['23', '20'])
+  assert.equal(empty.probes.length, 0)
+  const candidates = (await empty.entries()).filter(entry => entry.event === 'url.account_candidates').map(entry => entry.data)
+  assert.deepEqual(candidates.map(item => [item.platform, item.reason, item.selected]), [['23', 'empty_urls', 0], ['20', 'empty_urls', 0]])
+})
+
+test('an account candidate batch deadline is recorded before the web channel takes over', async() => {
+  const h = audioDiagnosticsHarness({ inspect: url => url.endsWith('23') ? new Promise(() => {})
+    : Promise.resolve({ readable: true, mime: 'audio/mpeg', durationMs: 180000 }) })
+  const pending = h.qq.getQQMusicUrlByAccount(diagnosticSong, '128k', '128k')
+  await flush()
+  await h.advance(5000)
+  assert.equal((await pending).url, `${diagnosticUrl}&channel=20`)
+  const batches = (await h.entries()).filter(entry => entry.event === 'url.account_candidates_done').map(entry => entry.data)
+  assert.deepEqual(batches.map(item => [item.platform, item.reason]), [['23', 'timeout'], ['20', 'complete']])
+  assert.equal(h.cancelled.length, 1)
+})
+
 test('disabled logging does not evaluate payloads, create timers or touch disk', () => {
   const h = logHarness()
   let evaluated = 0

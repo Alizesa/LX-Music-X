@@ -6,6 +6,12 @@ export interface RemoteAudioInfo {
   readable: boolean
   durationMs?: number
   mime?: string
+  /** 固定原因码；旧 APK 可能不返回这些诊断字段。 */
+  reason?: string
+  requests?: number
+  bytesRead?: number
+  httpStatus?: number
+  elapsedMs?: number
 }
 
 interface CachedProbe {
@@ -33,14 +39,17 @@ let taskId = 0
 
 const startProbe = (key: string, url: string, inspectDuration: boolean, timeoutMs: number): ProbeTask => {
   const id = `${taskPrefix}-${++taskId}`
+  const startedAt = Date.now()
   let finished = false
   let resolveResult!: (info: RemoteAudioInfo) => void
   const task: ProbeTask = {
     users: 0,
     promise: new Promise(resolve => { resolveResult = resolve }),
-    cancel: () => { finish({ readable: false }, true) },
+    cancel: () => { finish({ readable: false, reason: 'cancelled' }, true) },
   }
-  const timer = BackgroundTimer.setTimeout(() => { task.cancel() }, timeoutMs)
+  const timer = BackgroundTimer.setTimeout(() => {
+    finish({ readable: false, reason: 'timeout', elapsedMs: Date.now() - startedAt }, true)
+  }, timeoutMs)
   const finish = (info: RemoteAudioInfo, cancelNative = false) => {
     if (finished) return
     finished = true
@@ -51,7 +60,7 @@ const startProbe = (key: string, url: string, inspectDuration: boolean, timeoutM
     // 强制刷新可以替换旧任务；旧任务的迟到结果不能覆盖新缓存或删除新任务。
     if (pending.get(key) === task) {
       pending.delete(key)
-      if (info.readable && (!inspectDuration || (info.durationMs ?? 0) > 0)) {
+      if (!info.reason && info.readable && (!inspectDuration || (info.durationMs ?? 0) > 0)) {
         cache.delete(key)
         cache.set(key, { info, expires: Date.now() + 60_000 })
         if (cache.size > 32) cache.delete(cache.keys().next().value!)
@@ -60,10 +69,14 @@ const startProbe = (key: string, url: string, inspectDuration: boolean, timeoutM
     resolveResult(info)
   }
   pending.set(key, task)
+  if (typeof NativeModules.UtilsModule?.startRemoteAudioProbe !== 'function') {
+    finish({ readable: false, reason: 'native_unavailable' })
+    return task
+  }
   try {
     const request: Promise<RemoteAudioInfo> = NativeModules.UtilsModule.startRemoteAudioProbe(id, url, inspectDuration, timeoutMs)
-    void request.then(info => { finish(info) }, () => { finish({ readable: false }) })
-  } catch { finish({ readable: false }) }
+    void request.then(info => { finish(info) }, () => { finish({ readable: false, reason: 'native_error' }) })
+  } catch { finish({ readable: false, reason: 'native_error' }) }
   return task
 }
 

@@ -354,7 +354,9 @@ const mediaHarness = () => {
 
 test('a stuck native probe times out, is cancelled and can be retried', async() => {
   const h = mediaHarness()
-  assert.equal((await h.probe(standard, true, { timeoutMs: 15 })).readable, false)
+  const timedOut = await h.probe(standard, true, { timeoutMs: 15 })
+  assert.equal(timedOut.readable, false)
+  assert.equal(timedOut.reason, 'timeout')
   assert.deepEqual(h.cancelled, [h.started[0].id])
   const retry = h.probe(standard, true)
   assert.equal(h.started.length, 2)
@@ -362,6 +364,19 @@ test('a stuck native probe times out, is cancelled and can be retried', async() 
   h.started[0].resolve({ readable: true, durationMs: 180000, mime: 'audio/mpeg' })
   h.started[1].resolve({ readable: false })
   assert.equal((await retry).readable, false)
+})
+
+test('a native probe reporting a failure never caches its partial metadata', async() => {
+  const h = mediaHarness()
+  const first = h.probe(standard, true)
+  h.started[0].resolve({ ...fullAudio(standard), reason: 'timeout' })
+  assert.equal((await first).reason, 'timeout')
+  const retry = h.probe(standard, true)
+  assert.equal(h.started.length, 2)
+  h.started[1].resolve(fullAudio(standard))
+  assert.equal((await retry).durationMs, 180000)
+  assert.equal((await h.probe(standard, true)).durationMs, 180000)
+  assert.equal(h.started.length, 2)
 })
 
 test('cancelling one consumer preserves shared work; cancelling the last stops native IO', async() => {
