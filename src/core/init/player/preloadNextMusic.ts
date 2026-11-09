@@ -1,7 +1,7 @@
 import TrackPlayer from 'react-native-track-player'
 import BackgroundTimer from 'react-native-background-timer'
 import { getNextPlayMusicInfo, resetRandomNextMusicInfo } from '@/core/player/player'
-import { cancelPreload, hasPreloadMusic, isPreloadPaused, keepPreloadFor, pausePreload, preloadMusic } from '@/core/player/preload'
+import { cancelPreload, hasPreloadMusic, isPreloadCacheClearing, isPreloadPaused, keepPreloadFor, onPreloadCacheClearingChanged, pausePreload, preloadMusic } from '@/core/player/preload'
 import { canPreloadAudio } from '@/plugins/player/preload'
 import playerState from '@/store/player/state'
 import settingState from '@/store/setting/state'
@@ -29,6 +29,7 @@ export default () => {
     if (!setting['player.preloadNext']) return 'disabled'
     if (!canPreloadAudio()) return 'native_unavailable'
     if (!(Number(setting['player.cacheSize']) > 0)) return 'cache_disabled'
+    if (isPreloadCacheClearing()) return 'cache_clearing'
     if (global.lx.isPlayedStop) return 'stopping'
     if (!playbackReady) return 'playback_not_ready'
     if (!playerState.isPlay) return 'not_playing'
@@ -222,5 +223,6 @@ export default () => {
   global.state_event.on('playTempPlayListChanged', invalidate)
   global.state_event.on('configUpdated', configUpdated)
   global.state_event.on('playProgressChanged', () => { void check() })
+  onPreloadCacheClearingChanged(invalidate)
   scheduleCheck()
 }

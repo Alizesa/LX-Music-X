@@ -326,6 +326,7 @@ const schedulerScenario = async enabled => {
     } }, 'react-native-background-timer': { default: h.clock },
     '@/core/player/player': { getNextPlayMusicInfo: async() => { calls.selection++; return { musicInfo: next } }, resetRandomNextMusicInfo() {} },
     '@/core/player/preload': { cancelPreload() {}, keepPreloadFor() {}, pausePreload() {}, hasPreloadMusic: () => exists, isPreloadPaused: () => false,
+      isPreloadCacheClearing: () => false, onPreloadCacheClearingChanged() {},
       preloadMusic: () => { calls.preload++; exists = true; return Promise.resolve('ready') } },
     '@/plugins/player/preload': { canPreloadAudio: () => true }, '@/store/player/state': { default: state }, '@/store/setting/state': { default: { setting } },
     '@/utils/message': { isRequestCancelled: () => false }, '@/utils/playbackLog': h.log,

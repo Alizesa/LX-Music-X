@@ -76,7 +76,7 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   // }
   const targetQuality = quality ?? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
   playbackLog('url.cache_lookup', () => ({ ...trace, musicId: musicInfo.id, quality: targetQuality }))
-  const cachedUrl = await getStoreMusicUrl(musicInfo, targetQuality, cacheContext)
+  const cachedUrl = await getStoreMusicUrl(musicInfo, targetQuality, cacheContext, quality == null)
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
@@ -100,8 +100,11 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
     assertActive()
     playbackLog('url.resolved', () => ({ ...trace, musicId: musicInfo.id, actualMusicId: targetMusicInfo.id, quality: actualQuality, url, isFromCache }))
     if (cacheContext !== getMusicUrlCacheContext(settingState.setting, urlSourceOrder)) return url
-    if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, actualQuality, url, cacheContext)
-    void saveMusicUrl(musicInfo, actualQuality, url, cacheContext)
+    if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, actualQuality, url, cacheContext).catch(() => {})
+    void saveMusicUrl(musicInfo, actualQuality, url, cacheContext).catch(() => {})
+    // 记住这一档播放请求实际选中的降档结果，复播不再重复账号取票/脚本请求。
+    // 元数据保留实际音质，显式指定音质的下载仍须重新取到符合要求的链接。
+    if (actualQuality !== targetQuality) void saveMusicUrl(musicInfo, targetQuality, url, cacheContext, actualQuality).catch(() => {})
     return url
   })
 }

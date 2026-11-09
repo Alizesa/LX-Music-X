@@ -323,12 +323,16 @@ export const hasMusicUrlByMusic = async(musicInfo: LX.Music.MusicInfo) => {
 export const clearMusicUrlByMusic = async(musicInfo: LX.Music.MusicInfo) => {
   await removeDataMultiple(qualitys.map(q => `${storageDataPrefix.musicUrl}${musicInfo.id}_${q}`))
 }
-export const getMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality, context: string) => {
+export const getMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality, context: string, allowQualityFallback = false) => {
   const cached = await getData<CachedMusicUrl | string>(`${storageDataPrefix.musicUrl}${musicInfo.id}_${type}`)
   // 旧字符串没有来源信息，首次使用重新取址；仍沿用原 key，避免按设置组合无限累积缓存。
-  return cached && typeof cached === 'object' && cached.context === context && typeof cached.url === 'string' ? cached.url : ''
+  if (!cached || typeof cached !== 'object' || cached.context !== context || typeof cached.url !== 'string') return ''
+  const actualQuality = cached.actualQuality ?? type
+  // 只有播放明确允许降档；下载及内部精确取址不能把低档映射当作指定音质。
+  if (actualQuality !== type && (!allowQualityFallback || !qualitys.includes(actualQuality) || qualitys.indexOf(actualQuality) > qualitys.indexOf(type))) return ''
+  return cached.url
 }
-export const saveMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality, url: string, context: string) => saveData(`${storageDataPrefix.musicUrl}${musicInfo.id}_${type}`, { url, context } satisfies CachedMusicUrl)
+export const saveMusicUrl = async(musicInfo: LX.Music.MusicInfo, type: LX.Quality, url: string, context: string, actualQuality: LX.Quality = type) => saveData(`${storageDataPrefix.musicUrl}${musicInfo.id}_${type}`, { url, context, actualQuality } satisfies CachedMusicUrl)
 export const clearMusicUrl = async(keys?: string[]) => {
   if (!keys) keys = (await getAllKeys()).filter(key => key.startsWith(storageDataPrefix.musicUrl))
   await removeDataMultiple(keys)

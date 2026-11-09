@@ -43,7 +43,7 @@ const harness = ({ cachedUrl, inspect = url => audio(url === preview ? 60000 : 2
   const cache = new Map(cachedUrl ? [[`${song.id}:128k`, cachedUrl]] : [])
   const data = {
     getMusicUrl: async(music, quality) => cache.get(`${music.id}:${quality}`),
-    saveMusicUrl: async(music, quality, url) => { writes.push({ music, quality, url }); cache.set(`${music.id}:${quality}`, url) },
+    saveMusicUrl: async(music, quality, url, context, actualQuality = quality) => { writes.push({ music, quality, url, actualQuality }); cache.set(`${music.id}:${quality}`, url) },
   }
   const pipeline = load('src/core/music/utils.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
@@ -187,7 +187,10 @@ test('preload probe failures do not cool down every custom script before foregro
     // Foreground and preload must use the same quality/fallback key, as on the device.
     assert.equal(await h.resolve({ quality: undefined }), urls[0])
     assert.deepEqual(h.requests, ['user_api_a', 'user_api_b', 'user_api_c', 'user_api_a'])
-    assert.deepEqual(h.writes.map(item => item.url), [urls[0]])
+    assert.deepEqual(h.writes.map(({ quality, actualQuality, url }) => ({ quality, actualQuality, url })), [
+      { quality: '128k', actualQuality: '128k', url: urls[0] },
+      { quality: '320k', actualQuality: '128k', url: urls[0] },
+    ])
   }
 })
 

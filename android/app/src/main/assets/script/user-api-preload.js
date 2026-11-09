@@ -192,6 +192,10 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
     const requestInfo = {
       aborted: false,
       abort: () => {
+        if (requestInfo.aborted) return
+        requestInfo.aborted = true
+        // App 会丢弃已取消 HTTP 的响应，不能等回包才释放脚本回调。
+        requestQueue.delete(requestKey)
         nativeCall(NATIVE_EVENTS_NAMES.cancelRequest, requestKey)
       },
     }
@@ -478,10 +482,12 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
       if (timeout && typeof timeout == 'number' && timeout > 0) options.timeout = Math.min(timeout, 60_000)
 
       let request = sendNativeRequest(url, { method, body, form, formData, ...options }, (err, resp) => {
+        const handler = callback
+        callback = null
         if (err) {
-          callback(err, null, null)
+          handler(err, null, null)
         } else {
-          callback(err, {
+          handler(err, {
             statusCode: resp.statusCode,
             statusMessage: resp.statusMessage,
             headers: resp.headers,
@@ -493,8 +499,11 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
       })
 
       return () => {
-        if (!request.aborted) request.abort()
+        const target = request
         request = null
+        // 取消句柄可能继续被脚本持有，清空其作用域中的原始回调。
+        callback = null
+        if (target && !target.aborted) target.abort()
       }
     },
     send(eventName, data) {

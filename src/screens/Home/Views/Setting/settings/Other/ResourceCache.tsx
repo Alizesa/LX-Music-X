@@ -13,6 +13,7 @@ import { useI18n } from '@/lang'
 import Text from '@/components/common/Text'
 import { clearMusicUrl } from '@/utils/data'
 import { releaseIdleCaches } from '@/core/cacheLifecycle'
+import { clearPlaybackCache } from '@/core/player/preload'
 
 export default memo(() => {
   const t = useI18n()
@@ -36,16 +37,24 @@ export default memo(() => {
     }).then(confirm => {
       if (!confirm) return
       setCleaning(true)
-      // 同时释放可重建的闲置 JS 缓存（正在播放/显示的由各自的保护条件跳过）
-      releaseIdleCaches()
-      void Promise.all([
-        clearAppCache(),
-        clearCache(),
-        clearMusicUrl(),
-        resetNotificationPermissionCheck(),
-        resetIgnoringBatteryOptimizationCheck(),
-      ]).then(() => {
+      void clearPlaybackCache(async() => {
+        // 同时释放可重建的闲置 JS 缓存（正在播放/显示的由各自的保护条件跳过）
+        releaseIdleCaches()
+        // 任一清理失败也必须等其他删除结束，才能允许预加载重新写入。
+        const results = await Promise.allSettled([
+          clearAppCache,
+          clearCache,
+          clearMusicUrl,
+          resetNotificationPermissionCheck,
+          resetIgnoringBatteryOptimizationCheck,
+        ].map(async clear => clear()))
+        for (const result of results) {
+          if (result.status === 'rejected') throw result.reason
+        }
+      }).then(() => {
         toast(t('setting_other_cache_clear_success_tip'))
+      }).catch((error: unknown) => {
+        toast(t('list_remove_cache_fail_tip', { msg: error instanceof Error ? error.message : String(error) }))
       }).finally(() => {
         handleGetAppCacheSize()
         setCleaning(false)

@@ -29,6 +29,19 @@ interface PreloadTask {
   onError?: (error: unknown) => void
 }
 let active: PreloadTask | null = null
+let cacheClearing = 0
+let cacheClearRevision = 0
+const cacheClearingListeners = new Set<() => void>()
+export const isPreloadCacheClearing = () => cacheClearing > 0
+export const onPreloadCacheClearingChanged = (listener: () => void) => {
+  cacheClearingListeners.add(listener)
+  return () => { cacheClearingListeners.delete(listener) }
+}
+const notifyCacheClearingChanged = () => {
+  for (const listener of cacheClearingListeners) {
+    try { listener() } catch {}
+  }
+}
 const trace = (task: PreloadTask) => ({ playId: task.ownerPlayId, preloadId: playbackLogId(task, 'preload') })
 registerPlaybackLogSnapshot('preloadTask', () => active ? {
   ...trace(active),
@@ -84,6 +97,24 @@ export const cancelPreload = (reason = 'invalidated') => {
   active = null
 }
 
+/** 清理结束前禁止后台重新写缓存；前台已接管的取链请求仍由前台持有。 */
+export const clearPlaybackCache = async<T>(clear: () => Promise<T>): Promise<T> => {
+  if (++cacheClearing === 1) {
+    cacheClearRevision++
+    if (active && !active.claimed) cancelPreload('cache_clearing')
+    playbackLog('preload.cache_clear_started')
+    notifyCacheClearingChanged()
+  }
+  try {
+    return await clear()
+  } finally {
+    if (--cacheClearing === 0) {
+      playbackLog('preload.cache_clear_finished')
+      notifyCacheClearingChanged()
+    }
+  }
+}
+
 /** 切到已预取的歌曲时保留取链任务，交给前台接管；切到其他歌曲立即取消。 */
 export const keepPreloadFor = (music: Music | null) => {
   if (!active) return
@@ -127,6 +158,13 @@ export const takePreloadedMusicUrl = (music: Music, onCancel: (cancel: () => voi
 const cacheHead = async(task: PreloadTask, url: string) => {
   assertActive(task)
   if (task.rejectedUrls.has(url)) throw new Error('Audio resource already failed')
+  // 已接管的前台请求在清缓存期间直接串流，不再启动一次原生预取。
+  if (isPreloadCacheClearing() && task.claimed) {
+    task.finished = true
+    task.cacheAvailable = false
+    return
+  }
+  const clearRevision = cacheClearRevision
   task.phase = 'head'
   playbackLog('preload.head_start', () => ({ ...trace(task), url, bytes: 256 * 1024 }))
   try {
@@ -140,6 +178,16 @@ const cacheHead = async(task: PreloadTask, url: string) => {
     task.cacheAvailable = result != null
     playbackLog('preload.head_result', () => ({ ...trace(task), result, cacheAvailable: task.cacheAvailable }))
   } catch (error) {
+    assertActive(task)
+    // 原生 clear 会取消正在读取的首段，但不能把它变成前台取链失败。
+    // 用版本识别清理，即使清理的 Promise 已完成，迟到的取消仍可回退串流。
+    if (task.claimed && clearRevision !== cacheClearRevision && isRequestCancelled(error)) {
+      task.cancelCache = undefined
+      task.finished = true
+      task.cacheAvailable = false
+      playbackLog('preload.head_skipped', () => ({ ...trace(task), reason: 'cache_cleared' }))
+      return
+    }
     if (!isRequestCancelled(error)) {
       task.rejectedUrls.add(url)
       markMusicUrlFailed(url)
@@ -238,7 +286,7 @@ const startPrepare = (task: PreloadTask, isRefresh = false) => {
 }
 
 export const preloadMusic = (musicInfo: Music, onError?: (error: unknown) => void, ownerPlayId?: string): Promise<string> | null => {
-  if (!settingState.setting['player.preloadNext'] || !canPreloadAudio() || !(Number(settingState.setting['player.cacheSize']) > 0)) {
+  if (isPreloadCacheClearing() || !settingState.setting['player.preloadNext'] || !canPreloadAudio() || !(Number(settingState.setting['player.cacheSize']) > 0)) {
     playbackLog('preload.unavailable', { musicId: musicInfo.id, enabled: settingState.setting['player.preloadNext'], native: canPreloadAudio(), cacheMiB: settingState.setting['player.cacheSize'] })
     return null
   }

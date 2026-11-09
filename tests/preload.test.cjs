@@ -386,6 +386,8 @@ const schedulerHarness = () => {
       keepPreloadFor: music => { if (prepared !== music?.id) prepared = undefined },
       pausePreload: () => { paused = true },
       isPreloadPaused: () => paused,
+      isPreloadCacheClearing: () => false,
+      onPreloadCacheClearingChanged() {},
       hasPreloadMusic: music => prepared === music.id,
       preloadMusic: async music => { calls.push(music.id); prepared = music.id; paused = false; return 'url' },
     },
@@ -951,7 +953,7 @@ test('exact quality failures advance to another source without blocking playback
   assert.deepEqual(h.calls, ['user_api_a', 'user_api_b', 'user_api_a'])
 })
 
-test('a downgraded playback URL is cached only under its actual quality', async() => {
+test('a downgraded playback URL keeps its actual quality and the requested-quality mapping', async() => {
   const writes = []
   const setting = { ...settings(), 'player.playQuality': 'flac' }
   const api = load('src/core/music/online.ts', {
@@ -962,7 +964,9 @@ test('a downgraded playback URL is cached only under its actual quality', async(
     './utils': { getPlayQuality: quality => quality, handleGetOnlineMusicUrl: async() => ({ musicInfo: song('one'), url: 'https://audio.test/128k', quality: '128k' }) },
   })
   assert.equal(await api.getMusicUrl({ musicInfo: song('one'), isRefresh: false }), 'https://audio.test/128k')
-  assert.deepEqual(writes.map(([, quality]) => quality), ['128k'])
+  assert.deepEqual(writes.map(([, quality]) => quality), ['128k', 'flac'])
+  assert.equal(writes[1][2], 'https://audio.test/128k')
+  assert.equal(writes[1][4], '128k')
 })
 
 test('switching the primary source during initialization cannot redirect an old request to the new runtime', async() => {
