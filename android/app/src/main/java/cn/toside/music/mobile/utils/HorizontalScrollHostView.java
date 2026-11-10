@@ -117,7 +117,7 @@ public final class HorizontalScrollHostView extends ReactViewGroup {
             while (ancestor instanceof View) {
                 View view = (View) ancestor;
                 if (view.canScrollHorizontally(-1) || view.canScrollHorizontally(1)) {
-                    view.requestDisallowInterceptTouchEvent(true);
+                    ancestor.requestDisallowInterceptTouchEvent(true);
                 }
                 ancestor = view.getParent();
             }
