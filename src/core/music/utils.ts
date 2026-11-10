@@ -399,6 +399,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
         isRefresh,
         onCancel: registerCancel,
         allowQualityFallback: quality == null,
+        isUrlRejected: url => isMusicUrlFailed(url) || rejectedUrls?.has(url) === true,
         trace,
       })
       assertActive()

@@ -135,11 +135,13 @@ interface AccountUrlOptions {
   onCancel?: (cancel: () => void) => void
   /** 下载必须保持指定音质；播放默认允许依次降档。 */
   allowQualityFallback?: boolean
+  /** 在候选选择前跳过已播放失败或仍在冷却的地址，不占用媒体探测预算。 */
+  isUrlRejected?: (url: string) => boolean
   trace?: PlaybackLogContext
 }
 
 const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal: AbortSignal, isRefresh: boolean,
-  trace: PlaybackLogContext & { musicId: string, platform: string }): Promise<string | null> => {
+  trace: PlaybackLogContext & { musicId: string, platform: string }, isUrlRejected?: (url: string) => boolean): Promise<string | null> => {
   throwIfAborted(signal)
   const list: any[] = Array.isArray(data?.midurlinfo) ? data.midurlinfo : []
   const sips: string[] = Array.isArray(data?.sip) ? data.sip.filter((item: unknown) => typeof item === 'string') : []
@@ -161,7 +163,7 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
   const candidates = buildUrlCandidates(purls, sips)
   // 先试普通直链，避免第一项是试听时漏掉后面的完整地址。
   candidates.sort((a, b) => Number(TRIAL_RXP.test(a)) - Number(TRIAL_RXP.test(b)))
-  const selected = candidates.slice(0, 6)
+  const selected = candidates.filter(url => !isUrlRejected?.(url)).slice(0, 6)
   playbackLog('url.account_candidates', () => ({
     ...trace,
     quality,
@@ -170,7 +172,7 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
     candidates: candidates.length,
     selected: selected.length,
     resultCodes: list.slice(0, 6).map(info => Number(info?.result ?? 0)),
-    reason: selected.length ? 'checking' : returnedUrls ? 'quality_mismatch'
+    reason: selected.length ? 'checking' : candidates.length ? 'rejected_urls' : returnedUrls ? 'quality_mismatch'
       : list.some(info => Number(info?.result ?? 0) !== 0) ? 'item_rejected' : 'empty_urls',
   }))
   if (!selected.length) return null
@@ -198,10 +200,12 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
       while (next < selected.length) {
         if (done) return
         const url = selected[next++]
+        if (isUrlRejected?.(url)) continue
         const probeStartedAt = Date.now()
         const media = await probeRemoteAudio(url, true, { signal: controller.signal, isRefresh, timeoutMs: 5000 })
         if (done) return
-        const reason = audioFailure(media, expectedMs, expectedMime)
+        // 探测期间其他播放/预加载请求也可能标记这个 URL 失败，迟到结果不能重新选中它。
+        const reason = isUrlRejected?.(url) ? 'rejected_url' : audioFailure(media, expectedMs, expectedMime)
         playbackLog('url.account_probe', () => ({
           ...trace,
           quality,
@@ -313,7 +317,7 @@ export const getQQMusicUrlByAccount = async(
           playbackLog('url.account_channel_start', () => ({ ...trace, quality }))
           const data = await requestVkey(cookie, songMid, filenames, spec.prefix, platform, signal)
           playbackLog('url.account_channel_response', () => ({ ...trace, quality, elapsedMs: Date.now() - startedAt }))
-          const url = await pickUrl(data, quality, expectedMs, signal, options.isRefresh ?? false, trace)
+          const url = await pickUrl(data, quality, expectedMs, signal, options.isRefresh ?? false, trace, options.isUrlRejected)
           throwIfAborted(signal)
           if (url) return { url, quality }
         } catch (error) {

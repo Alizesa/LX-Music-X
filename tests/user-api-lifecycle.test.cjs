@@ -1,5 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
+const { spawnSync } = require('node:child_process')
+const path = require('node:path')
 const { userApiHarness, song, deferred, flush, message } = require('./helpers/user-api.cjs')
 const { harness, constants } = require('./helpers/playback.cjs')
 
@@ -119,4 +121,72 @@ test('a waiter from an earlier initialization is cancelled even after selecting 
   await flush()
   h.initialize()
   await cancelled
+})
+
+for (const termination of ['cancel', 'timeout']) {
+  test(`primary initialization ${termination} only releases that request's waiter`, async() => {
+    const h = await userApiHarness()
+    h.api.setApiSource('user_api_A')
+    await flush()
+    const initialization = h.global.lx.apiInitPromise[0]
+    let cancel
+    const first = h.runtime.requestUserApiMusicUrl('user_api_A', { ...song, id: 'cancelled' }, '128k', fn => { cancel = fn })
+    const timeout = [...h.timers.values()][0]
+    const expected = termination === 'cancel' ? message.requestMsg.cancelRequest : 'Source request timeout'
+    const rejected = assert.rejects(first, error => error.message === expected)
+    const second = h.runtime.requestUserApiMusicUrl('user_api_A', { ...song, id: 'active' }, '128k')
+    const destroyed = h.destroyed.length
+    if (termination === 'cancel') cancel()
+    else timeout()
+    await rejected
+    assert.equal(h.destroyed.length, destroyed)
+    assert.equal(h.timers.size, 1)
+    assert.equal(h.global.lx.apiInitPromise[0], initialization)
+    assert.equal(h.global.lx.apiInitPromise[1], false)
+    assert.equal(h.sends.length, 0)
+    h.initialize()
+    assert.equal((await second).url, 'https://audio.test/user_api_A')
+    assert.equal(h.destroyed.length, destroyed)
+    assert.equal(h.timers.size, 0)
+    assert.deepEqual(h.sends.filter(entry => entry.action === 'request').map(entry => entry.data.data.info.musicInfo.id), ['active'])
+  })
+}
+
+test('cancelled and timed-out primary initialization waiters release songs and errors before initialization settles', () => {
+  const result = spawnSync(process.execPath, ['--expose-gc', '-e', `
+    const assert = require('node:assert/strict')
+    const { userApiHarness, song, flush, message } = require('./tests/helpers/user-api.cjs')
+    ;(async() => {
+      const h = await userApiHarness()
+      h.api.setApiSource('user_api_A')
+      await flush()
+      const references = []
+      const requestOne = async(index, termination) => {
+        const music = { ...song, id: termination + index }
+        references.push(new WeakRef(music))
+        let cancel
+        const request = h.runtime.requestUserApiMusicUrl('user_api_A', music, '128k', fn => { cancel = fn })
+        const expected = termination === 'cancel' ? message.requestMsg.cancelRequest : 'Source request timeout'
+        const rejected = assert.rejects(request, error => {
+          references.push(new WeakRef(error))
+          return error.message === expected
+        })
+        assert.equal(h.timers.size, 1)
+        if (termination === 'cancel') cancel()
+        else for (const timeout of [...h.timers.values()]) timeout()
+        await rejected
+      }
+      for (const termination of ['cancel', 'timeout']) {
+        for (let index = 0; index < 20; index++) await requestOne(index, termination)
+      }
+      assert.equal(h.timers.size, 0)
+      assert.equal(h.global.lx.apiInitPromise[1], false)
+      for (let attempt = 0; attempt < 8; attempt++) { await flush(); global.gc() }
+      assert.equal(references.filter(ref => ref.deref() !== undefined).length, 0, 'disposed requests must not remain attached to shared initialization')
+      h.initialize()
+      await flush()
+      assert.equal(h.sends.filter(entry => entry.action === 'request').length, 0)
+    })().catch(error => { console.error(error); process.exitCode = 1 })
+  `], { cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 15000 })
+  assert.equal(result.status, 0, result.stderr || result.stdout)
 })

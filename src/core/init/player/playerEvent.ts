@@ -13,7 +13,6 @@ import { playbackLog, playbackLogId } from '@/utils/playbackLog'
 
 export default () => {
   let retryNum = 0
-  let prevTimeoutId: string | null = null
   let historyPlayback: typeof playerState.playMusicInfo | null = null
   let recovery: { playback: typeof playerState.playMusicInfo } | null = null
 
@@ -25,15 +24,9 @@ export default () => {
     loadingTimeout = BackgroundTimer.setTimeout(() => {
       loadingTimeout = null
       if (!isPlayRequested() || global.lx.isPlayedStop || playback !== playerState.playMusicInfo) return
-      playbackLog('player.buffer_timeout', () => ({ playId: playbackLogId(playback, 'play'), previousTimeoutMusicId: prevTimeoutId }))
-      // 如果加载超时，则尝试刷新URL
-      if (prevTimeoutId == playerState.musicInfo.id) {
-        prevTimeoutId = null
-        void playNext(true)
-      } else {
-        prevTimeoutId = playerState.musicInfo.id
-        if (playerState.playMusicInfo.musicInfo) setMusicUrl(playerState.playMusicInfo.musicInfo, true)
-      }
+      playbackLog('player.buffer_timeout', () => ({ playId: playbackLogId(playback, 'play'), retryNum }))
+      // 缓冲超时和原生报错共用换源次数、进度恢复及取消保护，不能跳过剩余备用源。
+      handleError()
     }, 25000)
   }
   const clearLoadingTimeout = () => {
@@ -136,7 +129,6 @@ export default () => {
   const handleSetPlayInfo = () => {
     retryNum = 0
     recovery = null
-    prevTimeoutId = null
     if (historyPlayback !== playerState.playMusicInfo) historyPlayback = null
     clearDelayNextTimeout()
     clearLoadingTimeout()

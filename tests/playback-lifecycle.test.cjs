@@ -1,5 +1,5 @@
 const { test } = require('node:test')
-const { harness, song, load, deferred, flush, constants, assert } = require('./helpers/playback.cjs')
+const { harness, song, load, deferred, flush, constants, assert, message } = require('./helpers/playback.cjs')
 
 const QUEUE = constants.LIST_IDS.PLAY_QUEUE
 const start = async(h, index = 0) => { await h.player.playList(QUEUE, index); await h.advance(200) }
@@ -166,6 +166,78 @@ test('pausing buffered playback stops its recovery timer', async() => {
   await h.player.pause()
   await h.advance(30000)
   assert.equal(h.sourceRequests.length, 1)
+})
+
+test('consecutive buffer timeouts reach the third selected source without skipping the song', async() => {
+  const ids = ['user_api_A', 'user_api_B', 'user_api_C']
+  const h = await harness({ setting: { 'common.apiSource': ids[0], 'common.apiSourceOrder': JSON.stringify(ids) } })
+  const calls = []
+  const priority = load('src/core/music/sourcePriority.ts', {
+    '@/store/setting/state': { default: { setting: h.setting } },
+    '@/store/userApi': { state: { list: ids.map(id => ({ id })) } },
+    '@/utils/apiSourceOrder': load('src/utils/apiSourceOrder.ts'), '@/utils/message': message,
+    '@/core/userApiRuntime': { requestUserApiMusicUrl: async(id, music, quality) => {
+      calls.push({ id, song: music.id })
+      return { url: `https://audio.test/${id}`, type: quality }
+    } },
+    '@/core/qqMusicUrl': { validateQQMusicUrl: async() => {} },
+  }, { global: h.globals })
+  h.music.getMusicUrl = async args => (await priority.getMusicUrlByPriority({ ...args, quality: '128k' })).url
+  const play = h.native.play
+  h.native.play = async() => {
+    const track = h.nativeTracks[await h.native.getCurrentTrack()]
+    if (track.url.endsWith('user_api_C')) return play()
+    h.emitNative('PlaybackState', { state: 'Buffering' })
+  }
+  addErrorHandling(h)
+  await start(h)
+  await h.native.seekTo(42)
+  await h.advance(25000)
+  assert.deepEqual(calls.map(call => call.id), ids.slice(0, 2))
+  await h.advance(25000)
+  assert.deepEqual(calls, ids.map(id => ({ id, song: 'A' })))
+  assert.equal(h.state.playMusicInfo.musicInfo.id, 'A')
+  assert.equal(h.state.isPlay, true)
+  assert.equal(await h.native.getPosition(), 42)
+  await h.advance(30000)
+  assert.equal(calls.length, 3)
+})
+
+test('native errors and buffer timeouts share one bounded recovery budget', async() => {
+  const h = await harness({ setting: { 'common.apiSourceOrder': '["user_api_A","user_api_B"]' } })
+  addErrorHandling(h)
+  await start(h)
+  await finishUrl(h)
+  await h.advance(800)
+  h.globals.app_event.playerError()
+  await flush()
+  await finishUrl(h)
+  await h.advance(800)
+  h.globals.app_event.playerWaiting()
+  await flush()
+  await h.advance(25000)
+  await finishUrl(h)
+  await h.advance(800)
+  h.globals.app_event.playerError()
+  await flush()
+  await h.advance(5500)
+  assert.equal(h.sourceRequests.filter(request => request.musicInfo.id === 'A').length, 3)
+  assert.equal(h.state.playMusicInfo.musicInfo.id, 'B')
+})
+
+test('pausing during a buffer-timeout position query prevents a late source recovery', async() => {
+  const position = deferred()
+  const h = await harness({ getPosition: () => position.promise })
+  addErrorHandling(h)
+  h.native.play = async() => { h.emitNative('PlaybackState', { state: 'Buffering' }) }
+  await start(h)
+  await finishUrl(h)
+  await h.advance(25000)
+  await h.player.pause()
+  position.resolve(60)
+  await h.advance(30000)
+  assert.equal(h.sourceRequests.length, 1)
+  assert.equal(h.state.isPlay, false)
 })
 
 test('deleting a previous queue row updates selection before its storage write finishes', async() => {

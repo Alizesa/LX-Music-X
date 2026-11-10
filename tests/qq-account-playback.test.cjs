@@ -498,12 +498,12 @@ test('account-wide timeout aborts a stuck ticket and permits source fallback', a
   assert.equal(h.getCancelledTickets(), 1)
 })
 
-const onlineHarness = (h, apiReady = Promise.resolve(true), data = {}) => {
+const onlineHarness = (h, apiReady = Promise.resolve(true), data = {}, failedUrls = new Set()) => {
   let sourceCalls = 0
   const pipeline = load('src/core/music/utils.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     './sourcePriority': {
-      isMusicUrlFailed: () => false,
+      isMusicUrlFailed: url => failedUrls.has(url),
       markMusicUrlFailed() {},
       getMusicUrlByPriority: async({ musicInfo, quality, onCancel }) => {
         let cancelled = false
@@ -547,6 +547,61 @@ test('unmarked previews in both account channels fall back to the selected sourc
   assert.equal((await online.resolve({ isRefresh: false })).url, 'https://source.example/song.mp3')
   assert.equal(h.requests.length, 2)
   assert.ok(h.probes.every(probe => probe.inspect))
+  assert.equal(online.sourceCalls(), 1)
+})
+
+for (const failure of ['playback', 'cooldown']) {
+  test(`account recovery skips ${failure} failures before choosing a healthy alternate CDN`, async() => {
+    const bad = 'https://bad.example/M500media.mp3'
+    const h = harness({ ticket: () => response('M500media.mp3', { sip: ['https://bad.example/', 'https://audio.example/'] }) })
+    const failed = new Set()
+    const online = onlineHarness(h, Promise.resolve(true), {}, failure === 'cooldown' ? failed : undefined)
+    assert.equal((await online.resolve({ isRefresh: false })).url, bad)
+    failed.add(bad)
+    h.probes.length = 0
+    const retry = await online.resolve({ isRefresh: true, rejectedUrls: failure === 'playback' ? failed : undefined })
+    assert.equal(retry.url, standard)
+    assert.deepEqual(h.probes, [{ url: standard, inspect: true }])
+    assert.equal(h.requests.length, 2)
+    assert.equal(online.sourceCalls(), 0)
+  })
+}
+
+test('rejected account URLs do not consume the six-candidate probe budget', async() => {
+  const rejectedBases = Array.from({ length: 6 }, (_, index) => `https://bad${index}.example/`)
+  const rejectedUrls = new Set(rejectedBases.map(base => `${base}M500media.mp3`))
+  const h = harness({ ticket: () => response('M500media.mp3', { sip: [...rejectedBases, 'https://audio.example/'] }) })
+  const online = onlineHarness(h)
+  assert.equal((await online.resolve({ isRefresh: true, rejectedUrls })).url, standard)
+  assert.deepEqual(h.probes, [{ url: standard, inspect: true }])
+  assert.equal(h.requests.length, 1)
+  assert.equal(online.sourceCalls(), 0)
+})
+
+test('an account URL rejected while its probe is pending cannot beat a healthy CDN', async() => {
+  const first = deferred(), second = deferred(), rejectedUrls = new Set()
+  const bad = 'https://bad.example/M500media.mp3'
+  const h = harness({
+    ticket: () => response('M500media.mp3', { sip: ['https://bad.example/', 'https://audio.example/'] }),
+    probe: url => url === bad ? first.promise : second.promise,
+  })
+  const online = onlineHarness(h)
+  const request = online.resolve({ isRefresh: true, rejectedUrls })
+  await flush()
+  rejectedUrls.add(bad)
+  first.resolve(fullAudio(bad))
+  await flush()
+  second.resolve(fullAudio(standard))
+  assert.equal((await request).url, standard)
+  assert.equal(online.sourceCalls(), 0)
+})
+
+test('rejecting every account candidate still falls back to a selected script without probing those URLs', async() => {
+  const h = harness()
+  const online = onlineHarness(h)
+  assert.equal((await online.resolve({ isRefresh: true, rejectedUrls: new Set([standard]) })).url, 'https://source.example/song.mp3')
+  assert.equal(h.requests.length, 2)
+  assert.equal(h.probes.length, 0)
   assert.equal(online.sourceCalls(), 1)
 })
 
