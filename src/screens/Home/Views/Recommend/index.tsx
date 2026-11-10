@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { RefreshControl, ScrollView, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native'
-import HorizontalScrollHost from '@/components/HorizontalScrollHost'
+import HorizontalScrollHost, { hasNativeHorizontalScrollHost } from '@/components/HorizontalScrollHost'
 import Text from '@/components/common/Text'
 import Image from '@/components/common/Image'
 import ImageBackground from '@/components/common/ImageBackground'
@@ -39,12 +39,14 @@ type Songs = LX.Music.MusicInfoOnline[]
 type Playlist = LX.QQMusic.PlaylistInfo
 type HomeCacheKind = 'daily' | 'guess' | 'radar' | 'playlists'
 
-// 原生容器在触摸开始时保护内层横滑；保留这组 JS 锁兼容尚未更新的 APK。
+// 新 APK 在原生触摸阶段保护横滑，只有旧 APK 才需要 JS 往返切换翻页开关。
 const horizontalScrollProps = {
   nestedScrollEnabled: true,
-  onTouchStart: () => { setHomePagerHorizontalScroll(true) },
-  onTouchEnd: () => { setHomePagerHorizontalScroll(false) },
-  onTouchCancel: () => { setHomePagerHorizontalScroll(false) },
+  ...(hasNativeHorizontalScrollHost ? {} : {
+    onTouchStart: () => { setHomePagerHorizontalScroll(true) },
+    onTouchEnd: () => { setHomePagerHorizontalScroll(false) },
+    onTouchCancel: () => { setHomePagerHorizontalScroll(false) },
+  }),
 }
 
 // 每日推荐的临时列表 id。位置记忆和历史标记都按它认队列，所以放在 core 里统一导出
@@ -149,11 +151,14 @@ export default () => {
     return value
   }, [isCurrent])
 
-  // 页面卸载时万一还按着横向列表，别把首页 PagerView 一直锁着
-  useEffect(() => () => { setHomePagerHorizontalScroll(false) }, [])
-  // 「推荐歌单」那块会在退出登录/列表清空时整个卸载，触摸中卸载不会补 onTouchEnd
+  // 旧 APK 的回退锁在页面卸载时释放，原生容器不需要 JS 清理翻页开关。
   useEffect(() => {
-    if (!loggedIn || !playlists.length) setHomePagerHorizontalScroll(false)
+    if (hasNativeHorizontalScrollHost) return
+    return () => { setHomePagerHorizontalScroll(false) }
+  }, [])
+  // 旧 APK 中，推荐歌单在退出登录/清空时卸载，不一定再有 onTouchEnd。
+  useEffect(() => {
+    if (!hasNativeHorizontalScrollHost && (!loggedIn || !playlists.length)) setHomePagerHorizontalScroll(false)
   }, [loggedIn, playlists.length])
 
   useEffect(() => {

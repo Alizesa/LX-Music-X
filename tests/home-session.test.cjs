@@ -5,13 +5,14 @@ const { load, deferred, flush } = require('./helpers/load.cjs')
 const { jsx, hookHost, elements } = require('./helpers/react.cjs')
 
 const songs = name => [{ id: name, source: 'tx', name, singer: 'Artist', meta: { picUrl: name + '-cover' } }]
-const harness = (layout = { isWide: false, contentWidth: 400 }) => {
+const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = true) => {
   const host = hookHost(), frame = host.frame(), events = new EventEmitter()
   let session = { cookie: 'A', generation: 1, user: null }
   let tree
   const caches = new Map([[1, { daily: songs('cached-A') }]])
   const replies = new Map()
   const toasts = []
+  const pagerCommands = []
   const cache = key => caches.get(session.generation)?.[key] ?? (key === 'playlists' ? null : [])
   class SessionExpired extends Error {}
   const account = {
@@ -25,12 +26,12 @@ const harness = (layout = { isWide: false, contentWidth: 400 }) => {
     'react/jsx-runtime': { jsx, jsxs: jsx },
     'react-native': { View: 'View', ScrollView: 'ScrollView', RefreshControl: 'RefreshControl', TouchableOpacity: 'TouchableOpacity' },
     '@/components/common/Text': {}, '@/components/common/Image': {}, '@/components/common/ImageBackground': {},
-    '@/components/HorizontalScrollHost': { default: 'HorizontalScrollHost' },
+    '@/components/HorizontalScrollHost': { default: nativeHost ? 'HorizontalScrollHost' : 'View', hasNativeHorizontalScrollHost: nativeHost },
     '@/components/common/IconAction': {}, '@/components/QQMusicLoginModal': {},
     '@/store/theme/hook': { useTheme: () => ({}) },
     '@/utils/hooks': { useTabletLayout: () => layout },
     '@/utils/tools': { createStyle: value => value, toast: value => toasts.push(value) },
-    '@/config/constant': {}, '@/core/homePagerScroll': { setHomePagerHorizontalScroll() {} },
+    '@/config/constant': {}, '@/core/homePagerScroll': { setHomePagerHorizontalScroll: active => pagerCommands.push(active) },
     '@/core/list': {}, '@/core/player/player': {}, '@/core/qqMusic': account,
     '@/core/qqMusicHome': { refreshQQMusicHomeDaily: async owner => replies.get(owner.generation) ?? songs('fresh-' + owner.cookie) },
     '@/core/qqMusicRecommend': {}, '@/core/qqMusicDailyPosition': {}, '@/navigation': {}, '@/store/common/state': {},
@@ -45,7 +46,7 @@ const harness = (layout = { isWide: false, contentWidth: 400 }) => {
   const settle = async() => { await flush(); render(); await flush(); render() }
   const refreshControl = () => elements(tree, 'ScrollView')[0].props.refreshControl.props
   return {
-    account, caches, replies, events, frame, toasts,
+    account, caches, replies, events, frame, toasts, pagerCommands,
     session: () => session,
     render, settle,
     horizontalRows: () => elements(tree, 'ScrollView').filter(node => node.props.horizontal),
@@ -202,18 +203,62 @@ test('the horizontal host uses native touch protection when installed and remain
     { os: 'ios', installed: false },
   ]) {
     const registered = []
-    const component = load('src/components/HorizontalScrollHost.tsx', {
+    let lookups = 0
+    const module = load('src/components/HorizontalScrollHost.tsx', {
       'react-native': {
         Platform: { OS: os },
         UIManager: { getViewManagerConfig: name => {
+          lookups++
           assert.equal(name, 'LXHorizontalScrollHost')
           return installed ? {} : null
         } },
         View: 'View',
         requireNativeComponent: name => { registered.push(name); return 'NativeHorizontalScrollHost' },
       },
-    }).default
-    assert.equal(component, installed ? 'NativeHorizontalScrollHost' : 'View')
+    })
+    assert.equal(module.default, installed ? 'NativeHorizontalScrollHost' : 'View')
+    assert.equal(module.hasNativeHorizontalScrollHost, installed)
     assert.equal(registered.length, installed ? 1 : 0)
+    assert.equal(lookups, os === 'android' ? 1 : 0)
   }
+})
+
+test('native-protected rows send no JS pager commands during touch, resize, logout or unmount', async t => {
+  const h = harness()
+  t.after(h.unmount)
+  h.caches.get(1).playlists = { list: [{ id: 'playlist', name: 'Playlist' }] }
+  await h.mount()
+  for (const { props } of h.horizontalRows()) {
+    props.onTouchStart?.()
+    props.onTouchCancel?.()
+    props.onTouchEnd?.()
+  }
+  h.resize({ isWide: true, contentWidth: 1112 })
+  h.measure(1112)
+  h.resize({ isWide: false, contentWidth: 600 })
+  h.measure(600)
+  h.changeAccount('')
+  await h.settle()
+  h.unmount()
+  assert.deepEqual(h.pagerCommands, [])
+  assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 0)
+})
+
+test('older APKs retain their JS touch locks and release them when the page unmounts', async t => {
+  const h = harness(undefined, false)
+  t.after(h.unmount)
+  h.caches.get(1).playlists = { list: [{ id: 'playlist', name: 'Playlist' }] }
+  await h.mount()
+  for (const { props } of h.horizontalRows()) {
+    h.pagerCommands.length = 0
+    props.onTouchStart()
+    props.onTouchEnd()
+    props.onTouchStart()
+    props.onTouchCancel()
+    assert.deepEqual(h.pagerCommands, [true, false, true, false])
+  }
+  h.pagerCommands.length = 0
+  h.unmount()
+  assert.deepEqual(h.pagerCommands, [false])
+  assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 0)
 })
