@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { RefreshControl, ScrollView, TouchableOpacity, View } from 'react-native'
+import { RefreshControl, ScrollView, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native'
+import HorizontalScrollHost from '@/components/HorizontalScrollHost'
 import Text from '@/components/common/Text'
 import Image from '@/components/common/Image'
 import ImageBackground from '@/components/common/ImageBackground'
@@ -38,7 +39,7 @@ type Songs = LX.Music.MusicInfoOnline[]
 type Playlist = LX.QQMusic.PlaylistInfo
 type HomeCacheKind = 'daily' | 'guess' | 'radar' | 'playlists'
 
-// 横向滑动块触摸期间同步关掉外层首页 PagerView 的横滑，否则手势会被它抢走
+// 原生容器在触摸开始时保护内层横滑；保留这组 JS 锁兼容尚未更新的 APK。
 const horizontalScrollProps = {
   nestedScrollEnabled: true,
   onTouchStart: () => { setHomePagerHorizontalScroll(true) },
@@ -54,7 +55,7 @@ const CARD_GAP = 10
 const CARD_PEEK = 20
 
 /** 一行两张、可横向滑动的推荐卡宽度（第三张只露出一截） */
-const getCardSide = (width: number, gap: number) => (width - H_PADDING * 2 - gap * 2 - CARD_PEEK) / 2
+const getCardSide = (width: number, gap: number) => Math.max(1, (width - H_PADDING * 2 - gap * 2 - CARD_PEEK) / 2)
 
 /**
  * 方形推荐卡。封面铺满，底部压一层暗色保证文字可读（没有渐变库，用纯色代替）。
@@ -103,15 +104,20 @@ export default () => {
   const t = useI18n()
   const theme = useTheme()
   const { isWide, contentWidth } = useTabletLayout()
+  const [pageWidth, setPageWidth] = useState<number | null>(null)
+  const onLayout = useCallback(({ nativeEvent: { layout: { width } } }: LayoutChangeEvent) => {
+    if (Number.isFinite(width) && width > 0) setPageWidth(width)
+  }, [])
+  const measuredWidth = pageWidth ?? contentWidth
   // 平板横屏内容更宽：边距放大、推荐卡一行三张；推荐歌单仍横向滑动
   const hPadding = isWide ? 24 : H_PADDING
-  const availableWidth = contentWidth - hPadding * 2
+  const availableWidth = Math.max(1, measuredWidth - hPadding * 2)
   const cardsPerRow = isWide ? 3 : 2
   // createStyle 会缩放 gap，尺寸计算使用渲染时的同一份值。
   const cardGap = styles.cardRow.gap
   const cardWidth = isWide
-    ? Math.min(Math.floor((availableWidth - cardGap * (cardsPerRow - 1)) / cardsPerRow), 340)
-    : getCardSide(contentWidth, cardGap)
+    ? Math.max(1, Math.min(Math.floor((availableWidth - cardGap * (cardsPerRow - 1)) / cardsPerRow), 340))
+    : getCardSide(measuredWidth, cardGap)
   // 平板横屏把卡片压扁到约 16:9，三张卡片不再占满首屏
   const cardHeight = isWide ? Math.min(Math.round(cardWidth * 0.56), 200) : cardWidth
   const similarColumns = isWide ? 2 : 1
@@ -470,7 +476,7 @@ export default () => {
   const similarTitle = similar.title || t('home_similar_title', { name: similar.seedName })
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={onLayout}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={{ paddingHorizontal: hPadding, paddingBottom: 16 }}
@@ -485,41 +491,43 @@ export default () => {
               </TouchableOpacity>
         }
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.cardScroll}
-          contentContainerStyle={isWide ? { ...styles.cardRow, flexGrow: 1, justifyContent: 'center' } : styles.cardRow}
-          {...horizontalScrollProps}
-        >
-          <RecommendCard
-            title={t('qq_daily_recommend')}
-            subtitle={t('mine_song_count', { num: daily.length })}
-            cover={daily[0]?.meta.picUrl}
-            width={cardWidth}
-            height={cardHeight}
-            onPress={() => { void openDaily() }}
-            action={<IconAction overlay icon="play" onPress={() => { void playDaily() }} />}
-          />
-          <RecommendCard
-            title={t('qq_guess_you_like')}
-            cover={guess[0]?.meta.picUrl}
-            width={cardWidth}
-            height={cardHeight}
-            onPress={() => { void playGuess() }}
-            disabled={playing}
-            action={<IconAction overlay icon="refresh" onPress={() => { void refreshGuess() }} disabled={refreshingGuess} />}
-          />
-          <RecommendCard
-            title={t('qq_heart_radar')}
-            subtitle={t('mine_song_count', { num: radar.length })}
-            cover={radar[0]?.meta.picUrl}
-            width={cardWidth}
-            height={cardHeight}
-            onPress={() => { void openRadar() }}
-            action={<IconAction overlay icon="play" onPress={() => { void playRadar() }} />}
-          />
-        </ScrollView>
+        <HorizontalScrollHost style={{ ...styles.horizontalHost, ...styles.cardScroll }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ ...styles.horizontalScroll, width: availableWidth }}
+            contentContainerStyle={isWide ? { ...styles.cardRow, flexGrow: 1, justifyContent: 'center' } : styles.cardRow}
+            {...horizontalScrollProps}
+          >
+            <RecommendCard
+              title={t('qq_daily_recommend')}
+              subtitle={t('mine_song_count', { num: daily.length })}
+              cover={daily[0]?.meta.picUrl}
+              width={cardWidth}
+              height={cardHeight}
+              onPress={() => { void openDaily() }}
+              action={<IconAction overlay icon="play" onPress={() => { void playDaily() }} />}
+            />
+            <RecommendCard
+              title={t('qq_guess_you_like')}
+              cover={guess[0]?.meta.picUrl}
+              width={cardWidth}
+              height={cardHeight}
+              onPress={() => { void playGuess() }}
+              disabled={playing}
+              action={<IconAction overlay icon="refresh" onPress={() => { void refreshGuess() }} disabled={refreshingGuess} />}
+            />
+            <RecommendCard
+              title={t('qq_heart_radar')}
+              subtitle={t('mine_song_count', { num: radar.length })}
+              cover={radar[0]?.meta.picUrl}
+              width={cardWidth}
+              height={cardHeight}
+              onPress={() => { void openRadar() }}
+              action={<IconAction overlay icon="play" onPress={() => { void playRadar() }} />}
+            />
+          </ScrollView>
+        </HorizontalScrollHost>
 
         {
           // 标题和刷新钮登录后一直在：列表空的时候也得留着入口，否则没法手动重拉
@@ -531,18 +539,26 @@ export default () => {
                 </View>
                 {
                   playlists.length
-                    ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList} {...horizontalScrollProps}>
-                        {
-                          playlists.map(item => (
-                            <TouchableOpacity key={item.id} style={styles.playlistCard} activeOpacity={0.8} onPress={() => { openPlaylist(item) }}>
-                              {item.cover
-                                ? <Image url={item.cover} style={styles.playlistCover} />
-                                : <View style={{ ...styles.playlistCover, backgroundColor: theme['c-primary-background'] }} />}
-                              <Text style={styles.playlistName} size={12} numberOfLines={2}>{item.name}</Text>
-                            </TouchableOpacity>
-                          ))
-                        }
-                      </ScrollView>
+                    ? <HorizontalScrollHost style={styles.horizontalHost}>
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          style={{ ...styles.horizontalScroll, width: availableWidth }}
+                          contentContainerStyle={styles.hList}
+                          {...horizontalScrollProps}
+                        >
+                          {
+                            playlists.map(item => (
+                              <TouchableOpacity key={item.id} style={styles.playlistCard} activeOpacity={0.8} onPress={() => { openPlaylist(item) }}>
+                                {item.cover
+                                  ? <Image url={item.cover} style={styles.playlistCover} />
+                                  : <View style={{ ...styles.playlistCover, backgroundColor: theme['c-primary-background'] }} />}
+                                <Text style={styles.playlistName} size={12} numberOfLines={2}>{item.name}</Text>
+                              </TouchableOpacity>
+                            ))
+                          }
+                        </ScrollView>
+                      </HorizontalScrollHost>
                     : null
                 }
               </>
@@ -589,6 +605,8 @@ const styles = createStyle({
   scrollContent: { paddingHorizontal: H_PADDING, paddingBottom: 16 },
   loginCard: { marginTop: 12, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 8, alignItems: 'center' },
   loginHint: { marginTop: 4 },
+  horizontalHost: { flexGrow: 0, flexShrink: 0 },
+  horizontalScroll: { flexGrow: 0, flexShrink: 0 },
   cardScroll: { marginTop: 12 },
   // 横向滑动页：卡片之间留固定间距
   cardRow: { gap: CARD_GAP },

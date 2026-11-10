@@ -5,7 +5,7 @@ const { load, deferred, flush } = require('./helpers/load.cjs')
 const { jsx, hookHost, elements } = require('./helpers/react.cjs')
 
 const songs = name => [{ id: name, source: 'tx', name, singer: 'Artist', meta: { picUrl: name + '-cover' } }]
-const harness = () => {
+const harness = (layout = { isWide: false, contentWidth: 400 }) => {
   const host = hookHost(), frame = host.frame(), events = new EventEmitter()
   let session = { cookie: 'A', generation: 1, user: null }
   let tree
@@ -25,9 +25,10 @@ const harness = () => {
     'react/jsx-runtime': { jsx, jsxs: jsx },
     'react-native': { View: 'View', ScrollView: 'ScrollView', RefreshControl: 'RefreshControl', TouchableOpacity: 'TouchableOpacity' },
     '@/components/common/Text': {}, '@/components/common/Image': {}, '@/components/common/ImageBackground': {},
+    '@/components/HorizontalScrollHost': { default: 'HorizontalScrollHost' },
     '@/components/common/IconAction': {}, '@/components/QQMusicLoginModal': {},
     '@/store/theme/hook': { useTheme: () => ({}) },
-    '@/utils/hooks': { useTabletLayout: () => ({ isWide: false, contentWidth: 400 }) },
+    '@/utils/hooks': { useTabletLayout: () => layout },
     '@/utils/tools': { createStyle: value => value, toast: value => toasts.push(value) },
     '@/config/constant': {}, '@/core/homePagerScroll': { setHomePagerHorizontalScroll() {} },
     '@/core/list': {}, '@/core/player/player': {}, '@/core/qqMusic': account,
@@ -47,6 +48,10 @@ const harness = () => {
     account, caches, replies, events, frame, toasts,
     session: () => session,
     render, settle,
+    horizontalRows: () => elements(tree, 'ScrollView').filter(node => node.props.horizontal),
+    protectedRows: () => elements(tree, 'HorizontalScrollHost'),
+    measure: width => { tree.props.onLayout({ nativeEvent: { layout: { width } } }); render() },
+    resize: next => { layout = next; render() },
     mount: async() => { render(); await settle() },
     unmount: () => host.unmount(frame),
     cover: () => elements(tree, 'ScrollView').find(node => node.props.horizontal).props.children[0].props.cover,
@@ -135,4 +140,80 @@ test('unmount invalidates an unfinished account read and removes the listener', 
   await flush()
   assert.equal(h.frame.dirty, false)
   assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 0)
+})
+
+test('both recommendation rows keep a horizontal scroll range on phone and narrow tablet windows', async t => {
+  for (const { contentWidth, measuredWidth } of [
+    { contentWidth: 400, measuredWidth: 400 },
+    { contentWidth: 600, measuredWidth: 600 },
+    { contentWidth: 840, measuredWidth: 808 },
+  ]) {
+    const h = harness({ isWide: false, contentWidth })
+    t.after(h.unmount)
+    h.caches.get(1).playlists = { list: Array.from({ length: 20 }, (_, id) => ({ id: String(id), name: 'Playlist ' + id })) }
+    await h.mount()
+    h.measure(measuredWidth)
+    const [cards, playlists] = h.horizontalRows().map(row => row.props)
+    const width = measuredWidth - 28
+    assert.equal(cards.style.width, width)
+    assert.equal(playlists.style.width, width)
+    const thirdStart = cards.children[0].props.width * 2 + cards.contentContainerStyle.gap * 2
+    assert.ok(thirdStart < width, 'the next card remains visible as a swipe hint')
+    assert.ok(thirdStart + cards.children[2].props.width > width, 'the row must have room to scroll')
+    const playlistWidth = playlists.children.reduce((total, item) => total + item.props.style.width + item.props.style.marginRight, 0)
+    assert.ok(playlistWidth > width, 'playlist content must overflow the viewport')
+    assert.equal(h.protectedRows().length, 2)
+    assert.ok(h.protectedRows().every(row => row.props.children.props.horizontal))
+  }
+})
+
+test('full-screen tablet card sizing returns unchanged after split-screen and small-window transitions', async t => {
+  const h = harness({ isWide: true, contentWidth: 1112 })
+  t.after(h.unmount)
+  await h.mount()
+  const assertWide = width => {
+    const row = h.horizontalRows()[0].props
+    assert.equal(row.children.length, 3)
+    assert.equal(row.contentContainerStyle.justifyContent, 'center')
+    for (const card of row.children) {
+      assert.equal(card.props.width, 340)
+      assert.equal(card.props.height, 190)
+    }
+    assert.ok(row.children[0].props.width * 3 + row.contentContainerStyle.gap * 2 <= width - 48)
+  }
+  h.measure(1112)
+  assertWide(1112)
+  for (const width of [600, 400]) {
+    h.resize({ isWide: false, contentWidth: width })
+    h.measure(width)
+    const row = h.horizontalRows()[0].props
+    assert.equal(row.style.width, width - 28)
+    assert.ok(row.children[0].props.width * 3 > row.style.width)
+  }
+  h.resize({ isWide: true, contentWidth: 1512 })
+  h.measure(1512)
+  assertWide(1512)
+})
+
+test('the horizontal host uses native touch protection when installed and remains compatible with older APKs', () => {
+  for (const { os, installed } of [
+    { os: 'android', installed: true },
+    { os: 'android', installed: false },
+    { os: 'ios', installed: false },
+  ]) {
+    const registered = []
+    const component = load('src/components/HorizontalScrollHost.tsx', {
+      'react-native': {
+        Platform: { OS: os },
+        UIManager: { getViewManagerConfig: name => {
+          assert.equal(name, 'LXHorizontalScrollHost')
+          return installed ? {} : null
+        } },
+        View: 'View',
+        requireNativeComponent: name => { registered.push(name); return 'NativeHorizontalScrollHost' },
+      },
+    }).default
+    assert.equal(component, installed ? 'NativeHorizontalScrollHost' : 'View')
+    assert.equal(registered.length, installed ? 1 : 0)
+  }
 })
