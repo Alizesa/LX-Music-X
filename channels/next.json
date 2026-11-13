@@ -1,14 +1,18 @@
 {
   "schemaVersion": 1,
   "channel": "next",
-  "version": "1.9.3-next.2",
-  "versionCode": 100002,
-  "tag": "v1.9.3-next.2",
-  "sourceSha": "2b2bfee2886eeca39c474463607ac01fab66c6fd",
-  "publishedAt": "2026-11-13T05:57:40.912Z",
-  "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.3-next.2",
-  "desc": "- fix: improve update channel fallback and default to stable (2b2bfee2)",
+  "version": "1.9.3-next.3",
+  "versionCode": 100003,
+  "tag": "v1.9.3-next.3",
+  "sourceSha": "7504befdaf735ae8c69e70ef096418fe1b0b79ed",
+  "publishedAt": "2026-11-13T06:24:11.214Z",
+  "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.3-next.3",
+  "desc": "- fix: avoid restoring stale recommendation queues (7504befd)",
   "history": [
+    {
+      "version": "1.9.3-next.2",
+      "desc": "- fix: improve update channel fallback and default to stable (2b2bfee2)"
+    },
     {
       "version": "1.9.3-next.1",
       "desc": "- fix: support current apksigner output and recover release initialization (48f4d3b3)\n- fix: harden release pipeline and automatic updates (0e45b000)\n- perf: 原生横滑保护启用时移除重复的 JS 翻页命令 (45bbb96c)\n- fix: 修正横滑手势父容器的接口调用 (8a946afa)\n- fix: 保护推荐列表原生横滑手势并适配小窗宽度 (866f071d)\n- fix: 修复音源自动切换与初始化等待回收 (16a2655d)\n- docs: refine README with professional product descriptions (4ed10122)\n- docs: highlight LX Music X features and listening experience (d2bdc81e)\n- fix: 修复预加载清理、降档缓存及脚本回收 (a4e80e6c)\n- fix: probe audio headers and isolate source cooldown failures (406cb205)\n- fix: reuse audio probe ranges and clarify playback diagnostics (a3d6adc4)\n- feat(player): add playback and preload diagnostic logging (12e773d1)\n- fix(player): synchronize playback and custom source switching (bb89d3bc)\n- fix: recover stalled next-track preloading after failures (c14a3387)\n- perf: reduce retained UI state and redundant playback work (740ca338)\n- fix: align audio probing with playback and support source formats (3694829c)\n- fix: validate QQ source audio before playback and preloading (44e8d7ba)\n- fix: stabilize requests, playback state, downloads and session caching (6d8335d5)\n- fix: preserve background preloading and temporary playback handoff (24de1335)\n- docs: rewrite README with neutral user-facing documentation (5b88d6c0)\n- feat: add download share and cache actions to player menu (5aed3d9e)\n- fix: reject incomplete QQ account audio and cached previews (b139af10)\n- fix: stabilize sizing across tablet window transitions (8f594b5d)\n- Fix tablet split-screen layout and modal sizing (877f6502)\n- Fix memory lifecycle and release idle UI resources (f81138a6)\n- fix: 优化平板弹窗并保留播放页位置 (c5cb5687)\n- fix: 调整平板当前播放列表尺寸 (8ba07c77)\n- fix: 平板播放详情三页滑动同时展示两页 (4df6b80a)\n- feat: 优化平板导航和播放布局 (9211beaf)\n- fix: 修复下载内存回收、音质与搜索缓存 (d1219950)\n- fix: 平板推荐歌单恢复横向滑动 (f2eef3cb)\n- style: 平板导航的首页/我的改为上下相邻 (b639adad)\n- fix: 平板导航只保留首页/我的，其余页面用竖屏结构 (643c94cf)\n- fix: 修复平板导航返回与网格缩放 (b3347f81)\n- feat: 平板横屏改左侧导航和多列布局 (82dd472a)\n- style: 精简音源排序和预加载说明 (99cc8aa9)\n- fix: 修正预加载音质与取消边界 (d4694f2d)\n- feat: 增加下一首预加载和自定义音源优先级 (86560231)\n- refactor: 移除竖屏首页横向滚动开关 (c479613a)\n- fix: 优化歌词定位并取消过期滚动 (df96e1c6)\n- chore: 开发约定仅保留在本地 (63f9938d)\n- fix: 修复页面返回时背景闪烁 (4419bd73)\n- perf: 降低内存占用并优化下载与搜索 (615494f9)\n- chore: 清理未引用的导出和废弃工具函数 (778ea1e5)\n- fix: 恢复 QQ 歌词翻译并升级旧缓存 (33c58424)\n- fix: 修复 QQ 会话和歌单缓存并发写入 (5b427261)\n- fix: 审查修复（收藏换号写保护/备份提示/迁移容错） (53ae4b7e)\n- chore: 清理废弃功能并修复歌单缓存分页 (ce02a31b)\n- fix: bound and cancel QQ playback probes and refresh stale checks (1ca906f4)\n- fix: align QQ account playback fallback with MusicOne (364cc9a3)"
@@ -17,38 +21,38 @@
   "assets": [
     {
       "abi": "arm64-v8a",
-      "fileName": "lx-music-mobile-v1.9.3-next.2-arm64-v8a.apk",
-      "size": 25035636,
-      "sha256": "3c59f68f101af5e1555ea3a25e8ac02bbde8686feb991528f454ac81c1c54b39",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.2/lx-music-mobile-v1.9.3-next.2-arm64-v8a.apk"
+      "fileName": "lx-music-mobile-v1.9.3-next.3-arm64-v8a.apk",
+      "size": 25035433,
+      "sha256": "7e6ea5c8c748881f5c3990dceaf2fcb8d236270d936e0ce02da153e5f5b3e628",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.3/lx-music-mobile-v1.9.3-next.3-arm64-v8a.apk"
     },
     {
       "abi": "armeabi-v7a",
-      "fileName": "lx-music-mobile-v1.9.3-next.2-armeabi-v7a.apk",
-      "size": 20140027,
-      "sha256": "40dcb2bdcf0f49038bf9baa00ae00b492e24c50b9c118c152ad05c4fe4817f18",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.2/lx-music-mobile-v1.9.3-next.2-armeabi-v7a.apk"
+      "fileName": "lx-music-mobile-v1.9.3-next.3-armeabi-v7a.apk",
+      "size": 20139822,
+      "sha256": "fc1872df6733ee944eef7582deaa973ab92072e6800eb14bcecfb20d203ac0e5",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.3/lx-music-mobile-v1.9.3-next.3-armeabi-v7a.apk"
     },
     {
       "abi": "x86_64",
-      "fileName": "lx-music-mobile-v1.9.3-next.2-x86_64.apk",
-      "size": 25802585,
-      "sha256": "0dd6acfe063f764052de1669f9f9e32cab895f8da97fbd051684a8f65b7764e4",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.2/lx-music-mobile-v1.9.3-next.2-x86_64.apk"
+      "fileName": "lx-music-mobile-v1.9.3-next.3-x86_64.apk",
+      "size": 25802386,
+      "sha256": "9c27448edd7b52e0486f6d3c745a9ea3529857af9bca84f485737540a002bef6",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.3/lx-music-mobile-v1.9.3-next.3-x86_64.apk"
     },
     {
       "abi": "x86",
-      "fileName": "lx-music-mobile-v1.9.3-next.2-x86.apk",
-      "size": 25345193,
-      "sha256": "2bafb49bdfbb393ecfbacb9cdf8cf80a13f75836ec5c9aacef28d6efc575b1dd",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.2/lx-music-mobile-v1.9.3-next.2-x86.apk"
+      "fileName": "lx-music-mobile-v1.9.3-next.3-x86.apk",
+      "size": 25344971,
+      "sha256": "ee6e6ab920382cb773b083d7b7626f2e711f45523dc1561f39d8d3ff1fe8ea6f",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.3/lx-music-mobile-v1.9.3-next.3-x86.apk"
     },
     {
       "abi": "universal",
-      "fileName": "lx-music-mobile-v1.9.3-next.2-universal.apk",
-      "size": 67693922,
-      "sha256": "fc228068d9eaf3e60ff4121e7e1ae5e68688e903e48090f4926776436a87d194",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.2/lx-music-mobile-v1.9.3-next.2-universal.apk"
+      "fileName": "lx-music-mobile-v1.9.3-next.3-universal.apk",
+      "size": 67693718,
+      "sha256": "0f9e8d8e40fe4f6f871b6c5ed7290941c3249b15746d231b243f90e0ed0fae7d",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.3/lx-music-mobile-v1.9.3-next.3-universal.apk"
     }
   ],
   "signingCertificateSha256": "37bf055966cdf9bb76a14f8298d9fe5898c264cd266997508f3bcac2e36c0814"
