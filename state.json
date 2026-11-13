@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "versionCodeBase": 100000,
+  "sequence": 1,
+  "lastStableVersion": "1.9.2",
+  "nextTargetVersion": "1.9.3",
+  "branches": {
+    "Next": "48f4d3b32dae3faec0f4aa6ef6009e218a0c13f7"
+  },
+  "events": {},
+  "builds": {
+    "Next/48f4d3b32dae3faec0f4aa6ef6009e218a0c13f7": {
+      "branch": "Next",
+      "sourceSha": "48f4d3b32dae3faec0f4aa6ef6009e218a0c13f7",
+      "before": "0e45b00045081b2b670d162b23ba1d09c4f1bbd6",
+      "channel": "next",
+      "sequence": 1,
+      "version": "1.9.3-next.1",
+      "versionCode": 100001,
+      "tag": "v1.9.3-next.1",
+      "status": "allocated"
+    }
+  },
+  "channels": {},
+  "legacyHistory": [],
+  "signingCertificateSha256": "37bf055966cdf9bb76a14f8298d9fe5898c264cd266997508f3bcac2e36c0814",
+  "signingHistoryChecked": true,
+  "repository": "Alizesa/LX-Music-X",
+  "initializationSkipped": {
+    "Next": [
+      "0e45b00045081b2b670d162b23ba1d09c4f1bbd6"
+    ]
+  }
+}
