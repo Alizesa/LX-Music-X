@@ -37,7 +37,7 @@ export default memo(() => {
       setTip('')
     } else if (versionInfo.isUnknown) {
       setTitle(t('version_title_unknown'))
-      setTip(t('version_tip_unknown'))
+      setTip(t('version_tip_unknown') + (versionInfo.checkError ? '\n' + t('version_check_error_details', { message: versionInfo.checkError }) : ''))
     } else {
       switch (versionInfo.status) {
         case 'downloading':
@@ -77,7 +77,7 @@ export default memo(() => {
           <Text size={14}>{t('version_label_latest_ver')}{versionInfo.newVersion?.version}</Text>
           <Text size={14}>{t('version_label_current_ver')}{versionInfo.version}</Text>
           {
-            tip ? <Text size={14}>{tip}</Text> : null
+            tip ? <Text selectable size={14}>{tip}</Text> : null
           }
         </View>
         <View style={styles.btn}>

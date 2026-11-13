@@ -17,6 +17,7 @@ export interface InitState {
     newVersion: UpdateManifest | null
     showModal: boolean
     isUnknown: boolean
+    checkError: string | null
     isLatest: boolean
     reCheck: boolean
     status: LX.UpdateStatus
@@ -32,12 +33,13 @@ const state: InitState = {
   versionInfo: {
     version,
     versionCode: null,
-    channel: version.includes('-next.') ? 'next' : 'stable',
+    channel: 'stable',
     initialized: false,
     newVersion: null,
     showModal: false,
     reCheck: false,
     isUnknown: false,
+    checkError: null,
     isLatest: false,
     status: 'idle',
     integrityError: false,

@@ -37,18 +37,28 @@ const client = ({ installed = { version: '1.9.2', versionCode: 79003 }, saved, g
   return { core, state, writes, writeAttempts, installed, modals, messages, changes, saved: () => saved }
 }
 
-test('a preview first persists next subscription and a later stable APK preserves it', async() => {
+test('new preview and stable installs both default to stable, including invalid saved channels', async() => {
+  for (const version of ['1.9.3-next.2', '1.9.3']) {
+    for (const saved of [undefined, null, { channel: 'invalid' }]) {
+      const app = client({ installed: { version, versionCode: 100002 }, saved })
+      assert.equal(app.state.versionInfo.channel, 'stable')
+      await Promise.all([app.core.initializeVersion(), app.core.initializeVersion()])
+      assert.equal(app.writes.length, 1)
+      assert.equal(app.state.versionInfo.channel, 'stable')
+      assert.equal(app.saved().channel, 'stable')
+      assert.equal(app.state.versionInfo.versionCode, 100002)
+    }
+  }
+})
+
+test('a manually selected preview subscription survives an upgrade to a stable APK', async() => {
   const preview = client({ installed: { version: '1.9.3-next.2', versionCode: 100002 } })
-  await Promise.all([preview.core.initializeVersion(), preview.core.initializeVersion()])
-  assert.equal(preview.writes.length, 1)
+  await preview.core.initializeVersion()
+  await preview.core.setUpdateChannel('next')
   assert.equal(preview.state.versionInfo.channel, 'next')
-  assert.equal(preview.state.versionInfo.versionCode, 100002)
   const stable = client({ installed: { version: '1.9.3', versionCode: 100003 }, saved: preview.saved() })
   await stable.core.initializeVersion()
   assert.equal(stable.state.versionInfo.channel, 'next')
-  const firstStable = client()
-  await firstStable.core.initializeVersion()
-  assert.equal(firstStable.state.versionInfo.channel, 'stable')
 })
 
 test('simultaneous checks share one request and recompute eligibility against the installed APK at completion', async() => {
@@ -103,15 +113,36 @@ test('ignoring a tag under next does not suppress the same stable release under 
 
 test('partial channel failure is an error without an eligible candidate, but can still offer a verified update', async() => {
   let candidates = []
-  const app = client({ getVersionInfo: async() => ({ manifests: candidates, incomplete: true }) })
+  const error = 'stable / api.github.com: Update request failed: 403'
+  const app = client({ getVersionInfo: async() => ({ manifests: candidates, incomplete: true, errors: [error] }) })
   await app.core.checkUpdate(true, false)
   assert.equal(app.state.versionInfo.isLatest, false)
   assert.equal(app.state.versionInfo.isUnknown, true)
+  assert.equal(app.state.versionInfo.checkError, error)
   candidates = [manifest()]
   await app.core.checkUpdate(true, false)
   assert.equal(app.state.versionInfo.status, 'idle')
   assert.equal(app.state.versionInfo.isUnknown, false)
+  assert.equal(app.state.versionInfo.checkError, null)
   assert.equal(app.state.versionInfo.newVersion.tag, 'v1.9.3')
+})
+
+test('initialization failures expose their own cause and a successful retry clears it', async() => {
+  let checks = 0
+  const app = client({
+    savePreferences: async(value, attempt) => {
+      if (attempt === 1) throw new Error('Update preferences could not be saved')
+    },
+    getVersionInfo: async() => { checks++; return { manifests: [], incomplete: false, errors: [] } },
+  })
+  await app.core.checkUpdate(true, false)
+  assert.equal(checks, 0)
+  assert.equal(app.state.versionInfo.status, 'error')
+  assert.equal(app.state.versionInfo.checkError, 'Update preferences could not be saved')
+  await app.core.checkUpdate(true, false)
+  assert.equal(checks, 1)
+  assert.equal(app.state.versionInfo.status, 'idle')
+  assert.equal(app.state.versionInfo.checkError, null)
 })
 
 const updater = ({ size = 12345, checksum = 'b'.repeat(64), statusCode = 200, supportedAbis = ['arm64-v8a'], downloadGate, request, fileSystem = {}, install = async() => {}, installed = { version: '1.9.2', versionCode: 79003 } } = {}) => {
@@ -199,13 +230,15 @@ for (const failure of ['network', 'HTTP 503', 'invalid manifest']) {
     const result = await transport.utilities.getVersionInfo('stable', true)
     assert.equal(result.manifests.length, 0)
     assert.equal(result.incomplete, true)
-    assert.equal(transport.requests.length, 2)
+    assert.equal(transport.requests.length, 3)
     const app = client({ utilities: transport.utilities })
     await app.core.checkUpdate(true, false)
     assert.equal(app.state.versionInfo.status, 'error')
     assert.equal(app.state.versionInfo.isUnknown, true)
     assert.equal(app.state.versionInfo.isLatest, false)
     assert.equal(app.state.versionInfo.newVersion, null)
+    assert.match(app.state.versionInfo.checkError, /stable \/ raw\.githubusercontent\.com:/)
+    assert.match(app.state.versionInfo.checkError, /stable \/ api\.github\.com:/)
   })
 }
 

@@ -77,11 +77,18 @@ test('fresh metadata -> reservation -> injection -> publication -> automatic che
   assert.equal(restarted.modals.length, 0)
 })
 
-test('a preview install receives the later stable APK and keeps its preview subscription after restart', async() => {
+test('a preview install defaults to the unpublished stable channel, then preserves an explicit preview selection through upgrades', async() => {
   const server = githubFixture(null)
   const preview = await publishSnapshot(server, { branch: 'Next', version: '1.9.3-next.1' })
   const app = createUpdateApp({ server, installed: { version: '1.9.2-next.7', versionCode: 79003 } })
   await app.boot()
+  assert.equal(app.versionState.versionInfo.channel, 'stable')
+  assert.equal(app.versionState.versionInfo.isLatest, true)
+  assert.equal(app.versionState.versionInfo.isUnknown, false)
+  assert.equal(app.versionState.versionInfo.newVersion, null)
+  assert.equal(app.requests.length, 1)
+  assert.equal(app.modals.length, 0)
+  await app.core.setUpdateChannel('next')
   assert.equal(app.versionState.versionInfo.channel, 'next')
   assert.equal(app.versionState.versionInfo.newVersion.tag, preview.record.tag)
   await app.core.downloadUpdate()

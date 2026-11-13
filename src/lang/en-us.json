@@ -566,7 +566,7 @@
 , "setting_version_channel": "Update channel"
 , "setting_version_channel_stable": "Stable"
 , "setting_version_channel_next": "Preview"
-, "setting_version_channel_tip": "Stable receives stable releases. Preview also receives later stable releases. Switching channels keeps your installed version until an eligible upgrade is available."
+, "setting_version_channel_tip": "Stable is the default and receives stable releases. Preview also receives later stable releases. Your channel choice is saved. Switching channels keeps your installed version until an eligible upgrade is available."
 , "version_tip_integrity_failed": "APK verification failed. Installation was cancelled. Download it again later."
 , "version_title_not_checked": "Updates have not been checked"
 , "version_tip_install_failed": "The installer could not open. The verified APK has been kept. Check installation permissions and try installing again."
@@ -577,4 +577,5 @@
 , "setting_about_download": "Download this app: "
 , "setting_about_upgrade": "Use an APK from this project with the same signing certificate to upgrade your installation. Upstream LX Music APKs cannot upgrade LX Music X."
 , "setting_about_upstream_author": "Upstream author: "
+, "version_check_error_details": "Details:\n{{message}}"
 }

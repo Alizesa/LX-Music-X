@@ -23,10 +23,11 @@ const VersionItem = ({ version, desc }: VersionInfo) => {
   )
 }
 
-const Content = memo(({ title, newVersionInfo, currentVer }: {
+const Content = memo(({ title, newVersionInfo, currentVer, checkError }: {
   title: string
   newVersionInfo: VersionInfo | null
   currentVer: string
+  checkError: string | null
 }) => {
   const t = useI18n()
 
@@ -45,6 +46,7 @@ const Content = memo(({ title, newVersionInfo, currentVer }: {
       <ScrollView style={styles.content} keyboardShouldPersistTaps={'always'}>
         <Text style={styles.label}>{t('version_label_latest_ver')}{newVersionInfo?.version}</Text>
         <Text style={styles.label}>{t('version_label_current_ver')}{currentVer}</Text>
+        {checkError ? <Text selectable style={styles.desc}>{t('version_check_error_details', { message: checkError })}</Text> : null}
         {
           newVersionInfo?.desc
             ? (
@@ -177,8 +179,8 @@ const VersionModal = ({ componentId }: { componentId: string }) => {
 
   return (
     <ModalContent>
-      <Content title={title} newVersionInfo={versionInfo.newVersion} currentVer={versionInfo.version} />
-      { tip.length ? <Text style={styles.tip} color={theme['c-primary-font']}>{tip}</Text> : null }
+      <Content title={title} newVersionInfo={versionInfo.newVersion} currentVer={versionInfo.version} checkError={versionInfo.isUnknown ? versionInfo.checkError : null} />
+      { tip.length ? <Text selectable style={styles.tip} color={theme['c-primary-font']}>{tip}</Text> : null }
       <View style={styles.btns}>
         {
           ignoreBtn.show

@@ -566,7 +566,7 @@
 , "setting_version_channel": "更新頻道"
 , "setting_version_channel_stable": "正式版"
 , "setting_version_channel_next": "測試版"
-, "setting_version_channel_tip": "正式頻道僅接收正式版；測試頻道同時接收測試版和後續正式版。切換頻道會保留目前版本，等待可升級的新版本。"
+, "setting_version_channel_tip": "預設使用正式頻道，僅接收正式版；測試頻道同時接收測試版和後續正式版。頻道選擇會儲存，切換後保留目前版本，等待可升級的新版本。"
 , "version_tip_integrity_failed": "安裝包驗證失敗，已取消安裝。請稍後重新下載。"
 , "version_title_not_checked": "尚未檢查更新"
 , "version_tip_install_failed": "無法開啟安裝畫面，已保留通過驗證的安裝包。請檢查安裝權限後重試安裝。"
@@ -577,4 +577,5 @@
 , "setting_about_download": "本專案安裝包："
 , "setting_about_upgrade": "覆蓋升級須使用本專案相同簽章的安裝包。上游 LX Music 安裝包不能用於升級 LX Music X。"
 , "setting_about_upstream_author": "上游作者："
+, "version_check_error_details": "詳細原因：\n{{message}}"
 }

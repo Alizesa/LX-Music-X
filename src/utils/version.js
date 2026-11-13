@@ -9,17 +9,33 @@ export const UPDATE_REPOSITORY = 'Alizesa/LX-Music-X'
 const CHECK_DEADLINE = 20000
 const REQUEST_TIMEOUT = 8000
 const CACHE_TIME = 5 * 60000
-// Only mirrors of this repository are allowed. No upstream or npm fallback.
-const roots = [
-  `https://raw.githubusercontent.com/${UPDATE_REPOSITORY}/release-meta/channels`,
-  `https://cdn.jsdelivr.net/gh/${UPDATE_REPOSITORY}@release-meta/channels`,
+// All endpoints read the same repository and metadata branch.
+const sources = [
+  {
+    host: 'raw.githubusercontent.com',
+    canonical: true,
+    url: channel => `https://raw.githubusercontent.com/${UPDATE_REPOSITORY}/release-meta/channels/${channel}.json`,
+  },
+  {
+    host: 'cdn.jsdelivr.net',
+    canonical: false,
+    url: channel => `https://cdn.jsdelivr.net/gh/${UPDATE_REPOSITORY}@release-meta/channels/${channel}.json`,
+  },
+  {
+    // The API can confirm an unpublished channel when raw is unreachable
+    // and the CDN only has a 404. It is last to avoid routine API rate limits.
+    host: 'api.github.com',
+    canonical: true,
+    url: channel => `https://api.github.com/repos/${UPDATE_REPOSITORY}/contents/channels/${channel}.json?ref=release-meta`,
+    headers: { Accept: 'application/vnd.github.raw+json' },
+  },
 ]
 const cache = new Map()
 const channelTags = new Map()
 const channelActivity = new Map()
 
-const request = (url, timeout) => new Promise((resolve, reject) => {
-  httpGet(url, { timeout }, (err, resp, body) => {
+const request = (url, timeout, headers) => new Promise((resolve, reject) => {
+  httpGet(url, { timeout, headers }, (err, resp, body) => {
     if (err) reject(err)
     else if (resp.statusCode === 404) resolve(null)
     else if (resp.statusCode !== 200) reject(new Error(`Update request failed: ${resp.statusCode}`))
@@ -34,23 +50,26 @@ const getChannel = async(channel, force, deadline) => {
   if (!channelActivity.has(channel)) channelActivity.set(channel, { started: 0, resolved: 0, cleared: 0 })
   const activity = channelActivity.get(channel)
   const requestId = ++activity.started
-  let lastError
-  for (const root of roots) {
+  const errors = []
+  for (const source of sources) {
     const remaining = deadline - Date.now()
-    if (remaining <= 0) throw new Error('Update check timed out')
+    if (remaining <= 0) {
+      errors.push(`${channel}: Update check timed out`)
+      break
+    }
     try {
-      const info = await request(`${root}/${channel}.json`, Math.min(REQUEST_TIMEOUT, remaining))
-      // Only the canonical endpoint can confirm an unpublished channel.
+      const info = await request(source.url(channel), Math.min(REQUEST_TIMEOUT, remaining), source.headers)
+      // Only GitHub's canonical endpoints can confirm an unpublished channel.
       // Mirrors may cache a 404 while release metadata is still syncing.
       if (info === null) {
-        if (root === roots[0]) {
+        if (source.canonical) {
           if (requestId < activity.resolved) return cache.get(`${channel}:${channelTags.get(channel)}`)?.manifest ?? null
           activity.resolved = activity.cleared = requestId
           cache.delete(`${channel}:${channelTags.get(channel)}`)
           channelTags.delete(channel)
           return null
         }
-        throw lastError ?? new Error('Update mirror is missing channel metadata')
+        throw new Error('Update mirror is missing channel metadata')
       }
       const manifest = validateManifest(info, channel, UPDATE_REPOSITORY, name)
       // A channel can be withdrawn when stable already contains its source.
@@ -66,9 +85,12 @@ const getChannel = async(channel, force, deadline) => {
       channelTags.set(channel, manifest.tag)
       cache.set(`${channel}:${manifest.tag}`, { manifest, expiresAt: Date.now() + CACHE_TIME })
       return manifest
-    } catch (error) { lastError = error }
+    } catch (error) {
+      const message = error?.name === 'AbortError' || error?.message === 'Aborted' ? 'Update request timed out' : error?.message ?? String(error)
+      errors.push(`${channel} / ${source.host}: ${message}`)
+    }
   }
-  throw lastError
+  throw new Error(errors.join('\n'))
 }
 
 export const getVersionInfo = async(channel = 'stable', force = false) => {
@@ -77,9 +99,10 @@ export const getVersionInfo = async(channel = 'stable', force = false) => {
   const channels = channel === 'next' ? ['stable', 'next'] : ['stable']
   const results = await Promise.allSettled(channels.map(item => getChannel(item, force, deadline)))
   const manifests = results.filter(item => item.status === 'fulfilled' && item.value).map(item => item.value)
+  const errors = results.filter(item => item.status === 'rejected').map(item => item.reason?.message ?? String(item.reason))
   // A partial failure must not be presented as latest when the other channel
   // may hold an eligible update. Valid candidates can still be offered.
-  return { manifests, incomplete: results.some(item => item.status === 'rejected') }
+  return { manifests, incomplete: errors.length > 0, errors }
 }
 
 let downloadJobId = null

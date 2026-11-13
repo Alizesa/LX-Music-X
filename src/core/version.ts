@@ -8,6 +8,8 @@ import { showVersionModal } from '@/navigation'
 import { Navigation } from 'react-native-navigation'
 import { toast } from '@/utils/tools'
 
+const checkErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
+
 let preferences: UpdatePreferences
 let initialization: Promise<void> | null = null
 let revision = 0
@@ -32,7 +34,7 @@ const persistPreferences = () => {
         revision++
         cancelUpdateDownload()
         versionActions.setProgress({ total: 0, current: 0 })
-        versionActions.setVersionInfo({ channel: preferences.channel, newVersion: null, status: 'error', isLatest: false, isUnknown: true, integrityError: false, installError: false })
+        versionActions.setVersionInfo({ channel: preferences.channel, newVersion: null, status: 'error', isLatest: false, isUnknown: true, checkError: checkErrorMessage(error), integrityError: false, installError: false })
       }
     }
     throw error
@@ -46,8 +48,8 @@ export const initializeVersion = async() => {
     initialization = (async() => {
       const [installed, saved] = await Promise.all([getInstalledAppInfo(), getUpdatePreferences()])
       void cleanupUpdateDownloads(installed.version).catch(() => {})
-      const prerelease = parseVersion(installed.version).prerelease
-      const channel: UpdateChannel = saved && isChannel(saved.channel) ? saved.channel : prerelease[0] === 'next' ? 'next' : 'stable'
+      parseVersion(installed.version)
+      const channel: UpdateChannel = saved && isChannel(saved.channel) ? saved.channel : 'stable'
       const ignored: UpdatePreferences['ignored'] = {}
       for (const item of ['stable', 'next'] as const) {
         const tag = saved?.ignored?.[item]
@@ -93,8 +95,8 @@ const hasUpdateDownload = () => versionState.versionInfo.status === 'downloading
 
 export const checkUpdate = async(force = false, notify = true) => {
   if (hasUpdateDownload()) return
-  try { await initializeVersion() } catch {
-    versionActions.setVersionInfo({ status: 'error', newVersion: null, isLatest: false, isUnknown: true })
+  try { await initializeVersion() } catch (error: unknown) {
+    versionActions.setVersionInfo({ status: 'error', newVersion: null, isLatest: false, isUnknown: true, checkError: checkErrorMessage(error) })
     if (notify) await reportCheckFailure()
     return
   }
@@ -105,18 +107,18 @@ export const checkUpdate = async(force = false, notify = true) => {
   const currentRevision = revision
   const channel = preferences.channel
   const check = (async() => {
-    versionActions.setVersionInfo({ status: 'checking', isLatest: false, isUnknown: false, integrityError: false, installError: false, newVersion: null })
+    versionActions.setVersionInfo({ status: 'checking', isLatest: false, isUnknown: false, checkError: null, integrityError: false, installError: false, newVersion: null })
     try {
-      const { manifests, incomplete } = await getVersionInfo(channel, force)
+      const { manifests, incomplete, errors = [] } = await getVersionInfo(channel, force)
       const installed = await getInstalledAppInfo()
       if (currentRevision !== revision || preferences.channel !== channel) return
       const candidate = selectUpdate(manifests, channel, installed.version, installed.versionCode)
-      if (!candidate && incomplete) throw new Error('Update channels could not be fully checked')
+      if (!candidate && incomplete) throw new Error(errors.join('\n') || 'Update channels could not be fully checked')
       versionActions.setVersionInfo({ ...installed, status: 'idle', isLatest: candidate === null, isUnknown: false, newVersion: candidate })
       if (notify && candidate && preferences.ignored[channel] !== candidate.tag) showModal()
-    } catch {
+    } catch (error: unknown) {
       if (currentRevision !== revision) return
-      versionActions.setVersionInfo({ status: 'error', isLatest: false, isUnknown: true, newVersion: null })
+      versionActions.setVersionInfo({ status: 'error', isLatest: false, isUnknown: true, checkError: checkErrorMessage(error), newVersion: null })
       if (notify) await reportCheckFailure()
     }
   })()
@@ -138,14 +140,14 @@ export const setUpdateChannel = async(channel: UpdateChannel) => {
     preferences.channel = channel
     versionActions.setIgnoreVersion(preferences.ignored[channel] ?? null)
     versionActions.setProgress({ total: 0, current: 0 })
-    versionActions.setVersionInfo({ channel, newVersion: null, isLatest: false, isUnknown: false, integrityError: false, installError: false, status: 'checking' })
+    versionActions.setVersionInfo({ channel, newVersion: null, isLatest: false, isUnknown: false, checkError: null, integrityError: false, installError: false, status: 'checking' })
     const write = persistPreferences()
     writeRevision = write.revision
     await write.promise
     if (currentRevision === revision) await checkUpdate(true, false)
-  } catch {
+  } catch (error: unknown) {
     if (writeRevision === null ? currentRevision !== revision : writeRevision !== preferenceWriteRevision) return
-    versionActions.setVersionInfo({ status: 'error', isUnknown: true, isLatest: false })
+    versionActions.setVersionInfo({ status: 'error', isUnknown: true, isLatest: false, checkError: checkErrorMessage(error) })
     toast(global.i18n.t('version_tip_failed'))
   }
 }

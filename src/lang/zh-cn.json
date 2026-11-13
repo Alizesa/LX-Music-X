@@ -566,7 +566,7 @@
 , "setting_version_channel": "更新渠道"
 , "setting_version_channel_stable": "正式版"
 , "setting_version_channel_next": "测试版"
-, "setting_version_channel_tip": "正式渠道只接收正式版；测试渠道同时接收测试版和后续正式版。切换渠道会保留当前版本，等待可升级的新版本。"
+, "setting_version_channel_tip": "默认使用正式渠道，只接收正式版；测试渠道同时接收测试版和后续正式版。渠道选择会保存，切换后保留当前版本，等待可升级的新版本。"
 , "version_tip_integrity_failed": "安装包校验失败，已取消安装。请稍后重新下载。"
 , "version_title_not_checked": "尚未检查更新"
 , "version_tip_install_failed": "安装界面未能打开，已保留校验通过的安装包。请检查安装权限后重试安装。"
@@ -577,4 +577,5 @@
 , "setting_about_download": "本项目安装包："
 , "setting_about_upgrade": "覆盖升级需使用本项目相同签名的安装包。上游 LX Music 安装包不能用于升级 LX Music X。"
 , "setting_about_upstream_author": "上游作者："
+, "version_check_error_details": "详细原因：\n{{message}}"
 }
