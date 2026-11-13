@@ -34,5 +34,9 @@
   "releaseLock:v1.9.3-next.1": {
     "owner": "43369235440/1/eb86d40c-4de3-4cfc-a436-abfe1bf39126",
     "expiresAt": 1794546843288
+  },
+  "promotionLock": {
+    "owner": "43369235440/1/eb86d40c-4de3-4cfc-a436-abfe1bf39126",
+    "expiresAt": 1794546860542
   }
 }
