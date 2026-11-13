@@ -24,7 +24,7 @@ const artifactFiles = info => new Map([
 
 // Real release orchestration and real GitHub state/lease methods, with only
 // transport and local artifact IO replaced. No live credentials or Android tools.
-const loadRelease = (info, { config = fixtureConfig } = {}) => {
+const loadRelease = (info, { config = fixtureConfig, clock = Date, delay, apkInspector } = {}) => {
   const files = artifactFiles(info)
   const loaded = { exports: {} }
   const virtualFs = {
@@ -39,14 +39,18 @@ const loadRelease = (info, { config = fixtureConfig } = {}) => {
     mkdirSync() {},
     mkdtempSync: prefix => prefix + 'fixture',
     rmSync() {},
+    unlinkSync: file => files.delete(path.basename(file)),
     writeFileSync: (file, data) => files.set(path.basename(file), Buffer.from(data)),
     appendFileSync: (file, data) => files.set(path.basename(file), Buffer.concat([files.get(path.basename(file)) ?? Buffer.alloc(0), Buffer.from(data)])),
   }
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../publish/release.cjs'), 'utf8'), {
     module: loaded, __dirname: path.resolve(__dirname, '../../publish'),
+    Date: clock,
     process: { env: { GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1' } }, console: { log() {} },
     require: name => {
       if (name === 'node:fs') return virtualFs
+      if (name === 'node:timers/promises' && delay) return { setTimeout: delay }
+      if (name === './android-tools.cjs' && apkInspector) return { createApkInspector: () => apkInspector }
       if (name === './release-config.json' && config) return config
       if (name === 'node:child_process') return { execFileSync: (executable, args) => {
         assert.equal(executable, 'git')

@@ -159,7 +159,7 @@ test('initialization inspects actual historical split APK codes and all existing
     request: async(method, route) => route.includes('matching-refs') ? [{ ref: 'refs/tags/v1.9.5-next.10' }] : { object: { type: 'commit', sha: sha('c') } },
     downloadAsset: async(asset, target) => { downloaded.push(asset.id); fs.writeFileSync(target, String(asset.id)) },
   }
-  const state = await seedState(github, config, { version: '1.9.2', name: 'lx-music-mobile' }, file => ({ versionCode: fs.readFileSync(file, 'utf8') === '10' ? 230004 : 230 }))
+  const state = await seedState(github, config, { version: '1.9.2', name: 'lx-music-mobile' }, file => ({ applicationId: config.applicationId, certificateSha256: 'a'.repeat(64), versionCode: fs.readFileSync(file, 'utf8') === '10' ? 230004 : 230 }))
   assert.deepEqual(downloaded, [10, 11])
   assert.equal(state.versionCodeBase, 230004)
   assert.equal(state.sequence, 10)

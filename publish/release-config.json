@@ -4,6 +4,6 @@
   "applicationId": "io.github.alizesa.lxmusicx",
   "versionCodeBase": 100000,
   "targetVersion": null,
-  "signingCertificateSha256": null,
+  "signingCertificateSha256": "37bf055966cdf9bb76a14f8298d9fe5898c264cd266997508f3bcac2e36c0814",
   "abis": ["arm64-v8a", "armeabi-v7a", "x86_64", "x86", "universal"]
 }

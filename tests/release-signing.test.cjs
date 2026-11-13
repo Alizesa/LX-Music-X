@@ -1,5 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
 const { readSigningCertificate, historicalSigningCertificate, pinSigningCertificate } = require('../publish/signing.cjs')
 const { verifyReleaseSigning: verifySigning } = require('../publish/release.cjs')
 const { createState } = require('../publish/release-state.cjs')
@@ -10,8 +12,41 @@ test('APK signature output must identify exactly one valid signer', () => {
   const output = `Verifies\nSigner #1 certificate DN: CN=LX\nSigner #1 certificate SHA-256 digest: ${fingerprint.toUpperCase()}\nSigner #1 public key SHA-256 digest: ${'b'.repeat(64)}\n`
   assert.equal(readSigningCertificate(output), fingerprint)
   assert.throws(() => readSigningCertificate('DOES NOT VERIFY'), /exactly one/)
-  assert.throws(() => readSigningCertificate(output.replace(fingerprint.toUpperCase(), 'short')), /exactly one/)
+  assert.throws(() => readSigningCertificate(output.replace(fingerprint.toUpperCase(), 'short')), /Invalid signing certificate/)
   assert.throws(() => readSigningCertificate(output + `Signer #2 certificate SHA-256 digest: ${fingerprint}\n`), /exactly one/)
+})
+
+for (const version of ['35', '37']) {
+  test(`real Build Tools ${version} output from the published APK yields its verified signer`, () => {
+    const directory = path.join(__dirname, 'fixtures/apksigner')
+    const source = JSON.parse(fs.readFileSync(path.join(directory, 'source.json'), 'utf8'))
+    const output = fs.readFileSync(path.join(directory, `build-tools-${version}.txt`), 'utf8')
+    assert.equal(source.tools.find(tool => tool.version.startsWith(version + '.')).exitCode, 0)
+    assert.equal(readSigningCertificate(output), source.certificateSha256)
+  })
+}
+
+test('scheme and SDK-range descriptions can repeat one signing identity without adding a signer', () => {
+  const output = [
+    `V1 Signer: certificate SHA-256 digest: ${fingerprint}`,
+    `V2 Signer: certificate SHA-256 digest: ${fingerprint}`,
+    `Signer (minSdkVersion=28, maxSdkVersion=32) certificate SHA-256 digest: ${fingerprint}`,
+    `V3.1 Signer (minSdkVersion=33, maxSdkVersion=2147483647): certificate SHA-256 digest: ${fingerprint}`,
+    `Source Stamp Signer: certificate SHA-256 digest: ${'b'.repeat(64)}`,
+    `V2 Signer: public key SHA-256 digest: ${'c'.repeat(64)}`,
+  ].join('\r\n')
+  assert.equal(readSigningCertificate(output), fingerprint)
+})
+
+test('multiple signers, distinct SDK identities and unknown signing formats remain rejected', () => {
+  const other = 'b'.repeat(64)
+  for (const output of [
+    `V2 Signer #1: certificate SHA-256 digest: ${fingerprint}\nV2 Signer #2: certificate SHA-256 digest: ${other}`,
+    `V2 Signer #1: certificate SHA-256 digest: ${fingerprint}\nV2 Signer #2: certificate SHA-256 digest: ${fingerprint}`,
+    `V3.0 Signer (minSdkVersion=28, maxSdkVersion=32): certificate SHA-256 digest: ${fingerprint}\nV3.1 Signer (minSdkVersion=33, maxSdkVersion=2147483647): certificate SHA-256 digest: ${other}`,
+    `V2 Signer: certificate SHA-256 digest: ${fingerprint}\nUnknown Signer: certificate SHA-256 digest: ${other}`,
+    `Source Stamp Signer: certificate SHA-256 digest: ${fingerprint}`,
+  ]) assert.throws(() => readSigningCertificate(output), /exactly one|Unsupported APK signer/)
 })
 
 test('historical signing identity is inferred only when unambiguous, or explicitly selected from actual history', () => {

@@ -7,7 +7,8 @@ const { setTimeout: delay } = require('node:timers/promises')
 const { GitHub, PUBLICATION_LEASE_MS } = require('./github.cjs')
 const { createState, branchChannel, buildKey, registerPush, publishManifest, restoreBranchHeads } = require('./release-state.cjs')
 const { createSourceHistory } = require('./source-history.cjs')
-const { readSigningCertificate, historicalSigningCertificate, pinSigningCertificate } = require('./signing.cjs')
+const { historicalSigningCertificate, pinSigningCertificate } = require('./signing.cjs')
+const { createApkInspector } = require('./android-tools.cjs')
 const { ABIS, compareVersions, parseVersion, validateManifest } = require('../shared/release')
 
 const ROOT = path.resolve(__dirname, '..')
@@ -15,6 +16,7 @@ const OUTPUT = path.join(ROOT, '.release')
 const CONFIG = require('./release-config.json')
 const ZERO = '0'.repeat(40)
 const sourceContains = createSourceHistory(ROOT)
+const inspectApk = createApkInspector({ root: ROOT })
 
 function readJson(file) { return JSON.parse(fs.readFileSync(file, 'utf8')) }
 function writeJson(file, value) {
@@ -26,24 +28,6 @@ function digest(file) { return createHash('sha256').update(fs.readFileSync(file)
 function tagVersion(tag) {
   if (typeof tag !== 'string' || !tag.startsWith('v')) return null
   try { parseVersion(tag.slice(1)); return tag.slice(1) } catch { return null }
-}
-function sdkTool(name) {
-  const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT
-  if (!sdk) throw new Error('Android SDK is required to inspect APK version codes')
-  const directory = path.join(sdk, 'build-tools')
-  const versions = fs.readdirSync(directory).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).reverse()
-  for (const version of versions) {
-    const file = path.join(directory, version, process.platform === 'win32' && name === 'apksigner' ? `${name}.bat` : name)
-    if (fs.existsSync(file)) return file
-  }
-  throw new Error(`Android SDK tool ${name} is not installed`)
-}
-function inspectApk(file) {
-  const badging = execFileSync(sdkTool('aapt'), ['dump', 'badging', file], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 })
-  const info = /package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'/.exec(badging)
-  if (!info || !Number.isSafeInteger(Number(info[2]))) throw new Error(`Cannot read Android package metadata: ${path.basename(file)}`)
-  const verification = execFileSync(sdkTool('apksigner'), ['verify', '--print-certs', file], { encoding: 'utf8' })
-  return { applicationId: info[1], versionCode: Number(info[2]), version: info[3], certificateSha256: readSigningCertificate(verification) }
 }
 
 // Initialization runs only in CI. Historical split APKs had ABI-adjusted codes,
@@ -71,16 +55,25 @@ async function seedState(github, config = CONFIG, pkg = readJson(path.join(ROOT,
   try {
     for (const release of releases.filter(item => !item.draft)) {
       const version = tagVersion(release.tag_name)
+      const apkMetadata = new Map()
       // Even releases with legacy non-SemVer tags can contain a higher APK code.
       for (const asset of release.assets.filter(item => item.name.endsWith('.apk'))) {
         const file = path.join(temporary, `${asset.id}.apk`)
-        await github.downloadAsset(asset, file)
-        const metadata = inspect(file)
-        codeBase = Math.max(codeBase, metadata.versionCode)
-        if (metadata.applicationId === config.applicationId) certificates.push(metadata.certificateSha256)
-        fs.unlinkSync(file)
+        console.log(`Inspecting historical APK ${release.tag_name}/${asset.name}`)
+        try {
+          await github.downloadAsset(asset, file)
+          const metadata = inspect(file, { signingApplicationId: config.applicationId })
+          apkMetadata.set(asset.name, metadata)
+          if (metadata.applicationId === config.applicationId) {
+            codeBase = Math.max(codeBase, metadata.versionCode)
+            certificates.push(metadata.certificateSha256)
+          }
+          fs.unlinkSync(file)
+        } catch (error) {
+          throw new Error(`Historical APK ${release.tag_name}/${asset.name} (asset ${asset.id}): ${error.message}`, { cause: error })
+        }
       }
-      if (!version) continue
+      if (!version || ![...apkMetadata.values()].some(metadata => metadata.applicationId === config.applicationId)) continue
       const prerelease = parseVersion(version).prerelease
       const channel = prerelease.length ? 'next' : 'stable'
       if (channel === 'next' && !/^next\.[1-9]\d*$/.test(prerelease.join('.'))) continue
@@ -91,6 +84,9 @@ async function seedState(github, config = CONFIG, pkg = readJson(path.join(ROOT,
         manifest = validateManifest(await github.assetJson(asset), channel, config.repository, pkg.name)
         if (manifest.tag !== release.tag_name) throw new Error('Historical update.json does not match its release')
         requireCompleteRelease(release, manifest, config)
+        for (const asset of manifest.assets) {
+          if (apkMetadata.get(asset.fileName)?.applicationId !== config.applicationId) throw new Error(`Historical manifest references a different application: ${release.tag_name}/${asset.fileName}`)
+        }
         const branch = channel === 'stable' ? 'master' : 'Next'
         const key = buildKey(branch, manifest.sourceSha)
         if (!builds[key] || compareVersions(manifest.version, builds[key].version) > 0) {
@@ -170,8 +166,25 @@ async function pushContext(github, event, env = process.env) {
   const matching = runs.filter(run => run.event === 'push' && run.head_branch === branch)
     .sort((a, b) => a.run_number - b.run_number)
   if (manual && matching.length === 0) return { branch, sha, before, bootstrap: true }
-  if (!matching.some(run => run.head_sha === sha)) throw new Error('Initialize the release branch with its earliest push run before recovering a missing push')
-  return { branch, sha, before, bootstrap: matching[0]?.head_sha === sha }
+  const failedBeforeRegistration = run => /^[a-f0-9]{40}$/.test(run.head_sha ?? '') && run.head_sha !== sha && run.status === 'completed' &&
+    ['failure', 'cancelled', 'timed_out', 'startup_failure'].includes(run.conclusion) &&
+    !snapshot.state?.builds[buildKey(branch, run.head_sha)] && !snapshot.state?.events?.[buildKey(branch, run.head_sha)]
+  // A failed initial history scan has no reservation/receipt to recover. It
+  // must not force every subsequent fixed commit to wait forever for that run.
+  // Active/successful runs and all recorded pushes still retain their order.
+  const eligible = matching.filter(run => !failedBeforeRegistration(run))
+  if (!matching.some(run => run.head_sha === sha) && !(manual && eligible.length === 0)) throw new Error('Initialize the release branch with its earliest push run before recovering a missing push')
+  const first = eligible[0]
+  const pending = first && snapshot.state?.events?.[buildKey(branch, first.head_sha)]
+  const skipped = matching.filter(run => failedBeforeRegistration(run) && (!first || run.run_number < first.run_number)).map(run => run.head_sha)
+  return {
+    branch,
+    sha,
+    before,
+    bootstrap: first?.head_sha === sha || Boolean(pending) || (manual && !first),
+    ...(pending ? { bootstrapBefore: pending.before } : {}),
+    ...(skipped.length ? { initializationSkippedSources: skipped } : {}),
+  }
 }
 
 async function reserve(github, env = process.env, isAncestor = sourceContains) {
@@ -183,11 +196,26 @@ async function reserve(github, env = process.env, isAncestor = sourceContains) {
   const snapshot = await github.readState()
   const seed = snapshot.state ? undefined : await seedState(github)
   const deadline = Date.now() + 600000
+  let nextBootstrapCheck = 0
   let record
   do {
     const transaction = await github.updateState(state => registerPush(state, { ...context, reservation: undefined, targetVersion }, { isAncestor, correctTarget: Boolean(correction) }), seed)
     record = transaction.result
-    if (record) break
+    if (record) {
+      const skipped = (context.initializationSkippedSources ?? []).filter(sha => transaction.state.initializationSkipped?.[context.branch]?.includes(sha))
+      if (skipped.length) console.log(`Initialized after earlier pushes failed without reservations: ${skipped.join(', ')}`)
+      break
+    }
+    if (!transaction.state.branches[context.branch] && Date.now() >= nextBootstrapCheck) {
+      nextBootstrapCheck = Date.now() + 30000
+      const refreshed = await pushContext(github, event, env)
+      if (refreshed.bootstrap) {
+        context.bootstrap = true
+        context.bootstrapBefore = refreshed.bootstrapBefore
+        context.initializationSkippedSources = refreshed.initializationSkippedSources
+        continue
+      }
+    }
     console.log(`Waiting for the earlier ${context.branch} push ${context.before} to reserve its version`)
     await delay(10000)
   } while (Date.now() < deadline)
@@ -266,7 +294,7 @@ async function prepare(github, record, inspect = inspectApk) {
   for (const abi of CONFIG.abis) {
     const fileName = `${pkg.name}-v${record.version}-${abi}.apk`
     const file = path.join(directory, fileName)
-    const metadata = inspect(file)
+    const metadata = inspect(file, { signingApplicationId: CONFIG.applicationId })
     if (metadata.version !== record.version || metadata.versionCode !== record.versionCode || metadata.applicationId !== CONFIG.applicationId) throw new Error(`Incorrect Android package metadata: ${fileName}`)
     const certificate = metadata.certificateSha256
     if (!/^[a-f0-9]{64}$/.test(certificate) || (signature && signature !== certificate)) throw new Error('APK signatures are missing or inconsistent')

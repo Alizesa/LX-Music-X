@@ -4,9 +4,28 @@ function fingerprint(value) {
 }
 
 function readSigningCertificate(output) {
-  const certificates = [...output.matchAll(/^Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]+)\s*$/gm)]
-  if (certificates.length !== 1) throw new Error('APK must have exactly one verified signing certificate')
-  return fingerprint(certificates[0][1])
+  // Build Tools 35 prints "Signer #1"; 37 prints "V2 Signer:" (and
+  // scheme-qualified V3 signers). V3.1 can print the same identity for several
+  // Android SDK ranges. Source-stamp certificates are not application signers.
+  const signerLabel = /^(?:(V(?:1|2|3(?:\.[012])?|4)) )?(?:Hybrid (?:Classical|PQC) )?Signer(?: #([1-9]\d*))?(?: \(minSdkVersion=\d+(?: \(dev release=true\))?, maxSdkVersion=\d+\))?:?$/
+  const certificates = new Set()
+  const signerNumbers = new Map()
+  for (const line of output.split(/\r?\n/)) {
+    const entry = /^(.+?) certificate SHA-256 digest:\s*(\S+)\s*$/.exec(line.trim())
+    if (!entry || /^Source Stamp Signer:?$/.test(entry[1])) continue
+    const signer = signerLabel.exec(entry[1])
+    if (!signer) throw new Error(`Unsupported APK signer output: ${entry[1]}`)
+    certificates.add(fingerprint(entry[2]))
+    if (signer[2]) {
+      const scheme = signer[1] ?? 'legacy'
+      if (!signerNumbers.has(scheme)) signerNumbers.set(scheme, new Set())
+      signerNumbers.get(scheme).add(signer[2])
+    }
+  }
+  if (certificates.size !== 1 || [...signerNumbers.values()].some(numbers => numbers.size !== 1 || !numbers.has('1'))) {
+    throw new Error(`APK must have exactly one verified signing certificate; found ${certificates.size} distinct certificate(s)`)
+  }
+  return [...certificates][0]
 }
 
 function historicalSigningCertificate(certificates, configured) {

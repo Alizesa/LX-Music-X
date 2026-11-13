@@ -44,6 +44,9 @@ function registerPush(state, event, { isAncestor = () => false, correctTarget = 
   restoreBranchHeads(state)
   const key = buildKey(event.branch, event.sha)
   if (state.builds[key]) return state.builds[key]
+  if (state.initializationSkipped?.[event.branch]?.includes(event.sha) && !state.events[key]) {
+    throw new Error('This source failed before version initialization; publish a new commit instead of reintroducing the skipped initial source')
+  }
   const targetVersion = validateTargetVersion(event.targetVersion)
   const existing = state.events[key]
   if (existing && existing.before !== event.before) throw new Error('Source commit was reintroduced with different history')
@@ -56,7 +59,25 @@ function registerPush(state, event, { isAncestor = () => false, correctTarget = 
       delete existing.error
     }
   }
-  if (!state.branches[event.branch] && event.bootstrap) state.branches[event.branch] = event.before
+  if (!state.branches[event.branch] && event.bootstrap) {
+    let cursor = event.bootstrapBefore ?? event.before
+    if (!/^[a-f0-9]{40}$/.test(cursor)) throw new Error('Invalid initialization before SHA')
+    const visited = new Set([event.sha])
+    // Preserve earlier receipts even when their worker has already stopped, or
+    // a concurrent worker recorded them after the bootstrap decision was read.
+    while (state.events[buildKey(event.branch, cursor)]) {
+      if (visited.has(cursor)) throw new Error('Cycle in the initialization push chain')
+      visited.add(cursor)
+      cursor = state.events[buildKey(event.branch, cursor)].before
+      if (!/^[a-f0-9]{40}$/.test(cursor)) throw new Error('Invalid initialization push chain')
+    }
+    state.branches[event.branch] = cursor
+    const skipped = (event.initializationSkippedSources ?? []).filter(sha => !state.events[buildKey(event.branch, sha)] && !state.builds[buildKey(event.branch, sha)])
+    if (skipped.length) {
+      state.initializationSkipped ??= {}
+      state.initializationSkipped[event.branch] = [...new Set(skipped)]
+    }
+  }
   allocateReady(state, isAncestor)
   return state.builds[key] ?? null
 }

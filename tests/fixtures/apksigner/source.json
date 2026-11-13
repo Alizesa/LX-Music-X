@@ -1,0 +1,31 @@
+{
+  "apkUrl": "https://github.com/Alizesa/LX-Music-X/releases/download/20261111.r260-Next/lx-music-mobile-v1.9.2-arm64-v8a.apk",
+  "apkSha256": "9edbe19ee50513fc3391c81d9f21e156d9689cef79d280d7345b6b1a78635d79",
+  "applicationId": "io.github.alizesa.lxmusicx",
+  "version": "1.9.2",
+  "versionCode": 79003,
+  "certificateSha256": "37bf055966cdf9bb76a14f8298d9fe5898c264cd266997508f3bcac2e36c0814",
+  "javaVersion": "17.0.12",
+  "command": [
+    "java",
+    "-jar",
+    "apksigner.jar",
+    "verify",
+    "--print-certs",
+    "<published APK>"
+  ],
+  "tools": [
+    {
+      "version": "35.0.0",
+      "url": "https://dl.google.com/android/repository/build-tools_r35_windows.zip",
+      "archiveSha256": "5753c679a1b90bcf6fbc9945a2ce39dfb9e74f1df0831a1e1866ae5b594326f0",
+      "exitCode": 0
+    },
+    {
+      "version": "37.0.0",
+      "url": "https://dl.google.com/android/repository/build-tools_r37_windows.zip",
+      "archiveSha256": "68075aa319ed8a01cf1a565ed1e61a3c1a801dd49191c35851248dc293c33b1a",
+      "exitCode": 0
+    }
+  ]
+}

@@ -49,6 +49,32 @@ jobs:
         with:
           node-version: 20
 
+      # reserve inspects historical APKs, so Java and the declared Android tools
+      # must be ready before version initialization, not only before building.
+      - name: Setup Java for APK verification
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: '17'
+
+      - name: Select declared Android Build Tools
+        id: android_tools
+        run: node publish/android-tools.cjs
+
+      - name: Ensure declared Android Build Tools are installed
+        shell: bash
+        env:
+          BUILD_TOOLS_VERSION: ${{ steps.android_tools.outputs.version }}
+        run: |
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$sdk_root" ]; then
+            echo '::error::ANDROID_HOME or ANDROID_SDK_ROOT is required'
+            exit 1
+          fi
+          if [ ! -x "$sdk_root/build-tools/$BUILD_TOOLS_VERSION/aapt" ] || [ ! -f "$sdk_root/build-tools/$BUILD_TOOLS_VERSION/lib/apksigner.jar" ]; then
+            "$sdk_root/cmdline-tools/latest/bin/sdkmanager" "build-tools;$BUILD_TOOLS_VERSION"
+          fi
+
       - name: Reserve or reuse release version
         id: reservation
         run: node publish/release.cjs reserve
