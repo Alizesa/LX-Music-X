@@ -98,7 +98,12 @@ def getNpmPackageJson() {
     return packageJson
 }
 def npmPackageJson = getNpmPackageJson()
-def verCode = npmPackageJson["versionCode"]
+def packageVersionCode = npmPackageJson["versionCode"]
+if (!(packageVersionCode instanceof Number) || packageVersionCode.longValue() != packageVersionCode ||
+        packageVersionCode < 1 || packageVersionCode > 2100000000) {
+    throw new GradleException('package.json versionCode must be an integer between 1 and 2100000000.')
+}
+def verCode = packageVersionCode.intValue()
 def verName = npmPackageJson["version"]
 def applicationName = npmPackageJson["name"]
 
@@ -170,17 +175,14 @@ android {
     // applicationVariants are e.g. debug, release
     applicationVariants.all { variant ->
         variant.outputs.each { output ->
-            // For each separate APK per architecture, set a unique version code as described here:
-            // https://developer.android.com/studio/build/configure-apk-splits.html
-            // Example: versionCode 1 will generate 1001 for armeabi-v7a, 1002 for x86, etc.
-            def versionCodes = ["armeabi-v7a": 1, "x86": 2, "arm64-v8a": 3, "x86_64": 4]
+            // CI reserves one global code for the release, shared by every APK.
+            // ABI offsets would prevent upgrades between architecture and universal APKs.
+            output.versionCodeOverride = defaultConfig.versionCode
             def abi = output.getFilter(OutputFile.ABI)
             if (abi == null) {  // null for the universal-debug, universal-release variants
                 output.outputFileName =
                         "${applicationName}-v${defaultConfig.versionName}-universal.apk"
             } else {
-                output.versionCodeOverride =
-                        defaultConfig.versionCode * 1000 + versionCodes.get(abi)
                 output.outputFileName =
                         "${applicationName}-v${defaultConfig.versionName}-${abi}.apk"
             }

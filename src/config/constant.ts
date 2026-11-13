@@ -106,6 +106,7 @@ export const storageDataPrefix = {
   searchHistoryList: '@search_history_list',
   listUpdateInfo: '@list_update_info',
   ignoreVersion: '@ignore_version',
+  updatePreferences: '@update_preferences_v1',
   ignoreVersionFailTipTimeKey: '@ignore_version_fail_tip_time',
   searchSetting: '@search_setting',
   searchResultsCache: '@search_results_cache__',

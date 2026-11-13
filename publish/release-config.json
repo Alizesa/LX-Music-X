@@ -1,0 +1,9 @@
+{
+  "repository": "Alizesa/LX-Music-X",
+  "metadataBranch": "release-meta",
+  "applicationId": "io.github.alizesa.lxmusicx",
+  "versionCodeBase": 100000,
+  "targetVersion": null,
+  "signingCertificateSha256": null,
+  "abis": ["arm64-v8a", "armeabi-v7a", "x86_64", "x86", "universal"]
+}

@@ -1,129 +1,210 @@
 import { httpGet } from '@/utils/request'
-import { author, name } from '../../package.json'
-import { downloadFile, stopDownload, temporaryDirectoryPath } from '@/utils/fs'
-import { getSupportedAbis, installApk } from '@/utils/nativeModules/utils'
+import { name } from '../../package.json'
+import { canUpgrade, compareVersions, isChannel, parseVersion, selectAsset, validateManifest } from '../../shared/release'
+import { downloadFile, hash, readDir, stat, stopDownload, temporaryDirectoryPath, unlink } from '@/utils/fs'
+import { getInstalledAppInfo, getSupportedAbis, installApk } from '@/utils/nativeModules/utils'
 import { APP_PROVIDER_NAME } from '@/config/constant'
 
-const abis = [
-  'arm64-v8a',
-  'armeabi-v7a',
-  'x86_64',
-  'x86',
-  'universal',
-]
-
-const address = [
-  [`https://raw.githubusercontent.com/${author.name}/${name}/master/publish/version.json`, 'direct'],
-  ['https://registry.npmjs.org/lx-music-mobile-version-info/latest', 'npm'],
-  [`https://cdn.jsdelivr.net/gh/${author.name}/${name}/publish/version.json`, 'direct'],
-  [`https://fastly.jsdelivr.net/gh/${author.name}/${name}/publish/version.json`, 'direct'],
-  [`https://gcore.jsdelivr.net/gh/${author.name}/${name}/publish/version.json`, 'direct'],
-  ['https://registry.npmmirror.com/lx-music-mobile-version-info/latest', 'npm'],
-  ['https://gitee.com/lyswhut/lx-music-mobile-versions/raw/master/version.json', 'direct'],
-  ['http://cdn.stsky.cn/lx-music/mobile/version.json', 'direct'],
-]
-
-
-// 整个检查的总时限：镜像列表里有几个在部分网络下是连不通的，
-// 挨个等超时会让「检查更新中」挂上好几分钟，超过这个时间就当作检查失败。
+export const UPDATE_REPOSITORY = 'Alizesa/LX-Music-X'
 const CHECK_DEADLINE = 20000
-// 单个镜像等多久。同一个地址重试没有意义（连不通就是连不通），
-// 失败就换下一个镜像，所以这里只请求一次。
 const REQUEST_TIMEOUT = 8000
+const CACHE_TIME = 5 * 60000
+// Only mirrors of this repository are allowed. No upstream or npm fallback.
+const roots = [
+  `https://raw.githubusercontent.com/${UPDATE_REPOSITORY}/release-meta/channels`,
+  `https://cdn.jsdelivr.net/gh/${UPDATE_REPOSITORY}@release-meta/channels`,
+]
+const cache = new Map()
+const channelTags = new Map()
+const channelActivity = new Map()
 
-const request = async(url) => {
-  return new Promise((resolve, reject) => {
-    httpGet(url, {
-      timeout: REQUEST_TIMEOUT,
-    }, (err, resp, body) => {
-      if (err || resp.statusCode != 200) {
-        reject(err || new Error(resp.statusMessage || resp.statusCode))
-      } else resolve(body)
-    })
+const request = (url, timeout) => new Promise((resolve, reject) => {
+  httpGet(url, { timeout }, (err, resp, body) => {
+    if (err) reject(err)
+    else if (resp.statusCode === 404) resolve(null)
+    else if (resp.statusCode !== 200) reject(new Error(`Update request failed: ${resp.statusCode}`))
+    else resolve(body)
   })
-}
+})
 
-const getDirectInfo = async(url) => {
-  return request(url).then(info => {
-    if (info.version == null) throw new Error('failed')
-    return info
-  })
-}
-
-const getNpmPkgInfo = async(url) => {
-  return request(url).then(json => {
-    if (!json.versionInfo) throw new Error('failed')
-    const info = JSON.parse(json.versionInfo)
-    if (info.version == null) throw new Error('failed')
-    return info
-  })
-}
-
-export const getVersionInfo = async(index = 0, deadline = Date.now() + CHECK_DEADLINE) => {
-  if (Date.now() > deadline) throw new Error('timeout')
-  const [url, source] = address[index]
-  let promise
-  switch (source) {
-    case 'direct':
-      promise = getDirectInfo(url)
-      break
-    case 'npm':
-      promise = getNpmPkgInfo(url)
-      break
+const getChannel = async(channel, force, deadline) => {
+  const cacheKey = `${channel}:${channelTags.get(channel)}`
+  const cached = cache.get(cacheKey)
+  if (!force && cached && cached.expiresAt > Date.now()) return cached.manifest
+  if (!channelActivity.has(channel)) channelActivity.set(channel, { started: 0, resolved: 0, cleared: 0 })
+  const activity = channelActivity.get(channel)
+  const requestId = ++activity.started
+  let lastError
+  for (const root of roots) {
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) throw new Error('Update check timed out')
+    try {
+      const info = await request(`${root}/${channel}.json`, Math.min(REQUEST_TIMEOUT, remaining))
+      // Only the canonical endpoint can confirm an unpublished channel.
+      // Mirrors may cache a 404 while release metadata is still syncing.
+      if (info === null) {
+        if (root === roots[0]) {
+          if (requestId < activity.resolved) return cache.get(`${channel}:${channelTags.get(channel)}`)?.manifest ?? null
+          activity.resolved = activity.cleared = requestId
+          cache.delete(`${channel}:${channelTags.get(channel)}`)
+          channelTags.delete(channel)
+          return null
+        }
+        throw lastError ?? new Error('Update mirror is missing channel metadata')
+      }
+      const manifest = validateManifest(info, channel, UPDATE_REPOSITORY, name)
+      // A channel can be withdrawn when stable already contains its source.
+      // An earlier response must not resurrect that withdrawn preview.
+      if (requestId < activity.cleared) return cache.get(`${channel}:${channelTags.get(channel)}`)?.manifest ?? null
+      activity.resolved = Math.max(activity.resolved, requestId)
+      const previousKey = `${channel}:${channelTags.get(channel)}`
+      const previous = cache.get(previousKey)
+      // Requests from an older check may finish after a channel switch and
+      // a newer response. Preserve the newest validated release in the cache.
+      if (previous && (previous.manifest.versionCode > manifest.versionCode || compareVersions(previous.manifest.version, manifest.version) > 0)) return previous.manifest
+      cache.delete(previousKey)
+      channelTags.set(channel, manifest.tag)
+      cache.set(`${channel}:${manifest.tag}`, { manifest, expiresAt: Date.now() + CACHE_TIME })
+      return manifest
+    } catch (error) { lastError = error }
   }
-
-  return promise.catch(async(err) => {
-    index++
-    if (index >= address.length) throw err
-    return getVersionInfo(index, deadline)
-  })
+  throw lastError
 }
 
-const getTargetAbi = async() => {
-  const supportedAbis = await getSupportedAbis()
-  for (const abi of abis) {
-    if (supportedAbis.includes(abi)) return abi
-  }
-  return abis[abis.length - 1]
+export const getVersionInfo = async(channel = 'stable', force = false) => {
+  if (!isChannel(channel)) throw new Error('Invalid update channel')
+  const deadline = Date.now() + CHECK_DEADLINE
+  const channels = channel === 'next' ? ['stable', 'next'] : ['stable']
+  const results = await Promise.allSettled(channels.map(item => getChannel(item, force, deadline)))
+  const manifests = results.filter(item => item.status === 'fulfilled' && item.value).map(item => item.value)
+  // A partial failure must not be presented as latest when the other channel
+  // may hold an eligible update. Valid candidates can still be offered.
+  return { manifests, incomplete: results.some(item => item.status === 'rejected') }
 }
+
 let downloadJobId = null
-const noop = (total, download) => {}
-let apkSavePath
+let downloadGeneration = 0
+let downloaded = null
+let installation = null
+let cleanupQueue = Promise.resolve()
+const protectedFiles = new Set()
 
-export const downloadNewVersion = async(version, onDownload = noop) => {
-  const abi = await getTargetAbi()
-  const url = `https://github.com/${author.name}/${name}/releases/download/v${version}/${name}-v${version}-${abi}.apk`
-  let savePath = temporaryDirectoryPath + '/lx-music-mobile.apk'
+const cachedApkVersion = fileName => {
+  if (!fileName.startsWith(`${name}-v`)) return null
+  const suffix = /-(?:arm64-v8a|armeabi-v7a|x86_64|x86|universal)\.apk\.[1-9]\d*\.apk$/.exec(fileName)
+  if (!suffix) return null
+  const version = fileName.slice(name.length + 2, suffix.index)
+  try { parseVersion(version); return version } catch { return null }
+}
 
-  if (downloadJobId) stopDownload(downloadJobId)
-
-  const { jobId, promise } = downloadFile(url, savePath, {
-    progressInterval: 500,
-    connectionTimeout: 20000,
-    readTimeout: 30000,
-    begin({ statusCode, contentLength }) {
-      onDownload(contentLength, 0)
-      // switch (statusCode) {
-      //   case 200:
-      //   case 206:
-      //     break
-      //   default:
-      //     onDownload(null, contentLength, 0)
-      //     break
-      // }
-    },
-    progress({ contentLength, bytesWritten }) {
-      onDownload(contentLength, bytesWritten)
-    },
+export const cleanupUpdateDownloads = (installedVersion) => {
+  cleanupQueue = cleanupQueue.catch(() => {}).then(async() => {
+    const entries = await readDir(temporaryDirectoryPath)
+    for (const entry of entries) {
+      if (!entry.isFile) continue
+      const version = cachedApkVersion(entry.name)
+      const legacy = entry.name === `${name}.apk`
+      if (!version && !legacy) continue
+      const path = `${temporaryDirectoryPath}/${entry.name}`
+      if (protectedFiles.has(path)) continue
+      // Startup removes installed/obsolete APKs and day-old abandoned files.
+      // Starting a replacement download can also discard unclaimed future APKs.
+      const expired = Number.isFinite(entry.lastModified) && entry.lastModified > 0 && Date.now() - entry.lastModified > 86400000
+      if (!installedVersion || legacy || expired || compareVersions(version, installedVersion) <= 0) await unlink(path).catch(() => {})
+    }
   })
-  downloadJobId = jobId
-  return promise.then(() => {
-    apkSavePath = savePath
-    return updateApp()
-  })
+  return cleanupQueue
+}
+
+const discardDownload = async(file) => {
+  if (downloaded === file) downloaded = null
+  protectedFiles.delete(file.path)
+  await unlink(file.path).catch(() => {})
+}
+
+export const hasDownloadedUpdate = tag => downloaded !== null && downloaded.manifest.tag === tag
+
+export const cancelUpdateDownload = () => {
+  downloadGeneration++
+  if (downloadJobId !== null) stopDownload(downloadJobId)
+  downloadJobId = null
+  const previous = downloaded
+  downloaded = null
+  if (previous) discardDownload(previous).catch(() => {})
+}
+
+const assertCurrent = generation => {
+  if (generation !== downloadGeneration) throw new Error('UPDATE_CANCELLED')
+}
+const verifyDownload = async(file) => {
+  const details = await stat(file.path)
+  if (details.size !== file.asset.size || (await hash(file.path, 'sha256')).toLowerCase() !== file.asset.sha256) {
+    throw new Error('UPDATE_INTEGRITY_FAILED')
+  }
+}
+
+const openInstaller = async(file, generation) => {
+  const installed = await getInstalledAppInfo()
+  if (!canUpgrade(installed.version, installed.versionCode, file.manifest)) {
+    await discardDownload(file)
+    throw new Error('APK is no longer an eligible upgrade')
+  }
+  assertCurrent(generation)
+  await installApk(file.path, APP_PROVIDER_NAME)
 }
 
 export const updateApp = async() => {
-  if (!apkSavePath) throw new Error('apk Save Path is null')
-  await installApk(apkSavePath, APP_PROVIDER_NAME)
+  const file = downloaded
+  if (!file) throw new Error('No verified APK is available')
+  if (installation?.file === file) return installation.promise
+  const generation = downloadGeneration
+  const promise = (async() => {
+    try { await verifyDownload(file) } catch (error) {
+      await discardDownload(file)
+      throw error
+    }
+    await openInstaller(file, generation)
+  })()
+  installation = { file, promise }
+  try { await promise } finally {
+    if (installation?.promise === promise) installation = null
+  }
+}
+
+export const downloadNewVersion = async(info, onDownload = () => {}) => {
+  const manifest = validateManifest(info, info.channel, UPDATE_REPOSITORY, name)
+  cancelUpdateDownload()
+  const generation = downloadGeneration
+  await cleanupUpdateDownloads().catch(() => {})
+  const installed = await getInstalledAppInfo()
+  if (!canUpgrade(installed.version, installed.versionCode, manifest)) throw new Error('APK is not an eligible upgrade')
+  const asset = selectAsset(manifest.assets, await getSupportedAbis())
+  assertCurrent(generation)
+  const path = `${temporaryDirectoryPath}/${asset.fileName}.${generation}.apk`
+  const file = { path, asset, manifest }
+  protectedFiles.add(path)
+  try {
+    const { jobId, promise } = downloadFile(asset.url, path, {
+      progressInterval: 500,
+      connectionTimeout: 20000,
+      readTimeout: 30000,
+      begin() { if (generation === downloadGeneration) onDownload(asset.size, 0) },
+      progress({ bytesWritten }) { if (generation === downloadGeneration) onDownload(asset.size, bytesWritten) },
+    })
+    downloadJobId = jobId
+    const result = await promise
+    assertCurrent(generation)
+    if (result.statusCode !== 200 || result.bytesWritten !== asset.size) throw new Error('UPDATE_INTEGRITY_FAILED')
+    await verifyDownload(file)
+    assertCurrent(generation)
+    downloaded = file
+  } catch (error) {
+    await discardDownload(file)
+    throw error
+  } finally {
+    if (generation === downloadGeneration) downloadJobId = null
+  }
+  // The just-completed verification is sufficient for this immediate launch.
+  // Installer failures preserve the APK; later retries verify it again.
+  await openInstaller(file, generation)
 }

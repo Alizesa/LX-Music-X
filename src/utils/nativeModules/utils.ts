@@ -11,9 +11,21 @@ export const stopScrollAnimation = async(viewTag: number): Promise<void> => {
 
 export const exitApp = UtilsModule.exitApp
 
-export const getSupportedAbis = UtilsModule.getSupportedAbis
+export const getSupportedAbis = UtilsModule.getSupportedAbis as () => Promise<string[]>
 
-export const installApk = (filePath: string, fileProviderAuthority: string) => UtilsModule.installApk(filePath, fileProviderAuthority)
+export interface InstalledAppInfo {
+  version: string
+  versionCode: number
+}
+
+export const getInstalledAppInfo = async(): Promise<InstalledAppInfo> => {
+  // An old APK can run a newer development bundle without this native method.
+  // Its actual ABI version code cannot safely be inferred from package.json.
+  if (typeof UtilsModule.getInstalledAppInfo !== 'function') throw new Error('Installed app version information is unavailable')
+  return UtilsModule.getInstalledAppInfo() as Promise<InstalledAppInfo>
+}
+
+export const installApk = async(filePath: string, fileProviderAuthority: string): Promise<void> => UtilsModule.installApk(filePath, fileProviderAuthority) as Promise<void>
 
 
 export const screenkeepAwake = () => {

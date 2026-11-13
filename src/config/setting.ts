@@ -17,6 +17,12 @@ const mergeSetting = (originSetting: LX.AppSetting, targetSetting?: Partial<LX.A
   updatedSettingKeys: Array<keyof LX.AppSetting>
   updatedSetting: Partial<LX.AppSetting>
 } => {
+  // Missing or malformed stored values must not turn off the enabled default.
+  // An explicit boolean false remains a user preference, including on upgrade.
+  if (targetSetting && Object.prototype.hasOwnProperty.call(targetSetting, 'version.autoCheckUpdate') && typeof targetSetting['version.autoCheckUpdate'] !== 'boolean') {
+    targetSetting = { ...targetSetting }
+    delete targetSetting['version.autoCheckUpdate']
+  }
   let originSettingCopy: LX.AppSetting = { ...originSetting }
   // const defaultVersion = targetSettingCopy.version
   const updatedSettingKeys: Array<keyof LX.AppSetting> = []

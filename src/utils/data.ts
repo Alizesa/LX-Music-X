@@ -4,6 +4,7 @@ import { isRemovedUserList } from './legacyList'
 import { throttle } from './common'
 import { getSecureItem, removeSecureItem, setSecureItem } from './nativeModules/secureStorage'
 import { type CachedMusicUrl } from './musicUrlCache'
+import { type UpdatePreferences } from '../../shared/release'
 // import { gzip, ungzip } from '@/utils/nativeModules/gzip'
 // import { readFile, writeFile, temporaryDirectoryPath, unlink } from '@/utils/fs'
 // import { isNotificationsEnabled, openNotificationPermissionActivity, shareText } from '@/utils/nativeModules/utils'
@@ -138,6 +139,9 @@ export const overwriteListUpdateInfo = async(ids: string[]) => {
 }
 
 let ignoreVersion: string | null
+export const getUpdatePreferences = async() => getData<UpdatePreferences>(storageDataPrefix.updatePreferences)
+export const saveUpdatePreferences = async(preferences: UpdatePreferences) => saveData(storageDataPrefix.updatePreferences, preferences)
+
 export const saveIgnoreVersion = (version: string | null) => {
   ignoreVersion = version
   if (version == null) {

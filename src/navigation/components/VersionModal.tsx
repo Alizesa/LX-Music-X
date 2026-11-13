@@ -1,10 +1,10 @@
 import { useMemo, useState, useEffect, memo } from 'react'
 import { View, ScrollView } from 'react-native'
 
-import { compareVer, sizeFormate } from '@/utils'
+import { sizeFormate } from '@/utils'
+import { compareVersions } from '../../../shared/release'
 
 import Button from '@/components/common/Button'
-import { updateApp } from '@/utils/version'
 import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import { type VersionInfo } from '@/store/version/state'
@@ -12,7 +12,7 @@ import Text from '@/components/common/Text'
 import { useI18n } from '@/lang'
 import { useVersionDownloadProgressUpdated, useVersionInfo, useVersionInfoIgnoreVersionUpdated } from '@/store/version/hook'
 import ModalContent from './ModalContent'
-import { checkUpdate, downloadUpdate, hideModal, setIgnoreVersion } from '@/core/version'
+import { checkUpdate, downloadUpdate, hideModal, installDownloadedUpdate, setIgnoreVersion } from '@/core/version'
 
 const VersionItem = ({ version, desc }: VersionInfo) => {
   return (
@@ -23,9 +23,10 @@ const VersionItem = ({ version, desc }: VersionInfo) => {
   )
 }
 
-const Content = memo(({ title, newVersionInfo }: {
+const Content = memo(({ title, newVersionInfo, currentVer }: {
   title: string
   newVersionInfo: VersionInfo | null
+  currentVer: string
 }) => {
   const t = useI18n()
 
@@ -33,10 +34,10 @@ const Content = memo(({ title, newVersionInfo }: {
     if (!newVersionInfo?.history) return []
     let arr = []
     for (const ver of newVersionInfo?.history) {
-      if (compareVer(currentVer, ver.version) < 0) arr.push(ver)
+      if (compareVersions(currentVer, ver.version) < 0) arr.push(ver)
     }
     return arr
-  }, [newVersionInfo])
+  }, [newVersionInfo, currentVer])
 
   return (
     <View style={styles.main}>
@@ -73,7 +74,6 @@ const Content = memo(({ title, newVersionInfo }: {
   )
 })
 
-const currentVer = process.versions.app
 const VersionModal = ({ componentId }: { componentId: string }) => {
   const theme = useTheme()
   const t = useI18n()
@@ -116,7 +116,7 @@ const VersionModal = ({ componentId }: { componentId: string }) => {
           break
         case 'downloaded':
           setTitle(t('version_title_update'))
-          setTip('')
+          setTip(versionInfo.installError ? t('version_tip_install_failed') : '')
           if (ignoreBtnConfig.show) ignoreBtnConfig.show = false
           setConfirmBtn({ text: t('version_btn_update'), show: true, disabled: false })
           setCloseBtnText(t('version_btn_close'))
@@ -130,7 +130,7 @@ const VersionModal = ({ componentId }: { componentId: string }) => {
           break
         case 'error':
           setTitle(t('version_title_failed'))
-          setTip(t('version_tip_failed'))
+          setTip(t(versionInfo.integrityError ? 'version_tip_integrity_failed' : 'version_tip_failed'))
           ignoreBtnConfig.show = true
           ignoreBtnConfig.disabled = false
           setConfirmBtn({ text: t('version_btn_failed'), show: true, disabled: false })
@@ -149,7 +149,8 @@ const VersionModal = ({ componentId }: { componentId: string }) => {
           break
       }
     }
-    ignoreBtnConfig.text = t(ignoreVersion == versionInfo.newVersion?.version ? 'version_btn_ignore_cancel' : 'version_btn_ignore')
+    ignoreBtnConfig.show = ignoreBtnConfig.show && versionInfo.newVersion !== null
+    ignoreBtnConfig.text = t(ignoreVersion == versionInfo.newVersion?.tag ? 'version_btn_ignore_cancel' : 'version_btn_ignore')
     setIgnoreBtn(ignoreBtnConfig)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -159,23 +160,24 @@ const VersionModal = ({ componentId }: { componentId: string }) => {
     hideModal(componentId)
   }
   const handleIgnore = () => {
-    setIgnoreVersion(ignoreVersion != versionInfo.newVersion!.version ? versionInfo.newVersion!.version : null)
+    if (!versionInfo.newVersion) return
+    void setIgnoreVersion(ignoreVersion != versionInfo.newVersion.tag ? versionInfo.newVersion.tag : null)
     // handleCancel()
   }
 
   const handleConfirm = () => {
     if (versionInfo.isLatest || versionInfo.isUnknown) {
-      void checkUpdate()
+      void checkUpdate(true, false)
     } else if (versionInfo.status == 'downloaded') {
-      void updateApp()
+      void installDownloadedUpdate()
     } else if (versionInfo.status == 'idle' || versionInfo.status == 'error') {
-      downloadUpdate()
+      void downloadUpdate()
     }
   }
 
   return (
     <ModalContent>
-      <Content title={title} newVersionInfo={versionInfo.newVersion} />
+      <Content title={title} newVersionInfo={versionInfo.newVersion} currentVer={versionInfo.version} />
       { tip.length ? <Text style={styles.tip} color={theme['c-primary-font']}>{tip}</Text> : null }
       <View style={styles.btns}>
         {

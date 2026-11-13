@@ -6,6 +6,8 @@ import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Rect;
 import android.net.Uri;
@@ -221,51 +223,61 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
     promise.resolve(array);
   }
 
+  private long getVersionCode(PackageInfo info) {
+    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? info.getLongVersionCode() : info.versionCode;
+  }
+
+  @ReactMethod
+  public void getInstalledAppInfo(Promise promise) {
+    try {
+      PackageInfo info = reactContext.getPackageManager().getPackageInfo(reactContext.getPackageName(), 0);
+      if (info.versionName == null || getVersionCode(info) <= 0) {
+        promise.reject("E_APP_VERSION", "Installed package has invalid version information");
+        return;
+      }
+      WritableMap result = Arguments.createMap();
+      result.putString("version", info.versionName);
+      result.putDouble("versionCode", (double) getVersionCode(info));
+      promise.resolve(result);
+    } catch (Exception e) {
+      promise.reject("E_APP_VERSION", "Unable to read installed package version", e);
+    }
+  }
+
   @ReactMethod
   public void installApk(String filePath, String fileProviderAuthority, Promise promise) {
-    // https://github.com/mikehardy/react-native-update-apk/blob/master/android/src/main/java/net/mikehardy/rnupdateapk/RNUpdateAPK.java
-    File file = new File(filePath);
-    if (!file.exists()) {
-      Log.e("Utils", "installApk: file doe snot exist '" + filePath + "'");
-      // FIXME this should take a promise and fail it
-      promise.reject("Utils", "installApk: file doe snot exist '" + filePath + "'");
-      return;
-    }
-
-    if (Build.VERSION.SDK_INT >= 24) {
-      // API24 and up has a package installer that can handle FileProvider content:// URIs
-      Uri contentUri;
-      try {
-        contentUri = FileProvider.getUriForFile(getReactApplicationContext(), fileProviderAuthority, file);
-      } catch (Exception e) {
-        // FIXME should be a Promise.reject really
-        Log.e("Utils", "installApk exception with authority name '" + fileProviderAuthority + "'", e);
-        promise.reject("Utils", "installApk exception with authority name '" + fileProviderAuthority + "'");
+    try {
+      File file = new File(filePath);
+      if (!file.isFile() || !file.canRead() || file.length() == 0) {
+        promise.reject("E_APK_FILE", "Downloaded APK is missing, empty or unreadable");
         return;
-        // throw e;
       }
-      Intent installApp = new Intent(Intent.ACTION_INSTALL_PACKAGE);
-      installApp.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-      installApp.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-      installApp.setData(contentUri);
-      installApp.putExtra(Intent.EXTRA_INSTALLER_PACKAGE_NAME, reactContext.getApplicationInfo().packageName);
-      reactContext.startActivity(installApp);
-      promise.resolve(null);
-    } else {
-      // Old APIs do not handle content:// URIs, so use an old file:// style
-      String cmd = "chmod 777 " + file;
-      try {
-        Runtime.getRuntime().exec(cmd);
-      } catch (Exception e) {
-        // e.printStackTrace();
-        Log.e("Utils", "installApk exception : " + e.getMessage(), e);
-        promise.reject("Utils", e.getMessage());
+      PackageManager packageManager = reactContext.getPackageManager();
+      PackageInfo archive = packageManager.getPackageArchiveInfo(file.getAbsolutePath(), 0);
+      PackageInfo installed = packageManager.getPackageInfo(reactContext.getPackageName(), 0);
+      if (archive == null || !reactContext.getPackageName().equals(archive.packageName)) {
+        promise.reject("E_APK_PACKAGE", "APK does not contain this application");
+        return;
       }
-      Intent intent = new Intent(Intent.ACTION_VIEW);
+      if (getVersionCode(archive) <= getVersionCode(installed)) {
+        promise.reject("E_APK_VERSION", "APK version code must be newer than the installed application");
+        return;
+      }
+
+      // FileProvider also supports Android 6 and exposes private cache files
+      // without changing permissions on the APK or its parent directories.
+      Uri contentUri = FileProvider.getUriForFile(reactContext, fileProviderAuthority, file);
+      Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+      intent.setDataAndType(contentUri, "application/vnd.android.package-archive");
+      intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+      intent.putExtra(Intent.EXTRA_INSTALLER_PACKAGE_NAME, reactContext.getPackageName());
       intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-      intent.setDataAndType(Uri.parse("file://" + file), "application/vnd.android.package-archive");
       reactContext.startActivity(intent);
+      // This confirms that the system installer opened; it owns installation consent/results.
       promise.resolve(null);
+    } catch (Exception e) {
+      Log.e("Utils", "Unable to open APK installer", e);
+      promise.reject("E_APK_INSTALL", "Unable to open APK installer", e);
     }
   }
 

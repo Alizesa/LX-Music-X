@@ -10,7 +10,7 @@ import { initDeeplink } from './deeplink'
 import { setApiSource } from '@/core/apiSource'
 import commonActions from '@/store/common/action'
 import settingState from '@/store/setting/state'
-import { checkUpdate } from '@/core/version'
+import { checkUpdate, initializeVersion } from '@/core/version'
 import { bootLog } from '@/utils/bootLog'
 import { cheatTip } from '@/utils/tools'
 import initPlaybackLog from './playbackLog'
@@ -24,7 +24,7 @@ const handlePushedHomeScreen = async() => {
   if (settingState.setting['common.isAgreePact']) {
     if (isFirstPush) {
       isFirstPush = false
-      // 默认不查：这条检查走的是上游官方发布，与本分支的构建无关（设置里可开）
+      // 根据用户开关检查本仓库已成功发布的更新。
       if (settingState.setting['version.autoCheckUpdate']) void checkUpdate()
       void initDeeplink()
     }
@@ -64,6 +64,9 @@ export default async() => {
   bootLog('Data inited.')
   await initCommonState(setting)
   bootLog('Common State inited.')
+
+  // 首次运行保存更新渠道选择；本地初始化不阻塞首页。
+  void initializeVersion().catch(() => {})
 
   isInited ||= true
 

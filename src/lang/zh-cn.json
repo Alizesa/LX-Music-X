@@ -420,7 +420,7 @@
   "setting_theme": "主题设置",
   "setting_version": "软件更新",
   "setting_version_auto_check": "启动时自动检查更新",
-  "setting_version_auto_check_tip": "检查的是上游官方发布，与本分支构建无关，下载到的版本也无法覆盖安装。",
+  "setting_version_auto_check_tip": "默认开启，启动时检查本项目当前渠道已发布的版本。关闭后保留你的选择。",
   "setting_version_show_ver_modal": "打开更新窗口 🚀",
   "share_card_title_music": "将「{name}」分享到...",
   "share_title_music": "歌曲分享",
@@ -508,12 +508,12 @@
   "version_label_current_ver": "当前版本：",
   "version_label_history": "历史版本：",
   "version_label_latest_ver": "最新版本：",
-  "version_tip_failed": "安装包下载失败，你可以重试或者去项目地址手动下载新版更新。\n💡提示：一般多点几次重试即可正常更新！",
-  "version_tip_latest": "软件已是最新，尽情地体验吧~🥂",
-  "version_tip_unknown": "获取最新版本信息失败，建议手动去项目地址检查是否有新版本",
+  "version_tip_failed": "更新失败。请检查网络和安装权限，稍后重试，或前往项目发布页手动下载。",
+  "version_tip_latest": "当前更新渠道暂无可升级版本。",
+  "version_tip_unknown": "检查更新失败，请稍后重试，或到本项目的 GitHub Releases 查看。",
   "version_title_checking": "⏳ 检查更新中 ⏳",
-  "version_title_failed": "❌ 下载失败 ❌",
-  "version_title_latest": "🎉 当前版本已是最新 🎊",
+  "version_title_failed": "❌ 更新失败 ❌",
+  "version_title_latest": "当前渠道暂无可升级版本",
   "version_title_new": "🌟 发现新版本 🌟",
   "version_title_unknown": "❓ 获取最新版本信息失败 ❓",
   "version_title_update": "🚀 软件更新 🚀"
@@ -563,4 +563,18 @@
 , "playback_log_reason_paused": "预加载已暂停"
 , "playback_log_reason_claimed": "前台播放已接管预加载资源"
 , "playback_log_reason_waiting": "等待下一次预加载检查"
+, "setting_version_channel": "更新渠道"
+, "setting_version_channel_stable": "正式版"
+, "setting_version_channel_next": "测试版"
+, "setting_version_channel_tip": "正式渠道只接收正式版；测试渠道同时接收测试版和后续正式版。切换渠道会保留当前版本，等待可升级的新版本。"
+, "version_tip_integrity_failed": "安装包校验失败，已取消安装。请稍后重新下载。"
+, "version_title_not_checked": "尚未检查更新"
+, "version_tip_install_failed": "安装界面未能打开，已保留校验通过的安装包。请检查安装权限后重试安装。"
+, "setting_about_fork": "LX Music X 是 LX Music 移动版的独立分支，可与上游应用同时安装。项目地址："
+, "setting_about_updates": "启动时自动检查更新默认开启。可在「软件更新」中关闭此开关，或选择正式版、测试版渠道。检查更新和手动下载均使用本项目的 GitHub Releases。"
+, "setting_about_source": "本软件免费开源。源码地址："
+, "setting_about_upstream": "上游项目："
+, "setting_about_download": "本项目安装包："
+, "setting_about_upgrade": "覆盖升级需使用本项目相同签名的安装包。上游 LX Music 安装包不能用于升级 LX Music X。"
+, "setting_about_upstream_author": "上游作者："
 }

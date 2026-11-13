@@ -1,7 +1,7 @@
 const defaultSetting: LX.AppSetting = {
   version: '2.1',
-  // 默认关闭：检查的是上游官方发布，与本分支构建无关（详见「关于」里的说明）
-  'version.autoCheckUpdate': false,
+  // 新安装和缺失/无效的旧设置默认开启；保留用户已保存的布尔开关。
+  'version.autoCheckUpdate': true,
   'common.isAutoTheme': false,
   'common.langId': null,
   'common.apiSource': '',

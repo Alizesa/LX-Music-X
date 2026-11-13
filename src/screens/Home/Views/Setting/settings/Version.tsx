@@ -12,9 +12,8 @@ import { useSettingValue } from '@/store/setting/hook'
 import Text from '@/components/common/Text'
 import CheckBoxItem from '../components/CheckBoxItem'
 import { updateSetting } from '@/core/common'
-import { checkUpdate, showModal } from '@/core/version'
+import { checkUpdate, initializeVersion, setUpdateChannel, showModal } from '@/core/version'
 
-const currentVer = process.versions.app
 export default memo(() => {
   const t = useI18n()
   const versionInfo = useVersionInfo()
@@ -23,13 +22,17 @@ export default memo(() => {
   const [title, setTitle] = useState('')
   const [tip, setTip] = useState('')
   const progress = useVersionDownloadProgressUpdated()
+  useEffect(() => { void initializeVersion().catch(() => {}) }, [])
   const handleOpenVersionModal = () => {
     showModal()
-    if (versionInfo.newVersion == null || versionInfo.status == 'checking') void checkUpdate()
+    if (versionInfo.newVersion == null || versionInfo.isUnknown || versionInfo.isLatest) void checkUpdate(true, false)
   }
 
   useEffect(() => {
-    if (versionInfo.isLatest) {
+    if (!versionInfo.newVersion && versionInfo.status === 'idle' && !versionInfo.isLatest) {
+      setTitle(t('version_title_not_checked'))
+      setTip('')
+    } else if (versionInfo.isLatest) {
       setTitle(t('version_tip_latest'))
       setTip('')
     } else if (versionInfo.isUnknown) {
@@ -47,7 +50,7 @@ export default memo(() => {
           break
         case 'downloaded':
           setTitle(t('version_title_update'))
-          setTip('')
+          setTip(versionInfo.installError ? t('version_tip_install_failed') : '')
           break
         case 'checking':
           setTitle(t('version_title_checking'))
@@ -55,7 +58,7 @@ export default memo(() => {
           break
         case 'error':
           setTitle(t('version_title_failed'))
-          setTip(t('version_tip_failed'))
+          setTip(t(versionInfo.integrityError ? 'version_tip_integrity_failed' : 'version_tip_failed'))
           break
         // case 'idle':
         //   break
@@ -72,7 +75,7 @@ export default memo(() => {
       <SubTitle title={title}>
         <View style={styles.desc}>
           <Text size={14}>{t('version_label_latest_ver')}{versionInfo.newVersion?.version}</Text>
-          <Text size={14}>{t('version_label_current_ver')}{currentVer}</Text>
+          <Text size={14}>{t('version_label_current_ver')}{versionInfo.version}</Text>
           {
             tip ? <Text size={14}>{tip}</Text> : null
           }
@@ -80,6 +83,13 @@ export default memo(() => {
         <View style={styles.btn}>
           <Button onPress={handleOpenVersionModal}>{t('setting_version_show_ver_modal')}</Button>
         </View>
+      </SubTitle>
+      <SubTitle title={t('setting_version_channel')}>
+        <View style={styles.btn}>
+          <Button disabled={!versionInfo.initialized || versionInfo.channel === 'stable'} onPress={() => { void setUpdateChannel('stable') }}>{t('setting_version_channel_stable')}</Button>
+          <Button disabled={!versionInfo.initialized || versionInfo.channel === 'next'} onPress={() => { void setUpdateChannel('next') }}>{t('setting_version_channel_next')}</Button>
+        </View>
+        <Text size={13} style={styles.channelTip}>{t('setting_version_channel_tip')}</Text>
       </SubTitle>
       <View style={styles.autoCheck}>
         <CheckBoxItem
@@ -102,6 +112,9 @@ const styles = StyleSheet.create({
   },
   autoCheck: {
     marginTop: 4,
+  },
+  channelTip: {
+    marginTop: 8,
   },
   autoCheckTip: {
     marginTop: 4,

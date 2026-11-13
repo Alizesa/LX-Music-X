@@ -88,7 +88,7 @@ const Footer = ({ componentId }: { componentId: string }) => {
           [{
             text: Buffer.from('e5a5bde79a8420284f4b29', 'hex').toString(),
             onPress: () => {
-              // 同上：默认不自动查更新（设置里可开）
+              // 首次同意协议后，按用户开关检查本项目更新（默认开启）。
               if (settingState.setting['version.autoCheckUpdate']) void checkUpdate()
               void initDeeplink()
             },

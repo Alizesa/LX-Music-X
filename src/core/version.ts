@@ -1,11 +1,72 @@
-import { compareVer } from '@/utils'
-import { downloadNewVersion, getVersionInfo } from '@/utils/version'
+import { cancelUpdateDownload, cleanupUpdateDownloads, downloadNewVersion, getVersionInfo, hasDownloadedUpdate, updateApp } from '@/utils/version'
+import { isChannel, parseVersion, selectUpdate, type UpdateChannel, type UpdatePreferences } from '../../shared/release'
+import { getInstalledAppInfo } from '@/utils/nativeModules/utils'
 import versionActions from '@/store/version/action'
 import versionState, { type InitState } from '@/store/version/state'
-import { getIgnoreVersion, getIgnoreVersionFailTipTime, saveIgnoreVersion, saveIgnoreVersionFailTipTime } from '@/utils/data'
+import { getIgnoreVersionFailTipTime, getUpdatePreferences, saveUpdatePreferences, saveIgnoreVersionFailTipTime } from '@/utils/data'
 import { showVersionModal } from '@/navigation'
 import { Navigation } from 'react-native-navigation'
 import { toast } from '@/utils/tools'
+
+let preferences: UpdatePreferences
+let initialization: Promise<void> | null = null
+let revision = 0
+let pendingCheck: { revision: number, promise: Promise<void> } | null = null
+let preferenceWrites = Promise.resolve()
+let preferenceWriteRevision = 0
+let durablePreferences: UpdatePreferences | null = null
+const persistPreferences = () => {
+  const writeRevision = ++preferenceWriteRevision
+  const snapshot = { channel: preferences.channel, ignored: { ...preferences.ignored } }
+  preferenceWrites = preferenceWrites.catch(() => {}).then(async() => {
+    await saveUpdatePreferences(snapshot)
+    durablePreferences = snapshot
+  }).catch((error: unknown) => {
+    if (writeRevision === preferenceWriteRevision && durablePreferences) {
+      const channelChanged = preferences.channel !== durablePreferences.channel
+      preferences = { channel: durablePreferences.channel, ignored: { ...durablePreferences.ignored } }
+      versionActions.setIgnoreVersion(preferences.ignored[preferences.channel] ?? null)
+      if (channelChanged) {
+        // Invalidate work started under the unsaved selection. The rollback
+        // target is the last successful write, not another pending selection.
+        revision++
+        cancelUpdateDownload()
+        versionActions.setProgress({ total: 0, current: 0 })
+        versionActions.setVersionInfo({ channel: preferences.channel, newVersion: null, status: 'error', isLatest: false, isUnknown: true, integrityError: false, installError: false })
+      }
+    }
+    throw error
+  })
+  return { revision: writeRevision, promise: preferenceWrites }
+}
+
+export const initializeVersion = async() => {
+  if (versionState.versionInfo.initialized) return
+  if (!initialization) {
+    initialization = (async() => {
+      const [installed, saved] = await Promise.all([getInstalledAppInfo(), getUpdatePreferences()])
+      void cleanupUpdateDownloads(installed.version).catch(() => {})
+      const prerelease = parseVersion(installed.version).prerelease
+      const channel: UpdateChannel = saved && isChannel(saved.channel) ? saved.channel : prerelease[0] === 'next' ? 'next' : 'stable'
+      const ignored: UpdatePreferences['ignored'] = {}
+      for (const item of ['stable', 'next'] as const) {
+        const tag = saved?.ignored?.[item]
+        if (typeof tag !== 'string' || !tag.startsWith('v')) continue
+        try { parseVersion(tag.slice(1)); ignored[item] = tag } catch {}
+      }
+      preferences = { channel, ignored }
+      // Persist the initial choice once, before setting initialized. A later
+      // stable APK must preserve an existing next subscription.
+      await persistPreferences().promise
+      versionActions.setIgnoreVersion(ignored[channel] ?? null)
+      versionActions.setVersionInfo({ ...installed, channel, initialized: true })
+    })().catch((error: unknown) => {
+      initialization = null
+      throw error
+    })
+  }
+  await initialization
+}
 
 export const showModal = () => {
   if (versionState.showModal) return
@@ -19,72 +80,121 @@ export const hideModal = (componentId: string) => {
   void Navigation.dismissOverlay(componentId)
 }
 
-export const checkUpdate = async() => {
-  versionActions.setVersionInfo({ status: 'checking' })
-  let versionInfo: InitState['versionInfo'] = { ...versionState.versionInfo }
+const reportCheckFailure = async() => {
   try {
-    const { version, desc, history } = await getVersionInfo()
-    versionInfo.newVersion = {
-      version,
-      desc,
-      history,
-    }
-  } catch (err) {
-    versionInfo.newVersion = {
-      version: '0.0.0',
-      desc: '',
-      history: [],
-    }
-  }
-  // const versionInfo = {
-  //   version: '1.9.0',
-  //   desc: '- 更新xxx\n- 修复xxx123的萨达修复xxx123的萨达修复xxx123的萨达修复xxx123的萨达修复xxx123的萨达',
-  //   history: [{ version: '1.8.0', desc: '- 更新xxx22\n- 修复xxx22' }, { version: '1.7.0', desc: '- 更新xxx22\n- 修复xxx22' }],
-  // }
-  if (versionInfo.newVersion.version == '0.0.0') {
-    versionInfo.isUnknown = true
-    versionInfo.status = 'error'
-  } else {
-    versionInfo.status = 'idle'
-    versionInfo.isUnknown = false
-    if (compareVer(versionInfo.version, versionInfo.newVersion.version) != -1) {
-      versionInfo.isLatest = true
-    }
-  }
-
-  versionActions.setVersionInfo(versionInfo)
-
-  if (!versionInfo.isLatest) {
-    if (versionInfo.isUnknown) {
-      const time = await getIgnoreVersionFailTipTime()
-      if (Date.now() - time < 7 * 86400000) return
-      saveIgnoreVersionFailTipTime(Date.now())
-      toast(global.i18n.t('version_tip_unknown'))
-    } else if (versionInfo.newVersion.version != await getIgnoreVersion()) {
-      showModal()
-    }
-  }
-  // console.log(compareVer(process.versions.app, versionInfo.version))
-  // console.log(process.versions.app, versionInfo.version)
+    const time = await getIgnoreVersionFailTipTime()
+    if (Date.now() - time < 7 * 86400000) return
+    saveIgnoreVersionFailTipTime(Date.now())
+    toast(global.i18n.t('version_tip_unknown'))
+  } catch { toast(global.i18n.t('version_tip_unknown')) }
 }
 
-export const downloadUpdate = () => {
-  versionActions.setVersionInfo({ status: 'downloading' })
+const hasUpdateDownload = () => versionState.versionInfo.status === 'downloading' || versionState.versionInfo.status === 'downloaded'
+
+export const checkUpdate = async(force = false, notify = true) => {
+  if (hasUpdateDownload()) return
+  try { await initializeVersion() } catch {
+    versionActions.setVersionInfo({ status: 'error', newVersion: null, isLatest: false, isUnknown: true })
+    if (notify) await reportCheckFailure()
+    return
+  }
+  // Initialization yields even when already complete. A download may have
+  // started in that gap and must retain its candidate and state.
+  if (hasUpdateDownload()) return
+  if (pendingCheck?.revision === revision) return pendingCheck.promise
+  const currentRevision = revision
+  const channel = preferences.channel
+  const check = (async() => {
+    versionActions.setVersionInfo({ status: 'checking', isLatest: false, isUnknown: false, integrityError: false, installError: false, newVersion: null })
+    try {
+      const { manifests, incomplete } = await getVersionInfo(channel, force)
+      const installed = await getInstalledAppInfo()
+      if (currentRevision !== revision || preferences.channel !== channel) return
+      const candidate = selectUpdate(manifests, channel, installed.version, installed.versionCode)
+      if (!candidate && incomplete) throw new Error('Update channels could not be fully checked')
+      versionActions.setVersionInfo({ ...installed, status: 'idle', isLatest: candidate === null, isUnknown: false, newVersion: candidate })
+      if (notify && candidate && preferences.ignored[channel] !== candidate.tag) showModal()
+    } catch {
+      if (currentRevision !== revision) return
+      versionActions.setVersionInfo({ status: 'error', isLatest: false, isUnknown: true, newVersion: null })
+      if (notify) await reportCheckFailure()
+    }
+  })()
+  pendingCheck = { revision: currentRevision, promise: check }
+  try { await check } finally {
+    if (pendingCheck?.promise === check) pendingCheck = null
+  }
+}
+
+export const setUpdateChannel = async(channel: UpdateChannel) => {
+  if (!isChannel(channel)) return
+  let currentRevision = revision
+  let writeRevision: number | null = null
+  try {
+    await initializeVersion()
+    if (preferences.channel === channel) return
+    currentRevision = ++revision
+    cancelUpdateDownload()
+    preferences.channel = channel
+    versionActions.setIgnoreVersion(preferences.ignored[channel] ?? null)
+    versionActions.setProgress({ total: 0, current: 0 })
+    versionActions.setVersionInfo({ channel, newVersion: null, isLatest: false, isUnknown: false, integrityError: false, installError: false, status: 'checking' })
+    const write = persistPreferences()
+    writeRevision = write.revision
+    await write.promise
+    if (currentRevision === revision) await checkUpdate(true, false)
+  } catch {
+    if (writeRevision === null ? currentRevision !== revision : writeRevision !== preferenceWriteRevision) return
+    versionActions.setVersionInfo({ status: 'error', isUnknown: true, isLatest: false })
+    toast(global.i18n.t('version_tip_failed'))
+  }
+}
+
+const reportDownloadFailure = (error: unknown) => {
+  const integrityError = error instanceof Error && error.message === 'UPDATE_INTEGRITY_FAILED'
+  const installError = hasDownloadedUpdate(versionState.versionInfo.newVersion?.tag ?? '')
+  versionActions.setVersionInfo({ status: installError ? 'downloaded' : 'error', integrityError, installError })
+  toast(global.i18n.t(installError ? 'version_tip_install_failed' : integrityError ? 'version_tip_integrity_failed' : 'version_tip_failed'))
+}
+
+export const downloadUpdate = async() => {
+  const candidate = versionState.versionInfo.newVersion
+  if (!candidate || versionState.versionInfo.isLatest || versionState.versionInfo.status === 'downloading') return
+  // Results from older checks cannot replace the candidate bound to this APK.
+  const currentRevision = ++revision
+  versionActions.setVersionInfo({ status: 'downloading', integrityError: false, installError: false })
   versionActions.setProgress({ total: 0, current: 0 })
-
-  downloadNewVersion(versionState.versionInfo.newVersion!.version, (total: number, current: number) => {
-    // console.log(total, current)
-    versionActions.setProgress({ total, current })
-  }).then(() => {
-    versionActions.setVersionInfo({ status: 'downloaded' })
-  }).catch(() => {
-    versionActions.setVersionInfo({ status: 'error' })
-    // console.log(err)
-  })
+  try {
+    await downloadNewVersion(candidate, (total, current) => {
+      if (currentRevision === revision) versionActions.setProgress({ total, current })
+    })
+    if (currentRevision === revision) versionActions.setVersionInfo({ status: 'downloaded' })
+  } catch (error: unknown) {
+    if (currentRevision === revision) reportDownloadFailure(error)
+  }
 }
 
+export const installDownloadedUpdate = async() => {
+  const currentRevision = revision
+  versionActions.setVersionInfo({ installError: false })
+  try { await updateApp() } catch (error: unknown) {
+    if (currentRevision === revision) reportDownloadFailure(error)
+  }
+}
 
-export const setIgnoreVersion = (version: InitState['ignoreVersion']) => {
-  versionActions.setIgnoreVersion(version)
-  saveIgnoreVersion(version)
+export const setIgnoreVersion = async(tag: InitState['ignoreVersion']) => {
+  let writeRevision: number | null = null
+  try {
+    await initializeVersion()
+    if (tag !== null && tag !== versionState.versionInfo.newVersion?.tag) return
+    if (tag === null) delete preferences.ignored[preferences.channel]
+    else preferences.ignored[preferences.channel] = tag
+    versionActions.setIgnoreVersion(tag)
+    const write = persistPreferences()
+    writeRevision = write.revision
+    await write.promise
+  } catch {
+    if (writeRevision !== null && writeRevision !== preferenceWriteRevision) return
+    toast(global.i18n.t('version_tip_failed'))
+  }
 }

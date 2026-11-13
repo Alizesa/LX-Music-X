@@ -1,15 +1,10 @@
 name: Run build test
 
 on:
-  push:
-    branches:
-      - master
-      - main
   pull_request:
     branches:
       - master
-      - main
-      - dev
+      - Next
 
 jobs:
   test:
@@ -36,9 +31,8 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      # 下面几步是耗时的完整验证。push 到 master 时 android-build.yml 已经完整构建了
-      # release 包（含 JS bundle 与 Gradle 编译），同一次推送再跑一遍纯属重复；
-      # PR 上没有 release 构建，所以在这里做完整检查。
+      # Branch pushes are checked by the unified release workflow; this workflow
+      # checks pull requests before they reach either release branch.
       - name: Setup Java
         if: github.event_name == 'pull_request'
         uses: actions/setup-java@v4

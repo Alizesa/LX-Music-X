@@ -11,6 +11,8 @@ import { useI18n } from '@/lang'
 import Text from '@/components/common/Text'
 import { showPactModal } from '@/core/common'
 
+const repositoryUrl = 'https://github.com/Alizesa/LX-Music-X'
+
 // const qqGroupUrl = 'mqqopensdkapi://bizAgent/qm/qr?url=http%3A%2F%2Fqm.qq.com%2Fcgi-bin%2Fqm%2Fqr%3Ffrom%3Dapp%26p%3Dandroid%26jump_from%3Dwebapi%26k%3Du1zyxek8roQAwic44nOkBXtG9CfbAxFw'
 // const qqGroupUrl2 = 'mqqopensdkapi://bizAgent/qm/qr?url=http%3A%2F%2Fqm.qq.com%2Fcgi-bin%2Fqm%2Fqr%3Ffrom%3Dapp%26p%3Dandroid%26jump_from%3Dwebapi%26k%3D-l4kNZ2bPQAuvfCQFFhl1UoibvF5wcrQ'
 // const qqGroupWebUrl = 'https://qm.qq.com/cgi-bin/qm/qr?k=jRZkyFSZ4FmUuTHA3P_RAXbbUO_Rrn5e&jump_from=webapi'
@@ -23,20 +25,17 @@ export default memo(() => {
     void openUrl('https://github.com/lyswhut/lx-music-mobile#readme')
   }
   const openForkPage = () => {
-    void openUrl('https://github.com/Alizesa/LX-Music-X')
+    void openUrl(repositoryUrl)
   }
   const openIssuePage = () => {
-    void openUrl('https://github.com/lyswhut/lx-music-mobile/issues?q=is%3Aissue+')
+    void openUrl(`${repositoryUrl}/issues`)
   }
   const openGHReleasePage = () => {
-    void openUrl('https://github.com/lyswhut/lx-music-mobile/releases')
+    void openUrl(`${repositoryUrl}/releases`)
   }
   const openFAQPage = () => {
     void openUrl('https://lyswhut.github.io/lx-music-doc/mobile/faq')
   }
-  // const openIssuesPage = () => {
-  //   openUrl('https://github.com/lyswhut/lx-music-mobile/issues')
-  // }
   const openPactModal = () => {
     showPactModal()
   }
@@ -66,23 +65,28 @@ export default memo(() => {
   return (
     <Section title={t('setting_about')}>
       <View style={styles.part}>
-        <Text style={styles.text}>本软件是个人自用的修改版，构建自 </Text>
+        <Text style={styles.text}>{t('setting_about_fork')}</Text>
         <TouchableOpacity onPress={openForkPage}>
           <Text style={textLinkStyle}>Alizesa/LX-Music-X</Text>
         </TouchableOpacity>
-        <Text style={styles.text}>，与上游官方发布的签名不同，两者无法互相覆盖安装。</Text>
       </View>
       <View style={styles.part}>
-        <Text style={styles.text}>因此「软件更新」里的自动检查更新默认关闭：它检查的是上游官方发布，下载到的版本与本分支无关。</Text>
+        <Text style={styles.text}>{t('setting_about_updates')}</Text>
       </View>
       <View style={styles.part}>
-        <Text style={styles.text} >本软件完全免费，代码已开源。开源地址：</Text>
+        <Text style={styles.text}>{t('setting_about_source')}</Text>
+        <TouchableOpacity onPress={openForkPage}>
+          <Text style={textLinkStyle}>{repositoryUrl}</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.part}>
+        <Text style={styles.text}>{t('setting_about_upstream')}</Text>
         <TouchableOpacity onPress={openHomePage}>
           <Text style={textLinkStyle}>https://github.com/lyswhut/lx-music-mobile</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.part}>
-        <Text style={styles.text}>最新版下载地址：</Text>
+        <Text style={styles.text}>{t('setting_about_download')}</Text>
         <TouchableOpacity onPress={openGHReleasePage}>
           <Text style={textLinkStyle}>GitHub Releases</Text>
         </TouchableOpacity>
@@ -114,7 +118,7 @@ export default memo(() => {
         <Text style={styles.text}>若你使用过程中遇到<Text style={styles.boldText}>广告</Text>或者<Text style={styles.boldText}>引流</Text>（如需要加群、关注公众号之类才能使用或者升级）的信息，则表明你当前运行的软件是「第三方修改版」。</Text>
       </View>
       <View style={styles.part}>
-        <Text style={styles.text}>若在升级新版本时提示「<Text style={styles.boldText}>签名不一致</Text>」，则表明你手机上的旧版本或者将要安装的新版本中<Text style={styles.boldText}>有一方</Text>是「<Text style={styles.boldText}>第三方修改版</Text>」。</Text>
+        <Text style={styles.text}>{t('setting_about_upgrade')}</Text>
       </View>
       <View style={styles.part}>
         <Text style={styles.text}>你已签署本软件的</Text>
@@ -124,7 +128,7 @@ export default memo(() => {
         <Text style={styles.text}>。</Text>
       </View>
       <View style={styles.part}>
-        <Text style={styles.text}>By: </Text>
+        <Text style={styles.text}>{t('setting_about_upstream_author')}</Text>
         <Text style={styles.text}>落雪无痕</Text>
       </View>
     </Section>

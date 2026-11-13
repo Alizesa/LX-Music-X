@@ -420,7 +420,7 @@
   "setting_theme": "Theme",
   "setting_version": "Update",
   "setting_version_auto_check": "Check for updates on startup",
-  "setting_version_auto_check_tip": "The check reads upstream's official releases, which are unrelated to this build and cannot be installed over it.",
+  "setting_version_auto_check_tip": "Enabled by default. Check this project's published releases in the selected channel at startup. Your choice is saved if you turn it off.",
   "setting_version_show_ver_modal": "Open Update Window 🚀",
   "share_card_title_music": "Share \"{name}\" to...",
   "share_title_music": "Song Sharing",
@@ -508,12 +508,12 @@
   "version_label_current_ver": "Current: ",
   "version_label_history": "History: ",
   "version_label_latest_ver": "Latest: ",
-  "version_tip_failed": "Failed to download the apk. You can either retry or go to the project address and download the new update manually.",
-  "version_tip_latest": "The app is up to date, please enjoy it~🥂",
-  "version_tip_unknown": "Failed to get the latest version information. Recommended to manually go to the project address to check for a new version.",
+  "version_tip_failed": "Update failed. Check your connection and installation permission, then try again later or download from the project's release page.",
+  "version_tip_latest": "No upgrade is available in the selected update channel.",
+  "version_tip_unknown": "Update check failed. Try again later or visit this project's GitHub Releases.",
   "version_title_checking": "⏳ Checking for updates ⏳",
-  "version_title_failed": "❌ Failed to download ❌",
-  "version_title_latest": "🎉 The current version is already the latest 🎊",
+  "version_title_failed": "❌ Update failed ❌",
+  "version_title_latest": "No upgrade available in this channel",
   "version_title_new": "🌟 New version found 🌟",
   "version_title_unknown": "❓ Failed to get the latest version information ❓",
   "version_title_update": "🚀 App update 🚀"
@@ -563,4 +563,18 @@
 , "playback_log_reason_paused": "Preloading is paused"
 , "playback_log_reason_claimed": "Foreground playback has taken over"
 , "playback_log_reason_waiting": "Waiting for the next preload check"
+, "setting_version_channel": "Update channel"
+, "setting_version_channel_stable": "Stable"
+, "setting_version_channel_next": "Preview"
+, "setting_version_channel_tip": "Stable receives stable releases. Preview also receives later stable releases. Switching channels keeps your installed version until an eligible upgrade is available."
+, "version_tip_integrity_failed": "APK verification failed. Installation was cancelled. Download it again later."
+, "version_title_not_checked": "Updates have not been checked"
+, "version_tip_install_failed": "The installer could not open. The verified APK has been kept. Check installation permissions and try installing again."
+, "setting_about_fork": "LX Music X is an independent fork of LX Music Mobile and can be installed alongside the upstream app. Project: "
+, "setting_about_updates": "Update checks on startup are enabled by default. Turn them off or select the Stable or Preview channel in Update settings. Update checks and manual downloads use this project's GitHub Releases."
+, "setting_about_source": "This app is free and open source. Source code: "
+, "setting_about_upstream": "Upstream project: "
+, "setting_about_download": "Download this app: "
+, "setting_about_upgrade": "Use an APK from this project with the same signing certificate to upgrade your installation. Upstream LX Music APKs cannot upgrade LX Music X."
+, "setting_about_upstream_author": "Upstream author: "
 }
