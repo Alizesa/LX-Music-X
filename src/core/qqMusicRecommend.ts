@@ -124,10 +124,10 @@ export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0
 }
 
 /**
- * 点「每日推荐」时先试着接手，返回是否已经处理完。三种情况：
+ * 点「猜你喜欢」时先试着接手，返回是否已经处理完。三种情况：
  * 1. 队列本来就是推荐队列，且和当前这份推荐是同一批 → 接着播，不重建
  *    （重建会把自动续上的批次丢回那 20 首，这正是「又从第一首开始」的原因）；
- * 2. 切走时留下的当天存档还在 → 还原队列和位置；
+ * 2. 切走时留下的当天存档还在，且对应当前这批推荐 → 还原队列和位置；
  * 3. 都没有 → false，调用方按原来的「读缓存/联网 + 从头播」走。
  * @param currentSongs 当前这份推荐（页面上缓存的那批），用来判断队列是不是同一批
  */
@@ -148,6 +148,12 @@ export const continueRecommendQueue = async(currentSongs: LX.Player.PlayMusic[])
   }
   const session = await getRecommendSession()
   if (!session) return false
+  // 卡片刷新后，尚未切走的旧队列仍可能被再次存档。
+  // savedAt 只反映切走时间；和当前队列一样，恢复存档也要核对原始批次。
+  if (currentSongs.length && session.sourceFirstMusicId !== currentSongs[0]?.id) {
+    await dropRecommendSession()
+    return false
+  }
   await startRecommendQueue(session.songs, session.index, session.sourceFirstMusicId)
   // 已经恢复成播放队列，存档的内存/磁盘副本可以放掉
   await dropRecommendSession()
