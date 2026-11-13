@@ -66,21 +66,30 @@
       "version": "1.9.3-next.4",
       "versionCode": 100004,
       "tag": "v1.9.3-next.4",
-      "status": "allocated"
+      "status": "published",
+      "notes": {
+        "version": "1.9.3-next.4",
+        "desc": "- fix: guard source changes and asynchronous UI feedback (3ac9ed1a)\n- ui: drag to reorder sources and select update channels from a dropdown (3bbc7374)\n- fix: release download resources and guard recommendation playback (3e86c26e)"
+      },
+      "publishedAt": "2026-11-13T11:02:25.002Z"
     }
   },
   "channels": {
     "next": {
       "schemaVersion": 1,
       "channel": "next",
-      "version": "1.9.3-next.3",
-      "versionCode": 100003,
-      "tag": "v1.9.3-next.3",
-      "sourceSha": "7504befdaf735ae8c69e70ef096418fe1b0b79ed",
-      "publishedAt": "2026-11-13T06:24:11.214Z",
-      "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.3-next.3",
-      "desc": "- fix: avoid restoring stale recommendation queues (7504befd)",
+      "version": "1.9.3-next.4",
+      "versionCode": 100004,
+      "tag": "v1.9.3-next.4",
+      "sourceSha": "3ac9ed1aa82e9874560d0cd5f0f918b3daaa3bb8",
+      "publishedAt": "2026-11-13T11:02:25.002Z",
+      "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.3-next.4",
+      "desc": "- fix: guard source changes and asynchronous UI feedback (3ac9ed1a)\n- ui: drag to reorder sources and select update channels from a dropdown (3bbc7374)\n- fix: release download resources and guard recommendation playback (3e86c26e)",
       "history": [
+        {
+          "version": "1.9.3-next.3",
+          "desc": "- fix: avoid restoring stale recommendation queues (7504befd)"
+        },
         {
           "version": "1.9.3-next.2",
           "desc": "- fix: improve update channel fallback and default to stable (2b2bfee2)"
@@ -93,38 +102,38 @@
       "assets": [
         {
           "abi": "arm64-v8a",
-          "fileName": "lx-music-mobile-v1.9.3-next.3-arm64-v8a.apk",
-          "size": 25035433,
-          "sha256": "7e6ea5c8c748881f5c3990dceaf2fcb8d236270d936e0ce02da153e5f5b3e628",
-          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.3/lx-music-mobile-v1.9.3-next.3-arm64-v8a.apk"
+          "fileName": "lx-music-mobile-v1.9.3-next.4-arm64-v8a.apk",
+          "size": 25038039,
+          "sha256": "c4176891692d6df6221717f90fded6dada81c892c7fb5d73190dd5001ccfc712",
+          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.4/lx-music-mobile-v1.9.3-next.4-arm64-v8a.apk"
         },
         {
           "abi": "armeabi-v7a",
-          "fileName": "lx-music-mobile-v1.9.3-next.3-armeabi-v7a.apk",
-          "size": 20139822,
-          "sha256": "fc1872df6733ee944eef7582deaa973ab92072e6800eb14bcecfb20d203ac0e5",
-          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.3/lx-music-mobile-v1.9.3-next.3-armeabi-v7a.apk"
+          "fileName": "lx-music-mobile-v1.9.3-next.4-armeabi-v7a.apk",
+          "size": 20142440,
+          "sha256": "98dec3aa311b31478c3705c4689f233552a2686ef79a12f067947e8459ffb6de",
+          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.4/lx-music-mobile-v1.9.3-next.4-armeabi-v7a.apk"
         },
         {
           "abi": "x86_64",
-          "fileName": "lx-music-mobile-v1.9.3-next.3-x86_64.apk",
-          "size": 25802386,
-          "sha256": "9c27448edd7b52e0486f6d3c745a9ea3529857af9bca84f485737540a002bef6",
-          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.3/lx-music-mobile-v1.9.3-next.3-x86_64.apk"
+          "fileName": "lx-music-mobile-v1.9.3-next.4-x86_64.apk",
+          "size": 25804995,
+          "sha256": "b0f96cefdcb7edbe30eddce8aeb0c68f50ff3bd1b9a86d36009cc16e2553697f",
+          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.4/lx-music-mobile-v1.9.3-next.4-x86_64.apk"
         },
         {
           "abi": "x86",
-          "fileName": "lx-music-mobile-v1.9.3-next.3-x86.apk",
-          "size": 25344971,
-          "sha256": "ee6e6ab920382cb773b083d7b7626f2e711f45523dc1561f39d8d3ff1fe8ea6f",
-          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.3/lx-music-mobile-v1.9.3-next.3-x86.apk"
+          "fileName": "lx-music-mobile-v1.9.3-next.4-x86.apk",
+          "size": 25347589,
+          "sha256": "5f0aaebf687ec3c2c8633e29d2a62d578795768ceb31939e1d3639721777d6b3",
+          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.4/lx-music-mobile-v1.9.3-next.4-x86.apk"
         },
         {
           "abi": "universal",
-          "fileName": "lx-music-mobile-v1.9.3-next.3-universal.apk",
-          "size": 67693718,
-          "sha256": "0f9e8d8e40fe4f6f871b6c5ed7290941c3249b15746d231b243f90e0ed0fae7d",
-          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.3/lx-music-mobile-v1.9.3-next.3-universal.apk"
+          "fileName": "lx-music-mobile-v1.9.3-next.4-universal.apk",
+          "size": 67696338,
+          "sha256": "75b531f78c9571bec016419ddf3d2dda3dd7b8a8cefe63d763e70f02e9a5a119",
+          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.4/lx-music-mobile-v1.9.3-next.4-universal.apk"
         }
       ],
       "signingCertificateSha256": "37bf055966cdf9bb76a14f8298d9fe5898c264cd266997508f3bcac2e36c0814"
