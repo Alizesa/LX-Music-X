@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 2,
+  "sequence": 3,
   "lastStableVersion": "1.9.2",
   "nextTargetVersion": "1.9.3",
   "branches": {
-    "Next": "2b2bfee2886eeca39c474463607ac01fab66c6fd"
+    "Next": "7504befdaf735ae8c69e70ef096418fe1b0b79ed"
   },
   "events": {},
   "builds": {
@@ -40,6 +40,17 @@
         "desc": "- fix: improve update channel fallback and default to stable (2b2bfee2)"
       },
       "publishedAt": "2026-11-13T05:57:40.912Z"
+    },
+    "Next/7504befdaf735ae8c69e70ef096418fe1b0b79ed": {
+      "branch": "Next",
+      "sourceSha": "7504befdaf735ae8c69e70ef096418fe1b0b79ed",
+      "before": "2b2bfee2886eeca39c474463607ac01fab66c6fd",
+      "channel": "next",
+      "sequence": 3,
+      "version": "1.9.3-next.3",
+      "versionCode": 100003,
+      "tag": "v1.9.3-next.3",
+      "status": "allocated"
     }
   },
   "channels": {
