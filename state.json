@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 3,
+  "sequence": 4,
   "lastStableVersion": "1.9.2",
   "nextTargetVersion": "1.9.3",
   "branches": {
-    "Next": "7504befdaf735ae8c69e70ef096418fe1b0b79ed"
+    "Next": "3ac9ed1aa82e9874560d0cd5f0f918b3daaa3bb8"
   },
   "events": {},
   "builds": {
@@ -56,6 +56,17 @@
         "desc": "- fix: avoid restoring stale recommendation queues (7504befd)"
       },
       "publishedAt": "2026-11-13T06:24:11.214Z"
+    },
+    "Next/3ac9ed1aa82e9874560d0cd5f0f918b3daaa3bb8": {
+      "branch": "Next",
+      "sourceSha": "3ac9ed1aa82e9874560d0cd5f0f918b3daaa3bb8",
+      "before": "7504befdaf735ae8c69e70ef096418fe1b0b79ed",
+      "channel": "next",
+      "sequence": 4,
+      "version": "1.9.3-next.4",
+      "versionCode": 100004,
+      "tag": "v1.9.3-next.4",
+      "status": "allocated"
     }
   },
   "channels": {
