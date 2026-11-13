@@ -47,7 +47,10 @@ export const createPlaySelection = () => {
   const requestId = ++listSelectionGeneration
   const generation = selectionGeneration
   const playback = playerState.playMusicInfo
-  return () => requestId === listSelectionGeneration && generation === selectionGeneration && playback === playerState.playMusicInfo
+  const isLatest = () => requestId === listSelectionGeneration
+  const isCurrent = () => isLatest() && generation === selectionGeneration && playback === playerState.playMusicInfo
+  // 本次确认播放也会改变 playback/generation；错误反馈只需判断是否仍是最后一次操作。
+  return Object.assign(isCurrent, { isLatest })
 }
 
 const createDelayNextTimeout = (delay: number) => {
@@ -447,7 +450,7 @@ export const playListById = async(listId: string, id: string) => {
  * @param listId 列表id
  * @param index 播放的歌曲位置
  */
-export const playList = async(listId: string, index: number, isCurrentSelection = createPlaySelection()) => {
+export const playList = async(listId: string, index: number, isCurrentSelection: () => boolean = createPlaySelection()) => {
   // LOCAL 是延迟加载的：从本地列表起播前必须先把整表读进来。
   // 建完队列后 isPlayQueueFromList(LOCAL) 会把列表钉住，这里只管操作期间的占用
   const isLocal = listId === LIST_IDS.LOCAL
@@ -519,6 +522,7 @@ export const addToPlayQueue = async(list: LX.Player.PlayMusic[]): Promise<number
 }
 
 export const clearQueue = async() => {
+  listSelectionGeneration++
   const generation = ++selectionGeneration
   // 清空队列不算「不要这次推荐了」：存档留到跨天或手动点「刷新」为止
   await parkRecommendQueue()
@@ -645,6 +649,7 @@ const handlePlayNext = async(playMusicInfo: LX.Player.PlayMusicInfo) => {
 export const playTempPlayMusic = async(index: number): Promise<void> => {
   const playMusicInfo = playerState.tempPlayList[index]
   if (!playMusicInfo) return
+  listSelectionGeneration++
   setPlayMusicInfo(playMusicInfo.listId, playMusicInfo.musicInfo, playMusicInfo.isTempPlay)
   removeTempPlayList(index)
   await handlePlay()
@@ -880,6 +885,7 @@ export const pause = async() => {
  * 停止播放
  */
 export const stop = async() => {
+  listSelectionGeneration++
   playbackLog('player.stop_requested', () => ({ playId: playbackLogId(playerState.playMusicInfo, 'play') }))
   const generation = ++selectionGeneration
   playRequested = false

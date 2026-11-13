@@ -453,7 +453,9 @@ export default () => {
       initQQMusicRecommendAutoRefresh()
       await startRecommendQueue(songs, 0, undefined, isCurrentPlay)
     } catch (error: unknown) {
-      if (isCurrentPlay()) toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      if (selection.isLatest() && isCurrent() && batchRevision === guessRequestRevision.current) {
+        toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      }
     } finally {
       if (isCurrent() && request === guessPlayRevision.current) setPlaying(false)
     }

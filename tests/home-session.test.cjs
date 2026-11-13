@@ -56,7 +56,7 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
       getQQMusicRecommendPlaylistsCache: async() => cache('playlists'),
     },
     '@/lang': { useI18n: () => key => key },
-  }, { global: { app_event: events } }).default
+  }, { Error, global: { app_event: events } }).default
   const render = () => { tree = host.render(frame, component); return tree }
   const settle = async() => { await flush(); render(); await flush(); render() }
   const refreshControl = () => elements(tree, 'ScrollView')[0].props.refreshControl.props
@@ -198,6 +198,43 @@ test('an earlier card action cannot clear the busy state of a newer restore', as
   assert.equal(h.guessPlaying(), false)
   assert.equal(h.started.length, 1)
 })
+
+for (const restoring of [false, true]) {
+  test(`${restoring ? 'restored' : 'fresh'} recommendation playback still reports an error after committing its selection`, async t => {
+    const h = await playbackHome(t)
+    const fail = async(isCurrent) => {
+      await h.playback.player.playList(constants.LIST_IDS.PLAY_QUEUE, 1, isCurrent)
+      throw new Error('queue save failed')
+    }
+    if (restoring) h.recommend.continueRecommendQueue = (songs, isCurrent) => fail(isCurrent)
+    else h.recommend.startRecommendQueue = (songs, index, firstId, isCurrent) => fail(isCurrent)
+    h.playGuess()
+    await h.settle()
+    assert.equal(h.playback.state.playMusicInfo.musicInfo.id, 'B')
+    assert.deepEqual(h.toasts, ['queue save failed'])
+    assert.equal(h.guessPlaying(), false)
+  })
+}
+
+for (const action of ['stop', 'playTempPlayMusic']) {
+  test(`a delayed playback failure is ignored after a newer ${action} action`, async t => {
+    const h = await playbackHome(t)
+    const error = deferred()
+    h.recommend.startRecommendQueue = async(songs, index, firstId, isCurrent) => {
+      await h.playback.player.playList(constants.LIST_IDS.PLAY_QUEUE, 1, isCurrent)
+      await error.promise
+    }
+    h.playGuess()
+    await h.settle()
+    if (action === 'playTempPlayMusic') {
+      h.playback.state.tempPlayList.push({ listId: null, musicInfo: h.playback.lists.library[2], isTempPlay: true })
+      await h.playback.player.playTempPlayMusic(0)
+    } else await h.playback.player.stop()
+    error.reject(new Error('old queue save failed'))
+    await h.settle()
+    assert.deepEqual(h.toasts, [])
+  })
+}
 
 test('a slow playlist cache does not delay songs or overwrite a completed refresh', async t => {
   const h = harness(); const slow = deferred()

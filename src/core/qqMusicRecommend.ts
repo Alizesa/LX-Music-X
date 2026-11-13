@@ -113,7 +113,7 @@ export const initQQMusicRecommendAutoRefresh = () => {
  * 用一批推荐重建播放队列，并从 index 开始播。
  * 队列打的是推荐专属来源标记，续播和存档都靠它认。
  */
-export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0, sourceFirstMusicId = songs[0]?.id, isCurrent = createPlaySelection()) => {
+export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0, sourceFirstMusicId = songs[0]?.id, isCurrent: () => boolean = createPlaySelection()) => {
   if (!songs.length || !isCurrent()) return false
   // 随机模式下 playNext 会先走已播列表，而那份记录不区分列表（队列播放的 listId 都是
   // play_queue），换一批新队列后可能先蹦出一首上一个列表的歌。重启恢复时它本来就是空的，
@@ -135,7 +135,7 @@ export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0
  * 读取期间选择已失效 → null，调用方结束本次操作，不再创建推荐队列。
  * @param currentSongs 当前这份推荐（页面上缓存的那批），用来判断队列是不是同一批
  */
-export const continueRecommendQueue = async(currentSongs: LX.Player.PlayMusic[], isCurrent = createPlaySelection()): Promise<boolean | null> => {
+export const continueRecommendQueue = async(currentSongs: LX.Player.PlayMusic[], isCurrent: () => boolean = createPlaySelection()): Promise<boolean | null> => {
   if (!isCurrent()) return null
   if (isRecommendQueue()) {
     // 比较建队列时的首曲，当前队首可能已因裁剪/删除/排序发生变化。

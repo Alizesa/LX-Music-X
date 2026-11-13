@@ -82,7 +82,7 @@ const createPlaylistPosition = (listId: string, store: PositionStore, logLabel: 
    * 从记下的位置开始播一批歌：先定位，再把这批灌进临时列表（顺带打上来源标记，
    * 位置记忆靠它认队列），最后起播。首页播放钮和歌单页的「播放」都走这里。
    */
-  const play = async(songs: LX.Music.MusicInfoOnline[], isCurrent = createPlaySelection()) => {
+  const play = async(songs: LX.Music.MusicInfoOnline[], isCurrent: () => boolean = createPlaySelection()) => {
     if (!songs.length || !isCurrent()) return
     const startIndex = await resolveIndex(songs)
     if (!isCurrent()) return

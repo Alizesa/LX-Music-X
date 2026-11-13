@@ -27,6 +27,7 @@ const harness = (selected = ['A', 'B', 'C']) => {
     '@/utils/tools': { createStyle: value => value },
     '@/core/apiSource': {
       setApiSource() {},
+      getApiSourceOrder: () => JSON.parse(setting['common.apiSourceOrder']),
       setApiSourceOrder: order => {
         writes.push(Array.from(order))
         setting['common.apiSourceOrder'] = JSON.stringify(order)
@@ -46,6 +47,7 @@ const harness = (selected = ['A', 'B', 'C']) => {
     './UserApiEditModal': { default: 'UserApiEditModal' },
     '@/components/common/Text': { default: 'Text' },
     '@/store/theme/hook': { useTheme: () => ({}) },
+    '@/utils/hooks/useScreenVisible': { useScreenVisible: host.visible },
   }).default
   const collect = tree => {
     if (Array.isArray(tree)) return tree.flatMap(collect)
@@ -73,6 +75,7 @@ const harness = (selected = ['A', 'B', 'C']) => {
     writes,
     setting,
     render,
+    hide: () => { frame.visible = false; render() },
     order: () => order,
     row: id => rows.get(prefix(id)).tree,
     handle: id => elements(rows.get(prefix(id)).tree, 'View').find(view => view.props.accessibilityRole === 'adjustable')?.props,
@@ -108,6 +111,47 @@ test('cancelled drags and taps leave source priorities untouched', t => {
   drag.onPanResponderRelease(null, { dy: 0 })
   assert.equal(h.writes.length, 0)
 })
+
+test('a checkbox action before rerender preserves the just-saved drag order', t => {
+  const h = harness()
+  t.after(h.close)
+  const drag = h.handle('A')
+  drag.onPanResponderGrant()
+  drag.onPanResponderRelease(null, { dy: 141 })
+  elements(h.row('D'), 'CheckBox')[0].props.onChange(true)
+  assert.deepEqual(h.writes.at(-1), ['B', 'C', 'A', 'D'].map(prefix))
+})
+
+test('rapid checkbox changes use the latest selection and a stale drag cannot undo them', t => {
+  const h = harness()
+  t.after(h.close)
+  const drag = h.handle('A')
+  drag.onPanResponderGrant()
+  elements(h.row('D'), 'CheckBox')[0].props.onChange(true)
+  elements(h.row('B'), 'CheckBox')[0].props.onChange(false)
+  assert.deepEqual(h.writes.at(-1), ['A', 'C', 'D'].map(prefix))
+  drag.onPanResponderRelease(null, { dy: 141 })
+  assert.equal(h.writes.length, 2, 'the old layout must not override a newer source selection')
+})
+
+for (const interrupt of ['selection', 'hide']) {
+  test(`a ${interrupt} change cancels dragging and ignores later move/release events`, t => {
+    const h = harness()
+    t.after(h.close)
+    const drag = h.handle('A')
+    drag.onPanResponderGrant()
+    drag.onPanResponderMove(null, { dy: 141 })
+    if (interrupt === 'selection') {
+      elements(h.row('D'), 'CheckBox')[0].props.onChange(true)
+      h.render()
+    } else h.hide()
+    const writes = h.writes.length
+    drag.onPanResponderMove(null, { dy: 300 })
+    drag.onPanResponderRelease(null, { dy: 300 })
+    assert.equal(h.writes.length, writes)
+    assert.equal(h.row('A').props.style.transform[0].translateY.value, 0)
+  })
+}
 
 test('dragging beyond either edge stays within selected sources and a single source cannot be dragged', t => {
   for (const [source, dy, expected] of [['A', 1000, ['B', 'C', 'A']], ['C', -1000, ['C', 'A', 'B']]]) {
