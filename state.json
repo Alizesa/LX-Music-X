@@ -131,9 +131,5 @@
   "releaseLock:v1.9.3-next.3": {
     "owner": "43377570260/1/35b2a7ee-453a-43c9-87d5-fbcb816e9302",
     "expiresAt": 1794551177404
-  },
-  "promotionLock": {
-    "owner": "43377570260/1/35b2a7ee-453a-43c9-87d5-fbcb816e9302",
-    "expiresAt": 1794551194032
   }
 }
