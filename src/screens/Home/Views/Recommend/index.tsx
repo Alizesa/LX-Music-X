@@ -9,10 +9,10 @@ import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMu
 import { useTheme } from '@/store/theme/hook'
 import { useTabletLayout } from '@/utils/hooks'
 import { createStyle, toast } from '@/utils/tools'
-import { LIST_IDS, QQ_DAILY_RECOMMEND_ID, QQ_HEART_RADAR_PLAYLIST_ID } from '@/config/constant'
+import { LIST_IDS, QQ_HEART_RADAR_PLAYLIST_ID } from '@/config/constant'
 import { setHomePagerHorizontalScroll } from '@/core/homePagerScroll'
 import { setTempList } from '@/core/list'
-import { playList } from '@/core/player/player'
+import { createPlaySelection, playList } from '@/core/player/player'
 import {
   getQQMusicSession,
   getQQMusicSimilarSongs,
@@ -128,6 +128,8 @@ export default () => {
   const [session, setSession] = useState<QQMusicSession | null>(null)
   const mounted = useRef(true)
   const cacheRevisions = useRef({ daily: 0, guess: 0, radar: 0, playlists: 0 })
+  const guessRequestRevision = useRef(0)
+  const guessPlayRevision = useRef(0)
   const [daily, setDaily] = useState<Songs>([])
   const [guess, setGuess] = useState<Songs>([])
   const [radar, setRadar] = useState<Songs>([])
@@ -234,7 +236,11 @@ export default () => {
   const fetchDaily = useCallback(async() => applyResult('daily', refreshQQMusicHomeDaily(session), setDaily), [session, applyResult])
 
   /** 拉一份新的猜你喜欢：铺上、落盘、作废上次那批的续播存档、记下「今天刷过了」 */
-  const fetchGuess = useCallback(async() => applyResult('guess', refreshQQMusicHomeGuess(session), setGuess), [session, applyResult])
+  const fetchGuess = useCallback(async() => {
+    // 刷新一开始就作废尚未完成的旧卡片点播，不能等新批次返回后才阻止恢复。
+    guessRequestRevision.current++
+    return applyResult('guess', refreshQQMusicHomeGuess(session), setGuess)
+  }, [session, applyResult])
 
   /** 拉一份新的红心雷达：铺上、落盘、记下「今天刷过了」 */
   const fetchRadar = useCallback(async() => applyResult('radar', refreshQQMusicHomeRadar(session), setRadar), [session, applyResult])
@@ -400,11 +406,13 @@ export default () => {
 
   // 每日推荐整表播放。用 30 首的独立列表，不挂电台续播那套
   const playDaily = useCallback(async() => {
+    const selection = createPlaySelection()
+    const isCurrentPlay = () => selection() && isCurrent()
     const songs = await ensureDailySongs()
-    if (!songs) return
+    if (!songs || !isCurrentPlay()) return
     // 接着上次那首放（见 core/qqMusicDailyPosition）。列表换了/歌没了会自动回到开头
-    await playQQMusicDailyPlaylist(songs)
-  }, [ensureDailySongs])
+    await playQQMusicDailyPlaylist(songs, isCurrentPlay)
+  }, [ensureDailySongs, isCurrent])
 
   // 卡片本身进歌单页（头图 + 那 30 首），播放交给右下角的按钮
   const openDaily = useCallback(async() => {
@@ -425,33 +433,46 @@ export default () => {
       loginRef.current?.show()
       return
     }
+    const selection = createPlaySelection()
+    const request = ++guessPlayRevision.current
+    let batchRevision = guessRequestRevision.current
+    const isCurrentPlay = () => selection() && isCurrent() && batchRevision === guessRequestRevision.current
     setPlaying(true)
     try {
-      if (await continueRecommendQueue(guess)) return
+      if (await continueRecommendQueue(guess, isCurrentPlay) !== false || !isCurrentPlay()) return
       // 抓不到一批（比如启动时的自动刷新失败了）：走同一条拉取路径，
       // 这样「今天刷过了」也会记上，下次冷启动不会再为同一批多请求一次
-      const songs = guess.length ? guess : await fetchGuess()
-      await setTempList(QQ_DAILY_RECOMMEND_ID, songs)
+      let songs = guess
+      if (!songs.length) {
+        const loading = fetchGuess()
+        // 这是本次点播自己请求的新批次，继续沿用同一个播放选择。
+        batchRevision = guessRequestRevision.current
+        songs = await loading
+      }
+      if (!isCurrentPlay()) return
       initQQMusicRecommendAutoRefresh()
-      await startRecommendQueue(songs, 0)
+      await startRecommendQueue(songs, 0, undefined, isCurrentPlay)
     } catch (error: unknown) {
-      if (isCurrent()) toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      if (isCurrentPlay()) toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
-      if (isCurrent()) setPlaying(false)
+      if (isCurrent() && request === guessPlayRevision.current) setPlaying(false)
     }
   }, [fetchGuess, guess, loggedIn, t, isCurrent])
 
   const playSongs = useCallback(async(listId: string, songs: Songs, index: number) => {
+    const isCurrentPlay = createPlaySelection()
     await setTempList(listId, [...songs])
-    void playList(LIST_IDS.TEMP, index)
+    if (isCurrentPlay()) await playList(LIST_IDS.TEMP, index, isCurrentPlay)
   }, [])
 
   // 红心雷达整表播放。和每日推荐一样接着上次那首放，不挂电台续播
   const playRadar = useCallback(async() => {
+    const selection = createPlaySelection()
+    const isCurrentPlay = () => selection() && isCurrent()
     const songs = await ensureRadarSongs()
-    if (!songs) return
-    await playQQMusicHeartRadarPlaylist(songs)
-  }, [ensureRadarSongs])
+    if (!songs || !isCurrentPlay()) return
+    await playQQMusicHeartRadarPlaylist(songs, isCurrentPlay)
+  }, [ensureRadarSongs, isCurrent])
 
   // 横幅进歌单页（头图 + 那批红心雷达歌曲），播放交给右下角的按钮
   const openRadar = useCallback(async() => {

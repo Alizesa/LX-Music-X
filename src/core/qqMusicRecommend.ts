@@ -4,7 +4,7 @@ import listState from '@/store/list/state'
 import playerState from '@/store/player/state'
 import { LIST_IDS, QQ_DAILY_RECOMMEND_ID, QQ_DAILY_RECOMMEND_QUEUE_SOURCE } from '@/config/constant'
 import { dropRecommendSession, getRecommendSession, isRecommendQueue } from '@/core/qqMusicRecommendSession'
-import { play, playList } from '@/core/player/player'
+import { createPlaySelection, play, playList } from '@/core/player/player'
 import { clearPlayedList } from '@/core/player/playedList'
 
 type CurrentPlayMusicInfo = typeof playerState['playMusicInfo']
@@ -113,14 +113,17 @@ export const initQQMusicRecommendAutoRefresh = () => {
  * 用一批推荐重建播放队列，并从 index 开始播。
  * 队列打的是推荐专属来源标记，续播和存档都靠它认。
  */
-export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0, sourceFirstMusicId = songs[0]?.id) => {
-  if (!songs.length) return
+export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0, sourceFirstMusicId = songs[0]?.id, isCurrent = createPlaySelection()) => {
+  if (!songs.length || !isCurrent()) return false
   // 随机模式下 playNext 会先走已播列表，而那份记录不区分列表（队列播放的 listId 都是
   // play_queue），换一批新队列后可能先蹦出一首上一个列表的歌。重启恢复时它本来就是空的，
   // 这里也清掉，两条路径保持一致。
   clearPlayedList()
-  await replacePlayQueue(QQ_DAILY_RECOMMEND_QUEUE_SOURCE, songs, sourceFirstMusicId)
-  await playList(LIST_IDS.PLAY_QUEUE, Math.max(0, Math.min(index, songs.length - 1)))
+  const saved = replacePlayQueue(QQ_DAILY_RECOMMEND_QUEUE_SOURCE, songs, sourceFirstMusicId)
+  // replace 同步更新内存队列；与普通点播一样先确认播放选择，再等待落盘。
+  // 不能在保存结束后用旧下标对届时的新队列再次发起点播。
+  await Promise.all([saved, playList(LIST_IDS.PLAY_QUEUE, Math.max(0, Math.min(index, songs.length - 1)), isCurrent)])
+  return true
 }
 
 /**
@@ -129,9 +132,11 @@ export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0
  *    （重建会把自动续上的批次丢回那 20 首，这正是「又从第一首开始」的原因）；
  * 2. 切走时留下的当天存档还在，且对应当前这批推荐 → 还原队列和位置；
  * 3. 都没有 → false，调用方按原来的「读缓存/联网 + 从头播」走。
+ * 读取期间选择已失效 → null，调用方结束本次操作，不再创建推荐队列。
  * @param currentSongs 当前这份推荐（页面上缓存的那批），用来判断队列是不是同一批
  */
-export const continueRecommendQueue = async(currentSongs: LX.Player.PlayMusic[]): Promise<boolean> => {
+export const continueRecommendQueue = async(currentSongs: LX.Player.PlayMusic[], isCurrent = createPlaySelection()): Promise<boolean | null> => {
+  if (!isCurrent()) return null
   if (isRecommendQueue()) {
     // 比较建队列时的首曲，当前队首可能已因裁剪/删除/排序发生变化。
     // 点过「刷新」之后存档已经丢了，这时应该换新的一批，而不是继续放旧的。
@@ -140,23 +145,24 @@ export const continueRecommendQueue = async(currentSongs: LX.Player.PlayMusic[])
       if (!playerState.isPlay) {
         // 暂停着就接着放；已经停掉（playMusicInfo 被清了）就按上次的位置重新起播
         if (playerState.playMusicInfo.musicInfo) play()
-        else await playList(LIST_IDS.PLAY_QUEUE, Math.max(0, playerState.playInfo.playerPlayIndex))
+        else await playList(LIST_IDS.PLAY_QUEUE, Math.max(0, playerState.playInfo.playerPlayIndex), isCurrent)
       }
       return true
     }
     return false
   }
   const session = await getRecommendSession()
+  if (!isCurrent()) return null
   if (!session) return false
   // 卡片刷新后，尚未切走的旧队列仍可能被再次存档。
   // savedAt 只反映切走时间；和当前队列一样，恢复存档也要核对原始批次。
   if (currentSongs.length && session.sourceFirstMusicId !== currentSongs[0]?.id) {
-    await dropRecommendSession()
-    return false
+    await dropRecommendSession(session)
+    return isCurrent() ? false : null
   }
-  await startRecommendQueue(session.songs, session.index, session.sourceFirstMusicId)
+  if (!await startRecommendQueue(session.songs, session.index, session.sourceFirstMusicId, isCurrent)) return null
   // 已经恢复成播放队列，存档的内存/磁盘副本可以放掉
-  await dropRecommendSession()
+  await dropRecommendSession(session)
   return true
 }
 

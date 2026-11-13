@@ -42,6 +42,14 @@ let selectionGeneration = 0
 let listSelectionGeneration = 0
 export const isPlayRequested = () => playRequested
 
+/** 在异步读列表/存档之前登记点播；后来的选择、暂停或停止会使这次操作失效。 */
+export const createPlaySelection = () => {
+  const requestId = ++listSelectionGeneration
+  const generation = selectionGeneration
+  const playback = playerState.playMusicInfo
+  return () => requestId === listSelectionGeneration && generation === selectionGeneration && playback === playerState.playMusicInfo
+}
+
 const createDelayNextTimeout = (delay: number) => {
   let timeout: number | null
   const clearDelayNextTimeout = () => {
@@ -420,13 +428,15 @@ const handlePlay = async() => {
  * @param id 歌曲id
  */
 export const playListById = async(listId: string, id: string) => {
+  const isCurrentSelection = createPlaySelection()
   // LOCAL 是延迟加载的：先确保整表在内存里，否则 getList 会拿到空数组
   const isLocal = listId === LIST_IDS.LOCAL
   if (isLocal) await retainLocalList('player:playListById')
   try {
+    if (!isCurrentSelection()) return
     const index = getList(listId).findIndex(musicInfo => musicInfo.id == id)
     if (index < 0) return
-    await playList(listId, index)
+    await playList(listId, index, isCurrentSelection)
   } finally {
     if (isLocal) releaseLocalList('player:playListById')
   }
@@ -437,11 +447,7 @@ export const playListById = async(listId: string, id: string) => {
  * @param listId 列表id
  * @param index 播放的歌曲位置
  */
-export const playList = async(listId: string, index: number) => {
-  const requestId = ++listSelectionGeneration
-  const generation = selectionGeneration
-  const playback = playerState.playMusicInfo
-  const isCurrentSelection = () => requestId === listSelectionGeneration && generation === selectionGeneration && playback === playerState.playMusicInfo
+export const playList = async(listId: string, index: number, isCurrentSelection = createPlaySelection()) => {
   // LOCAL 是延迟加载的：从本地列表起播前必须先把整表读进来。
   // 建完队列后 isPlayQueueFromList(LOCAL) 会把列表钉住，这里只管操作期间的占用
   const isLocal = listId === LIST_IDS.LOCAL
@@ -649,6 +655,7 @@ export const playTempPlayMusic = async(index: number): Promise<void> => {
  * @returns
  */
 export const playNext = async(isAutoToggle = false): Promise<void> => {
+  listSelectionGeneration++
   if (playerState.tempPlayList.length) { // 如果稍后播放列表存在歌曲则直接播放改列表的歌曲
     await playTempPlayMusic(0)
     return
@@ -748,6 +755,7 @@ export const playNext = async(isAutoToggle = false): Promise<void> => {
  * 上一曲
  */
 export const playPrev = async(isAutoToggle = false): Promise<void> => {
+  listSelectionGeneration++
   const playMusicInfo = playerState.playMusicInfo
   if (playMusicInfo.musicInfo == null) return handleToggleStop()
   const playInfo = playerState.playInfo
@@ -837,6 +845,7 @@ export const playPrev = async(isAutoToggle = false): Promise<void> => {
  * 恢复播放
  */
 export const play = () => {
+  listSelectionGeneration++
   playbackLog('player.play_requested', () => ({ playId: playbackLogId(playerState.playMusicInfo, 'play'), musicId: playerState.playMusicInfo.musicInfo?.id }))
   if (playerState.playMusicInfo.musicInfo == null) return
   playRequested = true
@@ -856,6 +865,7 @@ export const play = () => {
  * 暂停播放
  */
 export const pause = async() => {
+  listSelectionGeneration++
   playbackLog('player.pause_requested', () => ({ playId: playbackLogId(playerState.playMusicInfo, 'play'), isPlay: playerState.isPlay }))
   const notify = playRequested || playerState.isPlay
   playRequested = false

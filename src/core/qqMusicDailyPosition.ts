@@ -7,7 +7,7 @@ import {
   saveQQMusicHeartRadarPosition,
 } from '@/utils/data'
 import { getListMusics, setTempList } from '@/core/list'
-import { playList } from '@/core/player/player'
+import { createPlaySelection, playList } from '@/core/player/player'
 import { isPlayQueueFromList } from '@/core/player/playQueue'
 import listState from '@/store/list/state'
 import playerState from '@/store/player/state'
@@ -82,11 +82,13 @@ const createPlaylistPosition = (listId: string, store: PositionStore, logLabel: 
    * 从记下的位置开始播一批歌：先定位，再把这批灌进临时列表（顺带打上来源标记，
    * 位置记忆靠它认队列），最后起播。首页播放钮和歌单页的「播放」都走这里。
    */
-  const play = async(songs: LX.Music.MusicInfoOnline[]) => {
-    if (!songs.length) return
+  const play = async(songs: LX.Music.MusicInfoOnline[], isCurrent = createPlaySelection()) => {
+    if (!songs.length || !isCurrent()) return
     const startIndex = await resolveIndex(songs)
+    if (!isCurrent()) return
     await setTempList(listId, [...songs])
-    void playList(LIST_IDS.TEMP, startIndex)
+    if (!isCurrent()) return
+    await playList(LIST_IDS.TEMP, startIndex, isCurrent)
   }
 
   return { init, resolveIndex, play }

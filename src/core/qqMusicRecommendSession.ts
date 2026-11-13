@@ -105,8 +105,9 @@ export const getRecommendSession = async(): Promise<LX.QQMusic.RecommendSession 
   }
 }
 
-/** 丢掉存档。手动点「刷新」拿到新一批推荐时用，跨天由 getRecommendSession 自己处理 */
-export const dropRecommendSession = async() => {
+/** 无参数时清空；恢复完成时传入原存档，只删除自身快照，保留切走后新保存的位置。 */
+export const dropRecommendSession = async(expected?: LX.QQMusic.RecommendSession) => {
+  if (expected && session !== expected) return
   revision++
   session = null
   loaded = true

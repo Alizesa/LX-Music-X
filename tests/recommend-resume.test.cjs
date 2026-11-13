@@ -53,15 +53,22 @@ const harness = () => {
     '@/utils/data': data,
     '@/config/constant': constants,
   }, globals)
+  let selectionRevision = 0
   const player = {
-    playList: async(listId, index) => {
+    createPlaySelection: () => {
+      const revision = ++selectionRevision
+      return () => revision === selectionRevision
+    },
+    playList: async(listId, index, isCurrent = () => true) => {
+      if (!isCurrent()) return
+      selectionRevision++
       assert.equal(listId, constants.LIST_IDS.PLAY_QUEUE)
       state.playInfo = { playerListId: listId, playerPlayIndex: index, playIndex: index }
       state.playMusicInfo = { musicInfo: queue.getPlayQueue()[index].musicInfo, isTempPlay: false }
       state.isPlay = true
       played.push(state.playMusicInfo.musicInfo.id)
     },
-    play: () => { state.isPlay = true },
+    play: () => { selectionRevision++; state.isPlay = true },
   }
   const account = { cookie: 'fixture-cookie' }
   const qq = {

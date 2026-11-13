@@ -3,16 +3,19 @@ const { test } = require('node:test')
 const { EventEmitter } = require('node:events')
 const { load, deferred, flush } = require('./helpers/load.cjs')
 const { jsx, hookHost, elements } = require('./helpers/react.cjs')
+const { harness: playbackHarness, constants } = require('./helpers/playback.cjs')
 
 const songs = name => [{ id: name, source: 'tx', name, singer: 'Artist', meta: { picUrl: name + '-cover' } }]
 const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = true) => {
-  const host = hookHost(), frame = host.frame(), events = new EventEmitter()
+  const host = hookHost(); const frame = host.frame(); const events = new EventEmitter()
   let session = { cookie: 'A', generation: 1, user: null }
   let tree
   const caches = new Map([[1, { daily: songs('cached-A') }]])
   const replies = new Map()
   const toasts = []
   const pagerCommands = []
+  const player = {}; const recommend = {}; const list = {}; const dailyPosition = {}
+  const home = { refreshQQMusicHomeDaily: async owner => replies.get(owner.generation) ?? songs('fresh-' + owner.cookie) }
   const cache = key => caches.get(session.generation)?.[key] ?? (key === 'playlists' ? null : [])
   class SessionExpired extends Error {}
   const account = {
@@ -25,20 +28,32 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
     react: host.react,
     'react/jsx-runtime': { jsx, jsxs: jsx },
     'react-native': { View: 'View', ScrollView: 'ScrollView', RefreshControl: 'RefreshControl', TouchableOpacity: 'TouchableOpacity' },
-    '@/components/common/Text': {}, '@/components/common/Image': {}, '@/components/common/ImageBackground': {},
+    '@/components/common/Text': {},
+    '@/components/common/Image': {},
+    '@/components/common/ImageBackground': {},
     '@/components/HorizontalScrollHost': { default: nativeHost ? 'HorizontalScrollHost' : 'View', hasNativeHorizontalScrollHost: nativeHost },
-    '@/components/common/IconAction': {}, '@/components/QQMusicLoginModal': {},
+    '@/components/common/IconAction': {},
+    '@/components/QQMusicLoginModal': {},
     '@/store/theme/hook': { useTheme: () => ({}) },
     '@/utils/hooks': { useTabletLayout: () => layout },
     '@/utils/tools': { createStyle: value => value, toast: value => toasts.push(value) },
-    '@/config/constant': {}, '@/core/homePagerScroll': { setHomePagerHorizontalScroll: active => pagerCommands.push(active) },
-    '@/core/list': {}, '@/core/player/player': {}, '@/core/qqMusic': account,
-    '@/core/qqMusicHome': { refreshQQMusicHomeDaily: async owner => replies.get(owner.generation) ?? songs('fresh-' + owner.cookie) },
-    '@/core/qqMusicRecommend': {}, '@/core/qqMusicDailyPosition': {}, '@/navigation': {}, '@/store/common/state': {},
+    '@/config/constant': {},
+    '@/core/homePagerScroll': { setHomePagerHorizontalScroll: active => pagerCommands.push(active) },
+    '@/core/list': list,
+    '@/core/player/player': player,
+    '@/core/qqMusic': account,
+    '@/core/qqMusicHome': home,
+    '@/core/qqMusicRecommend': recommend,
+    '@/core/qqMusicDailyPosition': dailyPosition,
+    '@/navigation': {},
+    '@/store/common/state': {},
     '@/utils/data': {
-      getPlayHistory: async() => [], getQQMusicRefreshDay: async() => new Date().toDateString(),
-      getQQMusicDailyPlaylistCache: async() => cache('daily'), getQQMusicDailyRecommendCache: async() => cache('guess'),
-      getQQMusicHeartRadarCache: async() => cache('radar'), getQQMusicRecommendPlaylistsCache: async() => cache('playlists'),
+      getPlayHistory: async() => [],
+      getQQMusicRefreshDay: async() => new Date().toDateString(),
+      getQQMusicDailyPlaylistCache: async() => cache('daily'),
+      getQQMusicDailyRecommendCache: async() => cache('guess'),
+      getQQMusicHeartRadarCache: async() => cache('radar'),
+      getQQMusicRecommendPlaylistsCache: async() => cache('playlists'),
     },
     '@/lang': { useI18n: () => key => key },
   }, { global: { app_event: events } }).default
@@ -46,9 +61,21 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
   const settle = async() => { await flush(); render(); await flush(); render() }
   const refreshControl = () => elements(tree, 'ScrollView')[0].props.refreshControl.props
   return {
-    account, caches, replies, events, frame, toasts, pagerCommands,
+    account,
+    caches,
+    replies,
+    events,
+    frame,
+    toasts,
+    pagerCommands,
+    player,
+    recommend,
+    home,
+    list,
+    dailyPosition,
     session: () => session,
-    render, settle,
+    render,
+    settle,
     horizontalRows: () => elements(tree, 'ScrollView').filter(node => node.props.horizontal),
     protectedRows: () => elements(tree, 'HorizontalScrollHost'),
     measure: width => { tree.props.onLayout({ nativeEvent: { layout: { width } } }); render() },
@@ -58,6 +85,10 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
     cover: () => elements(tree, 'ScrollView').find(node => node.props.horizontal).props.children[0].props.cover,
     refreshing: () => refreshControl().refreshing,
     refresh: () => refreshControl().onRefresh(),
+    playGuess: () => elements(tree, 'ScrollView').find(node => node.props.horizontal).props.children[1].props.onPress(),
+    refreshGuess: () => elements(tree, 'ScrollView').find(node => node.props.horizontal).props.children[1].props.action.props.onPress(),
+    guessPlaying: () => elements(tree, 'ScrollView').find(node => node.props.horizontal).props.children[1].props.disabled,
+    playDaily: () => elements(tree, 'ScrollView').find(node => node.props.horizontal).props.children[0].props.action.props.onPress(),
     changeAccount: cookie => {
       session = { cookie, generation: session.generation + 1, user: null }
       events.emit('qqMusicAccountUpdated')
@@ -66,8 +97,110 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
   }
 }
 
+const playbackHome = async(t, cached = true) => {
+  const playback = await playbackHarness(); const h = harness(); const started = []; const temporary = []; const fetched = []
+  t.after(h.unmount)
+  await playback.player.playList(constants.LIST_IDS.PLAY_QUEUE, 0)
+  Object.assign(h.player, playback.player)
+  h.list.setTempList = async(...args) => temporary.push(args)
+  h.recommend.continueRecommendQueue = async() => false
+  h.recommend.initQQMusicRecommendAutoRefresh = () => {}
+  h.recommend.startRecommendQueue = async(value, index, firstId, isCurrent) => {
+    assert.equal(isCurrent(), true)
+    started.push(value)
+  }
+  h.home.refreshQQMusicHomeGuess = async() => { fetched.push(true); return songs('fresh-guess') }
+  if (cached) h.caches.get(1).guess = songs('cached-guess')
+  await h.mount()
+  return { ...h, playback, started, temporary, fetched }
+}
+
+test('an obsolete recommendation result ends the card action without starting a fallback queue', async t => {
+  const h = await playbackHome(t)
+  h.recommend.continueRecommendQueue = async() => null
+  h.playGuess()
+  await h.settle()
+  assert.equal(h.started.length, 0)
+  assert.equal(h.temporary.length, 0)
+  assert.equal(h.fetched.length, 0)
+  assert.equal(h.guessPlaying(), false)
+})
+
+test('daily playback from the home card supersedes a pending recommendation restore', async t => {
+  const h = await playbackHome(t); const reading = deferred(); const daily = []
+  h.recommend.continueRecommendQueue = async(value, isCurrent) => { await reading.promise; return isCurrent() ? false : null }
+  h.dailyPosition.playQQMusicDailyPlaylist = async(value, isCurrent) => {
+    assert.equal(isCurrent(), true)
+    daily.push(value)
+  }
+  h.playGuess()
+  await h.settle()
+  h.playDaily()
+  reading.resolve()
+  await h.settle()
+  assert.equal(daily.length, 1)
+  assert.equal(h.started.length, 0)
+  assert.equal(h.fetched.length, 0)
+})
+
+test('refreshing the recommendation card invalidates an old restore before the refresh returns', async t => {
+  const h = await playbackHome(t); const reading = deferred(); const refreshing = deferred()
+  h.recommend.continueRecommendQueue = async(value, isCurrent) => { await reading.promise; return isCurrent() ? false : null }
+  h.home.refreshQQMusicHomeGuess = () => refreshing.promise
+  h.playGuess()
+  await h.settle()
+  h.refreshGuess()
+  reading.resolve()
+  await h.settle()
+  assert.equal(h.started.length, 0)
+  assert.equal(h.temporary.length, 0)
+  refreshing.resolve(songs('fresh-guess'))
+  await h.settle()
+  assert.equal(h.started.length, 0)
+})
+
+for (const superseded of [false, true]) {
+  test(`a card fetch ${superseded ? 'stops when another song is selected' : 'can start the batch requested by its own playback action'}`, async t => {
+    const h = await playbackHome(t, false); const response = deferred()
+    let requests = 0
+    h.home.refreshQQMusicHomeGuess = () => { requests++; return response.promise }
+    h.playGuess()
+    await h.settle()
+    assert.equal(requests, 1)
+    if (superseded) await h.playback.player.playList(constants.LIST_IDS.PLAY_QUEUE, 1)
+    response.resolve(songs('fresh-guess'))
+    await h.settle()
+    assert.equal(h.started.length, superseded ? 0 : 1)
+    if (!superseded) assert.equal(h.started[0][0].id, 'fresh-guess')
+    else assert.equal(h.playback.state.playMusicInfo.musicInfo.id, 'B')
+    assert.equal(h.temporary.length, 0, 'recommendation queues no longer overwrite the shared temporary playlist')
+    assert.equal(h.guessPlaying(), false)
+  })
+}
+
+test('an earlier card action cannot clear the busy state of a newer restore', async t => {
+  const h = await playbackHome(t); const requests = []
+  h.recommend.continueRecommendQueue = async() => {
+    const gate = deferred()
+    requests.push(gate)
+    await gate.promise
+    return false
+  }
+  h.playGuess()
+  h.playGuess()
+  await h.settle()
+  requests[0].resolve()
+  await h.settle()
+  assert.equal(h.guessPlaying(), true)
+  assert.equal(h.started.length, 0)
+  requests[1].resolve()
+  await h.settle()
+  assert.equal(h.guessPlaying(), false)
+  assert.equal(h.started.length, 1)
+})
+
 test('a slow playlist cache does not delay songs or overwrite a completed refresh', async t => {
-  const h = harness(), slow = deferred()
+  const h = harness(); const slow = deferred()
   t.after(h.unmount)
   h.caches.get(1).playlists = slow.promise
   await h.mount()
@@ -81,7 +214,7 @@ test('a slow playlist cache does not delay songs or overwrite a completed refres
 })
 
 test('a song cache read cannot replace a newer successful refresh', async t => {
-  const h = harness(), slow = deferred()
+  const h = harness(); const slow = deferred()
   t.after(h.unmount)
   h.caches.get(1).daily = slow.promise
   await h.mount()
@@ -94,7 +227,7 @@ test('a song cache read cannot replace a newer successful refresh', async t => {
 })
 
 test('old cache reads cannot repopulate the home screen after switching accounts', async t => {
-  const h = harness(), slow = deferred()
+  const h = harness(); const slow = deferred()
   t.after(h.unmount)
   h.caches.get(1).daily = slow.promise
   await h.mount()
@@ -108,7 +241,7 @@ test('old cache reads cannot repopulate the home screen after switching accounts
 })
 
 test('an old account refresh cannot clear the new account refresh indicator or display old songs', async t => {
-  const h = harness(), first = deferred(), second = deferred()
+  const h = harness(); const first = deferred(); const second = deferred()
   t.after(h.unmount)
   h.replies.set(1, first.promise)
   h.replies.set(2, second.promise)
@@ -132,7 +265,7 @@ test('an old account refresh cannot clear the new account refresh indicator or d
 })
 
 test('unmount invalidates an unfinished account read and removes the listener', async() => {
-  const h = harness(), session = deferred()
+  const h = harness(); const session = deferred()
   h.account.getQQMusicSession = async() => session.promise
   h.render()
   h.unmount()
@@ -207,11 +340,13 @@ test('the horizontal host uses native touch protection when installed and remain
     const module = load('src/components/HorizontalScrollHost.tsx', {
       'react-native': {
         Platform: { OS: os },
-        UIManager: { getViewManagerConfig: name => {
-          lookups++
-          assert.equal(name, 'LXHorizontalScrollHost')
-          return installed ? {} : null
-        } },
+        UIManager: {
+          getViewManagerConfig: name => {
+            lookups++
+            assert.equal(name, 'LXHorizontalScrollHost')
+            return installed ? {} : null
+          },
+        },
         View: 'View',
         requireNativeComponent: name => { registered.push(name); return 'NativeHorizontalScrollHost' },
       },
