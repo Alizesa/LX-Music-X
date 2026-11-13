@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react'
+import { memo, useState, useEffect, useMemo } from 'react'
 import { StyleSheet, View } from 'react-native'
 
 import Section from '../components/Section'
@@ -10,13 +10,23 @@ import { useI18n } from '@/lang'
 import { useVersionDownloadProgressUpdated, useVersionInfo } from '@/store/version/hook'
 import { useSettingValue } from '@/store/setting/hook'
 import Text from '@/components/common/Text'
+import DorpDownMenu from '@/components/common/DorpDownMenu'
+import { IconIonicons } from '@/components/common/Icon'
+import { useTheme } from '@/store/theme/hook'
+import { scaleSizeW } from '@/utils/pixelRatio'
 import CheckBoxItem from '../components/CheckBoxItem'
 import { updateSetting } from '@/core/common'
 import { checkUpdate, initializeVersion, setUpdateChannel, showModal } from '@/core/version'
 
 export default memo(() => {
   const t = useI18n()
+  const theme = useTheme()
   const versionInfo = useVersionInfo()
+  const channels = useMemo(() => [
+    { action: 'stable', label: t('setting_version_channel_stable') },
+    { action: 'next', label: t('setting_version_channel_next') },
+  ] as const, [t])
+  const channelLabel = channels.find(item => item.action === versionInfo.channel)!.label
   const autoCheckUpdate = useSettingValue('version.autoCheckUpdate')
   // const versionStatus = useVrsionUpdateStatus()
   const [title, setTitle] = useState('')
@@ -86,8 +96,19 @@ export default memo(() => {
       </SubTitle>
       <SubTitle title={t('setting_version_channel')}>
         <View style={styles.btn}>
-          <Button disabled={!versionInfo.initialized || versionInfo.channel === 'stable'} onPress={() => { void setUpdateChannel('stable') }}>{t('setting_version_channel_stable')}</Button>
-          <Button disabled={!versionInfo.initialized || versionInfo.channel === 'next'} onPress={() => { void setUpdateChannel('next') }}>{t('setting_version_channel_next')}</Button>
+          <DorpDownMenu
+            menus={channels}
+            activeId={versionInfo.channel}
+            disabled={!versionInfo.initialized}
+            accessibilityLabel={`${t('setting_version_channel')}: ${channelLabel}`}
+            btnStyle={{ ...styles.channelSelect, backgroundColor: theme['c-button-background'], borderColor: theme['c-border-background'] }}
+            onPress={({ action }) => { if (versionInfo.initialized) void setUpdateChannel(action) }}
+          >
+            <View style={styles.channelValue}>
+              <Text size={14} numberOfLines={1} style={styles.channelLabel} color={theme['c-button-font']}>{channelLabel}</Text>
+              <IconIonicons name="chevron-down" size={scaleSizeW(16)} color={theme['c-button-font']} />
+            </View>
+          </DorpDownMenu>
         </View>
         <Text size={13} style={styles.channelTip}>{t('setting_version_channel_tip')}</Text>
       </SubTitle>
@@ -115,6 +136,23 @@ const styles = StyleSheet.create({
   },
   channelTip: {
     marginTop: 8,
+  },
+  channelSelect: {
+    width: 160,
+    maxWidth: '100%',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 4,
+  },
+  channelValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  channelLabel: {
+    flexShrink: 1,
+    marginRight: 16,
   },
   autoCheckTip: {
     marginTop: 4,

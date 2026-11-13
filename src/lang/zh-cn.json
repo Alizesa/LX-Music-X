@@ -523,7 +523,7 @@
   ,"download_url_source":"下载从哪里取链","player_url_source":"播放优先从哪里取链","url_source_script":"音源","url_source_account":"QQ 账号"
 , "source_priority_up": "上移"
 , "source_priority_down": "下移"
-, "source_priority_tip": "勾选音源并调整顺序，播放与下一首预加载会依次尝试，失败后自动使用下一个。"
+, "source_priority_tip": "勾选音源后，拖动右侧手柄调整顺序。播放与下一首预加载会依次尝试，失败后自动使用下一个。"
 , "setting_player_preload_next": "预加载下一首"
 , "setting_player_preload_next_tip": "当前播放缓冲充足后缓存下一首，使用基本设置中的音源顺序及现有播放缓存容量。"
 , "playback_log_title": "播放与预加载诊断"
@@ -578,4 +578,5 @@
 , "setting_about_upgrade": "覆盖升级需使用本项目相同签名的安装包。上游 LX Music 安装包不能用于升级 LX Music X。"
 , "setting_about_upstream_author": "上游作者："
 , "version_check_error_details": "详细原因：\n{{message}}"
+, "source_priority_drag": "拖动排序"
 }

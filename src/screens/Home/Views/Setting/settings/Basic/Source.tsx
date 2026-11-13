@@ -1,6 +1,6 @@
-import { memo, useCallback, useMemo, useRef } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { View } from 'react-native'
+import { Animated, PanResponder, View, type LayoutRectangle } from 'react-native'
 
 import SubTitle from '../../components/SubTitle'
 import CheckBox from '@/components/common/CheckBox'
@@ -12,9 +12,7 @@ import apiSourceInfo from '@/utils/musicSdk/api-source-info'
 import { useSettingValue } from '@/store/setting/hook'
 import { useStatus, useUserApiList } from '@/store/userApi'
 import Button from '../../components/Button'
-import IconButton from '@/components/common/Button'
-import { IconIonicons } from '@/components/common/Icon'
-import { scaleSizeW } from '@/utils/pixelRatio'
+import { Icon } from '@/components/common/Icon'
 import UserApiEditModal, { type UserApiEditModalType } from './UserApiEditModal'
 import Text from '@/components/common/Text'
 import { useTheme } from '@/store/theme/hook'
@@ -26,33 +24,51 @@ const apiSourceList = apiSourceInfo.map(api => ({
   disabled: api.disabled,
 }))
 
-const useActive = (id: string) => {
-  const activeLangId = useSettingValue('common.apiSource')
-  const sourceOrder = useSettingValue('common.apiSourceOrder')
-  const isActive = useMemo(() => id.startsWith('user_api')
-    ? parseApiSourceOrder(sourceOrder, activeLangId).includes(id)
-    : activeLangId == id, [activeLangId, id, sourceOrder])
-  return isActive
-}
-
-const Item = ({ id, name, desc, statusLabel, change, priority = -1, total = 0, move }: {
+const Item = memo(({ id, name, desc, statusLabel, active, change, priority = -1, total = 0, move, getDropIndex, onLayout }: {
   id: string
   name: string
   desc?: string
   statusLabel?: string
+  active: boolean
   change: (id: string) => void
   priority?: number
   total?: number
-  move?: (id: string, offset: number) => void
+  move?: (id: string, index: number) => void
+  getDropIndex?: (id: string, distance: number) => number
+  onLayout?: (id: string, layout: LayoutRectangle | null) => void
 }) => {
-  const isActive = useActive(id)
   const theme = useTheme()
   const t = useI18n()
-  // const [toggleCheckBox, setToggleCheckBox] = useState(false)
+  const translateY = useRef(new Animated.Value(0)).current
+  const [dragging, setDragging] = useState(false)
+  const canDrag = priority >= 0 && total > 1
+  const responder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => canDrag,
+    onMoveShouldSetPanResponder: (_, gesture) => canDrag && Math.abs(gesture.dy) > 3,
+    onPanResponderGrant: () => { setDragging(true) },
+    onPanResponderMove: Animated.event([null, { dy: translateY }], { useNativeDriver: false }),
+    onPanResponderRelease: (_, gesture) => {
+      translateY.setValue(0)
+      setDragging(false)
+      const target = getDropIndex?.(id, gesture.dy) ?? priority
+      if (target >= 0 && target !== priority) move?.(id, target)
+    },
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderTerminate: () => {
+      translateY.setValue(0)
+      setDragging(false)
+    },
+  }), [canDrag, getDropIndex, id, move, priority, translateY])
+
+  useEffect(() => () => { onLayout?.(id, null) }, [id, onLayout])
+
   return (
-    <View style={styles.sourceRow}>
+    <Animated.View
+      onLayout={event => { onLayout?.(id, event.nativeEvent.layout) }}
+      style={{ ...styles.sourceRow, transform: [{ translateY }], zIndex: dragging ? 1 : 0, backgroundColor: dragging ? theme['c-primary-background-hover'] : 'transparent' }}
+    >
       <View style={styles.sourceInfo}>
-        <CheckBox marginBottom={5} check={isActive} onChange={() => { change(id) }}>
+        <CheckBox marginBottom={5} check={active} onChange={() => { change(id) }}>
           <Text style={styles.sourceLabel}>
             {priority >= 0 ? `${priority + 1}. ` : ''}{name}
             {
@@ -64,19 +80,25 @@ const Item = ({ id, name, desc, statusLabel, change, priority = -1, total = 0, m
           </Text>
         </CheckBox>
       </View>
-      {priority >= 0 && move ? <View style={styles.sourceActions}>
-        <IconButton style={styles.sourceAction} disabled={priority == 0} onPress={() => { move(id, -1) }}
-          accessibilityRole="button" accessibilityLabel={t('source_priority_up')} accessibilityState={{ disabled: priority == 0 }}>
-          <IconIonicons name="arrow-up" size={scaleSizeW(18)} color={theme['c-font-label']} />
-        </IconButton>
-        <IconButton style={styles.sourceAction} disabled={priority == total - 1} onPress={() => { move(id, 1) }}
-          accessibilityRole="button" accessibilityLabel={t('source_priority_down')} accessibilityState={{ disabled: priority == total - 1 }}>
-          <IconIonicons name="arrow-down" size={scaleSizeW(18)} color={theme['c-font-label']} />
-        </IconButton>
+      {priority >= 0 && move ? <View
+        style={{ ...styles.sourceHandle, opacity: canDrag ? 1 : 0.3 }}
+        {...responder.panHandlers}
+        accessible
+        accessibilityRole="adjustable"
+        accessibilityLabel={`${t('source_priority_drag')} ${name}`}
+        accessibilityState={{ disabled: !canDrag }}
+        accessibilityValue={{ min: 1, max: total, now: priority + 1 }}
+        accessibilityActions={canDrag ? [{ name: 'decrement', label: t('source_priority_up') }, { name: 'increment', label: t('source_priority_down') }] : []}
+        onAccessibilityAction={({ nativeEvent }) => {
+          if (nativeEvent.actionName === 'decrement') move(id, priority - 1)
+          else if (nativeEvent.actionName === 'increment') move(id, priority + 1)
+        }}
+      >
+        <Icon name="menu" size={17} color={theme['c-font-label']} />
       </View> : null}
-    </View>
+    </Animated.View>
   )
-}
+})
 
 export default memo(() => {
   const t = useI18n()
@@ -91,18 +113,42 @@ export default memo(() => {
   const sourceOrderSetting = useSettingValue('common.apiSourceOrder')
   const sourceOrder = useMemo(() => parseApiSourceOrder(sourceOrderSetting, apiSourceSetting)
     .filter(id => userApiListRaw.some(api => api.id == id)), [sourceOrderSetting, apiSourceSetting, userApiListRaw])
+  const sourceOrderRef = useRef(sourceOrder)
+  sourceOrderRef.current = sourceOrder
+  const rowLayouts = useRef(new Map<string, LayoutRectangle>())
+  const handleRowLayout = useCallback((id: string, layout: LayoutRectangle | null) => {
+    if (layout) rowLayouts.current.set(id, layout)
+    else rowLayouts.current.delete(id)
+  }, [])
   const setApiSourceId = useCallback((id: string) => {
     if (!id.startsWith('user_api')) { setApiSource(id); return }
-    setApiSourceOrder(sourceOrder.includes(id) ? sourceOrder.filter(item => item != id) : [...sourceOrder, id])
-  }, [sourceOrder])
-  const moveSource = (id: string, offset: number) => {
-    const order = [...sourceOrder]
+    const order = sourceOrderRef.current
+    setApiSourceOrder(order.includes(id) ? order.filter(item => item != id) : [...order, id])
+  }, [])
+  const moveSource = useCallback((id: string, target: number) => {
+    const order = [...sourceOrderRef.current]
     const index = order.indexOf(id)
-    const target = index + offset
-    if (index < 0 || target < 0 || target >= order.length) return
-    ;[order[index], order[target]] = [order[target], order[index]]
+    if (index < 0 || target < 0 || target >= order.length || target === index) return
+    order.splice(index, 1)
+    order.splice(target, 0, id)
     setApiSourceOrder(order)
-  }
+  }, [])
+  const getDropIndex = useCallback((id: string, distance: number) => {
+    const order = sourceOrderRef.current
+    const row = rowLayouts.current.get(id)
+    let target = order.indexOf(id)
+    if (!row || target < 0 || !Number.isFinite(distance)) return target
+    const center = row.y + row.height / 2 + distance
+    let nearest = Infinity
+    // 音源名称、版本和状态可能换行，按实际行位置落下，不假设所有行等高。
+    order.forEach((sourceId, index) => {
+      const layout = rowLayouts.current.get(sourceId)
+      if (!layout) return
+      const delta = Math.abs(center - layout.y - layout.height / 2)
+      if (delta < nearest) { nearest = delta; target = index }
+    })
+    return target
+  }, [])
   const userApiList = useMemo(() => {
     const getApiStatus = () => {
       let status
@@ -138,11 +184,11 @@ export default memo(() => {
       <Text size={12}>{t('source_priority_tip')}</Text>
       <View style={styles.list}>
         {
-          list.map(({ id, name }) => <Item name={name} id={id} key={id} change={setApiSourceId} />)
+          list.map(({ id, name }) => <Item name={name} id={id} key={id} active={apiSourceSetting === id} change={setApiSourceId} />)
         }
         {
-          userApiList.map(({ id, name, desc, statusLabel }) => <Item name={name} desc={desc} statusLabel={statusLabel} id={id} key={id} change={setApiSourceId}
-            priority={sourceOrder.indexOf(id)} total={sourceOrder.length} move={moveSource} />)
+          userApiList.map(({ id, name, desc, statusLabel }) => <Item name={name} desc={desc} statusLabel={statusLabel} id={id} key={id} active={sourceOrder.includes(id)} change={setApiSourceId}
+            priority={sourceOrder.indexOf(id)} total={sourceOrder.length} move={moveSource} getDropIndex={getDropIndex} onLayout={handleRowLayout} />)
         }
       </View>
       <View style={styles.btn}>
@@ -154,16 +200,14 @@ export default memo(() => {
 })
 
 const styles = createStyle({
-  sourceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  sourceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, minHeight: 44, borderRadius: 4 },
   sourceInfo: { flex: 1 },
-  sourceActions: { flexShrink: 0, marginLeft: 4 },
-  sourceAction: {
-    width: 30,
-    height: 30,
-    borderRadius: scaleSizeW(15),
+  sourceHandle: {
+    width: 42,
+    alignSelf: 'stretch',
+    flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
   },
   list: {
     flexGrow: 0,

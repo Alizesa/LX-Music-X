@@ -523,7 +523,7 @@
   ,"download_url_source":"Resolve download URL from","player_url_source":"Prefer URL from","url_source_script":"Custom source","url_source_account":"QQ account"
 , "source_priority_up": "Move up"
 , "source_priority_down": "Move down"
-, "source_priority_tip": "Select and order sources for playback and next-track preloading. If one fails, the next is tried."
+, "source_priority_tip": "Select sources, then drag the handles on the right to reorder them. Playback and next-track preloading try them in order, moving on if one fails."
 , "setting_player_preload_next": "Preload the next track"
 , "setting_player_preload_next_tip": "Cache the next track when playback has enough buffer, using the source order in Basic settings and the existing playback cache limit."
 , "playback_log_title": "Playback and preload diagnostics"
@@ -578,4 +578,5 @@
 , "setting_about_upgrade": "Use an APK from this project with the same signing certificate to upgrade your installation. Upstream LX Music APKs cannot upgrade LX Music X."
 , "setting_about_upstream_author": "Upstream author: "
 , "version_check_error_details": "Details:\n{{message}}"
+, "source_priority_drag": "Drag to reorder"
 }

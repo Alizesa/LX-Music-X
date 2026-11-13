@@ -128,11 +128,22 @@ test('turning automatic checking off in the real settings component persists acr
     react: host.react, 'react/jsx-runtime': { jsx, jsxs: jsx }, 'react-native': { View: 'View', StyleSheet: { create: value => value } },
     '../components/Section': { default: 'Section' }, '../components/SubTitle': { default: 'SubTitle' }, '../components/Button': { default: 'Button' },
     '../components/CheckBoxItem': { default: 'CheckBox' }, '@/components/common/Text': { default: 'Text' },
+    '@/components/common/DorpDownMenu': { default: 'Dropdown' }, '@/components/common/Icon': { IconIonicons: 'Icon' },
+    '@/store/theme/hook': { useTheme: () => ({}) }, '@/utils/pixelRatio': { scaleSizeW: value => value },
     '@/utils': { sizeFormate: String }, '@/lang': { useI18n: () => key => messages[key] },
     '@/store/version/hook': { useVersionInfo: () => app.versionState.versionInfo, useVersionDownloadProgressUpdated: () => app.versionState.progress },
     '@/store/setting/hook': { useSettingValue: key => app.settingState.setting[key] }, '@/core/common': { updateSetting: app.changeSetting }, '@/core/version': app.core,
   }).default
   let tree = host.render(frame, Version)
+  assert.equal(elements(tree, 'Dropdown')[0].props.activeId, 'stable')
+  for (const channel of ['next', 'stable']) {
+    const menu = elements(tree, 'Dropdown')[0]
+    menu.props.onPress(menu.props.menus.find(item => item.action === channel))
+    await flush()
+    tree = host.render(frame, Version)
+    assert.equal(elements(tree, 'Dropdown')[0].props.activeId, channel)
+    assert.equal(app.disk.get('updatePreferences').channel, channel)
+  }
   assert.equal(elements(tree, 'CheckBox')[0].props.check, true)
   elements(tree, 'CheckBox')[0].props.onChange(false)
   tree = host.render(frame, Version)
