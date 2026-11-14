@@ -114,8 +114,9 @@ const getBatchKey = (songs: LX.Player.PlayMusic[]) => JSON.stringify(songs.map(s
 const matchesBatch = (batchKey: string | undefined, firstId: string | undefined, songs: LX.Player.PlayMusic[], currentSongs: LX.Player.PlayMusic[]) => {
   if (!currentSongs.length) return true
   if (batchKey !== undefined) return batchKey === getBatchKey(currentSongs)
-  // 旧数据只能在原始批次仍完整保留于队首时证明匹配，不能仅凭首歌恢复。
-  return firstId === currentSongs[0].id && songs.length >= currentSongs.length &&
+  // 旧数据没有原始批次长度；只有整份队列与卡片一致时才可迁移，
+  // 不能把较短的新卡片当作旧长队列的原始批次。
+  return firstId === currentSongs[0].id && songs.length === currentSongs.length &&
     currentSongs.every((song, index) => song.id === songs[index].id)
 }
 

@@ -226,11 +226,35 @@ test('an archive without a batch identifier cannot override a populated current 
   assert.equal(h.disk.session, null)
 })
 
+for (const [storedCount, cardCount] of [[20, 5], [20, 19], [21, 20]]) {
+  for (const archived of [false, true]) {
+    test(`a ${cardCount}-song prefix cannot identify an unknown ${storedCount}-song ${archived ? 'archive' : 'queue'}`, async() => {
+      const h = harness()
+      const original = Array.from({ length: storedCount }, (_, index) => song('legacy-' + index))
+      const fresh = original.slice(0, cardCount)
+      await h.queue.replacePlayQueue(constants.QQ_DAILY_RECOMMEND_QUEUE_SOURCE, original)
+      h.state.playInfo.playerPlayIndex = h.state.playInfo.playIndex = storedCount - 1
+      h.state.playMusicInfo = { musicInfo: original.at(-1), isTempPlay: false }
+      h.state.isPlay = true
+      await h.refreshCard(fresh)
+      if (archived) await h.switchToDaily()
+      const played = h.played.length
+      assert.equal(await h.recommend.continueRecommendQueue(h.disk.card), false)
+      assert.equal(h.played.length, played)
+      assert.equal(h.queue.getPlayQueueSourceBatchKey(), undefined, 'an unverifiable prefix must not become a durable batch identity')
+      await h.recommend.startRecommendQueue(h.disk.card)
+      assert.deepEqual(h.queueIds(), fresh.map(item => item.id))
+      assert.equal(h.played.at(-1), fresh[0].id)
+      assert.equal(h.requests(), 1)
+    })
+  }
+}
+
 for (const archived of [false, true]) {
   for (const matches of [false, true]) {
-    test(`a legacy ${archived ? 'archive' : 'queue'} ${matches ? 'migrates an intact original batch' : 'rejects a different batch with the same first song'}`, async() => {
+    test(`a legacy ${archived ? 'archive' : 'queue'} ${matches ? 'migrates an exactly matching complete list' : 'rejects a different batch with the same first song'}`, async() => {
       const original = songs('legacy')
-      const storedSongs = [...original, song('continued')]
+      const storedSongs = original
       const fresh = matches ? original : [original[0], ...songs('fresh').slice(1)]
       const session = { songs: storedSongs, sourceFirstMusicId: original[0].id, index: 3, savedAt: new Date(2026, 10, 12, 12).getTime() }
       const h = harness(archived ? { session } : {})
@@ -250,7 +274,10 @@ test('restoring a legacy archive before the card loads does not mislabel the exp
   const h = harness({ session: { songs: storedSongs, sourceFirstMusicId: original[0].id, index: 4, savedAt: new Date(2026, 10, 12, 12).getTime() } })
   assert.equal(await h.recommend.continueRecommendQueue([]), true)
   assert.equal(h.disk.queue[0].sourceBatchKey, undefined)
-  assert.equal(await h.recommend.continueRecommendQueue(original), true)
-  assert.equal(h.disk.queue[0].sourceBatchKey, JSON.stringify(original.map(item => item.id)))
+  assert.equal(await h.recommend.continueRecommendQueue(original), false)
+  assert.equal(h.disk.queue[0].sourceBatchKey, undefined)
   assert.equal(h.played.at(-1), original[4].id)
+  await h.recommend.startRecommendQueue(original)
+  assert.equal(h.disk.queue[0].sourceBatchKey, JSON.stringify(original.map(item => item.id)))
+  assert.deepEqual(h.queueIds(), original.map(item => item.id))
 })
