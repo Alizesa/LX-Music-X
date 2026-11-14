@@ -189,7 +189,6 @@ export const updateNowPlayingTitles = async(titles: NowPlayingTitles) => {
 
 export const resetPlay = async() => Promise.all([setPause(), setCurrentTime(0)])
 
-export const isCached = async(url: string) => TrackPlayer.isCached(url)
 export const getCacheSize = async() => TrackPlayer.getCacheSize()
 export const clearCache = async() => TrackPlayer.clearCache()
 export const migratePlayerCache = async() => {

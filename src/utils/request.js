@@ -47,8 +47,3 @@ export const httpGet = (url, options, callback) => {
   requestObj.request.then(resp => { callback(null, resp, resp.body) }).catch(err => { callback(err, null, null) })
   return requestObj.abort
 }
-
-export const checkUrl = async(url, options = {}) => {
-  const response = await fetchData(url, { method: 'head', ...options }).request
-  if (response.statusCode !== 200) throw new Error(response.statusCode)
-}

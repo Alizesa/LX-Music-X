@@ -16,7 +16,7 @@ const task = id => ({
 })
 const copy = value => JSON.parse(JSON.stringify(value))
 
-const harness = ({ active = [], history = [], unlink = async() => {}, url = async() => 'https://fixture.test/audio', enqueue, remove = async() => {}, getState = async() => null, save, data: extraData = {} } = {}) => {
+const harness = ({ active = [], history = [], unlink = async() => {}, url = async() => 'https://fixture.test/audio', enqueue, remove = async() => {}, save, data: extraData = {} } = {}) => {
   const clock = new Map()
   let timerId = 0
   const timers = {
@@ -70,7 +70,7 @@ const harness = ({ active = [], history = [], unlink = async() => {}, url = asyn
     '@/utils/localMediaMetadata': {},
     '@/utils/nativeModules/download': {
       onDownloadUpdate: listener => { nativeUpdate = listener },
-      getDownloadState: getState,
+      getDownloadState: async() => null,
       enqueueDownload: async args => { enqueued.push(args); return enqueue ? enqueue(args) : `work-${args.taskId}` },
       removeDownload: async(...args) => { removed.push(args); await remove(...args) },
       pauseDownload: async() => {},

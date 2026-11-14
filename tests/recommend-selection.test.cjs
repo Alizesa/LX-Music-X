@@ -165,22 +165,20 @@ test('expired archives still allow a fresh recommendation queue', async() => {
   assert.equal(h.state.playMusicInfo.musicInfo.id, 'recommend-0')
 })
 
-for (const method of ['playList', 'playListById']) {
-  test(`${method} reserves local playback before waiting for the local list`, async() => {
-    const local = deferred()
-    const h = await setup({ localList: { retainLocalList: () => local.promise, releaseLocalList() {} } })
-    const songs = h.archive(); const read = h.holdRead()
-    h.lists[constants.LIST_IDS.LOCAL] = [song('local')]
-    const restoring = h.recommend.continueRecommendQueue(songs)
-    await flush()
-    const selection = h.player[method](constants.LIST_IDS.LOCAL, method === 'playList' ? 0 : 'local')
-    read.resolve()
-    assert.equal(await restoring, null)
-    local.resolve(h.lists[constants.LIST_IDS.LOCAL])
-    await selection
-    assert.equal(h.state.playMusicInfo.musicInfo.id, 'local')
-  })
-}
+test('playList reserves local playback before waiting for the local list', async() => {
+  const local = deferred()
+  const h = await setup({ localList: { retainLocalList: () => local.promise, releaseLocalList() {} } })
+  const songs = h.archive(); const read = h.holdRead()
+  h.lists[constants.LIST_IDS.LOCAL] = [song('local')]
+  const restoring = h.recommend.continueRecommendQueue(songs)
+  await flush()
+  const selection = h.player.playList(constants.LIST_IDS.LOCAL, 0)
+  read.resolve()
+  assert.equal(await restoring, null)
+  local.resolve(h.lists[constants.LIST_IDS.LOCAL])
+  await selection
+  assert.equal(h.state.playMusicInfo.musicInfo.id, 'local')
+})
 
 for (const method of ['playQQMusicDailyPlaylist', 'playQQMusicHeartRadarPlaylist']) {
   test(`an older queue clear cannot invalidate a pending ${method} selection`, async() => {

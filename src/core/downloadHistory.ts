@@ -95,12 +95,6 @@ const readEntries = async(selected: Entry[]) => {
   return result
 }
 
-export const getDownloadHistoryPage = async(offset: number, limit: number) => {
-  await initDownloadHistory()
-  await writes
-  return readEntries(ordered.slice(offset, offset + limit))
-}
-
 export const getDownloadHistoryByIds = async(ids: string[]) => {
   await initDownloadHistory()
   await writes

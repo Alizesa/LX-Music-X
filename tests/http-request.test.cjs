@@ -138,7 +138,7 @@ test('SDK source signing matches the pre-refactor golden request', async() => {
   assert.equal(headers['624868746c'], true)
 })
 
-test('callback GET and URL validation keep their public behavior', async() => {
+test('callback GET keeps its public response behavior', async() => {
   const h = harness()
   await new Promise((resolve, reject) => h.sdk.httpGet('https://api.test/callback', (error, response, body) => {
     if (error) { reject(error); return }
@@ -146,8 +146,4 @@ test('callback GET and URL validation keep their public behavior', async() => {
     assert.equal(body.ok, true)
     resolve()
   }))
-  await h.sdk.checkUrl('https://api.test/head')
-  assert.equal(h.calls.at(-1).options.method, 'head')
-  h.response.status = 403
-  await assert.rejects(h.sdk.checkUrl('https://api.test/denied'), /403/)
 })

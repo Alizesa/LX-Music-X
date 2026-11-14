@@ -124,9 +124,6 @@ const buildTracks = (musicInfo: LX.Player.PlayMusic, url?: LX.Player.Track['url'
 //       }
 // }
 
-export const isTempTrack = (trackId: string) => /\/\/default$/.test(trackId)
-
-
 export const getCurrentTrackId = async() => {
   const currentTrackIndex = await TrackPlayer.getCurrentTrack()
   return list[currentTrackIndex]?.id

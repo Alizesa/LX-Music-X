@@ -430,26 +430,6 @@ const handlePlay = async() => {
 /**
  * 播放列表内歌曲
  * @param listId 列表id
- * @param id 歌曲id
- */
-export const playListById = async(listId: string, id: string) => {
-  const isCurrentSelection = createPlaySelection()
-  // LOCAL 是延迟加载的：先确保整表在内存里，否则 getList 会拿到空数组
-  const isLocal = listId === LIST_IDS.LOCAL
-  if (isLocal) await retainLocalList('player:playListById')
-  try {
-    if (!isCurrentSelection()) return
-    const index = getList(listId).findIndex(musicInfo => musicInfo.id == id)
-    if (index < 0) return
-    await playList(listId, index, isCurrentSelection)
-  } finally {
-    if (isLocal) releaseLocalList('player:playListById')
-  }
-}
-
-/**
- * 播放列表内歌曲
- * @param listId 列表id
  * @param index 播放的歌曲位置
  */
 export const playList = async(listId: string, index: number, isCurrentSelection: () => boolean = createPlaySelection()) => {
