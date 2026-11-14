@@ -1,4 +1,4 @@
-import { getPlayQueueMusic, getPlayQueueSourceFirstMusicId, isPlayQueueFromList } from '@/core/player/playQueue'
+import { getPlayQueueMusic, getPlayQueueSourceFirstMusicId, getPlayQueueSourceBatchKey, isPlayQueueFromList } from '@/core/player/playQueue'
 import playerState from '@/store/player/state'
 import { getQQMusicRecommendSession, removeQQMusicRecommendSession, saveQQMusicRecommendSession } from '@/utils/data'
 import { QQ_DAILY_RECOMMEND_QUEUE_SOURCE } from '@/config/constant'
@@ -62,6 +62,7 @@ export const parkRecommendQueue = async() => {
   const snapshot = session = {
     songs,
     sourceFirstMusicId: getPlayQueueSourceFirstMusicId(),
+    sourceBatchKey: getPlayQueueSourceBatchKey(),
     index: Math.max(0, playerState.playInfo.playerPlayIndex),
     savedAt: Date.now(),
   }

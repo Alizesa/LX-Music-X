@@ -12,13 +12,13 @@ const constants = {
 
 // Exercise the actual card refresh, queue metadata, archive I/O and resume logic.
 // Only storage, the QQ response and playback execution are controlled here.
-const harness = () => {
+const harness = (saved = {}) => {
   let now = new Date(2026, 10, 12, 12).getTime()
   class ClockDate extends Date {
     constructor(value = now) { super(value) }
     static now() { return now }
   }
-  const disk = { session: null, queue: [], card: [], refreshDay: null }
+  const disk = { session: null, queue: [], card: [], refreshDay: null, ...structuredClone(saved) }
   const played = []
   let response = []
   let requests = 0
@@ -145,6 +145,49 @@ for (const crossDay of [true, false]) {
   })
 }
 
+for (const changed of ['other songs', 'song order']) {
+  for (const archived of [false, true]) {
+    test(`matching first songs cannot identify ${archived ? 'an archived' : 'the active'} batch after changing ${changed}`, async() => {
+      const h = harness()
+      const original = songs('old')
+      const fresh = changed === 'other songs' ? [original[0], ...songs('fresh').slice(1)] : [original[0], original[2], original[1], ...original.slice(3)]
+      await h.recommend.startRecommendQueue(original, 6)
+      await h.refreshCard(fresh)
+      if (archived) await h.switchToDaily()
+      const before = h.played.length
+      assert.equal(await h.recommend.continueRecommendQueue(h.disk.card), false)
+      assert.equal(h.played.length, before)
+      await h.recommend.startRecommendQueue(h.disk.card)
+      assert.deepEqual(h.queueIds(), fresh.map(item => item.id))
+      assert.equal(h.state.playInfo.playerPlayIndex, 0)
+      assert.equal(h.requests(), 1)
+    })
+  }
+}
+
+test('queue and archive persistence retain the original batch after continuation, removal and reordering', async() => {
+  const h = harness()
+  const original = songs('original')
+  await h.recommend.startRecommendQueue(original, 6)
+  await h.queue.appendPlayQueue(constants.QQ_DAILY_RECOMMEND_QUEUE_SOURCE, [song('continued')])
+  await h.queue.removePlayQueueItem(0)
+  await h.queue.movePlayQueueItem(0, 2)
+  const expected = h.queueIds()
+  const persisted = structuredClone(h.disk)
+  const active = harness(persisted)
+  await active.queue.initPlayQueue()
+  assert.equal(await active.recommend.continueRecommendQueue(original), true)
+  assert.deepEqual(active.queueIds(), expected)
+
+  await h.switchToDaily()
+  const archived = harness(h.disk)
+  await archived.queue.initPlayQueue()
+  assert.equal(await archived.recommend.continueRecommendQueue(original), true)
+  assert.deepEqual(archived.queueIds(), expected)
+  assert.equal(archived.disk.session, null)
+  assert.equal(archived.disk.queue[0].sourceBatchKey, JSON.stringify(original.map(item => item.id)))
+})
+
 test('a matching archive preserves continuation tracks and position even after its original first song was removed', async() => {
   const h = harness()
   const original = songs('same')
@@ -181,4 +224,33 @@ test('an archive without a batch identifier cannot override a populated current 
   assert.equal(await h.recommend.continueRecommendQueue(songs('fresh')), false)
   assert.equal(h.played.length, 0)
   assert.equal(h.disk.session, null)
+})
+
+for (const archived of [false, true]) {
+  for (const matches of [false, true]) {
+    test(`a legacy ${archived ? 'archive' : 'queue'} ${matches ? 'migrates an intact original batch' : 'rejects a different batch with the same first song'}`, async() => {
+      const original = songs('legacy')
+      const storedSongs = [...original, song('continued')]
+      const fresh = matches ? original : [original[0], ...songs('fresh').slice(1)]
+      const session = { songs: storedSongs, sourceFirstMusicId: original[0].id, index: 3, savedAt: new Date(2026, 10, 12, 12).getTime() }
+      const h = harness(archived ? { session } : {})
+      if (!archived) await h.queue.replacePlayQueue(constants.QQ_DAILY_RECOMMEND_QUEUE_SOURCE, storedSongs)
+      assert.equal(await h.recommend.continueRecommendQueue(fresh), matches)
+      if (!matches) return
+      assert.deepEqual(h.queueIds(), storedSongs.map(item => item.id))
+      assert.equal(h.disk.queue[0].sourceBatchKey, JSON.stringify(original.map(item => item.id)))
+      assert.equal(h.requests(), 0)
+    })
+  }
+}
+
+test('restoring a legacy archive before the card loads does not mislabel the expanded queue as its original batch', async() => {
+  const original = songs('legacy')
+  const storedSongs = [...original, song('continued')]
+  const h = harness({ session: { songs: storedSongs, sourceFirstMusicId: original[0].id, index: 4, savedAt: new Date(2026, 10, 12, 12).getTime() } })
+  assert.equal(await h.recommend.continueRecommendQueue([]), true)
+  assert.equal(h.disk.queue[0].sourceBatchKey, undefined)
+  assert.equal(await h.recommend.continueRecommendQueue(original), true)
+  assert.equal(h.disk.queue[0].sourceBatchKey, JSON.stringify(original.map(item => item.id)))
+  assert.equal(h.played.at(-1), original[4].id)
 })

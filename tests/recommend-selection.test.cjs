@@ -218,3 +218,20 @@ test('the latest queue clear still stops playback and preserves its recommendati
   assert.equal(h.disk.session.index, 6)
   assert.equal(h.disk.session.songs.length, 20)
 })
+
+test('migrating legacy recommendation metadata cannot replay after a newer selection', async() => {
+  const h = await setup()
+  const songs = recommendations()
+  await h.queue.replacePlayQueue(constants.QQ_DAILY_RECOMMEND_QUEUE_SOURCE, songs)
+  await h.player.playList(QUEUE, 6)
+  const saving = deferred()
+  let writes = 0
+  h.io.savePlayQueue = async() => { if (++writes === 1) await saving.promise }
+  const resuming = h.recommend.continueRecommendQueue(songs)
+  await flush()
+  await h.player.playList('library', 1)
+  saving.resolve()
+  assert.equal(await resuming, null)
+  assert.equal(h.state.playMusicInfo.musicInfo.id, 'B')
+  assert.equal(h.queue.getPlayQueueSourceBatchKey(), undefined, 'a different playlist must not inherit the recommendation batch')
+})

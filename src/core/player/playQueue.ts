@@ -7,6 +7,7 @@ const queue: LX.Player.PlayQueueItem[] = []
 let initialized = false
 let sessionId = ''
 let sourceFirstMusicId: string | undefined
+let sourceBatchKey: string | undefined
 // 推荐续播会无限追加，保留最近一段即可；普通列表建队列不受这个上限影响
 const MAX_PLAY_QUEUE = 500
 
@@ -16,9 +17,11 @@ const commit = async() => {
     // 元信息随队列落盘，不能随当前队首被裁剪、删除或移动而改变
     first.sessionId = sessionId ||= first.queueId
     first.sourceFirstMusicId = sourceFirstMusicId ??= first.musicInfo.id
+    first.sourceBatchKey = sourceBatchKey
   } else {
     sessionId = ''
     sourceFirstMusicId = undefined
+    sourceBatchKey = undefined
   }
   const saved = savePlayQueue(queue)
   global.app_event.playQueueUpdate([...queue])
@@ -36,12 +39,14 @@ export const initPlayQueue = async() => {
   queue.splice(0, queue.length, ...(await getSavedPlayQueue()))
   sessionId = queue[0]?.sessionId ?? queue[0]?.queueId ?? ''
   sourceFirstMusicId = queue[0]?.sourceFirstMusicId ?? queue[0]?.musicInfo.id
+  sourceBatchKey = queue[0]?.sourceBatchKey
 }
 
 export const getPlayQueue = () => queue
 export const getPlayQueueMusic = () => queue.map(item => item.musicInfo)
 export const getPlayQueueSessionId = () => sessionId
 export const getPlayQueueSourceFirstMusicId = () => sourceFirstMusicId
+export const getPlayQueueSourceBatchKey = () => sourceBatchKey
 
 /**
  * 当前队列是不是由某个列表建出来的。
@@ -51,8 +56,12 @@ export const getPlayQueueSourceFirstMusicId = () => sourceFirstMusicId
 export const isPlayQueueFromList = (sourceListId: string) => queue[0]?.sourceListId === sourceListId
 
 /** 就地改写整条队列的来源标记。歌曲、顺序、queueId 都不动，只给老数据补标记用 */
-export const restampPlayQueue = async(sourceListId: string) => {
+export const restampPlayQueue = async(sourceListId: string, batchKey?: string) => {
   let changed = false
+  if (batchKey !== undefined && sourceBatchKey !== batchKey) {
+    sourceBatchKey = batchKey
+    changed = true
+  }
   for (const item of queue) {
     if (item.sourceListId === sourceListId) continue
     item.sourceListId = sourceListId
@@ -61,7 +70,7 @@ export const restampPlayQueue = async(sourceListId: string) => {
   if (changed) await commit()
 }
 
-export const replacePlayQueue = async(sourceListId: string, list: LX.Player.PlayMusic[], firstMusicId = list[0]?.id) => {
+export const replacePlayQueue = async(sourceListId: string, list: LX.Player.PlayMusic[], firstMusicId = list[0]?.id, batchKey?: string) => {
   const seed = Date.now().toString(36)
   queue.splice(0, queue.length, ...list.map((musicInfo, index) => ({
     queueId: `${seed}_${index}_${musicInfo.id}`,
@@ -70,6 +79,7 @@ export const replacePlayQueue = async(sourceListId: string, list: LX.Player.Play
   })))
   sessionId = queue[0]?.queueId ?? ''
   sourceFirstMusicId = firstMusicId
+  sourceBatchKey = batchKey
   await commit()
 }
 

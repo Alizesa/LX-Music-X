@@ -29,9 +29,11 @@ declare global {
         queueId: string
         sourceListId: string
         musicInfo: PlayMusic
-        /** 队首携带队列元信息，裁剪/排序后转移到新队首；旧数据没有这两个字段 */
+        /** 队首携带队列元信息，裁剪/排序后转移到新队首；旧数据可能没有这些字段 */
         sessionId?: string
         sourceFirstMusicId?: string
+        /** 原始推荐批次的完整歌曲 ID 与顺序，不随续加、删除或排序重算 */
+        sourceBatchKey?: string
       }
 
       interface PlayHistoryItem {

@@ -1,4 +1,4 @@
-import { appendPlayQueue, getPlayQueue, getPlayQueueSessionId, getPlayQueueSourceFirstMusicId, replacePlayQueue, restampPlayQueue } from '@/core/player/playQueue'
+import { appendPlayQueue, getPlayQueue, getPlayQueueMusic, getPlayQueueSessionId, getPlayQueueSourceFirstMusicId, getPlayQueueSourceBatchKey, replacePlayQueue, restampPlayQueue } from '@/core/player/playQueue'
 import { getQQMusicDailyRecommendations, getQQMusicSession } from '@/core/qqMusic'
 import listState from '@/store/list/state'
 import playerState from '@/store/player/state'
@@ -109,21 +109,32 @@ export const initQQMusicRecommendAutoRefresh = () => {
   global.state_event.on('playMusicInfoChanged', handlePlayMusicInfoChanged)
 }
 
-/**
- * 用一批推荐重建播放队列，并从 index 开始播。
- * 队列打的是推荐专属来源标记，续播和存档都靠它认。
- */
-export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0, sourceFirstMusicId = songs[0]?.id, isCurrent: () => boolean = createPlaySelection()) => {
+const getBatchKey = (songs: LX.Player.PlayMusic[]) => JSON.stringify(songs.map(song => song.id))
+
+const matchesBatch = (batchKey: string | undefined, firstId: string | undefined, songs: LX.Player.PlayMusic[], currentSongs: LX.Player.PlayMusic[]) => {
+  if (!currentSongs.length) return true
+  if (batchKey !== undefined) return batchKey === getBatchKey(currentSongs)
+  // 旧数据只能在原始批次仍完整保留于队首时证明匹配，不能仅凭首歌恢复。
+  return firstId === currentSongs[0].id && songs.length >= currentSongs.length &&
+    currentSongs.every((song, index) => song.id === songs[index].id)
+}
+
+const replaceRecommendQueue = async(songs: LX.Player.PlayMusic[], index: number, sourceFirstMusicId: string | undefined, isCurrent: () => boolean, batchKey: string | undefined) => {
   if (!songs.length || !isCurrent()) return false
   // 随机模式下 playNext 会先走已播列表，而那份记录不区分列表（队列播放的 listId 都是
   // play_queue），换一批新队列后可能先蹦出一首上一个列表的歌。重启恢复时它本来就是空的，
   // 这里也清掉，两条路径保持一致。
   clearPlayedList()
-  const saved = replacePlayQueue(QQ_DAILY_RECOMMEND_QUEUE_SOURCE, songs, sourceFirstMusicId)
+  const saved = replacePlayQueue(QQ_DAILY_RECOMMEND_QUEUE_SOURCE, songs, sourceFirstMusicId, batchKey)
   // replace 同步更新内存队列；与普通点播一样先确认播放选择，再等待落盘。
   // 不能在保存结束后用旧下标对届时的新队列再次发起点播。
   await Promise.all([saved, playList(LIST_IDS.PLAY_QUEUE, Math.max(0, Math.min(index, songs.length - 1)), isCurrent)])
   return true
+}
+
+/** 新推荐记录整批歌曲的身份；恢复存档时必须保留原始标识，不能按扩展后的队列重算。 */
+export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0, sourceFirstMusicId = songs[0]?.id, isCurrent: () => boolean = createPlaySelection()) => {
+  return replaceRecommendQueue(songs, index, sourceFirstMusicId, isCurrent, getBatchKey(songs))
 }
 
 /**
@@ -138,29 +149,30 @@ export const startRecommendQueue = async(songs: LX.Player.PlayMusic[], index = 0
 export const continueRecommendQueue = async(currentSongs: LX.Player.PlayMusic[], isCurrent: () => boolean = createPlaySelection()): Promise<boolean | null> => {
   if (!isCurrent()) return null
   if (isRecommendQueue()) {
-    // 比较建队列时的首曲，当前队首可能已因裁剪/删除/排序发生变化。
-    // 点过「刷新」之后存档已经丢了，这时应该换新的一批，而不是继续放旧的。
-    const queueFirstId = getPlayQueueSourceFirstMusicId()
-    if (!currentSongs.length || queueFirstId == currentSongs[0]?.id) {
-      if (!playerState.isPlay) {
-        // 暂停着就接着放；已经停掉（playMusicInfo 被清了）就按上次的位置重新起播
-        if (playerState.playMusicInfo.musicInfo) play()
-        else await playList(LIST_IDS.PLAY_QUEUE, Math.max(0, playerState.playInfo.playerPlayIndex), isCurrent)
-      }
-      return true
+    const batchKey = getPlayQueueSourceBatchKey()
+    if (!matchesBatch(batchKey, getPlayQueueSourceFirstMusicId(), getPlayQueueMusic(), currentSongs)) return false
+    if (batchKey === undefined && currentSongs.length) {
+      await restampPlayQueue(QQ_DAILY_RECOMMEND_QUEUE_SOURCE, getBatchKey(currentSongs))
+      if (!isCurrent()) return null
     }
-    return false
+    if (!playerState.isPlay) {
+      // 暂停着就接着放；已经停掉（playMusicInfo 被清了）就按上次的位置重新起播
+      if (playerState.playMusicInfo.musicInfo) play()
+      else await playList(LIST_IDS.PLAY_QUEUE, Math.max(0, playerState.playInfo.playerPlayIndex), isCurrent)
+    }
+    return true
   }
   const session = await getRecommendSession()
   if (!isCurrent()) return null
   if (!session) return false
   // 卡片刷新后，尚未切走的旧队列仍可能被再次存档。
   // savedAt 只反映切走时间；和当前队列一样，恢复存档也要核对原始批次。
-  if (currentSongs.length && session.sourceFirstMusicId !== currentSongs[0]?.id) {
+  if (!matchesBatch(session.sourceBatchKey, session.sourceFirstMusicId, session.songs, currentSongs)) {
     await dropRecommendSession(session)
     return isCurrent() ? false : null
   }
-  if (!await startRecommendQueue(session.songs, session.index, session.sourceFirstMusicId, isCurrent)) return null
+  const batchKey = session.sourceBatchKey ?? (currentSongs.length ? getBatchKey(currentSongs) : undefined)
+  if (!await replaceRecommendQueue(session.songs, session.index, session.sourceFirstMusicId, isCurrent, batchKey)) return null
   // 已经恢复成播放队列，存档的内存/磁盘副本可以放掉
   await dropRecommendSession(session)
   return true

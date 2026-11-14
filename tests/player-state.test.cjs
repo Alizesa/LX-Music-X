@@ -151,7 +151,7 @@ const sessionHarness = () => {
     removeQQMusicRecommendSession: async() => { stored = null },
   }
   const api = load('src/core/qqMusicRecommendSession.ts', {
-    '@/core/player/playQueue': { isPlayQueueFromList: () => true, getPlayQueueMusic: () => [song('new')], getPlayQueueSourceFirstMusicId: () => 'new' },
+    '@/core/player/playQueue': { isPlayQueueFromList: () => true, getPlayQueueMusic: () => [song('new')], getPlayQueueSourceFirstMusicId: () => 'new', getPlayQueueSourceBatchKey: () => undefined },
     '@/store/player/state': { default: { playInfo: { playerPlayIndex: 0 } } }, '@/utils/data': data, '@/config/constant': {},
   })
   return { api, data, stored: () => stored }
