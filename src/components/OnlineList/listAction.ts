@@ -1,5 +1,5 @@
 import { LIST_IDS } from '@/config/constant'
-import { addToPlayQueue, playList, playNext } from '@/core/player/player'
+import { addToPlayQueue, createPlaySelection, playList, playNext } from '@/core/player/player'
 import { getPlayQueue } from '@/core/player/playQueue'
 import { addTempPlayList } from '@/core/player/tempPlayList'
 import settingState from '@/store/setting/state'
@@ -15,10 +15,12 @@ import { clearMusicUrlByMusic } from '@/utils/data'
  * 加进队列（已有的会去重）再定位到它起播。
  */
 export const handlePlay = (musicInfo: LX.Music.MusicInfoOnline) => {
-  void addToPlayQueue([musicInfo]).then(() => {
+  const selection = createPlaySelection()
+  void addToPlayQueue([musicInfo]).then(async() => {
+    if (!selection()) return
     const index = getPlayQueue().findIndex(item => item.musicInfo.id == musicInfo.id)
     if (index < 0) return
-    void playList(LIST_IDS.PLAY_QUEUE, index)
+    await playList(LIST_IDS.PLAY_QUEUE, index, selection)
   })
 }
 export const handlePlayLater = (musicInfo: LX.Music.MusicInfoOnline, selectedList: LX.Music.MusicInfoOnline[], onCancelSelect: () => void) => {

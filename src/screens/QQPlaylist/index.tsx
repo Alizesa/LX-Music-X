@@ -14,7 +14,7 @@ import PlusMinusIcon from '@/components/common/PlusMinusIcon'
 import { setComponentId } from '@/core/common'
 import { COMPONENT_IDS, LIST_IDS, QQ_HEART_RADAR_PLAYLIST_ID } from '@/config/constant'
 import { setTempList } from '@/core/list'
-import { playList } from '@/core/player/player'
+import { createPlaySelection, playList } from '@/core/player/player'
 import { getQQMusicPlaylistSongs, getQQMusicSession } from '@/core/qqMusic'
 import { refreshQQMusicHomeDaily, refreshQQMusicHomeRadar } from '@/core/qqMusicHome'
 import { getQQMusicLikedSongs, isQQMusicLikedSongsStale, loadQQMusicLikedSongsCache, refreshQQMusicLikedSongs, releaseQQMusicLikedSongs, retainQQMusicLikedSongs, toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
@@ -232,9 +232,10 @@ export default ({ componentId, info }: Props) => {
   const playFrom: OnlineListProps['onPlayList'] = useCallback((index: number) => {
     const songs = songsRef.current
     if (!songs.length) return
+    const selection = createPlaySelection()
     const listId = info.daily ? QQ_DAILY_PLAYLIST_ID : info.radar ? QQ_HEART_RADAR_PLAYLIST_ID : `qq__${info.id}`
-    void setTempList(listId, [...songs]).then(() => {
-      void playList(LIST_IDS.TEMP, index)
+    void setTempList(listId, [...songs]).then(async() => {
+      if (selection()) await playList(LIST_IDS.TEMP, index, selection)
     })
   }, [info.daily, info.id, info.radar])
 
