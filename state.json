@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 4,
+  "sequence": 5,
   "lastStableVersion": "1.9.2",
   "nextTargetVersion": "1.9.3",
   "branches": {
-    "Next": "3ac9ed1aa82e9874560d0cd5f0f918b3daaa3bb8"
+    "Next": "8a9115adc42c2ad6a1175a95b4ee527f6252c5fb"
   },
   "events": {},
   "builds": {
@@ -72,6 +72,17 @@
         "desc": "- fix: guard source changes and asynchronous UI feedback (3ac9ed1a)\n- ui: drag to reorder sources and select update channels from a dropdown (3bbc7374)\n- fix: release download resources and guard recommendation playback (3e86c26e)"
       },
       "publishedAt": "2026-11-13T11:02:25.002Z"
+    },
+    "Next/8a9115adc42c2ad6a1175a95b4ee527f6252c5fb": {
+      "branch": "Next",
+      "sourceSha": "8a9115adc42c2ad6a1175a95b4ee527f6252c5fb",
+      "before": "3ac9ed1aa82e9874560d0cd5f0f918b3daaa3bb8",
+      "channel": "next",
+      "sequence": 5,
+      "version": "1.9.3-next.5",
+      "versionCode": 100005,
+      "tag": "v1.9.3-next.5",
+      "status": "allocated"
     }
   },
   "channels": {
