@@ -137,9 +137,63 @@ for (const kind of ['singer', 'album', 'songlist', 'deeplink', 'online menu', 'Q
     assert.equal(h.state.playMusicInfo.musicInfo.id, 'entry-song')
     assert.equal(h.player.isPlayRequested(), true)
   })
+
+  test(`${kind} survives the previous track ending while storage is pending`, async t => {
+    const h = await setup(kind)
+    t.after(h.close)
+    const pending = h.start()
+    await flush()
+    h.globals.app_event.playerEnded()
+    await flush()
+    h.gate.resolve()
+    await pending
+    await flush()
+    assert.equal(h.state.playMusicInfo.musicInfo.id, 'entry-song')
+    assert.equal(h.player.isPlayRequested(), true)
+  })
 }
 
+for (const next of ['temporary playback', 'empty queue']) {
+  test(`a pending user selection survives automatic ${next}`, async() => {
+    const h = await setup('singer')
+    const pending = h.start()
+    await flush()
+    if (next === 'temporary playback') h.state.tempPlayList.push({ listId: null, musicInfo: song('temporary'), isTempPlay: true })
+    else await h.queue.clearPlayQueue()
+    h.globals.app_event.playerEnded()
+    await flush()
+    h.gate.resolve()
+    await pending
+    await h.advance(0)
+    assert.equal(h.state.playMusicInfo.musicInfo.id, 'entry-song')
+    assert.equal(h.player.isPlayRequested(), true)
+  })
+}
+
+test('a failed user preparation does not prevent the existing queue from advancing', async() => {
+  const h = await setup('singer')
+  const pending = h.start().catch(error => error)
+  await flush()
+  h.gate.reject(new Error('write failed'))
+  assert.match((await pending).message, /write failed/)
+  h.globals.app_event.playerEnded()
+  await flush()
+  assert.equal(h.state.playMusicInfo.musicInfo.id, 'B')
+})
+
 for (const kind of ['songlist', 'deeplink']) {
+  test(`${kind} keeps the pending user choice through an automatic track change during the first request`, async() => {
+    const h = await setup(kind, 'first page')
+    const pending = h.start()
+    await flush()
+    h.globals.app_event.playerEnded()
+    await flush()
+    h.gate.resolve()
+    await pending
+    await flush()
+    assert.equal(h.state.playMusicInfo.musicInfo.id, 'entry-song')
+    assert.deepEqual(h.requests, ['first', 'all'])
+  })
   for (const stage of ['first page', 'empty first page', 'full list']) {
     test(`${kind} drops an obsolete ${stage} response before modifying the temporary list`, async t => {
       const h = await setup(kind, stage)

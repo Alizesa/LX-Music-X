@@ -39,17 +39,18 @@ import { newPlaybackLogId, playbackLog, playbackLogId, registerPlaybackLogSnapsh
 
 let playRequested = false
 let selectionGeneration = 0
+// 只由用户选择或控制动作推进，自动续播不产生新的用户意图。
 let listSelectionGeneration = 0
+let committedListSelection = 0
 export const isPlayRequested = () => playRequested
 
 /** 在异步读列表/存档之前登记点播；后来的选择、暂停或停止会使这次操作失效。 */
 export const createPlaySelection = () => {
   const requestId = ++listSelectionGeneration
-  const generation = selectionGeneration
-  const playback = playerState.playMusicInfo
   const isLatest = () => requestId === listSelectionGeneration
-  const isCurrent = () => isLatest() && generation === selectionGeneration && playback === playerState.playMusicInfo
-  // 本次确认播放也会改变 playback/generation；错误反馈只需判断是否仍是最后一次操作。
+  // 自动切歌可以改变播放实例；只有后来的用户操作或自身提交才能结束这次选择。
+  const isCurrent = () => isLatest() && requestId !== committedListSelection
+  // 提交后的列表补充和错误反馈仍属于这次用户操作。
   return Object.assign(isCurrent, { isLatest })
 }
 
@@ -473,6 +474,7 @@ export const playList = async(listId: string, index: number, isCurrentSelection:
     const item = getPlayQueue()[index]
     if (!item) { await saved; return }
     // 选曲确认有效之后再作废旧播放，失效下标不能让当前取址结果无人接管。
+    committedListSelection = listSelectionGeneration
     selectionGeneration++
     setPlayListId(LIST_IDS.PLAY_QUEUE)
     setPlayMusicInfo(LIST_IDS.PLAY_QUEUE, item.musicInfo)
@@ -523,18 +525,19 @@ export const addToPlayQueue = async(list: LX.Player.PlayMusic[]): Promise<number
 
 export const clearQueue = async() => {
   const requestId = ++listSelectionGeneration
-  const generation = ++selectionGeneration
+  selectionGeneration++
   // 清空队列不算「不要这次推荐了」：存档留到跨天或手动点「刷新」为止
   await parkRecommendQueue()
-  if (requestId !== listSelectionGeneration || generation !== selectionGeneration) return
+  if (requestId !== listSelectionGeneration) return
   clearTempPlayeList()
   const saved = clearPlayQueue()
-  await Promise.all([saved, handleToggleStop()])
+  await Promise.all([saved, handleToggleStop(false)])
 }
 
-const handleToggleStop = async() => {
+const handleToggleStop = async(registerSelection = true) => {
   setPlayMusicInfo(null, null)
-  await stop()
+  if (registerSelection) await stop()
+  else await stopPlayback()
 }
 
 
@@ -646,13 +649,18 @@ const handlePlayNext = async(playMusicInfo: LX.Player.PlayMusicInfo) => {
  * 按 isTempPlay 播放，播完仍会回到原播放列表的位置继续。
  * @param index 歌曲在“稍后播放”列表中的位置
  */
-export const playTempPlayMusic = async(index: number): Promise<void> => {
+const selectTempPlayMusic = async(index: number): Promise<void> => {
   const playMusicInfo = playerState.tempPlayList[index]
   if (!playMusicInfo) return
-  listSelectionGeneration++
   setPlayMusicInfo(playMusicInfo.listId, playMusicInfo.musicInfo, playMusicInfo.isTempPlay)
   removeTempPlayList(index)
   await handlePlay()
+}
+
+export const playTempPlayMusic = async(index: number): Promise<void> => {
+  if (!playerState.tempPlayList[index]) return
+  listSelectionGeneration++
+  await selectTempPlayMusic(index)
 }
 /**
  * 下一曲
@@ -660,20 +668,21 @@ export const playTempPlayMusic = async(index: number): Promise<void> => {
  * @returns
  */
 export const playNext = async(isAutoToggle = false): Promise<void> => {
-  listSelectionGeneration++
+  if (!isAutoToggle) listSelectionGeneration++
+  const requestId = listSelectionGeneration
   if (playerState.tempPlayList.length) { // 如果稍后播放列表存在歌曲则直接播放改列表的歌曲
-    await playTempPlayMusic(0)
+    await selectTempPlayMusic(0)
     return
   }
 
   const playMusicInfo = playerState.playMusicInfo
   const playInfo = playerState.playInfo
-  if (playMusicInfo.musicInfo == null) return handleToggleStop()
+  if (playMusicInfo.musicInfo == null) return handleToggleStop(false)
   const generation = selectionGeneration
 
   // console.log(playInfo.playerListId)
   const currentListId = playInfo.playerListId
-  if (!currentListId) return handleToggleStop()
+  if (!currentListId) return handleToggleStop(false)
   const currentList = getList(currentListId)
 
   const playedList = playerState.playedList
@@ -716,8 +725,8 @@ export const playNext = async(isAutoToggle = false): Promise<void> => {
     isNext: true,
   })
 
-  if (generation !== selectionGeneration || playMusicInfo !== playerState.playMusicInfo) return
-  if (!filteredList.length) return handleToggleStop()
+  if (generation !== selectionGeneration || playMusicInfo !== playerState.playMusicInfo || (!isAutoToggle && requestId !== listSelectionGeneration)) return
+  if (!filteredList.length) return handleToggleStop(false)
   // let currentIndex: number = filteredList.indexOf(currentList[playInfo.playerPlayIndex])
   if (playerIndex == -1 && filteredList.length) playerIndex = 0
   let nextIndex = playerIndex
@@ -760,14 +769,15 @@ export const playNext = async(isAutoToggle = false): Promise<void> => {
  * 上一曲
  */
 export const playPrev = async(isAutoToggle = false): Promise<void> => {
-  listSelectionGeneration++
+  if (!isAutoToggle) listSelectionGeneration++
+  const requestId = listSelectionGeneration
   const playMusicInfo = playerState.playMusicInfo
-  if (playMusicInfo.musicInfo == null) return handleToggleStop()
+  if (playMusicInfo.musicInfo == null) return handleToggleStop(false)
   const playInfo = playerState.playInfo
   const generation = selectionGeneration
 
   const currentListId = playInfo.playerListId
-  if (!currentListId) return handleToggleStop()
+  if (!currentListId) return handleToggleStop(false)
   const currentList = getList(currentListId)
 
   const playedList = playerState.playedList
@@ -805,8 +815,8 @@ export const playPrev = async(isAutoToggle = false): Promise<void> => {
     playerMusicInfo: currentList[playInfo.playerPlayIndex],
     isNext: false,
   })
-  if (generation !== selectionGeneration || playMusicInfo !== playerState.playMusicInfo) return
-  if (!filteredList.length) return handleToggleStop()
+  if (generation !== selectionGeneration || playMusicInfo !== playerState.playMusicInfo || (!isAutoToggle && requestId !== listSelectionGeneration)) return
+  if (!filteredList.length) return handleToggleStop(false)
 
   // let currentIndex = filteredList.indexOf(currentList[playInfo.playerPlayIndex])
   if (playerIndex == -1 && filteredList.length) playerIndex = 0
@@ -881,11 +891,7 @@ export const pause = async() => {
   await setPause()
 }
 
-/**
- * 停止播放
- */
-export const stop = async() => {
-  listSelectionGeneration++
+const stopPlayback = async() => {
   playbackLog('player.stop_requested', () => ({ playId: playbackLogId(playerState.playMusicInfo, 'play') }))
   const generation = ++selectionGeneration
   playRequested = false
@@ -894,6 +900,12 @@ export const stop = async() => {
   setTimeout(() => {
     if (generation === selectionGeneration && !playRequested) global.app_event.stop()
   })
+}
+
+/** 用户停止播放，同时作废尚未提交的点播。内部自动停止不登记新的用户操作。 */
+export const stop = async() => {
+  listSelectionGeneration++
+  await stopPlayback()
 }
 
 /**

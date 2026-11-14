@@ -235,3 +235,74 @@ test('migrating legacy recommendation metadata cannot replay after a newer selec
   assert.equal(h.state.playMusicInfo.musicInfo.id, 'B')
   assert.equal(h.queue.getPlayQueueSourceBatchKey(), undefined, 'a different playlist must not inherit the recommendation batch')
 })
+
+test('a queue clear remains the latest user request when the previous track ends during its archive write', async() => {
+  const h = await setup()
+  await h.recommend.startRecommendQueue(recommendations(), 6)
+  const saving = deferred()
+  const save = h.data.saveQQMusicRecommendSession
+  h.data.saveQQMusicRecommendSession = async value => { await saving.promise; await save(value) }
+  const clearing = h.player.clearQueue()
+  await flush()
+  h.globals.app_event.playerEnded()
+  await flush()
+  saving.resolve()
+  await clearing
+  assert.equal(h.queue.getPlayQueue().length, 0)
+  assert.equal(h.state.playMusicInfo.musicInfo, null)
+  assert.equal(h.player.isPlayRequested(), false)
+})
+
+test('an archive restore survives an automatic track change while its read is pending', async() => {
+  const h = await setup()
+  const songs = h.archive()
+  const reading = h.holdRead()
+  const restoring = h.recommend.continueRecommendQueue(songs)
+  await flush()
+  h.globals.app_event.playerEnded()
+  await flush()
+  reading.resolve()
+  assert.equal(await restoring, true)
+  assert.equal(h.state.playMusicInfo.musicInfo.id, 'recommend-4')
+})
+
+test('a committed selection stays complete across automatic playback and loses feedback ownership to a new user action', async() => {
+  const h = await setup()
+  const selection = h.player.createPlaySelection()
+  await h.player.playList(QUEUE, 1, selection)
+  assert.equal(selection(), false)
+  assert.equal(selection.isLatest(), true)
+  h.globals.app_event.playerEnded()
+  await flush()
+  assert.equal(selection(), false)
+  assert.equal(selection.isLatest(), true)
+  await h.player.pause()
+  assert.equal(selection.isLatest(), false)
+})
+
+for (const method of ['playNext', 'playPrev']) {
+  for (const empty of [false, true]) {
+    test(`an older manual ${method} cannot ${empty ? 'stop an empty queue over' : 'replace'} a newer pending selection`, async() => {
+      const h = await setup()
+      if (empty) await h.queue.clearPlayQueue()
+      const current = h.state.playMusicInfo
+      const changing = h.player[method]()
+      const selection = h.player.createPlaySelection()
+      await changing
+      assert.equal(selection(), true)
+      assert.equal(h.state.playMusicInfo, current)
+      await h.player.playList('library', 2, selection)
+      assert.equal(h.state.playMusicInfo.musicInfo.id, 'C')
+    })
+  }
+}
+
+test('an explicit temporary-track selection still supersedes pending user playback', async() => {
+  const h = await setup()
+  h.state.tempPlayList.push({ listId: null, musicInfo: song('temporary'), isTempPlay: true })
+  const selection = h.player.createPlaySelection()
+  await h.player.playTempPlayMusic(0)
+  assert.equal(selection(), false)
+  assert.equal(selection.isLatest(), false)
+  assert.equal(h.state.playMusicInfo.musicInfo.id, 'temporary')
+})
