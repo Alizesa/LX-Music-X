@@ -5,6 +5,10 @@ const { pipeline } = require('node:stream/promises')
 const { createHash } = require('node:crypto')
 
 const PUBLICATION_LEASE_MS = 120000
+const REQUEST_TIMEOUT_MS = 30000
+const UPLOAD_TIMEOUT_MS = 180000
+const WRITE_MARGIN_MS = 5000
+const lostLock = () => Object.assign(new Error('Publication lock ownership was lost'), { code: 'PUBLICATION_LOCK_LOST' })
 
 class GitHubError extends Error {
   constructor(status, message) {
@@ -23,8 +27,9 @@ class GitHub {
     this.snapshot = null
   }
 
-  async request(method, route, { json, body, headers = {}, allow404 = false, upload = false } = {}) {
+  async request(method, route, { json, body, headers = {}, allow404 = false, upload = false, signal } = {}) {
     const base = upload ? 'https://uploads.github.com' : 'https://api.github.com'
+    const timeout = AbortSignal.timeout(upload ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS)
     const response = await this.fetch(`${base}/repos/${this.repository}${route}`, {
       method,
       headers: {
@@ -36,7 +41,7 @@ class GitHub {
         ...headers,
       },
       body: json === undefined ? body : JSON.stringify(json),
-      signal: AbortSignal.timeout(upload ? 180000 : 30000),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     })
     if (allow404 && response.status === 404) return null
     const text = await response.text()
@@ -186,18 +191,32 @@ class GitHub {
   async withLock(key, owner, leaseMs, work) {
     const deadline = Date.now() + 180000
     let acquired = false
+    let notBefore = 0
     let reclaimOwner
     let checkedOwner
     let nextRunCheck = 0
     let waitMs = 3000
     while (!acquired && Date.now() < deadline) {
       const transaction = await this.updateState(state => {
-        if (state[key] && state[key].owner !== owner && state[key].expiresAt > Date.now() && state[key].owner !== reclaimOwner) return false
-        state[key] = { owner, expiresAt: Date.now() + leaseMs }
+        const current = state[key]
+        if (current && current.owner !== owner) {
+          // A cancelled process can still have a GitHub mutation in flight.
+          // Its recorded write window also applies to early Actions reclamation.
+          if (current.writeExpiresAt > Date.now()) return false
+          if (current.expiresAt > Date.now() && current.owner !== reclaimOwner) return false
+        }
+        // Older publishers checked ownership before PATCH but did not reserve
+        // its full request window. Drain that possible request when taking over.
+        const legacyPromotion = key === 'promotionLock' && current && current.owner !== owner && current.protocol !== 2
+        const drainUntil = Math.max(current?.notBefore ?? 0, legacyPromotion ? Date.now() + REQUEST_TIMEOUT_MS + WRITE_MARGIN_MS : 0)
+        state[key] = { owner, expiresAt: Date.now() + leaseMs, protocol: 2, ...(drainUntil > Date.now() ? { notBefore: drainUntil } : {}) }
         return true
       })
       acquired = transaction.result
-      if (acquired) break
+      if (acquired) {
+        notBefore = transaction.state[key].notBefore ?? 0
+        break
+      }
       const blockedOwner = transaction.state[key]?.owner
       if (blockedOwner && (blockedOwner !== checkedOwner || Date.now() >= nextRunCheck)) {
         checkedOwner = blockedOwner
@@ -209,23 +228,35 @@ class GitHub {
           continue
         }
       }
-      const expiresAt = transaction.state[key]?.expiresAt ?? deadline
+      const lock = transaction.state[key]
+      const expiresAt = lock?.owner === reclaimOwner
+        ? lock.writeExpiresAt ?? lock.expiresAt
+        : Math.max(lock?.expiresAt ?? deadline, lock?.writeExpiresAt ?? 0)
       await delay(Math.max(1, Math.min(waitMs, expiresAt - Date.now(), deadline - Date.now())))
       waitMs = Math.min(15000, waitMs * 2)
     }
     if (!acquired) throw new Error('Another release owns the publication lock; rerun this source commit')
     let renewalFailure
+    const controller = new AbortController()
+    let writeUncertain = false
+    const fail = error => {
+      renewalFailure ??= error
+      controller.abort(renewalFailure)
+      return renewalFailure
+    }
     let pendingRenewal = Promise.resolve()
-    const renew = () => {
+    const renew = (protectWrite = false) => {
       pendingRenewal = pendingRenewal.then(async() => {
         if (renewalFailure) return
         const transaction = await this.updateState(state => {
           if (state[key]?.owner !== owner || state[key].expiresAt <= Date.now()) return false
           state[key].expiresAt = Date.now() + leaseMs
+          if (protectWrite) state[key].writeExpiresAt = state[key].expiresAt
           return true
         })
-        if (!transaction.result) throw new Error('Publication lock ownership was lost')
-      }).catch(error => { renewalFailure = error })
+        if (!transaction.result) throw lostLock()
+      }).catch(error => { fail(error) })
+      return pendingRenewal
     }
     const timer = setInterval(renew, Math.min(60000, Math.floor(leaseMs / 3)))
     timer.unref()
@@ -233,18 +264,51 @@ class GitHub {
       assertOwned: async() => {
         if (renewalFailure) throw renewalFailure
         const { state } = await this.readState()
-        if (state[key]?.owner !== owner || state[key].expiresAt <= Date.now()) throw new Error('Publication lock ownership was lost')
+        if (state[key]?.owner !== owner || state[key].expiresAt <= Date.now()) throw fail(lostLock())
+        return { expiresAt: state[key].expiresAt, writeExpiresAt: state[key].writeExpiresAt }
+      },
+      request: async(method, route, options = {}) => {
+        // Reserve enough lease time for the entire bounded request, including
+        // slow renewal commits. Checking the old lease alone is insufficient.
+        await renew(true)
+        const window = await lease.assertOwned()
+        const timeout = options.upload ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS
+        if (Math.min(window.expiresAt, window.writeExpiresAt ?? 0) - Date.now() <= timeout + WRITE_MARGIN_MS) throw fail(lostLock())
+        writeUncertain = true
+        let result
+        try {
+          result = await this.request(method, route, {
+            ...options,
+            signal: options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal,
+          })
+          writeUncertain = false
+        } catch (error) {
+          throw renewalFailure ?? error
+        }
+        await lease.assertOwned()
+        return result
       },
     }
     try {
+      if (notBefore > Date.now()) {
+        await delay(notBefore - Date.now())
+        await lease.assertOwned()
+      }
       const result = await work(lease)
+      clearInterval(timer)
+      await pendingRenewal
       if (renewalFailure) throw renewalFailure
+      await lease.assertOwned()
       return result
     } finally {
       clearInterval(timer)
       await pendingRenewal
       await this.updateState(state => {
-        if (state[key]?.owner === owner) delete state[key]
+        if (state[key]?.owner !== owner) return
+        if (writeUncertain && state[key].writeExpiresAt > Date.now()) {
+          // A failed transport does not prove the server cancelled its PATCH.
+          state[key].expiresAt = state[key].writeExpiresAt
+        } else delete state[key]
       })
     }
   }

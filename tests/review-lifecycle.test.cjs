@@ -185,7 +185,7 @@ test('comment images do not request or measure an image before click and decode 
 test('search suggestions coalesce input and cancel pending timers and late responses on hide and unmount', async() => {
   const host = hookHost(); const frame = host.frame(); const ref = { current: null }
   const timers = new Map(); const requests = []; let nextTimer = 0
-  const state = { temp_source: 'kw', tipListInfo: { text: '', source: 'kw', list: [] } }
+  const state = { searchText: '', temp_source: 'kw', tipListInfo: { text: '', source: 'kw', list: [] } }
   const TipList = load('src/screens/Home/Views/Search/TipList.tsx', {
     react: host.react,
     'react/jsx-runtime': { jsx, jsxs: jsx },
@@ -207,7 +207,7 @@ test('search suggestions coalesce input and cancel pending timers and late respo
     },
     '@/store/search/state': { default: state },
     '@/core/search/search': {
-      setSearchText: text => { state.text = text },
+      setSearchText: text => { state.searchText = text },
       setTipListInfo: (text, source) => { Object.assign(state.tipListInfo, { text, source }) },
       setTipList: list => { state.tipListInfo.list = list },
     },

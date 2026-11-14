@@ -28,9 +28,13 @@ export const getBrowseDetailCacheIndex = async() => await getData<Record<string,
 export const saveBrowseDetailCacheIndex = async(index: Record<string, number>) => saveDataDirect(storageDataPrefix.browseDetailCacheIndex, index)
 export const getBrowseDetailCache = async<T>(key: string) => getData<T>(storageDataPrefix.browseDetailCacheItem + key)
 export const saveBrowseDetailCache = async(key: string, value: unknown) => saveData(storageDataPrefix.browseDetailCacheItem + key, value)
-export const removeBrowseDetailCaches = async(keys: string[]) => {
+export const removeBrowseDetailCaches = async(keys: string[], { includePages = true } = {}) => {
   if (!keys.length) return
   const groups = new Set(keys.map(key => storageDataPrefix.browseDetailCacheItem + key))
+  if (!includePages) {
+    await removeDataMultiple([...groups])
+    return
+  }
   const stored = await getAllKeys()
   const pages = stored.filter(key => groups.has(key.split('::')[0]))
   await removeDataMultiple([...new Set([...groups, ...pages])])

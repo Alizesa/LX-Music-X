@@ -339,9 +339,27 @@ async function publishedManifest(github, release, record, knownManifest) {
 }
 
 async function promote(github, manifest, owner, publishAction, isAncestor = sourceContains) {
+  const progress = { publishAction, latestAttempted: false }
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await promoteOnce(github, manifest, owner, progress, isAncestor)
+    } catch (error) {
+      // A late PATCH may have taken effect before a lost lease was observed.
+      // Reacquire and select the highest complete release again; do not replay
+      // the draft publication action or reuse the old Latest candidate.
+      if (!progress.latestAttempted || error.code !== 'PUBLICATION_LOCK_LOST' || attempt >= 2) throw error
+      progress.latestAttempted = false
+    }
+  }
+}
+
+async function promoteOnce(github, manifest, owner, progress, isAncestor) {
   return github.withPromotionLock(owner, async lease => {
     await lease.assertOwned()
-    if (publishAction) await publishAction()
+    if (progress.publishAction) {
+      await progress.publishAction()
+      progress.publishAction = undefined
+    }
     const { state: snapshot } = await github.readState()
     const records = new Map(Object.values(snapshot.builds).map(record => [record.tag, record]))
     const published = (await github.list('/releases')).filter(item => !item.draft && tagVersion(item.tag_name))
@@ -393,7 +411,8 @@ async function promote(github, manifest, owner, publishAction, isAncestor = sour
     const latest = stableRelease ?? published.find(release => !release.prerelease && !parseVersion(release.tag_name.slice(1)).prerelease.length)
     if (latest) {
       await lease.assertOwned()
-      await github.request('PATCH', `/releases/${latest.id}`, { json: { make_latest: 'true' } })
+      progress.latestAttempted = true
+      await lease.request('PATCH', `/releases/${latest.id}`, { json: { make_latest: 'true' } })
     }
   })
 }

@@ -11,6 +11,10 @@ import { waitForPromise } from '@/utils/abortable'
 
 const ITEM_HEIGHT_RAW = 36
 export const ITEM_HEIGHT = scaleSizeH(ITEM_HEIGHT_RAW)
+const cachedSuggestions = (keyword: string, source: typeof searchState.temp_source) => {
+  const cached = searchState.tipListInfo
+  return cached.text === keyword && cached.source === source ? cached.list : undefined
+}
 
 export type SearchTipListProps = _SearchTipListProps<string>
 export type SearchTipListType = _SearchTipListType<string>
@@ -31,6 +35,7 @@ export default forwardRef<TipListType, TipListProps>(({ onSearch }, ref) => {
   const heightRef = useRef(0)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const request = useRef<AbortController | null>(null)
+  const pendingQuery = useRef<{ text: string, source: typeof searchState.temp_source } | null>(null)
   const generation = useRef(0)
   const cancel = useCallback(() => {
     generation.current++
@@ -38,33 +43,45 @@ export default forwardRef<TipListType, TipListProps>(({ onSearch }, ref) => {
     timer.current = null
     request.current?.abort()
     request.current = null
+    pendingQuery.current = null
   }, [])
   useEffect(() => cancel, [cancel])
 
   const handleSearch = useCallback((keyword: string, height: number) => {
-    cancel()
+    const source = searchState.temp_source
     heightRef.current = height
     visibleListRef.current = true
     setVisible(true)
     setSearchText(keyword)
-    const source = searchState.temp_source
-    setTipListInfo(keyword, source)
+    searchTipListRef.current?.setHeight(height)
+    if ((timer.current != null || request.current != null) && pendingQuery.current?.text === keyword && pendingQuery.current.source === source) return
+    cancel()
+    const cached = cachedSuggestions(keyword, source)
+    searchTipListRef.current?.setList(cached ?? [])
     if (keyword) {
+      if (cached !== undefined) return
+      pendingQuery.current = { text: keyword, source }
       const version = generation.current
       timer.current = setTimeout(() => {
         timer.current = null
-        if (!visibleListRef.current || version !== generation.current) return
+        if (!visibleListRef.current || version !== generation.current || keyword !== searchState.searchText) return
         const controller = request.current = new AbortController()
         void waitForPromise(musicSdk[source].tipSearch.search(keyword, controller.signal) as Promise<string[]>, controller.signal).then(list => {
-          if (!visibleListRef.current || version !== generation.current || source !== searchState.temp_source) return
+          if (!visibleListRef.current || version !== generation.current || source !== searchState.temp_source || keyword !== searchState.searchText) return
+          // 缓存的查询归属只在结果完成时提交，不能提前把 A 的列表标成 B。
+          setTipListInfo(keyword, source)
           setTipList(list)
           searchTipListRef.current?.setHeight(heightRef.current)
           searchTipListRef.current?.setList(list)
         }).catch(() => {}).finally(() => {
-          if (request.current === controller) request.current = null
+          if (request.current === controller) {
+            request.current = null
+            pendingQuery.current = null
+          }
         })
       }, 200)
     } else {
+      setTipListInfo(keyword, source)
       setTipList([])
       searchTipListRef.current?.setList([])
     }
@@ -79,17 +96,13 @@ export default forwardRef<TipListType, TipListProps>(({ onSearch }, ref) => {
   useEffect(() => {
     if (!visible) return
     searchTipListRef.current?.setHeight(heightRef.current)
-    searchTipListRef.current?.setList(searchState.tipListInfo.list)
+    searchTipListRef.current?.setList(cachedSuggestions(searchState.searchText, searchState.temp_source) ?? [])
   }, [visible])
 
   useImperativeHandle(ref, () => ({
     search: handleSearch,
     show(height) {
-      heightRef.current = height
-      visibleListRef.current = true
-      setVisible(true)
-      searchTipListRef.current?.setHeight(height)
-      searchTipListRef.current?.setList(searchState.tipListInfo.list)
+      handleSearch(searchState.searchText, height)
     },
     hide,
   }), [handleSearch, hide])

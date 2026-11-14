@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
 const { createState } = require('../publish/release-state.cjs')
+const { deferred, flush } = require('./helpers/load.cjs')
 
 // Execute the actual lock implementation with a virtual clock. No real waits,
 // Actions requests, or publication side effects are needed for crash recovery.
@@ -29,6 +30,8 @@ const lockClient = () => {
     module: loaded,
     require: dependency => dependency === 'node:timers/promises' ? { setTimeout: advance } : require(dependency),
     Date: VirtualDate,
+    AbortController,
+    AbortSignal,
     fetch: async() => { assert.fail('Unexpected live GitHub request') },
     setInterval: (callback, period) => {
       const timer = { callback, period, next: now + period, unref() {} }
@@ -45,7 +48,7 @@ const lockClient = () => {
 }
 
 for (const [key, oldLease] of [['releaseLock:v1.9.3', 3600000], ['promotionLock', 900000]]) {
-  test(`a cancelled Actions attempt releases a legacy ${key} immediately for the rerun`, async() => {
+  test(`a cancelled Actions attempt reclaims legacy ${key} with only the required request drain`, async() => {
     const app = lockClient()
     const started = app.now()
     app.state[key] = { owner: '123/1/cancelled-worker', expiresAt: started + oldLease }
@@ -58,7 +61,7 @@ for (const [key, oldLease] of [['releaseLock:v1.9.3', 3600000], ['promotionLock'
       assert.equal(app.state[key].owner, '123/2/rerun-worker')
     })
     assert.equal(worked, true)
-    assert.equal(app.now() - started, 0)
+    assert.equal(app.now() - started, key === 'promotionLock' ? 35000 : 0)
     assert.deepEqual(requests, ['/actions/runs/123/attempts/1'])
     assert.equal(app.state[key], undefined)
   })
@@ -74,7 +77,7 @@ for (const key of ['releaseLock:v1.9.3', 'promotionLock']) {
       ? await app.github.withPromotionLock('new-worker', work)
       : await app.github.withLock(key, 'new-worker', app.leaseMs, work)
     assert.equal(result, 'recovered')
-    assert.equal(app.now() - started, 120000)
+    assert.equal(app.now() - started, key === 'promotionLock' ? 155000 : 120000)
     assert.ok(app.now() - started < 180000)
     assert.equal(app.state[key], undefined)
   })
@@ -113,7 +116,7 @@ test('run lookup failures and missing attempts do not authorize early lock recla
     app.state.promotionLock = { owner: '123/1/offline-worker', expiresAt: started + app.leaseMs }
     app.github.request = async() => { if (reply instanceof Error) throw reply; return reply }
     await app.github.withPromotionLock('456/1/new-worker', async lease => { await lease.assertOwned() })
-    assert.equal(app.now() - started, 120000)
+    assert.equal(app.now() - started, 155000)
   }
 })
 
@@ -129,4 +132,69 @@ test('a completed-owner lookup cannot evict a different worker that acquired the
   }
   await assert.rejects(app.github.withPromotionLock('789/1/new-worker', async() => { assert.fail('The healthy new owner must keep its lock') }), /Another release owns/)
   assert.equal(app.state.promotionLock.owner, '456/1/live-worker')
+})
+
+test('a completed Actions attempt keeps its in-flight publication write window before takeover', async() => {
+  const app = lockClient()
+  const started = app.now()
+  app.state.promotionLock = { owner: '123/1/old', expiresAt: started + 120000, writeExpiresAt: started + 60000, protocol: 2 }
+  app.github.request = async() => ({ status: 'completed' })
+  await app.github.withPromotionLock('456/1/new', async lease => { await lease.assertOwned() })
+  assert.equal(app.now() - started, 60000)
+})
+
+test('renewal failing during final cleanup cannot make a lost publication lease report success', async() => {
+  const app = lockClient(); const gate = deferred(); const returning = deferred()
+  const update = app.github.updateState
+  let stallNext = false
+  app.github.updateState = async change => {
+    if (stallNext) { stallNext = false; await gate.promise }
+    return update(change)
+  }
+  const result = app.github.withPromotionLock('old', async() => {
+    stallNext = true
+    await app.advance(40000)
+    app.state.promotionLock = { owner: 'new', expiresAt: app.now() + app.leaseMs }
+    returning.resolve()
+  })
+  const rejected = assert.rejects(result, /ownership was lost/)
+  await returning.promise
+  await flush()
+  gate.resolve()
+  await rejected
+  assert.equal(app.state.promotionLock.owner, 'new')
+})
+
+test('a slow guarded renewal cannot use a later heartbeat to overrun its earlier write window', async() => {
+  const app = lockClient()
+  let patches = 0
+  app.github.request = async() => { patches++; return {} }
+  await assert.rejects(app.github.withPromotionLock('old', async lease => {
+    const update = app.github.updateState
+    let delayed = false
+    app.github.updateState = async change => {
+      const result = await update(change)
+      if (!delayed) {
+        delayed = true
+        await app.advance(90001)
+      }
+      return result
+    }
+    await lease.request('PATCH', '/releases/1', { json: { make_latest: 'true' } })
+  }), /ownership was lost/)
+  assert.equal(patches, 0)
+})
+
+test('an uncertain PATCH keeps its write window even when the original process exits with an error', async() => {
+  const app = lockClient()
+  const started = app.now()
+  app.github.request = async() => { throw new Error('response lost') }
+  await assert.rejects(app.github.withPromotionLock('123/1/old', async lease => {
+    await lease.request('PATCH', '/releases/1', { json: { make_latest: 'true' } })
+  }), /response lost/)
+  assert.equal(app.state.promotionLock.owner, '123/1/old')
+  assert.equal(app.state.promotionLock.writeExpiresAt, started + app.leaseMs)
+  app.github.request = async() => ({ status: 'completed' })
+  await app.github.withPromotionLock('456/1/new', async lease => { await lease.assertOwned() })
+  assert.equal(app.now(), started + app.leaseMs)
 })

@@ -1,5 +1,5 @@
-import { memo, useMemo } from 'react'
-import { View, FlatList, type FlatListProps, type LayoutChangeEvent } from 'react-native'
+import { memo, useEffect, useMemo, type ComponentProps } from 'react'
+import { View, FlatList, type FlatListProps } from 'react-native'
 import { type Line, useLrcPlay, useLrcSet } from '@/plugins/lyric'
 import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
@@ -12,6 +12,7 @@ import { resolveLrcColors } from './lrcColors'
 
 
 type FlatListType = FlatListProps<Line>
+type CellProps = ComponentProps<NonNullable<FlatListType['CellRendererComponent']>>
 
 type FontSizeSetting = 'playDetail.horizontal.style.lrcFontSize' | 'playDetail.vertical.style.lrcFontSize'
 
@@ -20,9 +21,8 @@ interface LineProps {
   line: Line
   lineNum: number
   activeLine: number
-  onLayout: (lineNum: number, height: number, width: number) => void
 }
-const LrcLine = memo(({ line, lineNum, activeLine, onLayout, fontSizeSetting }: LineProps) => {
+const LrcLine = memo(({ line, lineNum, activeLine, fontSizeSetting }: LineProps) => {
   const theme = useTheme()
   const lrcFontSize = useSettingValue(fontSizeSetting)
   const textAlign = useSettingValue('playDetail.style.align')
@@ -40,14 +40,10 @@ const LrcLine = memo(({ line, lineNum, activeLine, onLayout, fontSizeSetting }: 
     lrcOpacity,
   }), [activeLine, lineNum, theme, lrcColor, lrcActiveColor, lrcOpacity])
 
-  const handleLayout = ({ nativeEvent }: LayoutChangeEvent) => {
-    onLayout(lineNum, nativeEvent.layout.height, nativeEvent.layout.width)
-  }
-
   // textBreakStrategy="simple" 用于解决某些设备上字体被截断的问题
   // https://stackoverflow.com/a/72822360
   return (
-    <View style={styles.line} onLayout={handleLayout}>
+    <View style={styles.line}>
       <AnimatedColorText style={{
         ...styles.lineText,
         textAlign,
@@ -78,14 +74,26 @@ export default ({ fontSizeSetting }: { fontSizeSetting: FontSizeSetting }) => {
   const isShowLyricProgressSetting = useSettingValue('playDetail.isShowLyricProgressSetting')
   const {
     flatListRef, playLineRef, ready,
-    handleScroll, handleLineLayout, handleSpaceLayout, handleLayout, handlePlayLine,
+    handleScroll, handleCellLayout, handleCellUnmount, handleSpaceLayout, handleLayout, handlePlayLine,
     handleScrollBeginDrag, handleScrollEndDrag, handleMomentumScrollBegin, handleMomentumScrollEnd,
     handleScrollToIndexFailed, handleContentSizeChange,
   } = useLyricScroll(lyricLines, line, isShowLyricProgressSetting)
 
+  const CellRendererComponent = useMemo(() => {
+    const Cell = ({ index, item, cellKey, ...props }: CellProps) => {
+      useEffect(() => () => { handleCellUnmount(index, item) }, [index, item])
+      return <View {...props} onLayout={event => {
+        // 外层 cell 的 y 是内容坐标；行内 View 的 y 只相对当前 cell。
+        props.onLayout?.(event)
+        handleCellLayout(index, item, event.nativeEvent.layout)
+      }} />
+    }
+    return Cell
+  }, [handleCellLayout, handleCellUnmount])
+
   const renderItem: FlatListType['renderItem'] = ({ item, index }) => {
     return (
-      <LrcLine fontSizeSetting={fontSizeSetting} line={item} lineNum={index} activeLine={line} onLayout={handleLineLayout} />
+      <LrcLine fontSizeSetting={fontSizeSetting} line={item} lineNum={index} activeLine={line} />
     )
   }
   const getkey: FlatListType['keyExtractor'] = (item, index) => `${index}${item.text}`
@@ -99,6 +107,7 @@ export default ({ fontSizeSetting }: { fontSizeSetting: FontSizeSetting }) => {
       <FlatList
         data={lyricLines}
         renderItem={renderItem}
+        CellRendererComponent={CellRendererComponent}
         keyExtractor={getkey}
         style={[styles.container, { opacity: ready ? 1 : 0 }]}
         ref={flatListRef}
