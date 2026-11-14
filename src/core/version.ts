@@ -57,9 +57,15 @@ export const initializeVersion = async() => {
         try { parseVersion(tag.slice(1)); ignored[item] = tag } catch {}
       }
       preferences = { channel, ignored }
-      // Persist the initial choice once, before setting initialized. A later
-      // stable APK must preserve an existing next subscription.
-      await persistPreferences().promise
+      const savedIgnored = saved?.ignored
+      const alreadySaved = saved?.channel === channel && savedIgnored != null &&
+        typeof savedIgnored === 'object' && !Array.isArray(savedIgnored) &&
+        Object.keys(savedIgnored).length === Object.keys(ignored).length &&
+        (['stable', 'next'] as const).every(item => savedIgnored[item] === ignored[item])
+      // Valid preferences are already durable. Do not require a new write to
+      // use them; keep a separate snapshot for later failed-write rollbacks.
+      if (alreadySaved) durablePreferences = { channel, ignored: { ...ignored } }
+      else await persistPreferences().promise
       versionActions.setIgnoreVersion(ignored[channel] ?? null)
       versionActions.setVersionInfo({ ...installed, channel, initialized: true })
     })().catch((error: unknown) => {

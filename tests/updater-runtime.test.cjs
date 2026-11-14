@@ -37,6 +37,55 @@ const client = ({ installed = { version: '1.9.2', versionCode: 79003 }, saved, g
   return { core, state, writes, writeAttempts, installed, modals, messages, changes, saved: () => saved }
 }
 
+for (const channel of ['stable', 'next']) {
+  test(`valid saved ${channel} preferences allow checks without rewriting readable storage`, async() => {
+    let checks = 0
+    const saved = { channel, ignored: { stable: 'v1.9.3', next: 'v1.9.4-next.4' } }
+    const app = client({
+      saved,
+      savePreferences: async() => { throw new Error('storage is readable but cannot be written') },
+      getVersionInfo: async() => { checks++; return { manifests: [], incomplete: false } },
+    })
+    await app.core.checkUpdate(true, false)
+    assert.equal(app.state.versionInfo.initialized, true)
+    assert.equal(app.state.versionInfo.channel, channel)
+    assert.equal(app.state.ignoreVersion, saved.ignored[channel])
+    assert.equal(app.state.versionInfo.status, 'idle')
+    assert.equal(checks, 1)
+    assert.equal(app.writeAttempts.length, 0)
+    assert.deepEqual(app.saved(), saved)
+  })
+
+  test(`a failed first change rolls back to the saved ${channel} snapshot without a startup write`, async() => {
+    const saved = { channel, ignored: { [channel]: 'v1.9.3' } }
+    let rejectWrite = true
+    const app = client({ saved, savePreferences: async() => { if (rejectWrite) throw new Error('preference write failed') } })
+    await app.core.initializeVersion()
+    assert.equal(app.writeAttempts.length, 0)
+    const nextChannel = channel === 'next' ? 'stable' : 'next'
+    await app.core.setUpdateChannel(nextChannel)
+    assert.equal(app.state.versionInfo.channel, channel)
+    assert.equal(app.state.ignoreVersion, 'v1.9.3')
+    assert.equal(app.writeAttempts.length, 1)
+    assert.deepEqual(app.saved(), saved)
+    rejectWrite = false
+    await app.core.setUpdateChannel(nextChannel)
+    assert.equal(app.state.versionInfo.channel, nextChannel)
+    assert.equal(app.saved().channel, nextChannel)
+    assert.equal(app.writeAttempts.length, 2)
+  })
+}
+
+for (const ignored of [undefined, null, [], { invalid: 'v1.9.3' }, { stable: 'invalid-tag' }]) {
+  test(`initialization still repairs malformed ignored preferences ${JSON.stringify(ignored)}`, async() => {
+    const app = client({ saved: { channel: 'next', ignored } })
+    await app.core.initializeVersion()
+    assert.equal(app.writeAttempts.length, 1)
+    assert.deepEqual(app.saved(), { channel: 'next', ignored: {} })
+    assert.equal(app.state.versionInfo.initialized, true)
+  })
+}
+
 test('new preview and stable installs both default to stable, including invalid saved channels', async() => {
   for (const version of ['1.9.3-next.2', '1.9.3']) {
     for (const saved of [undefined, null, { channel: 'invalid' }]) {
