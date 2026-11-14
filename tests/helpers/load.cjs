@@ -21,6 +21,8 @@ const load = (file, mocks = {}, globals = {}) => {
     console: { log() {}, warn() {}, error() {} },
     require: name => {
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./playback-log.cjs')
+      if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return load('src/utils/abortable.ts', { './message': load('src/utils/message.ts') })
+      if (name === '@/utils/listPage' && !Object.hasOwn(mocks, name)) return load('src/utils/listPage.ts')
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${file}: ${name}`)
       return mocks[name]
     },

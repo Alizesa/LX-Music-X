@@ -1,6 +1,7 @@
 import state, { type InitState, type Source } from './state'
 import { sortInsert, similar, arrPush } from '@/utils/common'
-import { deduplicationList, toNewMusicInfo } from '@/utils'
+import { toNewMusicInfo } from '@/utils'
+import { appendListPage } from '@/utils/listPage'
 
 
 export interface SearchResult {
@@ -54,7 +55,7 @@ const setLists = (results: SearchResult[], page: number, text: string): LX.Music
   else listInfo.total = limit * page
   // listInfo.limit = limit
   listInfo.page = page
-  listInfo.list = deduplicationList(page > 1 ? [...listInfo.list, ...list] : list)
+  listInfo.list = appendListPage(listInfo.list, list, page === 1, item => item.id)
   state.source = 'all'
 
   return listInfo.list
@@ -64,7 +65,7 @@ const setList = (datas: SearchResult, page: number, text: string): LX.Music.Musi
   // console.log(datas.source, datas.list)
   let listInfo = state.listInfos[datas.source]!
   const list = datas.list.map(s => toNewMusicInfo(s) as LX.Music.MusicInfoOnline)
-  listInfo.list = deduplicationList(page == 1 ? list : [...listInfo.list, ...list])
+  listInfo.list = appendListPage(listInfo.list, list, page === 1, item => item.id)
   if (page == 1 || (datas.total && datas.list.length)) listInfo.total = datas.total
   else listInfo.total = datas.limit * page
   listInfo.maxPage = datas.allPage

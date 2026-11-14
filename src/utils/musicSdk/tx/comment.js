@@ -1,3 +1,4 @@
+import { waitForPromise, waitForRequest } from '../../abortable'
 import { httpFetch } from '../../request'
 import { dateFormat2 } from '../../index'
 import getMusicInfo from './musicInfo'
@@ -82,8 +83,6 @@ const setSongIdCache = (songmid, songId) => {
 }
 
 export default {
-  _requestObj: null,
-  _requestObj2: null,
   async getSongId({ songId, songmid }) {
     if (songId) return songId
     if (songIdMap.has(songmid)) return songIdMap.get(songmid)
@@ -100,9 +99,8 @@ export default {
       if (promises.get(songmid) === promise) promises.delete(songmid)
     }
   },
-  async getComment(mInfo, page = 1, limit = 20) {
-    if (this._requestObj) this._requestObj.cancelHttp()
-    const songId = await this.getSongId(mInfo)
+  async getComment(mInfo, page = 1, limit = 20, signal) {
+    const songId = await waitForPromise(this.getSongId(mInfo), signal)
 
     const _requestObj = httpFetch('http://c.y.qq.com/base/fcgi-bin/fcg_global_comment_h5.fcg', {
       method: 'POST',
@@ -122,9 +120,8 @@ export default {
         pagesize: limit,
       },
     })
-    const { body, statusCode } = await _requestObj.promise
+    const { body, statusCode } = await waitForRequest(_requestObj, signal)
     if (statusCode != 200 || body.code !== 0) throw new Error('获取评论失败')
-    // console.log(body, statusCode)
     const comment = body.comment
     return {
       source: 'tx',
@@ -135,27 +132,8 @@ export default {
       maxPage: Math.ceil(comment.commenttotal / limit) || 1,
     }
   },
-  async getHotComment(mInfo, page = 1, limit = 20) {
-    // const _requestObj2 = httpFetch('http://c.y.qq.com/base/fcgi-bin/fcg_global_comment_h5.fcg', {
-    //   method: 'POST',
-    //   headers: {
-    //     'User-Agent': 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)',
-    //   },
-    //   form: {
-    //     uin: '0',
-    //     format: 'json',
-    //     cid: '205360772',
-    //     reqtype: '2',
-    //     biztype: '1',
-    //     topid: songId,
-    //     cmd: '9',
-    //     needmusiccrit: '1',
-    //     pagenum: page - 1,
-    //     pagesize: limit,
-    //   },
-    // })
-    if (this._requestObj2) this._requestObj2.cancelHttp()
-    const songId = await this.getSongId(mInfo)
+  async getHotComment(mInfo, page = 1, limit = 20, signal) {
+    const songId = await waitForPromise(this.getSongId(mInfo), signal)
 
     const _requestObj2 = httpFetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
       method: 'POST',
@@ -192,8 +170,7 @@ export default {
         origin: 'https://y.qq.com',
       },
     })
-    const { body, statusCode } = await _requestObj2.promise
-    // console.log('body', body)
+    const { body, statusCode } = await waitForRequest(_requestObj2, signal)
     if (statusCode != 200 || body.code !== 0 || body.req.code !== 0) throw new Error('获取热门评论失败')
     const comment = body.req.data.CommentList
     return {
@@ -229,7 +206,6 @@ export default {
         likedCount: item.praisenum,
         reply: item.middlecommentcontent
           ? item.middlecommentcontent.map(c => {
-            // let index = c.subcommentid.lastIndexOf('_')
             return {
               id: `sub_${item.rootcommentid}_${c.subcommentid}`,
               text: this.replaceEmoji(c.subcommentcontent).replace(/\\n/g, '\n'),

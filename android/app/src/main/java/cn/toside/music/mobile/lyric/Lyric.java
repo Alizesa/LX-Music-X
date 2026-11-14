@@ -43,7 +43,6 @@ public class Lyric extends LyricPlayer {
     this.isShowRoma = isShowRoma;
     this.playbackRate = playbackRate;
     registerScreenBroadcastReceiver();
-    // checkA2DPConnection(reactContext);
   }
 
   private void registerScreenBroadcastReceiver() {
@@ -90,42 +89,9 @@ public class Lyric extends LyricPlayer {
     lyricText = "";
     translationText = "";
     romaLyricText = "";
-    super.setLyric("", new ArrayList<>());
+    clearParsedLyric();
     lyricEvent = null;
   }
-
-  // private void checkA2DPConnection(Context context) {
-  //   BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-
-  //   if (bluetoothAdapter != null && bluetoothAdapter.isEnabled()) {
-  //     bluetoothAdapter.getProfileProxy(context, new BluetoothProfile.ServiceListener() {
-  //       @Override
-  //       public void onServiceConnected(int profile, BluetoothProfile proxy) {
-  //         if (profile == BluetoothProfile.A2DP) {
-  //           List<BluetoothDevice> connectedDevices = proxy.getConnectedDevices();
-  //           if (!connectedDevices.isEmpty()) {
-  //             System.out.println("已连接的 A2DP 媒体设备：");
-  //             for (BluetoothDevice device : connectedDevices) {
-  //               System.out.println("设备名称: " + "地址: " + device.getAddress());
-  //             }
-  //           } else {
-  //             System.out.println("没有连接的 A2DP 媒体设备");
-  //           }
-  //         }
-  //         bluetoothAdapter.closeProfileProxy(profile, proxy);
-  //       }
-
-  //       @Override
-  //       public void onServiceDisconnected(int profile) {
-  //         // 服务断开时的处理
-  //         System.out.println("蓝牙服务断开时的处理");
-  //       }
-  //     }, BluetoothProfile.A2DP);
-  //   } else {
-  //     System.out.println("蓝牙未开启或设备不支持蓝牙");
-  //   }
-  // }
-
   private boolean isDisableAutoPause() {
     return !isRunPlayer || isSendLyricTextEvent;
   }
@@ -146,9 +112,12 @@ public class Lyric extends LyricPlayer {
   }
 
   private void pausePlayer() {
-    if (!isRunPlayer || isShowLyricView || isSendLyricTextEvent) return;
+    if (isShowLyricView || isSendLyricTextEvent) return;
     isRunPlayer = false;
-    this.pause();
+    lyricText = "";
+    translationText = "";
+    romaLyricText = "";
+    clearParsedLyric();
   }
 
   private void setCurrentLyric(String lyric, ArrayList<String> extendedLyrics) {
@@ -201,6 +170,7 @@ public class Lyric extends LyricPlayer {
       // 没显示出来（比如悬浮窗权限被收回、addView 抛了），状态得退回去，
       // 否则 isShowLyricView 一直是 true，之后就再也 show 不起来了
       isShowLyricView = false;
+      pausePlayer();
       promise.reject(e);
       // 记完整堆栈：只记 getMessage() 的话，出了「一点就弹权限」这类问题根本看不出是哪一步炸的
       Log.e("Lyric", "showDesktopLyric failed: " + e.getClass().getName() + " " + e.getMessage(), e);
@@ -230,6 +200,10 @@ public class Lyric extends LyricPlayer {
   }
 
   public void setLyric(String lyric, String translation, String romaLyric) {
+    if (!isShowLyricView && !isSendLyricTextEvent) {
+      pausePlayer();
+      return;
+    }
     lyricText = lyric;
     translationText = translation;
     romaLyricText = romaLyric;
@@ -240,10 +214,6 @@ public class Lyric extends LyricPlayer {
   public void onSetLyric(List lines) {
     this.lines = lines;
     handleGetCurrentLyric(-1);
-    // for (int i = 0; i < lines.size(); i++) {
-    //   HashMap line = (HashMap) lines.get(i);
-    //   Log.d("Lyric", "onSetLyric: " +(String) line.get("text") + " " + line.get("extendedLyrics"));
-    // }
   }
 
   @Override

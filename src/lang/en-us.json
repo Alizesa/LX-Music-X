@@ -14,6 +14,7 @@
   "comment_not support": "Unable to get comments for this song.",
   "comment_refresh": "This is already the comment for \"{name}\"",
   "comment_show_image": "Show Picture",
+  "comment_load_previous": "Load previous comments",
   "comment_show_text": "Expand",
   "comment_tab_hot": "Top {total}",
   "comment_tab_new": "Latest {total}",

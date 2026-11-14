@@ -15,11 +15,6 @@ public class CacheClearAsyncTask extends AsyncTask<Integer,Integer,String> {
   }
 
   @Override
-  protected void onPreExecute() {
-    super.onPreExecute();
-  }
-
-  @Override
   protected void onPostExecute(String s) {
     super.onPostExecute(s);
     promise.resolve(null);

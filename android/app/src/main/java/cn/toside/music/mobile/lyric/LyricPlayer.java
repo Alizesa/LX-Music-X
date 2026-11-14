@@ -37,14 +37,6 @@ public class LyricPlayer {
   boolean tempPaused = false;
 
   LyricPlayer() {
-//    tagRegMap = new HashMap<String, String>();
-//    tagRegMap.put("title", "ti");
-//    tagRegMap.put("artist", "ar");
-//    tagRegMap.put("album", "al");
-//    tagRegMap.put("offset", "offset");
-//    tagRegMap.put("by", "by");
-//    tags = new HashMap();
-
     timeFieldPattern = Pattern.compile(timeFieldExp);
     timePattern = Pattern.compile(timeExp);
     msTimePattern = Pattern.compile(msTimeRxp);
@@ -61,17 +53,6 @@ public class LyricPlayer {
       }
     }
   }
-
-//  @RequiresApi(api = Build.VERSION_CODES.N)
-//  private void initTag() {
-//    tagRegMap.forEach((tag, value) -> {
-//      Pattern pattern = Pattern.compile("\\[" + value + ":([^\\]]*)]", Pattern.CASE_INSENSITIVE);
-//      Matcher matcher = pattern.matcher(lyric);
-//
-//      tags.put(tag, matcher.group(1));
-//    });
-//  }
-
   private void startTimeout(Runnable runnable, long delay) {
     if (tid != null) Utils.clearTimeout(tid);
     tid = Utils.setTimeout(runnable, delay);
@@ -115,7 +96,6 @@ public class LyricPlayer {
       tags.put("offset", offset);
     }
   }
-
 
   final String t_rxp_1 = "^0+(\\d+)";
   final String t_rxp_2 = ":0+(\\d+)";
@@ -282,7 +262,6 @@ public class LyricPlayer {
   }
 
   private int findCurLineNum(int curTime, int startIndex) {
-    // Log.d("Lyric", "findCurLineNum: " + startIndex);
     if (curTime <= 0) return 0;
     int length = lines.size();
     for (int index = startIndex; index < length; index++) {
@@ -304,8 +283,6 @@ public class LyricPlayer {
     if (tempPaused) tempPaused = false;
 
     curLineNum++;
-    // Log.d("Lyric", "refresh: " + curLineNum);
-
     if (curLineNum >= maxLine) {
       handleMaxLine();
       return;
@@ -319,7 +296,6 @@ public class LyricPlayer {
     if (driftTime >= 0 || curLineNum == 0) {
       HashMap nextLine = lines.get(curLineNum + 1);
       int delay = (int)(((int)nextLine.get("time") - (int)curLine.get("time") - driftTime) / this.playbackRate);
-      // Log.d("Lyric", "delay: " + delay + "  driftTime: " + driftTime);
       if (delay > 0) {
         if (isPlay) {
           startTimeout(() -> {
@@ -335,7 +311,6 @@ public class LyricPlayer {
       } else {
         int newCurLineNum = this.findCurLineNum(currentTime, curLineNum + 1);
         if (newCurLineNum > curLineNum) curLineNum = newCurLineNum - 1;
-        // Log.d("Lyric", "refresh--: " + curLineNum + "  newCurLineNum: " + newCurLineNum);
         refresh();
       }
       return;
@@ -350,6 +325,19 @@ public class LyricPlayer {
     this.lyric = lyric;
     this.extendedLyrics = extendedLyrics;
     init();
+  }
+
+  protected final void clearParsedLyric() {
+    isPlay = false;
+    tempPaused = false;
+    stopTimeout();
+    lyric = "";
+    extendedLyrics = new ArrayList<>();
+    lines = new ArrayList<>();
+    tags = new HashMap();
+    curLineNum = 0;
+    maxLine = 0;
+    onSetLyric(lines);
   }
 
   public void setPlaybackRate(float playbackRate) {

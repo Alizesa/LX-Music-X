@@ -2,6 +2,7 @@ import { sortInsert, similar } from '@/utils/common'
 
 import type { InitState, ListInfoItem, Source } from './state'
 import state from './state'
+import { appendListPage } from '@/utils/listPage'
 
 export interface SearchResult {
   list: ListInfoItem[]
@@ -54,7 +55,7 @@ const setLists = (results: SearchResult[], page: number, text: string): ListInfo
   else listInfo.total = limit * page
   listInfo.page = page
   list = handleSortList(list, text)
-  listInfo.list = page > 1 ? [...listInfo.list, ...list] : list
+  listInfo.list = appendListPage(listInfo.list, list, page === 1, item => `${item.source}_${item.id}`)
   state.source = 'all'
   return listInfo.list
 }
@@ -62,7 +63,7 @@ const setLists = (results: SearchResult[], page: number, text: string): ListInfo
 const setList = (datas: SearchResult, page: number, text: string): ListInfoItem[] => {
   // console.log(datas.source, datas.list)
   let listInfo = state.listInfos[datas.source]!
-  listInfo.list = page == 1 ? datas.list : [...listInfo.list, ...datas.list]
+  listInfo.list = appendListPage(listInfo.list, datas.list, page === 1, item => `${item.source}_${item.id}`)
   if (page == 1 || (datas.total && datas.list.length)) listInfo.total = datas.total
   else listInfo.total = datas.limit * page
   listInfo.page = page

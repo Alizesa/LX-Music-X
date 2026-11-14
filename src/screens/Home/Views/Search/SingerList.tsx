@@ -27,6 +27,7 @@ export default forwardRef<SingerListType, {}>((props, ref) => {
   const theme = useTheme()
   const t = useI18n()
   const [list, setList] = useState<SingerItem[]>([])
+  const [listRevision, setListRevision] = useState(0)
   const [status, setStatus] = useState<Status>('idle')
   const textRef = useRef('')
   const isUnmountedRef = useRef(false)
@@ -36,7 +37,8 @@ export default forwardRef<SingerListType, {}>((props, ref) => {
       const result = await search(textRef.current, page, isRefresh)
       // null：这次结果已经作废（关键词换了），列表归新的那次请求管
       if (result == null || isUnmountedRef.current) return
-      setList([...result])
+      setList(result)
+      setListRevision(value => value + 1)
       setStatus(searchSingerState.listInfo.maxPage <= page ? 'end' : 'idle')
     } catch (err) {
       console.log(err)
@@ -118,6 +120,7 @@ export default forwardRef<SingerListType, {}>((props, ref) => {
   return (
     <FlatList
       data={list}
+      extraData={listRevision}
       style={styles.list}
       keyExtractor={item => item.mid}
       renderItem={renderItem}

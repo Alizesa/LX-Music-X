@@ -1,21 +1,16 @@
+import { waitForRequest } from '../../abortable'
 import { httpFetch } from '../../request'
 import { dateFormat2 } from '../../index'
 
 export default {
-  _requestObj: null,
-  _requestObj2: null,
-  async getComment({ songmid }, page = 1, limit = 20) {
-    if (this._requestObj) this._requestObj.cancelHttp()
-
+  async getComment({ songmid }, page = 1, limit = 20, signal) {
     const _requestObj = httpFetch(`http://ncomment.kuwo.cn/com.s?f=web&type=get_comment&aapiver=1&prod=kwplayer_ar_10.5.2.0&digest=15&sid=${songmid}&start=${limit * (page - 1)}&msgflag=1&count=${limit}&newver=3&uid=0`, {
       headers: {
         'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 9;)',
       },
     })
-    const { body, statusCode } = await _requestObj.promise
+    const { body, statusCode } = await waitForRequest(_requestObj, signal)
     if (statusCode != 200 || body.code != '200') throw new Error('获取评论失败')
-    // console.log(body)
-
     const total = body.comments_counts
     return {
       source: 'kw',
@@ -26,18 +21,14 @@ export default {
       maxPage: Math.ceil(total / limit) || 1,
     }
   },
-  async getHotComment({ songmid }, page = 1, limit = 100) {
-    if (this._requestObj2) this._requestObj2.cancelHttp()
-
+  async getHotComment({ songmid }, page = 1, limit = 100, signal) {
     const _requestObj2 = httpFetch(`http://ncomment.kuwo.cn/com.s?f=web&type=get_rec_comment&aapiver=1&prod=kwplayer_ar_10.5.2.0&digest=15&sid=${songmid}&start=${limit * (page - 1)}&msgflag=1&count=${limit}&newver=3&uid=0`, {
       headers: {
         'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 9;)',
       },
     })
-    const { body, statusCode } = await _requestObj2.promise
+    const { body, statusCode } = await waitForRequest(_requestObj2, signal)
     if (statusCode != 200 || body.code != '200') throw new Error('获取热门评论失败')
-    // console.log(body)
-
     const total = body.hot_comments_counts
     return {
       source: 'kw',

@@ -11,7 +11,6 @@ import { BorderRadius } from '@/theme'
 import CheckBox from '@/components/common/CheckBox'
 import { Icon } from '@/components/common/Icon'
 import settingState from '@/store/setting/state'
-import apiSourceInfo from '@/utils/musicSdk/api-source-info'
 import { setApiSource } from '@/core/apiSource'
 
 const formatVersionName = (version: string) => {
@@ -85,8 +84,7 @@ export default () => {
     if (!confirm) return
     void removeUserApi([id]).finally(() => {
       if (settingState.setting['common.apiSource'] == id) {
-        let backApiId = apiSourceInfo.find(api => !api.disabled)?.id
-        if (!backApiId) backApiId = userApiState.list[0]?.id
+        const backApiId = userApiState.list[0]?.id
         setApiSource(backApiId ?? '')
       }
     })

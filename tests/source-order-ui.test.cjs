@@ -36,7 +36,6 @@ const harness = (selected = ['A', 'B', 'C']) => {
     },
     '@/utils/apiSourceOrder': load('src/utils/apiSourceOrder.ts'),
     '@/lang': { useI18n: () => key => key },
-    '@/utils/musicSdk/api-source-info': { default: [] },
     '@/store/setting/hook': { useSettingValue: key => setting[key] },
     '@/store/userApi': {
       useStatus: () => ({ status: true }),

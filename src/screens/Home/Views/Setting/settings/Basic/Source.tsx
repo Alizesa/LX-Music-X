@@ -5,10 +5,9 @@ import { Animated, PanResponder, View, type LayoutRectangle } from 'react-native
 import SubTitle from '../../components/SubTitle'
 import CheckBox from '@/components/common/CheckBox'
 import { createStyle } from '@/utils/tools'
-import { getApiSourceOrder, setApiSource, setApiSourceOrder } from '@/core/apiSource'
+import { getApiSourceOrder, setApiSourceOrder } from '@/core/apiSource'
 import { parseApiSourceOrder } from '@/utils/apiSourceOrder'
 import { useI18n } from '@/lang'
-import apiSourceInfo from '@/utils/musicSdk/api-source-info'
 import { useSettingValue } from '@/store/setting/hook'
 import { useStatus, useUserApiList } from '@/store/userApi'
 import Button from '../../components/Button'
@@ -18,12 +17,6 @@ import Text from '@/components/common/Text'
 import { useTheme } from '@/store/theme/hook'
 import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 // import { importUserApi, removeUserApi } from '@/core/userApi'
-
-const apiSourceList = apiSourceInfo.map(api => ({
-  id: api.id,
-  name: api.name,
-  disabled: api.disabled,
-}))
 
 const Item = memo(({ id, name, desc, statusLabel, active, visible, change, priority = -1, total = 0, orderKey = '', move, getDropIndex, onLayout }: {
   id: string
@@ -117,11 +110,6 @@ const Item = memo(({ id, name, desc, statusLabel, active, visible, change, prior
 export default memo(() => {
   const t = useI18n()
   const visible = useScreenVisible()
-  const list = useMemo(() => apiSourceList.map(s => ({
-    // @ts-expect-error
-    name: t(`setting_basic_source_${s.id}`) || s.name,
-    id: s.id,
-  })), [t])
   const userApiListRaw = useUserApiList()
   const apiStatus = useStatus()
   const apiSourceSetting = useSettingValue('common.apiSource')
@@ -137,7 +125,6 @@ export default memo(() => {
     else rowLayouts.current.delete(id)
   }, [])
   const setApiSourceId = useCallback((id: string) => {
-    if (!id.startsWith('user_api')) { setApiSource(id); return }
     const order = getApiSourceOrder()
     setApiSourceOrder(order.includes(id) ? order.filter(item => item != id) : [...order, id])
   }, [])
@@ -202,9 +189,6 @@ export default memo(() => {
     <SubTitle title={t('setting_basic_source')}>
       <Text size={12}>{t('source_priority_tip')}</Text>
       <View style={styles.list}>
-        {
-          list.map(({ id, name }) => <Item name={name} id={id} key={id} active={apiSourceSetting === id} visible={visible} change={setApiSourceId} />)
-        }
         {
           userApiList.map(({ id, name, desc, statusLabel }) => <Item name={name} desc={desc} statusLabel={statusLabel} id={id} key={id} active={sourceOrder.includes(id)} visible={visible} change={setApiSourceId}
             priority={sourceOrder.indexOf(id)} total={sourceOrder.length} orderKey={orderKey} move={moveSource} getDropIndex={getDropIndex} onLayout={handleRowLayout} />)

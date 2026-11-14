@@ -47,7 +47,6 @@ const userApiHarness = async({ scripts = {}, autoReply = true, appGlobal, settin
     './common': { updateSetting: values => { Object.assign(setting, values); globalState.state_event.configUpdated(Object.keys(values), values) } },
     '@/store/setting/state': { default: { setting } },
     './userApi': core,
-    '@/utils/musicSdk/api-source-info': { default: [] },
     '@/store/userApi': { state },
     '@/utils/apiSourceOrder': load('src/utils/apiSourceOrder.ts'),
   }, { global: globalState, requestAnimationFrame: fn => setImmediate(fn) })

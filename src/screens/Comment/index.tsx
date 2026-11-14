@@ -3,8 +3,8 @@ import { View, TouchableOpacity } from 'react-native'
 import PagerView, { type PagerViewOnPageSelectedEvent } from 'react-native-pager-view'
 import Header from './components/Header'
 import { Icon } from '@/components/common/Icon'
-import CommentHot from './CommentHot'
-import CommentNew from './CommentNew'
+import CommentList from './CommentList'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 import { createStyle, toast } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
 import Text from '@/components/common/Text'
@@ -37,38 +37,6 @@ const HeaderItem = ({ id, label, isActive, onPress }: {
   return components
 }
 
-const HotCommentPage = memo(({ activeId, musicInfo, onUpdateTotal }: {
-  activeId: ActiveId
-  musicInfo: LX.Music.MusicInfoOnline
-  onUpdateTotal: (total: number) => void
-}) => {
-  const initedRef = useRef(false)
-  const comment = useMemo(() => <CommentHot musicInfo={musicInfo} onUpdateTotal={onUpdateTotal} />, [musicInfo, onUpdateTotal])
-  switch (activeId) {
-    case 'hot':
-      if (!initedRef.current) initedRef.current = true
-      return comment
-    default:
-      return initedRef.current ? comment : null
-  }
-})
-
-const NewCommentPage = memo(({ activeId, musicInfo, onUpdateTotal }: {
-  activeId: ActiveId
-  musicInfo: LX.Music.MusicInfoOnline
-  onUpdateTotal: (total: number) => void
-}) => {
-  const initedRef = useRef(false)
-  const comment = useMemo(() => <CommentNew musicInfo={musicInfo} onUpdateTotal={onUpdateTotal} />, [musicInfo, onUpdateTotal])
-  switch (activeId) {
-    case 'new':
-      if (!initedRef.current) initedRef.current = true
-      return comment
-    default:
-      return initedRef.current ? comment : null
-  }
-})
-
 const TABS = [
   'hot',
   'new',
@@ -81,6 +49,7 @@ export default memo(({ componentId }: {
   componentId: string
 }) => {
   const pagerViewRef = useRef<PagerView>(null)
+  const visible = useScreenVisible()
   const [activeId, setActiveId] = useState<ActiveId>('hot')
   const [musicInfo, setMusicInfo] = useState<LX.Music.MusicInfo | null>(getMusicInfo(playerState.playMusicInfo.musicInfo))
   const t = useI18n()
@@ -118,6 +87,7 @@ export default memo(({ componentId }: {
       return
     }
     setMusicInfo(playerMusicInfo)
+    setTotal({ hot: 0, new: 0 })
   }, [musicInfo, t])
 
   const setHotTotal = useCallback((total: number) => {
@@ -147,15 +117,15 @@ export default memo(({ componentId }: {
           style={styles.pagerView}
         >
           <View collapsable={false} style={styles.pageStyle}>
-            <HotCommentPage activeId={activeId} musicInfo={musicInfo as LX.Music.MusicInfoOnline} onUpdateTotal={setHotTotal} />
+            {visible && activeId === 'hot' && <CommentList type="hot" musicInfo={musicInfo as LX.Music.MusicInfoOnline} onUpdateTotal={setHotTotal} />}
           </View>
           <View collapsable={false} style={styles.pageStyle}>
-            <NewCommentPage activeId={activeId} musicInfo={musicInfo as LX.Music.MusicInfoOnline} onUpdateTotal={setNewTotal} />
+            {visible && activeId === 'new' && <CommentList type="new" musicInfo={musicInfo as LX.Music.MusicInfoOnline} onUpdateTotal={setNewTotal} />}
           </View>
         </PagerView>
       </View>
     )
-  }, [activeId, musicInfo, onPageSelected, refreshComment, setHotTotal, setNewTotal, tabs, theme, toggleTab])
+  }, [activeId, musicInfo, onPageSelected, refreshComment, setHotTotal, setNewTotal, tabs, theme, toggleTab, visible])
 
   return (
     <PageContent>

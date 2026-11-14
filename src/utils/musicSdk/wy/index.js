@@ -1,4 +1,3 @@
-import { apis } from '../api-source'
 import getLyric from './lyric'
 import getMusicInfo from './musicInfo'
 import musicSearch from './musicSearch'
@@ -11,9 +10,6 @@ const wy = {
   songList,
   hotSearch,
   comment,
-  getMusicUrl(songInfo, type) {
-    return apis('wy').getMusicUrl(songInfo, type)
-  },
   getLyric(songInfo) {
     return getLyric(songInfo.songmid)
   },

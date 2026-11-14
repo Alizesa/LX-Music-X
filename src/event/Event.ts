@@ -1,6 +1,3 @@
-// import mitt from 'mitt'
-// import type { Emitter } from 'mitt'
-
 export default class Event {
   listeners: Map<string, Array<(...args: any[]) => any>>
   constructor() {
@@ -38,21 +35,3 @@ export default class Event {
     this.listeners.delete(eventName)
   }
 }
-
-// export class App_EVENT {
-//   listeners: Map<string, Array<() => void>>
-//   constructor() {
-//     this.listeners = new Map()
-//   }
-
-//   on(eventName: string, listener: () => void) {
-//     let targetListeners = this.listeners.get(eventName)
-//     if (targetListeners) this.listeners.set(eventName, targetListeners = [])
-//     targetListeners!.push(listener)
-//   }
-
-//   off(eventName: string, listener: () => void) {
-
-//   }
-// }
-

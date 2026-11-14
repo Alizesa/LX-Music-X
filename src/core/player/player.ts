@@ -120,6 +120,12 @@ const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, i
 }
 let musicUrlGeneration = 0
 let cancelMusicUrl: (() => void) | null = null
+let metadataController: AbortController | null = null
+const beginMetadataRequest = () => {
+  metadataController?.abort()
+  metadataController = new AbortController()
+  return metadataController.signal
+}
 let lastMusicUrl: { musicId: string, url: string } | null = null
 const failedPlaybackUrls = new Set<string>()
 const sourceConfig = () => JSON.stringify([
@@ -311,6 +317,7 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
   const musicInfo = playMusicInfo.musicInfo
   if (!musicInfo) return
   const isCurrent = () => playerState.playMusicInfo === playMusicInfo
+  const signal = beginMetadataRequest()
 
   setTimeout(() => {
     if (!isCurrent()) return
@@ -319,7 +326,7 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
 
   void initTrackInfo(musicInfo, playerState.musicInfo, isCurrent).catch(console.warn)
 
-  void getPicPath({ musicInfo, listId: playMusicInfo.listId }).then((url: string) => {
+  void getPicPath({ musicInfo, listId: playMusicInfo.listId, signal }).then((url: string) => {
     if (
       !isCurrent() ||
       playerState.musicInfo.pic == url ||
@@ -329,7 +336,7 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
     global.app_event.picUpdated()
   }).catch(console.warn)
 
-  void getLyricInfo({ musicInfo }).then((lyricInfo) => {
+  void getLyricInfo({ musicInfo, signal }).then((lyricInfo) => {
     if (!isCurrent()) return
     setMusicInfo({
       lrc: lyricInfo.lyric,
@@ -353,9 +360,10 @@ const debouncePlay = debounceBackgroundTimer((playback: typeof playerState.playM
   const musicInfo = playback.musicInfo
   const isCurrent = () => playback === playerState.playMusicInfo
   if (!musicInfo || !isCurrent()) return
+  const signal = beginMetadataRequest()
   setMusicUrl(musicInfo)
 
-  void getPicPath({ musicInfo, listId: playerState.playMusicInfo.listId }).then((url: string) => {
+  void getPicPath({ musicInfo, listId: playerState.playMusicInfo.listId, signal }).then((url: string) => {
     if (
       !isCurrent() ||
       playerState.musicInfo.pic == url ||
@@ -364,7 +372,7 @@ const debouncePlay = debounceBackgroundTimer((playback: typeof playerState.playM
     global.app_event.picUpdated()
   }).catch(console.warn)
 
-  void getLyricInfo({ musicInfo }).then((lyricInfo) => {
+  void getLyricInfo({ musicInfo, signal }).then((lyricInfo) => {
     if (!isCurrent()) return
     setMusicInfo({
       lrc: lyricInfo.lyric,
@@ -383,6 +391,8 @@ const debouncePlay = debounceBackgroundTimer((playback: typeof playerState.playM
 
 // 处理音乐播放
 const handlePlay = async() => {
+  metadataController?.abort()
+  metadataController = null
   const playMusicInfo = playerState.playMusicInfo
   const musicInfo = playMusicInfo.musicInfo
   if (!musicInfo) return
@@ -885,6 +895,8 @@ export const pause = async() => {
 }
 
 const stopPlayback = async() => {
+  metadataController?.abort()
+  metadataController = null
   playbackLog('player.stop_requested', () => ({ playId: playbackLogId(playerState.playMusicInfo, 'play') }))
   const generation = ++selectionGeneration
   playRequested = false

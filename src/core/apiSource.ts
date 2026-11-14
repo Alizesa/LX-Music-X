@@ -1,10 +1,6 @@
-// import { setUserApi as setUserApiAction } from '@renderer/utils/ipc'
-import musicSdk from '@/utils/musicSdk'
-// import apiSourceInfo from '@renderer/utils/musicSdk/api-source-info'
 import { updateSetting } from './common'
 import settingState from '@/store/setting/state'
 import { destroyUserApi, setUserApi, setUserApiStatus } from './userApi'
-import apiSourceInfo from '@/utils/musicSdk/api-source-info'
 import { state as userApiState } from '@/store/userApi'
 import { resolveApiSourceOrder } from '@/utils/apiSourceOrder'
 
@@ -19,7 +15,6 @@ export const setApiSourceOrder = (ids: string[]) => {
   updateSetting({ 'common.apiSourceOrder': JSON.stringify(order) })
   if (settingState.setting['common.apiSource'] != (order[0] ?? '')) setApiSource(order[0] ?? '')
 }
-
 
 let sourceGeneration = 0
 export const setApiSource = (apiId: string) => {
@@ -41,15 +36,11 @@ export const setApiSource = (apiId: string) => {
       if (!global.lx.apiInitPromise[1]) global.lx.apiInitPromise[2](false)
       setUserApiStatus(false, err instanceof Error ? err.message : String(err))
       console.log(err)
-      let api = apiSourceInfo.find(api => !api.disabled)
-      if (!api) return
-      if (api.id != settingState.setting['common.apiSource']) setApiSource(api.id)
     })
   } else {
-    // @ts-expect-error
-    global.lx.qualityList = musicSdk.supportQuality[apiId] ?? {}
+    global.lx.qualityList = {}
     destroyUserApi()
-    if (!global.lx.apiInitPromise[1]) global.lx.apiInitPromise[2](true)
+    if (!global.lx.apiInitPromise[1]) global.lx.apiInitPromise[2](false)
     // apiSource.value = apiId
     // void setUserApiAction(apiId)
   }

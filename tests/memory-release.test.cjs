@@ -44,6 +44,7 @@ const load = (file, mocks = {}, globals = {}) => {
     console: { log() {}, warn() {}, error() {} },
     require: name => {
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'Fragment' }
+      if (name === '@/utils/listPage') return load('src/utils/listPage.ts')
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${file}: ${name}`)
       return mocks[name]
     },
@@ -313,6 +314,7 @@ const singerHarness = () => {
     '@/store/singer/action': actions,
     '@/utils/musicSdk': { default: sdk },
     './detailCache': cache.api,
+    '@/utils': { toNewMusicInfo: value => value },
   })
   return { cache, state: state.default, actions, api, sdk, requests, clock }
 }
@@ -364,6 +366,25 @@ test('a shared visible singer keeps its record until the last screen releases it
   assert.strictEqual(h.state.singers.s, record)
   h.actions.releaseSingerRecord('s')
   assert.equal(h.state.singers.s, undefined)
+})
+
+test('singer paging writes incoming pages without repeatedly serializing all earlier songs', async() => {
+  const h = singerHarness()
+  let serializedSongs = 0
+  const save = h.cache.data.saveBrowseDetailCache
+  h.cache.data.saveBrowseDetailCache = async(key, value) => {
+    serializedSongs += value.list?.length ?? value.songs?.list?.length ?? 0
+    await save(key, value)
+  }
+  h.sdk.tx.singer.getSongs = async(mid, page) => ({
+    list: Array.from({ length: 20 }, (_, i) => song(`${page}-${i}`)), total: 2000, allPage: 100, limit: 20, source: 'tx',
+  })
+  await h.api.getSingerDetail('s')
+  for (let page = 2; page <= 100; page++) await h.api.getSingerSongs('s', page)
+  const snapshot = await h.cache.api.getDetailCache('singer_s')
+  assert.equal(h.state.singers.s.songs.list.length, 1981)
+  assert.equal(snapshot.songs.list, undefined)
+  assert.ok(serializedSongs > 20 && serializedSongs <= 1981)
 })
 
 test('detail snapshots coalesce pending writes, limit disk entries and recover after write failures', async() => {

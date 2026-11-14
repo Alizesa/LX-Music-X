@@ -3,8 +3,6 @@ import kg from './kg'
 import tx from './tx'
 import wy from './wy'
 import mg from './mg'
-import xm from './xm'
-import { supportQuality } from './api-source'
 import { versionChars } from './versionChars'
 
 
@@ -36,31 +34,16 @@ const sources = {
   tx,
   wy,
   mg,
-  // bd,
-  xm,
 }
-export default {
-  ...sources,
-  supportQuality,
-}
-
-export const init = () => {
-  const tasks = []
-  for (let source of sources.sources) {
-    let sm = sources[source.id]
-    sm && sm.init && tasks.push(sm.init())
-  }
-  return Promise.all(tasks)
-}
+export default sources
 
 
 export const searchMusic = async({ name, singer, source: s, limit = 25 }) => {
   const trimStr = str => typeof str == 'string' ? str.trim() : str
   const musicName = trimStr(name)
   const tasks = []
-  const excludeSource = ['xm']
   for (const source of sources.sources) {
-    if (!sources[source.id].musicSearch || source.id == s || excludeSource.includes(source.id)) continue
+    if (!sources[source.id].musicSearch || source.id == s) continue
     tasks.push(sources[source.id].musicSearch.search(`${musicName} ${singer || ''}`.trim(), 1, limit).catch(_ => null))
   }
   return (await Promise.all(tasks)).filter(s => s)

@@ -14,6 +14,7 @@
   "comment_not support": "該歌曲不支援獲取評論",
   "comment_refresh": "這已經是「{name}」的評論啦",
   "comment_show_image": "顯示圖片",
+  "comment_load_previous": "載入更前面的評論",
   "comment_show_text": "展開評論",
   "comment_tab_hot": "熱門 {total}",
   "comment_tab_new": "最新 {total}",

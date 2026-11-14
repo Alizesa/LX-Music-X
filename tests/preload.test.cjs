@@ -15,10 +15,11 @@ const load = (file, mocks = {}, globals = {}) => {
   }
   const context = {
     exports: {},
+    AbortController,
     setTimeout,
     clearTimeout,
     console: { log() {} },
-    require(name) { if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs'); assert.ok(Object.hasOwn(mocks, name), `Unexpected import ${name} in ${file}`); return mocks[name] },
+    require(name) { if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/abortable.ts', { './message': mocks['@/utils/message'] ?? load('src/utils/message.ts') }); if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs'); assert.ok(Object.hasOwn(mocks, name), `Unexpected import ${name} in ${file}`); return mocks[name] },
     ...globals,
   }
   vm.runInNewContext(compiled.get(file), context, { filename: file })

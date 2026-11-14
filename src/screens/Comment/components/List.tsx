@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react'
+import { useMemo } from 'react'
 import { FlatList, type FlatListProps, RefreshControl, View } from 'react-native'
 
 // import { useMusicList } from '@/store/list/hook'
@@ -12,39 +12,25 @@ import Text from '@/components/common/Text'
 type FlatListType = FlatListProps<Comment>
 
 export interface ListProps {
+  list: Comment[]
+  status: Status
+  hasPrevious: boolean
   onRefresh: () => void
   onLoadMore: () => void
-}
-export interface ListType {
-  setList: (list: Comment[]) => void
-  getList: () => Comment[]
-  setStatus: (val: Status) => void
+  onLoadPrevious: () => void
 }
 export type Status = 'loading' | 'refreshing' | 'end' | 'error' | 'idle'
 
-const List = forwardRef<ListType, ListProps>(({
+const List = ({
+  list,
+  status,
+  hasPrevious,
   onRefresh,
   onLoadMore,
-}, ref) => {
-  // const t = useI18n()
+  onLoadPrevious,
+}: ListProps) => {
+  const t = useI18n()
   const theme = useTheme()
-  const flatListRef = useRef<FlatList>(null)
-  const [currentList, setList] = useState<Comment[]>([])
-  const [status, setStatus] = useState<Status>('idle')
-  // const currentListIdRef = useRef('')
-  // console.log('render comment list')
-
-  useImperativeHandle(ref, () => ({
-    setList(list) {
-      setList(list)
-    },
-    getList() {
-      return currentList
-    },
-    setStatus(val) {
-      setStatus(val)
-    },
-  }))
 
   const handleLoadMore = () => {
     if (status != 'idle') return
@@ -84,25 +70,24 @@ const List = forwardRef<ListType, ListProps>(({
 
   return (
     <FlatList
-      ref={flatListRef}
       style={styles.list}
-      data={currentList}
+      data={list}
       onEndReachedThreshold={0.5}
-      // maxToRenderPerBatch={4}
-      // updateCellsBatchingPeriod={80}
-      // windowSize={8}
+      maxToRenderPerBatch={4}
+      windowSize={5}
       removeClippedSubviews={false}
-      // initialNumToRender={12}
+      initialNumToRender={8}
       renderItem={renderItem}
       keyExtractor={getkey}
       // onRefresh={onRefresh}
       // refreshing={refreshing}
       onEndReached={handleLoadMore}
       refreshControl={refreshControl}
+      ListHeaderComponent={hasPrevious ? <Text style={styles.footer} onPress={onLoadPrevious}>{t('comment_load_previous')}</Text> : null}
       ListFooterComponent={footerComponent}
     />
   )
-})
+}
 
 type FooterLabel = 'list_loading' | 'list_end' | 'list_error' | null
 const Footer = ({ label, onLoadMore }: {

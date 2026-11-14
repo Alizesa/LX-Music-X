@@ -1,5 +1,7 @@
 import { toOldMusicInfo } from '@/utils'
 import music from '@/utils/musicSdk'
+import { waitForPromise } from '@/utils/abortable'
+import { isRequestCancelled, requestMsg } from '@/utils/message'
 
 export interface Comment {
   id: string
@@ -23,28 +25,18 @@ export interface CommentInfo {
   maxPage: number
 }
 
-export const getNewComment = async(musicInfo: LX.Music.MusicInfoOnline, page: number, limit: number, retryNum = 0): Promise<CommentInfo> => {
-  let resp
-  try {
-    resp = await (music[musicInfo.source].comment.getComment(toOldMusicInfo(musicInfo), page, limit) as Promise<CommentInfo>)
-  } catch (error: any) {
-    console.log(error.message)
-    if (error.message == '取消请求' || ++retryNum > 2) throw error
-    resp = await getNewComment(musicInfo, page, limit, retryNum)
+export const getComments = async(musicInfo: LX.Music.MusicInfoOnline, type: 'hot' | 'new', page: number, limit: number, signal: AbortSignal): Promise<CommentInfo> => {
+  const api = music[musicInfo.source]?.comment
+  if (!api) throw new Error('Unsupported comment source')
+  for (let attempt = 0; ; attempt++) {
+    if (signal.aborted) throw new Error(requestMsg.cancelRequest)
+    try {
+      const request = type === 'hot' ? api.getHotComment : api.getComment
+      return await waitForPromise(request.call(api, toOldMusicInfo(musicInfo), page, limit, signal) as Promise<CommentInfo>, signal)
+    } catch (error) {
+      if (signal.aborted || isRequestCancelled(error) || attempt >= 2) throw error
+    }
   }
-  return resp
-}
-
-export const getHotComment = async(musicInfo: LX.Music.MusicInfoOnline, page: number, limit: number, retryNum = 0): Promise<CommentInfo> => {
-  let resp
-  try {
-    resp = await (music[musicInfo.source].comment.getHotComment(toOldMusicInfo(musicInfo), page, limit) as Promise<CommentInfo>)
-  } catch (error: any) {
-    console.log(error.message)
-    if (error.message == '取消请求' || ++retryNum > 2) throw error
-    resp = await getHotComment(musicInfo, page, limit, retryNum)
-  }
-  return resp
 }
 
 export const filterList = (list: Comment[]) => {

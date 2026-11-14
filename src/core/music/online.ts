@@ -21,29 +21,6 @@ import {
   isLyricCacheStale,
 } from './utils'
 
-/* export const setMusicUrl = ({ musicInfo, type, url }: {
-  musicInfo: LX.Music.MusicInfo
-  type: LX.Quality
-  url: string
-}) => {
-  saveMusicUrl(musicInfo, type, url)
-}
-
-export const setPic = (datas: {
-  listId: string
-  musicInfo: LX.Music.MusicInfo
-  url: string
-}) => {
-  datas.musicInfo.img = datas.url
-  updateMusicInfo({
-    listId: datas.listId,
-    id: datas.musicInfo.songmid,
-    data: { img: datas.url },
-    musicInfo: datas.musicInfo,
-  })
-}
- */
-
 
 export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSource = true, onToggleSource = () => {}, urlSourceOrder, onCancel, validateUrl, rejectedUrls, cacheContext = getMusicUrlCacheContext(settingState.setting, urlSourceOrder), trace }: {
   musicInfo: LX.Music.MusicInfoOnline

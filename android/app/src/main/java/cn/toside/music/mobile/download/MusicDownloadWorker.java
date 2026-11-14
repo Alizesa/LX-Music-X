@@ -4,8 +4,10 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.DocumentsContract;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
@@ -25,6 +27,8 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
@@ -43,6 +47,7 @@ public class MusicDownloadWorker extends Worker {
   public static final String KEY_ERROR = "error";
   private static final String CHANNEL_ID = "music_downloads";
   private static final Semaphore DOWNLOAD_SLOTS = new Semaphore(2, true);
+  private static final Object DESTINATION_CREATION_LOCK = new Object();
   private static final ConcurrentHashMap<String, MusicDownloadWorker> RUNNING = new ConcurrentHashMap<>();
   private final CountDownLatch finished = new CountDownLatch(1);
   private final Object lifecycle = new Object();
@@ -213,10 +218,17 @@ public class MusicDownloadWorker extends Worker {
     throwIfStopped();
     DocumentFile directory = DocumentFile.fromTreeUri(getApplicationContext(), Uri.parse(treeUri));
     if (directory == null || !directory.canWrite()) throw new IOException("Download directory is not writable");
-    String fileName = availableName(directory, requestedFileName);
-    throwIfStopped();
-    DocumentFile destination = directory.createFile(mimeType, fileName);
-    if (destination == null) throw new IOException("Unable to create destination file");
+    String fileName;
+    DocumentFile destination;
+    // 目录快照和创建在同一临界区；复制文件不占锁，其他 worker 可以继续创建。
+    synchronized (DESTINATION_CREATION_LOCK) {
+      fileName = availableName(readNames(directory), requestedFileName);
+      throwIfStopped();
+      destination = directory.createFile(mimeType, fileName);
+      if (destination == null) throw new IOException("Unable to create destination file");
+      String actualName = destination.getName();
+      if (actualName != null) fileName = actualName;
+    }
     boolean copied = false;
     try {
       try (
@@ -242,17 +254,32 @@ public class MusicDownloadWorker extends Worker {
     }
   }
 
-  private String availableName(DocumentFile directory, String requestedName) throws IOException {
-    if (directory.findFile(requestedName) == null) return requestedName;
+  private Set<String> readNames(DocumentFile directory) throws IOException {
+    Set<String> names = new HashSet<>();
+    Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(
+      directory.getUri(), DocumentsContract.getDocumentId(directory.getUri()));
+    try (Cursor cursor = getApplicationContext().getContentResolver().query(children,
+      new String[] { DocumentsContract.Document.COLUMN_DISPLAY_NAME }, null, null, null)) {
+      if (cursor == null) throw new IOException("Unable to read download directory");
+      while (cursor.moveToNext()) {
+        throwIfStopped();
+        names.add(cursor.getString(0));
+      }
+    }
+    return names;
+  }
+
+  private String availableName(Set<String> names, String requestedName) throws IOException {
+    if (!names.contains(requestedName)) return requestedName;
     int dot = requestedName.lastIndexOf('.');
     String stem = dot > 0 ? requestedName.substring(0, dot) : requestedName;
     String extension = dot > 0 ? requestedName.substring(dot) : "";
-    for (int index = 1; index < 10000; index++) {
+    for (int index = 1; index < Integer.MAX_VALUE; index++) {
       throwIfStopped();
       String candidate = stem + " (" + index + ")" + extension;
-      if (directory.findFile(candidate) == null) return candidate;
+      if (!names.contains(candidate)) return candidate;
     }
-    return stem + " (" + System.currentTimeMillis() + ")" + extension;
+    throw new IOException("Unable to select a unique destination name");
   }
 
   private void publishProgress(String taskId, String fileName, long downloaded, long total) {

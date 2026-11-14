@@ -3,7 +3,6 @@ import songList from './songList'
 import musicSearch from './musicSearch'
 import singer from './singer'
 import album from './album'
-import { apis } from '../api-source'
 import hotSearch from './hotSearch'
 import comment from './comment'
 
@@ -14,12 +13,7 @@ const tx = {
   album,
   hotSearch,
   comment,
-
-  getMusicUrl(songInfo, type) {
-    return apis('tx').getMusicUrl(songInfo, type)
-  },
   getLyric(songInfo) {
-    // let singer = songInfo.singer.indexOf('、') > -1 ? songInfo.singer.split('、')[0] : songInfo.singer
     return lyric.getLyric(songInfo)
   },
   async getPic(songInfo) {

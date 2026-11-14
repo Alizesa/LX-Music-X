@@ -14,6 +14,7 @@
   "comment_not support": "该歌曲不支持获取评论",
   "comment_refresh": "这已经是「{name}」的评论啦",
   "comment_show_image": "显示图片",
+  "comment_load_previous": "加载更前面的评论",
   "comment_show_text": "展开评论",
   "comment_tab_hot": "热门 {total}",
   "comment_tab_new": "最新 {total}",

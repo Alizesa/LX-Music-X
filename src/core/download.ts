@@ -40,6 +40,13 @@ import { toMD5 } from '@/utils/tools'
 import { sizeFormate } from '@/utils/common'
 
 const tasks: LX.Download.DownloadTask[] = []
+const tasksById = new Map<string, LX.Download.DownloadTask>()
+const isCurrentTask = (task: LX.Download.DownloadTask) => tasksById.get(task.id) === task
+const replaceTasks = (next: LX.Download.DownloadTask[]) => {
+  tasks.splice(0, tasks.length, ...next)
+  tasksById.clear()
+  for (const task of next) tasksById.set(task.id, task)
+}
 const speedSamples = new Map<string, { bytes: number, time: number }>()
 let initPromise: Promise<void> | null = null
 let reconciling = false
@@ -146,7 +153,7 @@ const toListItem = (task: LX.Download.DownloadTask): LX.Download.DownloadListIte
 
 export const getDownloadTaskItem = (id: string) => {
   if (hasDownloadHistory(id)) return null
-  const task = tasks.find(item => item.id === id)
+  const task = tasksById.get(id)
   return task ? toListItem(task) : null
 }
 
@@ -253,23 +260,28 @@ const withFileOperation = async(action: () => Promise<void>) => {
 }
 const forEachFileOperation = async<T>(items: readonly T[], action: (item: T) => Promise<void>) => {
   let next = 0
+  let failure: unknown
+  let failed = false
   const worker = async() => {
     while (next < items.length) {
       const item = items[next++]
-      await withFileOperation(async() => action(item))
+      try { await withFileOperation(async() => action(item)) } catch (error) {
+        if (!failed) { failed = true; failure = error }
+      }
     }
   }
   await Promise.all(Array.from({ length: Math.min(4, items.length) }, worker))
+  if (failed) throw failure
 }
 
 const updateTask = async(task: LX.Download.DownloadTask, update: Partial<LX.Download.DownloadTask>, immediate = false) => {
   // 同一歌曲重建会复用 ID；旧任务的异步结果只能修改原来的对象。
-  if (!tasks.includes(task)) return false
+  if (!isCurrentTask(task)) return false
   Object.assign(task, update)
   dirtyTasks.add(task.id)
   if (immediate) await persistNow()
   else schedulePersist()
-  if (!tasks.includes(task)) return false
+  if (!isCurrentTask(task)) return false
   global.app_event.downloadTaskUpdate(toListItem(task))
   return true
 }
@@ -311,7 +323,7 @@ const writeEmbeddedMetadata = async(task: LX.Download.DownloadTask) => {
     }
   } catch {}
   try {
-    if (!tasks.includes(task)) return
+    if (!isCurrentTask(task)) return
     await writeDownloadMetadata(task.filePath, {
       name: info.name,
       singer: info.singer,
@@ -337,7 +349,7 @@ const flushCompletions = () => {
   completionTimer = null
   const batch = completions.splice(0)
   void withCatalogWrite(async() => {
-    const current = batch.filter(item => tasks.includes(item.task))
+    const current = batch.filter(item => isCurrentTask(item.task))
     if (!current.length) return
     // 连续完成的下载只写一次 LOCAL、重建一次匹配索引。
     await addListMusics(LIST_IDS.LOCAL, current.map(item => item.localInfo), 'bottom')
@@ -345,6 +357,7 @@ const flushCompletions = () => {
     for (const { task } of current) {
       const index = tasks.indexOf(task)
       if (index >= 0) tasks.splice(index, 1)
+      if (isCurrentTask(task)) tasksById.delete(task.id)
       speedSamples.delete(task.id)
     }
     try { await persistNow() } finally { notify() }
@@ -354,7 +367,7 @@ const flushCompletions = () => {
 }
 
 const completeTask = async(task: LX.Download.DownloadTask, state: NativeDownloadState) => {
-  if (!state.filePath || !tasks.includes(task)) return
+  if (!state.filePath || !isCurrentTask(task)) return
   // 入本地列表之前先核对大小，坏的直接判失败，不留一条播不了的记录。
   // state.downloaded 正常就是落盘字节数（原生完成事件与 WorkManager 的 output data
   // 带的都是真实长度），没带上时退回下载过程中记录的字节数
@@ -399,7 +412,7 @@ const completeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
   // 写元数据要花几秒（下载封面 + 取歌词），这期间任务可能已被删除
   // （批量删除尤其容易发生：它会把仍在 finalizing 的任务一并删掉并解除文件）。
   // 不检查的话会给一个刚被删掉的文件补一条本地记录，留下播不了的条目。
-  if (!tasks.includes(task)) return
+  if (!isCurrentTask(task)) return
   await new Promise<void>((resolve, reject) => {
     completions.push({ task, localInfo, resolve, reject })
     completionTimer ??= setTimeout(flushCompletions, 250)
@@ -441,7 +454,7 @@ const finalizeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
         await completeTask(task, state)
         resolve()
       } catch (error) {
-        if (tasks.includes(task)) {
+        if (isCurrentTask(task)) {
           task.status = 'error'
           task.error = error instanceof Error ? error.message : String(error)
           dirtyTasks.add(task.id)
@@ -473,7 +486,7 @@ const resumeFinalization = (task: LX.Download.DownloadTask) => {
 const earlyNativeUpdates = new Map<LX.Download.DownloadTask, Map<string, NativeDownloadState>>()
 const handleNativeUpdate = (state: NativeDownloadState) => {
   if (!state.taskId) return
-  const task = tasks.find(item => item.id == state.taskId)
+  const task = tasksById.get(state.taskId)
   if (!task || hasDownloadHistory(task.id)) return
   if (state.nativeId && state.nativeId !== task.nativeId) {
     // enqueue 的 Promise 回来之前可能先收到进度；只暂存本次入队期间的事件，
@@ -521,7 +534,7 @@ const reconcileTask = async(task: LX.Download.DownloadTask) => {
   const nativeId = task.nativeId
   try {
     const state = await getDownloadState(nativeId)
-    const currentTask = tasks.find(item => item === task)
+    const currentTask = (isCurrentTask(task) ? task : undefined)
     if (!currentTask || currentTask.nativeId !== nativeId || currentTask.status === 'pause') return
     if (!state) {
       task.status = 'waiting'
@@ -534,7 +547,7 @@ const reconcileTask = async(task: LX.Download.DownloadTask) => {
       task.nativeId = undefined
     } else handleNativeUpdate({ ...state, taskId: task.id })
   } catch (error) {
-    const currentTask = tasks.find(item => item === task)
+    const currentTask = (isCurrentTask(task) ? task : undefined)
     if (!currentTask || currentTask.nativeId !== nativeId || currentTask.status === 'pause') return
     // 查询失败不能当作原生 work 不存在，否则会取消仍在运行的下载并重新取链。
     currentTask.status = 'error'
@@ -559,14 +572,14 @@ const processQueue = async() => {
       // 先快照 id：循环里的 await 期间可能完成/归档别的任务，
       // 直接遍历 tasks 会被 splice 打乱迭代器、跳过下一项
       for (const id of tasks.map(task => task.id)) {
-        const task = tasks.find(item => item.id == id)
+        const task = tasksById.get(id)
         if (!task || task.status != 'waiting' || task.nativeId) continue
         try {
           await updateTask(task, { status: 'resolving', error: undefined }, true)
-          if (!tasks.includes(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') continue
+          if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') continue
           const url = await resolveTaskUrl(task)
           if (url === null) continue
-          const currentTask = tasks.find(item => item === task)
+          const currentTask = (isCurrentTask(task) ? task : undefined)
           if (currentTask?.status != 'resolving') continue
           const early = new Map<string, NativeDownloadState>()
           earlyNativeUpdates.set(task, early)
@@ -578,7 +591,7 @@ const processQueue = async() => {
               fileName: task.fileName,
               mimeType: mimeForExtension(extensionForQuality(task.quality)),
             })
-            const enqueuedTask = tasks.find(item => item === task)
+            const enqueuedTask = (isCurrentTask(task) ? task : undefined)
             if (!enqueuedTask || enqueuedTask.status === 'pause') {
               await removeNativeDownload(nativeId, task.id, false).catch(() => {})
               continue
@@ -590,7 +603,7 @@ const processQueue = async() => {
             earlyNativeUpdates.delete(task)
           }
         } catch (error: unknown) {
-          if (!tasks.includes(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') continue
+          if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') continue
           await updateTask(task, {
             status: 'error',
             error: error instanceof Error ? error.message : String(error),
@@ -630,7 +643,7 @@ const loadDownloadStorage = async() => {
   const active = await getDownloadActiveTasks()
   await initDownloadHistory()
   // 历史已写成功、活跃快照还没写就被杀时，按历史去重，避免再次下载/写标签。
-  tasks.splice(0, tasks.length, ...active.filter(task => !hasDownloadHistory(task.id)))
+  replaceTasks(active.filter(task => !hasDownloadHistory(task.id)))
 }
 
 export const initDownloads = async() => {
@@ -647,7 +660,7 @@ export const initDownloads = async() => {
     // 状态查询和元数据补写不阻塞首页，也不阻塞下载页读取已有快照。
     void (async() => {
       for (const task of [...tasks]) {
-        if (tasks.includes(task)) await reconcileTask(task)
+        if (isCurrentTask(task)) await reconcileTask(task)
       }
     })().catch(logDownloadError).finally(() => {
       reconciling = false
@@ -763,7 +776,7 @@ const addTasksToCatalog = async(musicInfos: LX.Music.MusicInfoOnline[], quality:
   const addedIds = new Set(added.map(task => task.id))
   // 同 id 的旧任务(一定是 error，否则上面就跳过了)先移除，再整批放到最前面，顺序与传入一致
   const kept = tasks.filter(task => !addedIds.has(task.id))
-  tasks.splice(0, tasks.length, ...added, ...kept)
+  replaceTasks([...added, ...kept])
   for (const task of added) dirtyTasks.add(task.id)
   await persistNow()
   notify()
@@ -778,10 +791,8 @@ export const addTasks = async(musicInfos: LX.Music.MusicInfoOnline[], quality: L
   return withCatalogWrite(async() => addTasksToCatalog(musicInfos, quality))
 }
 
-const pauseTaskInternal = async(id: string, persist: boolean) => {
-  await init()
-  const task = tasks.find(item => item.id == id)
-  if (!task || task.status == 'completed' || task.status == 'finalizing') return
+const preparePause = (task: LX.Download.DownloadTask) => {
+  if (!isCurrentTask(task) || task.status == 'completed' || task.status == 'finalizing') return
   // 等待目录/原生取消时仍可能显示 pause，重复暂停也必须作废旧恢复。
   resumeRequests.delete(task)
   if (task.status == 'pause') return
@@ -790,27 +801,33 @@ const pauseTaskInternal = async(id: string, persist: boolean) => {
   cancelTaskUrl(task)
   task.progress.speed = ''
   dirtyTasks.add(task.id)
-  if (persist) {
-    await persistNow()
-    notify()
-  }
-  if (nativeId) await pauseNativeDownload(nativeId)
+  return nativeId
 }
 
-export const pauseTask = async(id: string) => pauseTaskInternal(id, true)
-
-const retryTaskInternal = async(id: string, persist: boolean, process: boolean) => {
+export const pauseTask = async(id: string) => {
   await init()
-  const task = tasks.find(item => item.id == id)
-  if (!task || task.status == 'completed' || task.status == 'finalizing') return
+  const task = tasksById.get(id)
+  if (!task) return
+  const nativeId = preparePause(task)
+  await persistNow()
+  notify()
+  if (nativeId) await withFileOperation(async() => pauseNativeDownload(nativeId))
+}
+
+const prepareResume = (task: LX.Download.DownloadTask) => {
+  if (!isCurrentTask(task) || task.status == 'completed' || task.status == 'finalizing') return
   if (resumeFinalization(task)) return
   const request = Symbol('download-resume')
   resumeRequests.set(task, request)
-  const isCurrent = () => resumeRequests.get(task) === request && tasks.includes(task) &&
-    task.status !== 'completed' && task.status !== 'finalizing' && !task.pendingCompletion
   cancelTaskUrl(task)
+  return { task, request }
+}
+const retryTaskInternal = async({ task, request }: NonNullable<ReturnType<typeof prepareResume>>,
+  directoryPromise: Promise<LX.Download.DownloadDirectory | null>, persist: boolean, process: boolean) => {
+  const isCurrent = () => resumeRequests.get(task) === request && isCurrentTask(task) &&
+    task.status !== 'completed' && task.status !== 'finalizing' && !task.pendingCompletion
   try {
-    const directory = await getDownloadPath()
+    const directory = await directoryPromise
     if (!isCurrent()) return
     if (!directory) throw new Error(global.i18n.t('download_path_required'))
     // 等旧 worker 停止后才复用 .part；保留断点续传的进度。
@@ -835,12 +852,19 @@ const retryTaskInternal = async(id: string, persist: boolean, process: boolean) 
   }
 }
 
-export const retryTask = async(id: string) => retryTaskInternal(id, true, true)
+export const retryTask = async(id: string) => {
+  await init()
+  const task = tasksById.get(id)
+  const request = task && prepareResume(task)
+  if (request) await withFileOperation(async() => retryTaskInternal(request, getDownloadPath(), true, true))
+}
 
 export const pauseAllTasks = async() => {
   await init()
+  // 先同步暂停所有任务并作废在途恢复，再限制原生操作的并发。
+  const nativeIds = tasks.map(preparePause).filter((id): id is string => !!id)
   try {
-    await Promise.all(tasks.filter(task => task.status != 'completed').map(async task => pauseTaskInternal(task.id, false)))
+    await forEachFileOperation(nativeIds, async nativeId => pauseNativeDownload(nativeId))
   } finally {
     // 批量操作只落盘/通知一次，避免 N 个任务各写一遍整份数组
     await persistNow()
@@ -850,8 +874,14 @@ export const pauseAllTasks = async() => {
 
 export const resumeAllTasks = async() => {
   await init()
+  const requests = tasks.filter(task => task.status === 'pause' || task.status === 'error')
+    .map(prepareResume).filter((request): request is NonNullable<typeof request> => !!request)
   try {
-    await Promise.all(tasks.filter(task => task.status == 'pause' || task.status == 'error').map(async task => retryTaskInternal(task.id, false, false)))
+    if (requests.length) {
+      const directory = getDownloadPath()
+      void directory.catch(() => {})
+      await forEachFileOperation(requests, async request => retryTaskInternal(request, directory, false, false))
+    }
   } finally {
     await persistNow()
     notify()
@@ -871,7 +901,7 @@ export const removeTasks = async(ids: string[], deleteFile = false) => {
     if (!activeTargets.length && !ids.some(hasDownloadHistory)) return
     try {
       const historyTargets = await removeDownloadHistory(idSet, deleteFile)
-      tasks.splice(0, tasks.length, ...tasks.filter(task => !idSet.has(task.id)))
+      replaceTasks(tasks.filter(task => !idSet.has(task.id)))
       activeTargets.forEach(task => { resumeRequests.delete(task); cancelTaskUrl(task); speedSamples.delete(task.id) })
       await forEachFileOperation(activeTargets, async task =>
         removeNativeDownload(task.nativeId, task.id, task.status != 'completed').catch(() => {}),

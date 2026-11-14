@@ -1,0 +1,147 @@
+import { memo, useMemo } from 'react'
+import { View, FlatList, type FlatListProps, type LayoutChangeEvent } from 'react-native'
+import { type Line, useLrcPlay, useLrcSet } from '@/plugins/lyric'
+import { createStyle } from '@/utils/tools'
+import { useTheme } from '@/store/theme/hook'
+import { useSettingValue } from '@/store/setting/hook'
+import { AnimatedColorText } from '@/components/common/Text'
+import { setSpText } from '@/utils/pixelRatio'
+import PlayLine from './PlayLine'
+import { useLyricScroll } from './useLyricScroll'
+import { resolveLrcColors } from './lrcColors'
+
+
+type FlatListType = FlatListProps<Line>
+
+type FontSizeSetting = 'playDetail.horizontal.style.lrcFontSize' | 'playDetail.vertical.style.lrcFontSize'
+
+interface LineProps {
+  fontSizeSetting: FontSizeSetting
+  line: Line
+  lineNum: number
+  activeLine: number
+  onLayout: (lineNum: number, height: number, width: number) => void
+}
+const LrcLine = memo(({ line, lineNum, activeLine, onLayout, fontSizeSetting }: LineProps) => {
+  const theme = useTheme()
+  const lrcFontSize = useSettingValue(fontSizeSetting)
+  const textAlign = useSettingValue('playDetail.style.align')
+  const lrcColor = useSettingValue('playDetail.style.lyricColor')
+  const lrcActiveColor = useSettingValue('playDetail.style.lyricActiveColor')
+  const lrcOpacity = useSettingValue('playDetail.style.lyricOpacity')
+  const size = lrcFontSize / 10
+  const lineHeight = setSpText(size) * 1.3
+
+  const colors = useMemo(() => resolveLrcColors({
+    active: activeLine == lineNum,
+    theme,
+    lrcColor,
+    lrcActiveColor,
+    lrcOpacity,
+  }), [activeLine, lineNum, theme, lrcColor, lrcActiveColor, lrcOpacity])
+
+  const handleLayout = ({ nativeEvent }: LayoutChangeEvent) => {
+    onLayout(lineNum, nativeEvent.layout.height, nativeEvent.layout.width)
+  }
+
+  // textBreakStrategy="simple" 用于解决某些设备上字体被截断的问题
+  // https://stackoverflow.com/a/72822360
+  return (
+    <View style={styles.line} onLayout={handleLayout}>
+      <AnimatedColorText style={{
+        ...styles.lineText,
+        textAlign,
+        lineHeight,
+      }} textBreakStrategy="simple" color={colors.color} opacity={colors.opacity} size={size}>{line.text}</AnimatedColorText>
+      {
+        line.extendedLyrics.map((lrc, index) => {
+          return (<AnimatedColorText style={{
+            ...styles.lineTranslationText,
+            textAlign,
+            lineHeight: lineHeight * 0.8,
+          }} textBreakStrategy="simple" key={index} color={colors.translationColor} opacity={colors.translationOpacity} size={size * 0.8}>{lrc}</AnimatedColorText>)
+        })
+      }
+    </View>
+  )
+}, (prevProps, nextProps) => {
+  return prevProps.fontSizeSetting === nextProps.fontSizeSetting && prevProps.line === nextProps.line &&
+    prevProps.activeLine != nextProps.lineNum &&
+    nextProps.activeLine != nextProps.lineNum
+})
+// 首屏渲染数量固定，远处的当前句由定位逻辑带入渲染窗口。
+const INITIAL_LYRIC_LINES = 30
+
+export default ({ fontSizeSetting }: { fontSizeSetting: FontSizeSetting }) => {
+  const lyricLines = useLrcSet()
+  const { line } = useLrcPlay()
+  const isShowLyricProgressSetting = useSettingValue('playDetail.isShowLyricProgressSetting')
+  const {
+    flatListRef, playLineRef, ready,
+    handleScroll, handleLineLayout, handleSpaceLayout, handleLayout, handlePlayLine,
+    handleScrollBeginDrag, handleScrollEndDrag, handleMomentumScrollBegin, handleMomentumScrollEnd,
+    handleScrollToIndexFailed, handleContentSizeChange,
+  } = useLyricScroll(lyricLines, line, isShowLyricProgressSetting)
+
+  const renderItem: FlatListType['renderItem'] = ({ item, index }) => {
+    return (
+      <LrcLine fontSizeSetting={fontSizeSetting} line={item} lineNum={index} activeLine={line} onLayout={handleLineLayout} />
+    )
+  }
+  const getkey: FlatListType['keyExtractor'] = (item, index) => `${index}${item.text}`
+
+  const spaceComponent = useMemo(() => (
+    <View style={styles.space} onLayout={handleSpaceLayout}></View>
+  ), [handleSpaceLayout])
+
+  return (
+    <>
+      <FlatList
+        data={lyricLines}
+        renderItem={renderItem}
+        keyExtractor={getkey}
+        style={[styles.container, { opacity: ready ? 1 : 0 }]}
+        ref={flatListRef}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={spaceComponent}
+        ListFooterComponent={spaceComponent}
+        onScrollBeginDrag={handleScrollBeginDrag}
+        onScrollEndDrag={handleScrollEndDrag}
+        onMomentumScrollBegin={handleMomentumScrollBegin}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        onLayout={handleLayout}
+        onContentSizeChange={handleContentSizeChange}
+        fadingEdgeLength={100}
+        initialNumToRender={INITIAL_LYRIC_LINES}
+        onScrollToIndexFailed={handleScrollToIndexFailed}
+        onScroll={handleScroll}
+      />
+      { isShowLyricProgressSetting ? <PlayLine ref={playLineRef} onPlayLine={handlePlayLine} /> : null }
+    </>
+  )
+}
+
+const styles = createStyle({
+  container: {
+    flex: 1,
+    paddingLeft: 20,
+    paddingRight: 20,
+  },
+  space: {
+    paddingTop: '100%',
+  },
+  line: {
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+  lineText: {
+    textAlign: 'center',
+
+
+  },
+  lineTranslationText: {
+    textAlign: 'center',
+
+    paddingTop: 5,
+  },
+})

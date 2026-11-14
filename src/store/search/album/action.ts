@@ -1,4 +1,5 @@
 import state, { type AlbumItem } from './state'
+import { appendListPage } from '@/utils/listPage'
 
 export interface SearchResult {
   list: AlbumItem[]
@@ -8,18 +9,10 @@ export interface SearchResult {
   source: 'tx'
 }
 
-/** 去重按 mid，翻页时接口偶尔会把同一个专辑重复给回来 */
-const deduplication = (list: AlbumItem[]) => {
-  return [...new Map(list.map(item => [item.mid, item])).values()]
-}
-
 export default {
-  setSearchText(searchText: string) {
-    state.searchText = searchText
-  },
   setListInfo(result: SearchResult, page: number, text: string) {
     const listInfo = state.listInfo
-    listInfo.list = deduplication(page == 1 ? result.list : [...listInfo.list, ...result.list])
+    listInfo.list = appendListPage(listInfo.list, result.list, page === 1, item => item.mid, true)
     if (page == 1 || (result.total && result.list.length)) listInfo.total = result.total
     else listInfo.total = result.limit * page
     listInfo.maxPage = result.allPage

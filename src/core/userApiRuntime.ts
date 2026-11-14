@@ -7,50 +7,10 @@ import { requestMsg } from '@/utils/message'
 import { destroy, loadScript, onScriptAction, sendAction, supportsIsolatedUserApi } from '@/utils/nativeModules/userApi'
 import { fetchData } from '@/core/init/userApi/request'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
+import { waitForPromise } from '@/utils/abortable'
 
 const qualities: LX.Quality[] = ['flac24bit', 'flac', '320k', '128k']
 let nextRuntimeId = 0
-
-interface InitializationWaiter {
-  resolve: (initialized: boolean) => void
-  reject: (error: unknown) => void
-}
-const initializationWaiters = new WeakMap<Promise<boolean>, Set<InitializationWaiter>>()
-
-/** 共享初始化只挂一个观察者；不能让未完成的全局 Promise 逐次积累已取消请求。 */
-const getInitializationWaiters = (initialization: Promise<boolean>) => {
-  const current = initializationWaiters.get(initialization)
-  if (current) return current
-  const waiters = new Set<InitializationWaiter>()
-  initializationWaiters.set(initialization, waiters)
-  // 观察者单独建作用域，不捕获任意一个请求的歌曲、取消信号或等待者。
-  const finish = () => {
-    initializationWaiters.delete(initialization)
-    waiters.clear()
-  }
-  void initialization.then(initialized => {
-    for (const waiter of waiters) waiter.resolve(initialized)
-    finish()
-  }, (error: unknown) => {
-    for (const waiter of waiters) waiter.reject(error)
-    finish()
-  })
-  return waiters
-}
-
-const waitForInitialization = async(initialization: Promise<boolean>, cancelled: Promise<never>) => {
-  const waiters = getInitializationWaiters(initialization)
-  let waiter: InitializationWaiter
-  const ready = new Promise<boolean>((resolve, reject) => {
-    waiter = { resolve, reject }
-    waiters.add(waiter)
-  })
-  try {
-    return await Promise.race([ready, cancelled])
-  } finally {
-    waiters.delete(waiter!)
-  }
-}
 
 const selectQuality = (preferred: LX.Quality, supported: LX.Quality[], musicInfo: LX.Music.MusicInfoOnline, allowFallback: boolean) => {
   if (!allowFallback) {
@@ -68,6 +28,7 @@ export const requestUserApiMusicUrl = async(apiId: string, musicInfo: LX.Music.M
   onCancel?: (cancel: () => void) => void, allowQualityFallback = true, trace?: PlaybackLogContext): Promise<{ url: string, type: LX.Quality }> => {
   const startedAt = Date.now()
   let disposed = false
+  const controller = new AbortController()
   let cancelRequest: (() => void) | undefined
   let removeListener: (() => void) | undefined
   let runtimeId: string | undefined
@@ -78,6 +39,7 @@ export const requestUserApiMusicUrl = async(apiId: string, musicInfo: LX.Music.M
   const cancel = (message: string) => {
     if (disposed) return
     disposed = true
+    controller.abort()
     playbackLog('source.cancel', () => ({ ...trace, apiId, reason: message, elapsedMs: Date.now() - startedAt }))
     try { cancelRequest?.() } catch {}
     rejectCancelled(new Error(message))
@@ -90,7 +52,7 @@ export const requestUserApiMusicUrl = async(apiId: string, musicInfo: LX.Music.M
     if (apiId == settingState.setting['common.apiSource']) {
       playbackLog('source.init_wait', () => ({ ...trace, apiId, primary: true, ready: global.lx.apiInitPromise[1] }))
       const initialization = global.lx.apiInitPromise[0]
-      const initialized = await waitForInitialization(initialization, cancelled)
+      const initialized = await waitForPromise(initialization, controller.signal)
       playbackLog('source.init_result', () => ({ ...trace, apiId, initialized, elapsedMs: Date.now() - startedAt }))
       assertActive()
       if (initialization !== global.lx.apiInitPromise[0] || apiId != settingState.setting['common.apiSource']) throw new Error(requestMsg.cancelRequest)

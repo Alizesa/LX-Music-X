@@ -46,12 +46,8 @@ export const readFile = async(path: string, encoding?: Encoding) => FileSystem.r
 export const moveFile = async(fromPath: string, toPath: string) => FileSystem.mv(fromPath, toPath)
 export const gzipFile = async(fromPath: string, toPath: string) => FileSystem.gzipFile(fromPath, toPath)
 export const unGzipFile = async(fromPath: string, toPath: string) => FileSystem.unGzipFile(fromPath, toPath)
-export const gzipString = async(data: string, encoding?: Encoding) => FileSystem.gzipString(data, encoding)
-export const unGzipString = async(data: string, encoding?: Encoding) => FileSystem.unGzipString(data, encoding)
 
 export const existsFile = async(path: string) => FileSystem.exists(path)
-
-export const rename = async(path: string, name: string) => FileSystem.rename(path, name)
 
 export const writeFile = async(path: string, data: string, encoding?: Encoding) => FileSystem.writeFile(path, data, encoding)
 

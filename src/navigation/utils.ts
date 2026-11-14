@@ -5,14 +5,9 @@ import {
 } from './screenNames'
 import themeState from '@/store/theme/state'
 
-
 export const getStatusBarStyle = (isDark: boolean) => isDark ? 'light' : 'dark'
 
-export const dismissOverlay = async(compId: string) => Navigation.dismissOverlay(compId)
-
 export const pop = async(compId: string) => Navigation.pop(compId)
-export const popToRoot = async(compId: string) => Navigation.popToRoot(compId)
-export const popTo = async(compId: string) => Navigation.popTo(compId)
 
 export const showPactModal = () => {
   const theme = themeState.theme
@@ -37,27 +32,6 @@ export const showPactModal = () => {
           // visible: false,
           backgroundColor: theme['c-content-background'],
         },
-        // animations: {
-
-        //   showModal: {
-        //     enter: {
-        //       enabled: true,
-        //       alpha: {
-        //         from: 0,
-        //         to: 1,
-        //         duration: 300,
-        //       },
-        //     },
-        //     exit: {
-        //       enabled: true,
-        //       alpha: {
-        //         from: 1,
-        //         to: 0,
-        //         duration: 300,
-        //       },
-        //     },
-        //   },
-        // },
       },
     },
   })
@@ -86,37 +60,7 @@ export const showVersionModal = () => {
           // visible: false,
           backgroundColor: theme['c-content-background'],
         },
-        // animations: {
-
-        //   showModal: {
-        //     enter: {
-        //       enabled: true,
-        //       alpha: {
-        //         from: 0,
-        //         to: 1,
-        //         duration: 300,
-        //       },
-        //     },
-        //     exit: {
-        //       enabled: true,
-        //       alpha: {
-        //         from: 1,
-        //         to: 0,
-        //         duration: 300,
-        //       },
-        //     },
-        //   },
-        // },
       },
     },
   })
 }
-
-
-// export const showToast = (text) => {
-//   Navigation.showOverlay({
-//     component: {
-//       name: TOAST_SCREEN,
-//     },
-//   })
-// }

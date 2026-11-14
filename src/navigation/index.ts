@@ -14,13 +14,6 @@ const init = (callback: () => void | Promise<void>) => {
 
   if (unRegisterEvent) unRegisterEvent.remove()
 
-  Navigation.setDefaultOptions({
-    // animations: {
-    //   setRoot: {
-    //     waitForRender: true,
-    //   },
-    // },
-  })
   unRegisterEvent = Navigation.events().registerScreenPoppedListener(({ componentId }) => {
     removeComponentId(componentId)
   })

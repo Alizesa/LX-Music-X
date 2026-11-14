@@ -28,7 +28,13 @@ export const getBrowseDetailCacheIndex = async() => await getData<Record<string,
 export const saveBrowseDetailCacheIndex = async(index: Record<string, number>) => saveDataDirect(storageDataPrefix.browseDetailCacheIndex, index)
 export const getBrowseDetailCache = async<T>(key: string) => getData<T>(storageDataPrefix.browseDetailCacheItem + key)
 export const saveBrowseDetailCache = async(key: string, value: unknown) => saveData(storageDataPrefix.browseDetailCacheItem + key, value)
-export const removeBrowseDetailCaches = async(keys: string[]) => removeDataMultiple(keys.map(key => storageDataPrefix.browseDetailCacheItem + key))
+export const removeBrowseDetailCaches = async(keys: string[]) => {
+  if (!keys.length) return
+  const groups = new Set(keys.map(key => storageDataPrefix.browseDetailCacheItem + key))
+  const stored = await getAllKeys()
+  const pages = stored.filter(key => groups.has(key.split('::')[0]))
+  await removeDataMultiple([...new Set([...groups, ...pages])])
+}
 const listPrefix = storageDataPrefix.list
 const dislikeListPrefix = storageDataPrefix.dislikeList
 const userApiPrefix = storageDataPrefix.userApi
@@ -324,8 +330,6 @@ export const clearMusicUrl = async(keys?: string[]) => {
   if (!keys) keys = (await getAllKeys()).filter(key => key.startsWith(storageDataPrefix.musicUrl))
   await removeDataMultiple(keys)
 }
-
-export const getLyric = async(musicInfo: LX.Music.MusicInfo) => getData<LX.Music.LyricInfo>(`${storageDataPrefix.lyric}${musicInfo.id}`).then(lrcInfo => lrcInfo ?? { lyric: '' })
 export const saveLyric = async(musicInfo: LX.Music.MusicInfo, lyricInfo: LX.Music.LyricInfo) => saveData(`${storageDataPrefix.lyric}${musicInfo.id}`, lyricInfo)
 export const clearLyric = async(keys?: string[]) => {
   if (!keys) keys = (await getAllKeys()).filter(key => key.startsWith(storageDataPrefix.lyric))
@@ -353,8 +357,6 @@ export const getPlayerLyric = async(musicInfo: LX.Music.MusicInfo): Promise<LX.P
     }
   })
 }
-
-export const getOtherSource = async(id: string) => getData<LX.Music.MusicInfoOnline[]>(`${storageDataPrefix.musicOtherSource}${id}`).then((url) => url ?? [])
 export const clearOtherSource = async(keys?: string[]) => {
   if (!keys) keys = (await getAllKeys()).filter(key => key.startsWith(storageDataPrefix.musicOtherSource))
   await removeDataMultiple(keys)

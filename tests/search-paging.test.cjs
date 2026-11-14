@@ -104,3 +104,23 @@ test('reopening the same aggregate page reuses its in-memory result', async() =>
   assert.equal(first, second)
   assert.equal(h.calls.length, 3)
 })
+
+test('long music pagination only visits incoming identifiers after its index has been created', () => {
+  const h = harness()
+  const state = h.state
+  let reads = 0
+  const actions = load('src/store/search/music/action.ts', {
+    './state': { default: state },
+    '@/utils/common': {},
+    '@/utils': { toNewMusicInfo: value => value },
+  }).default
+  let first
+  for (let page = 1; page <= 100; page++) {
+    const list = Array.from({ length: 20 }, (_, i) => ({ get id() { reads++; return `${page}-${i}` } }))
+    const result = actions.setListInfo({ source: 'tx', list, total: 2000, allPage: 100, limit: 20 }, page, 'song')
+    if (page === 1) first = result
+    else assert.equal(result, first)
+  }
+  assert.equal(state.listInfos.tx.list.length, 2000)
+  assert.equal(reads, 2000)
+})

@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useCallback } from 'react'
 import { type LayoutChangeEvent, View } from 'react-native'
 
 // import music from '@/utils/musicSdk'
@@ -13,7 +13,8 @@ import { getSearchSetting, saveSearchSetting } from '@/utils/data'
 import { createStyle } from '@/utils/tools'
 import TipList, { type TipListType } from './TipList'
 import List, { type ListType } from './List'
-import { addHistoryWord } from '@/core/search/search'
+import { addHistoryWord, setSearchText } from '@/core/search/search'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 
 interface SearchInfo {
@@ -28,10 +29,19 @@ export default () => {
   const listRef = useRef<ListType>(null)
   const layoutHeightRef = useRef<number>(0)
   const searchInfo = useRef<SearchInfo>({ temp_source: 'kw', source: 'kw', searchType: 'music' })
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const visible = useScreenVisible()
+  const handleHideTipList = useCallback(() => {
+    searchTipListRef.current?.hide()
+  }, [])
+  useEffect(() => {
+    if (!visible) handleHideTipList()
+    return handleHideTipList
+  }, [visible, handleHideTipList])
 
   useEffect(() => {
+    let active = true
     void getSearchSetting().then(info => {
+      if (!active) return
       // info.type = 'music'
       searchInfo.current.temp_source = info.temp_source
       searchInfo.current.source = info.source
@@ -72,6 +82,7 @@ export default () => {
     global.app_event.on('searchTypeChanged', handleTypeChange)
 
     return () => {
+      active = false
       global.app_event.off('searchTypeChanged', handleTypeChange)
     }
   }, [])
@@ -88,30 +99,18 @@ export default () => {
     listRef.current?.loadList(searchState.searchText, source, searchInfo.current.searchType)
   }
   const handleTipSearch: HeaderBarProps['onTipSearch'] = (text) => {
-    setTimeout(() => {
-      searchTipListRef.current?.search(text, layoutHeightRef.current)
-    }, 500)
-  }
-  const handleHideTipList = () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-      timeoutRef.current = null
-    }
-    searchTipListRef.current?.hide()
+    searchTipListRef.current?.search(text, layoutHeightRef.current)
   }
   const handleSearch: HeaderBarProps['onSearch'] = (text) => {
     handleHideTipList()
-    searchTipListRef.current?.search(text, layoutHeightRef.current)
+    setSearchText(text)
     headerBarRef.current?.setText(text)
     headerBarRef.current?.blur()
     void addHistoryWord(text)
     listRef.current?.loadList(text, searchInfo.current.source, searchInfo.current.searchType)
   }
   const handleShowTipList: HeaderBarProps['onShowTipList'] = () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current)
-    timeoutRef.current = setTimeout(() => {
-      searchTipListRef.current?.show(layoutHeightRef.current)
-    }, 500)
+    searchTipListRef.current?.show(layoutHeightRef.current)
   }
 
   return (

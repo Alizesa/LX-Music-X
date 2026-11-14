@@ -31,7 +31,7 @@ export interface ListType {
 
 export default forwardRef<ListType, ListProps>(({ onRefresh, onLoadMore, onOpenDetail }, ref) => {
   const flatListRef = useRef<FlatList>(null)
-  const [currentList, setList] = useState<ListInfoItem[]>([])
+  const [listSnapshot, setListSnapshot] = useState<{ list: ListInfoItem[] }>({ list: [] })
   const [showSource, setShowSource] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
   const { onLayout, width } = useLayout()
@@ -41,7 +41,7 @@ export default forwardRef<ListType, ListProps>(({ onRefresh, onLoadMore, onOpenD
   useImperativeHandle(ref, () => ({
     setList(list, showSource = false) {
       // rawListRef.current = list
-      setList(list)
+      setListSnapshot({ list })
       setShowSource(showSource)
     },
     setStatus(val) {
@@ -124,7 +124,7 @@ export default forwardRef<ListType, ListProps>(({ onRefresh, onLoadMore, onOpenD
   }, [width])
   // console.log(rowNum)
   const list = useMemo(() => {
-    const list = [...currentList]
+    const list = [...listSnapshot.list]
     let whiteItemNum = (list.length % rowInfo.num)
     if (whiteItemNum > 0) whiteItemNum = rowInfo.num - whiteItemNum
     for (let i = 0; i < whiteItemNum; i++) {
@@ -140,7 +140,7 @@ export default forwardRef<ListType, ListProps>(({ onRefresh, onLoadMore, onOpenD
       })
     }
     return list
-  }, [currentList, rowInfo])
+  }, [listSnapshot, rowInfo])
   // console.log(listInfo.list.map((item) => item.id))
 
   return (

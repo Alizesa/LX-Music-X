@@ -31,7 +31,8 @@ export interface AlbumListType {
 }
 
 export default forwardRef<AlbumListType, AlbumListProps>(({ onRefresh, onLoadMore, onOpenDetail, releaseOnHide = false }, ref) => {
-  const [currentList, setList] = useState<AlbumItem[]>([])
+  const [listSnapshot, setListSnapshot] = useState<{ list: AlbumItem[] }>({ list: [] })
+  const currentList = listSnapshot.list
   const [status, setStatus] = useState<Status>('idle')
   const { onLayout, width } = useLayout()
   const theme = useTheme()
@@ -44,14 +45,14 @@ export default forwardRef<AlbumListType, AlbumListProps>(({ onRefresh, onLoadMor
   const scrollRestore = useListScrollRestore(listRef, visible, currentList.length > 0)
   useEffect(() => {
     if (visible) return
-    setList([])
+    setListSnapshot({ list: [] })
     setStatus('idle')
   }, [visible])
 
   useImperativeHandle(ref, () => ({
     setList(list) {
       if (!visibleRef.current) return
-      setList(list)
+      setListSnapshot({ list })
     },
     setStatus(val) {
       if (!visibleRef.current) return
@@ -78,14 +79,14 @@ export default forwardRef<AlbumListType, AlbumListProps>(({ onRefresh, onLoadMor
 
   // 末行补齐占位项，保证最后一行的卡片宽度一致
   const list = useMemo(() => {
-    const list = [...currentList]
+    const list = [...listSnapshot.list]
     let whiteItemNum = list.length % rowInfo.num
     if (whiteItemNum > 0) whiteItemNum = rowInfo.num - whiteItemNum
     for (let i = 0; i < whiteItemNum; i++) {
       list.push({ id: `white__${i}`, mid: '', name: '', author: '', img: '', publishDate: '', albumType: '', source: 'tx' })
     }
     return list
-  }, [currentList, rowInfo])
+  }, [listSnapshot, rowInfo])
 
   const refreshControl = useMemo(() => (
     <RefreshControl

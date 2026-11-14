@@ -69,9 +69,10 @@ export const releaseIdleSearchCaches = async() => {
     for (const { kind, source, info } of records()) {
       if (holders) return
       if (!info.list.length || isSearchPending(kind)) continue
+      const currentList = info.list
       const snapshot: Snapshot = {
         savedAt: Date.now(),
-        info: { ...info },
+        info: { ...info, list: [...currentList] },
         maxPages: kind === 'music' ? { ...music.maxPages } : kind === 'songlist' ? { ...songlist.maxPages } : undefined,
       }
       const key = `${kind}_${source}`
@@ -82,7 +83,7 @@ export const releaseIdleSearchCaches = async() => {
       } catch (error) {
         console.warn('[Search] cache save:', error instanceof Error ? error.message : error)
       }
-      if (holders || info.list !== snapshot.info.list || info.key !== snapshot.info.key) continue
+      if (holders || info.list !== currentList || info.key !== snapshot.info.key) continue
       if (saved) invalidated.delete(key)
       // 重新赋值，不修改播放队列或尚未完成的调用持有的原数组。
       info.list = []

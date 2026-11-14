@@ -1,22 +1,16 @@
-import { useRef, useImperativeHandle, forwardRef, useState, useEffect } from 'react'
+import { useRef, useImperativeHandle, forwardRef, useState, useEffect, useCallback } from 'react'
 import SearchTipList, { type SearchTipListProps as _SearchTipListProps, type SearchTipListType as _SearchTipListType } from '@/components/SearchTipList'
 import Button from '@/components/common/Button'
 import { createStyle } from '@/utils/tools'
 import Text from '@/components/common/Text'
 import { scaleSizeH } from '@/utils/pixelRatio'
 import musicSdk from '@/utils/musicSdk'
-import searchState, { type InitState as SearchState } from '@/store/search/state'
+import searchState from '@/store/search/state'
 import { setSearchText, setTipList, setTipListInfo } from '@/core/search/search'
-import { debounce } from '@/utils'
+import { waitForPromise } from '@/utils/abortable'
 
 const ITEM_HEIGHT_RAW = 36
 export const ITEM_HEIGHT = scaleSizeH(ITEM_HEIGHT_RAW)
-
-export const debounceTipSearch = debounce((keyword: string, source: SearchState['temp_source'], callback: (list: string[]) => void) => {
-  // console.log(reslutList)
-  void musicSdk[source].tipSearch.search(keyword).then(callback)
-}, 200)
-
 
 export type SearchTipListProps = _SearchTipListProps<string>
 export type SearchTipListType = _SearchTipListType<string>
@@ -34,68 +28,71 @@ export default forwardRef<TipListType, TipListProps>(({ onSearch }, ref) => {
   const searchTipListRef = useRef<SearchTipListType>(null)
   const [visible, setVisible] = useState(false)
   const visibleListRef = useRef(false)
-  const isUnmountedRef = useRef(false)
-
-  useEffect(() => {
-    isUnmountedRef.current = false
-    return () => {
-      isUnmountedRef.current = true
-    }
+  const heightRef = useRef(0)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const request = useRef<AbortController | null>(null)
+  const generation = useRef(0)
+  const cancel = useCallback(() => {
+    generation.current++
+    if (timer.current != null) clearTimeout(timer.current)
+    timer.current = null
+    request.current?.abort()
+    request.current = null
   }, [])
+  useEffect(() => cancel, [cancel])
 
-  const handleSearch = (keyword: string, height: number) => {
-    searchTipListRef.current?.setHeight(height)
+  const handleSearch = useCallback((keyword: string, height: number) => {
+    cancel()
+    heightRef.current = height
+    visibleListRef.current = true
+    setVisible(true)
     setSearchText(keyword)
+    const source = searchState.temp_source
+    setTipListInfo(keyword, source)
     if (keyword) {
-      setTipListInfo(keyword, searchState.temp_source)
-      debounceTipSearch(keyword, searchState.temp_source, (list) => {
-        if (keyword != searchState.tipListInfo.text) return
-        setTipList(list)
-        if (!visibleListRef.current || isUnmountedRef.current) return
-        searchTipListRef.current?.setList(list)
-      })
+      const version = generation.current
+      timer.current = setTimeout(() => {
+        timer.current = null
+        if (!visibleListRef.current || version !== generation.current) return
+        const controller = request.current = new AbortController()
+        void waitForPromise(musicSdk[source].tipSearch.search(keyword, controller.signal) as Promise<string[]>, controller.signal).then(list => {
+          if (!visibleListRef.current || version !== generation.current || source !== searchState.temp_source) return
+          setTipList(list)
+          searchTipListRef.current?.setHeight(heightRef.current)
+          searchTipListRef.current?.setList(list)
+        }).catch(() => {}).finally(() => {
+          if (request.current === controller) request.current = null
+        })
+      }, 200)
     } else {
-      setTipListInfo(keyword, searchState.temp_source)
       setTipList([])
       searchTipListRef.current?.setList([])
     }
-  }
+  }, [cancel])
 
-  const handleShowList = (height: number) => {
-    searchTipListRef.current?.setHeight(height)
-    if (searchState.tipListInfo.list.length) {
-      visibleListRef.current = true
-      searchTipListRef.current?.setList([...searchState.tipListInfo.list])
-    }
-  }
+  const hide = useCallback(() => {
+    visibleListRef.current = false
+    cancel()
+    searchTipListRef.current?.setList([])
+    setVisible(false)
+  }, [cancel])
+  useEffect(() => {
+    if (!visible) return
+    searchTipListRef.current?.setHeight(heightRef.current)
+    searchTipListRef.current?.setList(searchState.tipListInfo.list)
+  }, [visible])
 
   useImperativeHandle(ref, () => ({
-    search(keyword, height) {
-      if (visible) handleSearch(keyword, height)
-      else {
-        setVisible(true)
-        requestAnimationFrame(() => {
-          handleSearch(keyword, height)
-        })
-      }
-    },
+    search: handleSearch,
     show(height) {
+      heightRef.current = height
       visibleListRef.current = true
-      if (visible) handleShowList(height)
-      else {
-        setVisible(true)
-        requestAnimationFrame(() => {
-          handleShowList(height)
-        })
-      }
+      setVisible(true)
+      searchTipListRef.current?.setHeight(height)
+      searchTipListRef.current?.setList(searchState.tipListInfo.list)
     },
-    hide() {
-      requestAnimationFrame(() => {
-        visibleListRef.current = false
-        searchTipListRef.current?.setList([])
-      })
-    },
-  }), [visible])
+    hide,
+  }), [handleSearch, hide])
 
   const renderItem: SearchTipListProps['renderItem'] = ({ item, index }) => {
     return (
@@ -114,7 +111,7 @@ export default forwardRef<TipListType, TipListProps>(({ onSearch }, ref) => {
       ? <SearchTipList
           ref={searchTipListRef}
           renderItem={renderItem}
-          onPressBg={() => searchTipListRef.current?.setList([])}
+          onPressBg={hide}
           keyExtractor={getkey}
           getItemLayout={getItemLayout}
         />

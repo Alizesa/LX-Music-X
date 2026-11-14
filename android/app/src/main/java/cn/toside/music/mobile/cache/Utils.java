@@ -1,7 +1,5 @@
 package cn.toside.music.mobile.cache;
 
-import android.content.Context;
-
 import java.io.File;
 
 // https://github.com/midas-gufei/react-native-clear-app-cache/tree/master/android/src/main/java/com/learnta/clear
@@ -26,26 +24,6 @@ public class Utils {
       }
     }
     return dirSize;
-  }
-
-  /**
-   * 判断当前版本是否兼容目标版本的方法
-   *
-   * @param VersionCode
-   * @return
-   */
-  static public boolean isMethodsCompat(int VersionCode) {
-    int currentVersion = android.os.Build.VERSION.SDK_INT;
-    return currentVersion >= VersionCode;
-  }
-
-  static public File getExternalCacheDir(Context context) {
-
-    // return context.getExternalCacheDir(); API level 8
-
-    // e.g. "<sdcard>/Android/data/<package_name>/cache/"
-
-    return context.getExternalCacheDir();
   }
 
   /**

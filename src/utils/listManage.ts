@@ -23,7 +23,9 @@ const USER_LIST_CACHE_MAX = 2
 const USER_LIST_CACHE_MAX_SONGS = 3000
 // Map 保持插入顺序：访问时删了再塞，淘汰从头部拿最久没用的
 const listAccessOrder = new Map<string, true>()
+const listCacheHolds = new Map<string, number>()
 let listCachePruneTimer: ReturnType<typeof setTimeout> | null = null
+let pressurePrunePending = false
 
 // TEMP 只在「当前队列由它建立」或「启动恢复指向它」时保护；
 // 切走队列后它和普通列表一样可以被释放（已落盘，需要时重新读）
@@ -32,6 +34,7 @@ const isTempInUse = () =>
   global.lx.restorePlayInfo?.listId === LIST_IDS.TEMP
 
 const isListCacheProtected = (id: string) =>
+  listCacheHolds.has(id) ||
   id === LIST_IDS.LOCAL ||
   (id === LIST_IDS.TEMP && isTempInUse()) ||
   id === playerState.playInfo.playerListId ||
@@ -43,19 +46,21 @@ const touchListCache = (id: string) => {
   listAccessOrder.set(id, true)
 }
 
-const pruneListCache = () => {
+const pruneListCache = (pressure = false) => {
   // 只统计可淘汰的列表；保护的列表不触发淘汰，也不被淘汰
   const ids = [...listAccessOrder.keys()].filter(id => allMusicList.has(id) && !isListCacheProtected(id))
   if (!ids.length) return
   let count = ids.length
   let totalSongs = ids.reduce((sum, id) => sum + (allMusicList.get(id)?.length ?? 0), 0)
-  if (count <= USER_LIST_CACHE_MAX && totalSongs <= USER_LIST_CACHE_MAX_SONGS) return
+  const maxLists = pressure ? 0 : USER_LIST_CACHE_MAX
+  const maxSongs = pressure ? 0 : USER_LIST_CACHE_MAX_SONGS
+  if (count <= maxLists && totalSongs <= maxSongs) return
 
   // 最近访问的那个留着，否则一个超大列表会刚加载完就被自己挤掉
   const newest = ids[ids.length - 1]
   for (const id of ids) {
-    if (count <= USER_LIST_CACHE_MAX && totalSongs <= USER_LIST_CACHE_MAX_SONGS) break
-    if (id === newest) continue
+    if (count <= maxLists && totalSongs <= maxSongs) break
+    if (!pressure && id === newest) continue
     totalSongs -= allMusicList.get(id)?.length ?? 0
     allMusicList.delete(id)
     listAccessOrder.delete(id)
@@ -63,7 +68,7 @@ const pruneListCache = () => {
   }
 }
 
-// 延迟一点再淘汰：避免在某个列表的增删改还没走完时就把它的缓存删掉
+// 合并普通 LRU 回收；操作安全由引用计数保证，不依赖定时器的延迟。
 const schedulePruneListCache = () => {
   if (listCachePruneTimer) return
   listCachePruneTimer = setTimeout(() => {
@@ -72,17 +77,38 @@ const schedulePruneListCache = () => {
   }, 3000)
 }
 
+/** 从加载/修改开始一直保护到持久化结束；嵌套操作各自释放。 */
+export const withListCacheProtection = async<T>(ids: readonly string[], work: () => Promise<T>): Promise<T> => {
+  const uniqueIds = [...new Set(ids)]
+  for (const id of uniqueIds) listCacheHolds.set(id, (listCacheHolds.get(id) ?? 0) + 1)
+  try {
+    return await work()
+  } finally {
+    for (const id of uniqueIds) {
+      const count = listCacheHolds.get(id)! - 1
+      if (count) listCacheHolds.set(id, count)
+      else listCacheHolds.delete(id)
+    }
+    if (pressurePrunePending) {
+      releaseTempListCache()
+      pruneListCache(true)
+      if (!listCacheHolds.size) pressurePrunePending = false
+    } else schedulePruneListCache()
+  }
+}
+
 /** 不在使用时释放 TEMP 整表（已落盘，下次用到会重新读） */
 export const releaseTempListCache = () => {
-  if (isTempInUse() || !allMusicList.has(LIST_IDS.TEMP)) return
+  if (isListCacheProtected(LIST_IDS.TEMP) || !allMusicList.has(LIST_IDS.TEMP)) return
   allMusicList.delete(LIST_IDS.TEMP)
   listAccessOrder.delete(LIST_IDS.TEMP)
 }
 
-/** 后台/设置页清理入口：TEMP 条件释放 + 用户列表按上限 prune */
-export const releaseIdleListCaches = () => {
+/** 普通队列变化遵循 LRU；后台/内存压力释放所有未受保护的列表。 */
+export const releaseIdleListCaches = (pressure = false) => {
+  if (pressure && listCacheHolds.size) pressurePrunePending = true
   releaseTempListCache()
-  pruneListCache()
+  pruneListCache(pressure)
 }
 
 export const setUserLists = (lists: LX.List.UserListInfo[]) => {
@@ -99,8 +125,8 @@ export const setMusicList = (listId: string, musicList: LX.Music.MusicInfo[]): L
 export const removeMusicList = (id: string) => {
   allMusicList.delete(id)
   listAccessOrder.delete(id)
+  loadingListPromises.delete(id)
 }
-
 
 const createUserList = ({
   name,
@@ -153,18 +179,11 @@ const removeUserList = (id: string) => {
   const index = userLists.findIndex(l => l.id == id)
   if (index < 0) return
   userLists.splice(index, 1)
-  // removeMusicList(id)
 }
 
 const overwriteUserList = (lists: LX.List.UserListInfo[]) => {
   userLists.splice(0, userLists.length, ...lists)
 }
-
-
-// const sendMyListUpdateEvent = (ids: string[]) => {
-//   window.app_event.myListUpdate(ids)
-// }
-
 /**
  * 获取用户列表
  * @returns 所有用户列表
@@ -174,18 +193,17 @@ export const getUserLists = async() => {
   return setUserLists(lists)
 }
 
-
 export const listDataOverwrite = ({ localList, userList, tempList }: MakeOptional<LX.List.ListDataFull, 'tempList'>): string[] => {
   const updatedListIds: string[] = []
-  const newUserIds: string[] = []
+  const newUserIds = new Set<string>()
   const newUserListInfos = userList.map(({ list, ...listInfo }) => {
     if (allMusicList.has(listInfo.id)) updatedListIds.push(listInfo.id)
-    newUserIds.push(listInfo.id)
+    newUserIds.add(listInfo.id)
     setMusicList(listInfo.id, list)
     return listInfo
   })
   for (const list of userLists) {
-    if (!allMusicList.has(list.id) || newUserIds.includes(list.id)) continue
+    if (!allMusicList.has(list.id) || newUserIds.has(list.id)) continue
     removeMusicList(list.id)
     updatedListIds.push(list.id)
   }
@@ -200,7 +218,7 @@ export const listDataOverwrite = ({ localList, userList, tempList }: MakeOptiona
     updatedListIds.push(LIST_IDS.LOCAL)
   }
 
-  if (tempList && allMusicList.has(LIST_IDS.TEMP)) {
+  if (Array.isArray(tempList)) {
     setMusicList(LIST_IDS.TEMP, tempList)
     updatedListIds.push(LIST_IDS.TEMP)
   }
@@ -252,12 +270,7 @@ export const userListsUpdate = (listInfos: LX.List.UserListInfo[]) => {
 
 export const userListsUpdatePosition = (position: number, ids: string[]) => {
   const newUserLists = [...userLists]
-
-  // console.log(position, ids)
-
   const updateLists: LX.List.UserListInfo[] = []
-
-  // const targetItem = list[position]
   const map = new Map<string, LX.List.UserListInfo>()
   for (const item of newUserLists) map.set(item.id, item)
   for (const id of ids) {
@@ -294,14 +307,18 @@ export const getListMusics = async(listId: string): Promise<LX.Music.MusicInfo[]
 
   let promise = loadingListPromises.get(listId)
   if (!promise) {
-    promise = (async() => {
+    promise = withListCacheProtection([listId], async() => {
       const list = await getListMusicsFromStore(listId)
+      // 等待读取期间可能已导入/覆盖同一列表，不能用旧磁盘结果覆盖新数据。
+      const current = allMusicList.get(listId)
+      if (current) return current
+      if (loadingListPromises.get(listId) !== promise) return list
       setMusicList(listId, list)
       // 完整列表才是数据源：加载时校对/重建匹配索引，并把索引里较新的封面覆盖回来
       if (listId === LIST_IDS.LOCAL) await syncLocalMatchIndexWithList(list)
       return list
-    })().finally(() => {
-      loadingListPromises.delete(listId)
+    }).finally(() => {
+      if (loadingListPromises.get(listId) === promise) loadingListPromises.delete(listId)
     })
     loadingListPromises.set(listId, promise)
   }
@@ -379,22 +396,8 @@ export const listMusicUpdateInfo = async(musicInfos: LX.List.ListActionMusicUpda
   return Array.from(updateListIds)
 }
 
-
 export const listMusicUpdatePosition = async(listId: string, position: number, ids: string[]): Promise<string[]> => {
   let targetList = await getListMusics(listId)
-
-  // const infos = Array(ids.length)
-  // for (let i = targetList.length; i--;) {
-  //   const item = targetList[i]
-  //   const index = ids.indexOf(item.id)
-  //   if (index < 0) continue
-  //   infos.splice(index, 1, targetList.splice(i, 1)[0])
-  // }
-  // targetList.splice(Math.min(position, targetList.length - 1), 0, ...infos)
-
-  // console.time('ts')
-
-  // const list = createSortedList(targetList, position, ids)
   const infos: LX.Music.MusicInfo[] = []
   const map = new Map<string, LX.Music.MusicInfo>()
   for (const item of targetList) map.set(item.id, item)
@@ -407,11 +410,8 @@ export const listMusicUpdatePosition = async(listId: string, position: number, i
 
   targetList.splice(0, targetList.length)
   arrPush(targetList, list)
-
-  // console.timeEnd('ts')
   return [listId]
 }
-
 
 export const listMusicClear = async(ids: string[]): Promise<string[]> => {
   const changedIds: string[] = []

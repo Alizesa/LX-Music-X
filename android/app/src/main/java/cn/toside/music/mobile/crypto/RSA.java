@@ -15,45 +15,6 @@ import javax.crypto.Cipher;
 public class RSA {
   static final String PADDING_OAEPWithSHA1AndMGF1Padding = "RSA/ECB/OAEPWithSHA1AndMGF1Padding";
   static final String PADDING_NoPadding = "RSA/ECB/NoPadding";
-
-  // https://stackoverflow.com/a/40978042
-//  public void testEncryptData(String dataToEncrypt) throws NoSuchAlgorithmException, InvalidKeySpecException {
-//    // generate a new public/private key pair to test with (note. you should only do this once and keep them!)
-//    KeyPair kp = getKeyPair();
-//
-//    PublicKey publicKey = kp.getPublic();
-//    byte[] publicKeyBytes = publicKey.getEncoded();
-//    String publicKeyBytesBase64 = new String(Base64.encode(publicKeyBytes, Base64.DEFAULT));
-//    Log.d("RSATest", "publicKeyBytesBase64: " + publicKeyBytesBase64);
-//
-//    PrivateKey privateKey = kp.getPrivate();
-//    KeyFactory keyFac = KeyFactory.getInstance("RSA");
-//    KeySpec keySpec = new PKCS8EncodedKeySpec(privateKey.getEncoded());
-//    Key key = keyFac.generatePrivate(keySpec);
-//
-//    StringBuilder sb = new StringBuilder();
-//    sb.append("-----BEGIN PRIVATE KEY-----");
-//    sb.append(new String(Base64.encode(key.getEncoded(), Base64.DEFAULT)));
-//    sb.append("-----END PRIVATE KEY-----");
-//    Log.d("RSATest", "privateKeyBytesBase64: " + sb);
-//
-//    //    return new String(Base64.encode(sb.toString().getBytes()));
-//
-//    byte[] privateKeyBytes = privateKey.getEncoded();
-//    String privateKeyBytesBase64 = new String(Base64.encode(privateKeyBytes, Base64.DEFAULT));
-//    Log.d("RSATest", "privateKeyBytesBase64: " + privateKeyBytesBase64);
-//
-//    // test encryption
-//    String encrypted = encryptRSAToString(dataToEncrypt, publicKeyBytesBase64);
-//
-//    Log.d("RSATest", "encrypted: " + encrypted);
-//
-//    // test decryption
-//    String decrypted = decryptRSAToString(encrypted, privateKeyBytesBase64);
-//
-//    Log.d("RSATest", "decrypted: " + decrypted);
-//  }
-
   public static KeyPair getKeyPair() {
     KeyPair kp = null;
     try {

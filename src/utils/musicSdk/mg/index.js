@@ -1,4 +1,3 @@
-import { apis } from '../api-source'
 import songList from './songList'
 import musicSearch from './musicSearch'
 import pic from './pic'
@@ -11,9 +10,6 @@ const mg = {
   musicSearch,
   hotSearch,
   comment,
-  getMusicUrl(songInfo, type) {
-    return apis('mg').getMusicUrl(songInfo, type)
-  },
   getLyric(songInfo) {
     return lyric.getLyric(songInfo)
   },

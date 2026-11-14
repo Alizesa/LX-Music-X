@@ -198,12 +198,13 @@ export const getCachedPlaylistSongs = async(id: string): Promise<LX.Music.MusicI
   }
 
   const songs = item.songs
+  const count = songs.length
   // 访问 LRU：不阻塞页面，只更新小索引
   void enqueue(async() => {
     const current = await getQQMusicPlaylistSongsIndex().catch(() => null)
     if (!current?.[id]) return
     current[id].savedAt = Date.now()
-    current[id].count = songs.length
+    current[id].count = count
     await saveQQMusicPlaylistSongsIndex(current)
   }).catch(error => { warn('touch index failed', error) })
   return songs

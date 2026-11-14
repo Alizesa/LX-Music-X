@@ -2,11 +2,6 @@ import searchState from '@/store/search/state'
 import searchActions from '@/store/search/action'
 import { getSearchHistory as getSearchHistoryFromStore, saveSearchHistory } from '@/utils/data'
 import settingState from '@/store/setting/state'
-
-
-export const setSearchType: typeof searchActions['setSearchType'] = (type) => {
-  searchActions.setSearchType(type)
-}
 export const setSearchText: typeof searchActions['setSearchText'] = (text) => {
   searchActions.setSearchText(text)
 }

@@ -29,13 +29,6 @@ export const createUserList = async(position: number, listInfos: LX.List.UserLis
 }
 
 /**
- * 移除用户列表及列表内歌曲
- */
-export const removeUserList = async(ids: string[]) => {
-  await global.list_event.list_remove(ids)
-}
-
-/**
  * 更新用户列表
  */
 export const updateUserList = async(listInfos: LX.List.UserListInfo[]) => {

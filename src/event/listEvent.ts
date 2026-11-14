@@ -1,6 +1,6 @@
 import Event from './Event'
 
-import { getListMusics as getListMusicsFromStore, saveUserList, removeListMusics, saveListMusics } from '@/utils/data'
+import { saveUserList, removeListMusics, saveListMusics } from '@/utils/data'
 import { markLocalMatchIndexDirty, rebuildLocalMatchIndexFromList } from '@/utils/localMatchIndex'
 import {
   userLists,
@@ -17,40 +17,41 @@ import {
   listMusicUpdatePosition,
   listMusicClear,
   allMusicList,
+  withListCacheProtection,
 } from '@/utils/listManage'
 import { LIST_IDS } from '@/config/constant'
 import { setUserList } from '@/core/list'
 
 const updateUserList = async(userLists: LX.List.UserListInfo[]) => {
-  await saveUserList(userLists)
-  setUserList(userLists)
+  const snapshot = [...userLists]
+  await saveUserList(snapshot)
+  setUserList(snapshot)
 }
 
-export const checkUpdateList = async(changedIds: string[]) => {
+// 导入、移动和普通编辑共用提交顺序，避免较早的保存覆盖后续修改。
+let operationQueue: Promise<void> = Promise.resolve()
+const runListOperation = async<T>(ids: readonly string[], work: () => Promise<T>): Promise<T> => {
+  const result = operationQueue.then(async() => withListCacheProtection(ids, work))
+  operationQueue = result.then(() => {}, () => {})
+  return result
+}
+
+export const checkUpdateList = async(changedIds: string[]) => withListCacheProtection(changedIds, async() => {
   if (!changedIds.length) return
+  const snapshots = changedIds.map(id => {
+    const musics = allMusicList.get(id)
+    if (!musics) throw new Error(`Missing modified list: ${id}`)
+    return { id, musics }
+  })
   const includesLocal = changedIds.includes(LIST_IDS.LOCAL)
   // 先标 dirty：列表写成功、索引没写就崩溃时，下次启动会重建
   if (includesLocal) await markLocalMatchIndexDirty()
-  await saveListMusics(changedIds.map(id => ({ id, musics: allMusicList.get(id) as LX.List.ListMusics })))
+  for (const snapshot of snapshots) await saveListMusics([snapshot])
   if (includesLocal) {
-    // 延迟加载阶段 LOCAL 可能不在内存里，防御性地从存储读一次再建
-    const list = allMusicList.get(LIST_IDS.LOCAL) ?? await getListMusicsFromStore(LIST_IDS.LOCAL)
-    await rebuildLocalMatchIndexFromList(list)
+    await rebuildLocalMatchIndexFromList(snapshots.find(list => list.id === LIST_IDS.LOCAL)!.musics)
   }
   global.app_event.myListMusicUpdate(changedIds)
-}
-
-
-// {
-//   // sync: {
-//   //   send_action_list: 'send_action_list',
-//   //   handle_action_list: 'handle_action_list',
-//   //   send_sync_list: 'send_sync_list',
-//   //   handle_sync_list: 'handle_sync_list',
-//   // },
-// }
-
-// 兼容v2.3.0之前版本插入数字类型的ID导致其意外在末尾追加 .0 的问题，确保所有ID都是字符串类型
+})
 const fixListIdType = (lists: LX.List.UserListInfo[] | LX.List.UserListInfoFull[]) => {
   for (const list of lists) {
     if (typeof list.sourceListId == 'number') {
@@ -62,16 +63,11 @@ const fixListIdType = (lists: LX.List.UserListInfo[] | LX.List.UserListInfoFull[
   }
 }
 
-
 export class ListEvent extends Event {
   /**
    * 现有歌曲列表更改时触发的事件
    * @param ids
    */
-  // list_music_changed(ids: string[]) {
-  //   this.emit('list_music_changed', ids)
-  // }
-
   /**
    * 覆盖整个列表数据
    * @param listData 列表数据
@@ -79,25 +75,22 @@ export class ListEvent extends Event {
    */
   async list_data_overwrite(listData: MakeOptional<LX.List.ListDataFull, 'tempList'>, isRemote: boolean = false) {
     fixListIdType(listData.userList)
-    const oldIds = userLists.map(l => l.id)
-    const changedIds = listDataOverwrite(listData)
-    await updateUserList(userLists)
-    // await checkUpdateList(changedIds)
-    const removedList = oldIds.filter(id => !allMusicList.has(id))
-    if (removedList.length) await removeListMusics(removedList)
-    // LOCAL 只在「已加载」或「本次显式提供了 localList」时才写：
-    // 延迟加载下，没加载不等于空列表，不能拿它覆盖存储
-    const includesLocal = allMusicList.has(LIST_IDS.LOCAL)
-    const allListIds = includesLocal
-      ? [LIST_IDS.LOCAL, ...userLists.map(l => l.id)]
-      : userLists.map(l => l.id)
-    if (changedIds.includes(LIST_IDS.TEMP)) allListIds.push(LIST_IDS.TEMP)
-    if (includesLocal) await markLocalMatchIndexDirty()
-    await saveListMusics([...allListIds.map(id => ({ id, musics: allMusicList.get(id) as LX.List.ListMusics }))])
-    if (includesLocal) await rebuildLocalMatchIndexFromList(allMusicList.get(LIST_IDS.LOCAL)!)
-
-    global.app_event.myListMusicUpdate(changedIds)
-    this.emit('list_data_overwrite', listData, isRemote)
+    const snapshots = listData.userList.map(({ id, list }) => ({ id, musics: list }))
+    if (Array.isArray(listData.localList)) snapshots.push({ id: LIST_IDS.LOCAL, musics: listData.localList })
+    if (Array.isArray(listData.tempList)) snapshots.push({ id: LIST_IDS.TEMP, musics: listData.tempList })
+    await runListOperation(snapshots.map(list => list.id), async() => {
+      const newIds = new Set(listData.userList.map(list => list.id))
+      const removedIds = userLists.map(list => list.id).filter(id => !newIds.has(id))
+      const changedIds = listDataOverwrite(listData)
+      if (Array.isArray(listData.localList)) await markLocalMatchIndexDirty()
+      // 只保存输入中的快照；缓存淘汰和未加载的 LOCAL 都不影响持久化内容。
+      for (const snapshot of snapshots) await saveListMusics([snapshot])
+      await updateUserList(userLists)
+      if (removedIds.length) await removeListMusics(removedIds)
+      if (Array.isArray(listData.localList)) await rebuildLocalMatchIndexFromList(listData.localList)
+      global.app_event.myListMusicUpdate(changedIds)
+      this.emit('list_data_overwrite', listData, isRemote)
+    })
   }
 
   /**
@@ -107,14 +100,12 @@ export class ListEvent extends Event {
    * @param isRemote 是否属于远程操作
    */
   async list_create(position: number, lists: LX.List.UserListInfo[], isRemote: boolean = false) {
-    // const changedIds: string[] = []
-    fixListIdType(lists)
-    for (const list of lists) {
-      userListCreate({ ...list, position })
-      // changedIds.push(list.id)
-    }
-    await updateUserList(userLists)
-    this.emit('list_create', position, lists, isRemote)
+    await runListOperation([], async() => {
+      fixListIdType(lists)
+      for (const list of lists) userListCreate({ ...list, position })
+      await updateUserList(userLists)
+      this.emit('list_create', position, lists, isRemote)
+    })
   }
 
   /**
@@ -123,11 +114,13 @@ export class ListEvent extends Event {
    * @param isRemote 是否属于远程操作
    */
   async list_remove(ids: string[], isRemote: boolean = false) {
-    const changedIds = userListsRemove(ids)
-    await updateUserList(userLists)
-    await removeListMusics(ids)
-    this.emit('list_remove', ids, isRemote)
-    global.app_event.myListMusicUpdate(changedIds)
+    await runListOperation(ids, async() => {
+      const changedIds = userListsRemove(ids)
+      await updateUserList(userLists)
+      await removeListMusics(ids)
+      this.emit('list_remove', ids, isRemote)
+      global.app_event.myListMusicUpdate(changedIds)
+    })
   }
 
   /**
@@ -136,9 +129,11 @@ export class ListEvent extends Event {
    * @param isRemote 是否属于远程操作
    */
   async list_update(lists: LX.List.UserListInfo[], isRemote: boolean = false) {
-    userListsUpdate(lists)
-    await updateUserList(userLists)
-    this.emit('list_update', lists, isRemote)
+    await runListOperation([], async() => {
+      userListsUpdate(lists)
+      await updateUserList(userLists)
+      this.emit('list_update', lists, isRemote)
+    })
   }
 
   /**
@@ -148,9 +143,11 @@ export class ListEvent extends Event {
    * @param isRemote 是否属于远程操作
    */
   async list_update_position(position: number, ids: string[], isRemote: boolean = false) {
-    userListsUpdatePosition(position, ids)
-    await updateUserList(userLists)
-    this.emit('list_update_position', position, ids, isRemote)
+    await runListOperation([], async() => {
+      userListsUpdatePosition(position, ids)
+      await updateUserList(userLists)
+      this.emit('list_update_position', position, ids, isRemote)
+    })
   }
 
   /**
@@ -160,9 +157,11 @@ export class ListEvent extends Event {
    * @param isRemote 是否属于远程操作
    */
   async list_music_overwrite(listId: string, musicInfos: LX.Music.MusicInfo[], isRemote: boolean = false) {
-    const changedIds = await listMusicOverwrite(listId, musicInfos)
-    await checkUpdateList(changedIds)
-    this.emit('list_music_overwrite', listId, musicInfos, isRemote)
+    await runListOperation([listId], async() => {
+      const changedIds = await listMusicOverwrite(listId, musicInfos)
+      await checkUpdateList(changedIds)
+      this.emit('list_music_overwrite', listId, musicInfos, isRemote)
+    })
   }
 
   /**
@@ -173,9 +172,11 @@ export class ListEvent extends Event {
    * @param isRemote 是否属于远程操作
    */
   async list_music_add(listId: string, musicInfos: LX.Music.MusicInfo[], addMusicLocationType: LX.AddMusicLocationType, isRemote: boolean = false) {
-    const changedIds = await listMusicAdd(listId, musicInfos, addMusicLocationType)
-    await checkUpdateList(changedIds)
-    this.emit('list_music_add', listId, musicInfos, addMusicLocationType, isRemote)
+    await runListOperation([listId], async() => {
+      const changedIds = await listMusicAdd(listId, musicInfos, addMusicLocationType)
+      await checkUpdateList(changedIds)
+      this.emit('list_music_add', listId, musicInfos, addMusicLocationType, isRemote)
+    })
   }
 
   /**
@@ -187,9 +188,11 @@ export class ListEvent extends Event {
    * @param isRemote 是否属于远程操作
    */
   async list_music_move(fromId: string, toId: string, musicInfos: LX.Music.MusicInfo[], addMusicLocationType: LX.AddMusicLocationType, isRemote: boolean = false) {
-    const changedIds = await listMusicMove(fromId, toId, musicInfos, addMusicLocationType)
-    await checkUpdateList(changedIds)
-    this.emit('list_music_move', fromId, toId, musicInfos, addMusicLocationType, isRemote)
+    await runListOperation([fromId, toId], async() => {
+      const changedIds = await listMusicMove(fromId, toId, musicInfos, addMusicLocationType)
+      await checkUpdateList(changedIds)
+      this.emit('list_music_move', fromId, toId, musicInfos, addMusicLocationType, isRemote)
+    })
   }
 
   /**
@@ -200,10 +203,11 @@ export class ListEvent extends Event {
    * @param isRemote 是否属于远程操作
    */
   async list_music_remove(listId: string, ids: string[], isRemote: boolean = false) {
-    const changedIds = await listMusicRemove(listId, ids)
-    // console.log(changedIds)
-    await checkUpdateList(changedIds)
-    this.emit('list_music_remove', listId, ids, isRemote)
+    await runListOperation([listId], async() => {
+      const changedIds = await listMusicRemove(listId, ids)
+      await checkUpdateList(changedIds)
+      this.emit('list_music_remove', listId, ids, isRemote)
+    })
   }
 
   /**
@@ -212,9 +216,11 @@ export class ListEvent extends Event {
    * @param isRemote 是否属于远程操作
    */
   async list_music_update(musicInfos: LX.List.ListActionMusicUpdate, isRemote: boolean = false) {
-    const changedIds = await listMusicUpdateInfo(musicInfos)
-    await checkUpdateList(changedIds)
-    this.emit('list_music_update', musicInfos, isRemote)
+    await runListOperation(musicInfos.map(info => info.id), async() => {
+      const changedIds = await listMusicUpdateInfo(musicInfos)
+      await checkUpdateList(changedIds)
+      this.emit('list_music_update', musicInfos, isRemote)
+    })
   }
 
   /**
@@ -223,9 +229,11 @@ export class ListEvent extends Event {
    * @param isRemote 是否属于远程操作
    */
   async list_music_clear(ids: string[], isRemote: boolean = false) {
-    const changedIds = await listMusicClear(ids)
-    await checkUpdateList(changedIds)
-    this.emit('list_music_clear', ids, isRemote)
+    await runListOperation(ids, async() => {
+      const changedIds = await listMusicClear(ids)
+      await checkUpdateList(changedIds)
+      this.emit('list_music_clear', ids, isRemote)
+    })
   }
 
   /**
@@ -236,15 +244,15 @@ export class ListEvent extends Event {
    * @param isRemote 是否属于远程操作
    */
   async list_music_update_position(listId: string, position: number, ids: string[], isRemote: boolean = false) {
-    const changedIds = await listMusicUpdatePosition(listId, position, ids)
-    await checkUpdateList(changedIds)
-    this.emit('list_music_update_position', listId, position, ids, isRemote)
+    await runListOperation([listId], async() => {
+      const changedIds = await listMusicUpdatePosition(listId, position, ids)
+      await checkUpdateList(changedIds)
+      this.emit('list_music_update_position', listId, position, ids, isRemote)
+    })
   }
 }
 
-
 type EventMethods = Omit<EventType, keyof Event>
-
 
 declare class EventType extends ListEvent {
   on<K extends keyof EventMethods>(event: K, listener: EventMethods[K]): any

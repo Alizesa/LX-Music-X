@@ -22,10 +22,12 @@ const load = (file, mocks = {}) => {
   })
   const context = {
     exports: {},
+    AbortController,
     Buffer,
     console: { log() {}, warn() {}, error() {} },
     global: { i18n: { t: key => key } },
     require: name => {
+      if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/abortable.ts', { './message': mocks['@/utils/message'] ?? load('src/utils/message.ts') })
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs')
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${name}`)
       return mocks[name]

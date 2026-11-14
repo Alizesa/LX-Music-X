@@ -1,3 +1,4 @@
+import { waitForRequest } from '../../abortable'
 import { httpFetch } from '../../request'
 import { weapi } from './utils/crypto'
 import { dateFormat2 } from '../../index'
@@ -115,11 +116,7 @@ let cursorTools = {
 }
 
 export default {
-  _requestObj: null,
-  _requestObj2: null,
-  async getComment({ songmid }, page = 1, limit = 20) {
-    if (this._requestObj) this._requestObj.cancelHttp()
-
+  async getComment({ songmid }, page = 1, limit = 20, signal) {
     const id = 'R_SO_4_' + songmid
 
     const cursorInfo = cursorTools.getCursor(songmid, page, limit)
@@ -141,15 +138,12 @@ export default {
         threadId: id,
       }),
     })
-    const { body, statusCode } = await _requestObj.promise
-    // console.log(body)
+    const { body, statusCode } = await waitForRequest(_requestObj, signal)
     if (statusCode != 200 || body.code !== 200) throw new Error('获取评论失败')
     cursorTools.setCursor(songmid, body.data.cursor, cursorInfo.orderType, cursorInfo.offset, page)
     return { source: 'wy', comments: this.filterComment(body.data.comments), total: body.data.totalCount, page, limit, maxPage: Math.ceil(body.data.totalCount / limit) || 1 }
   },
-  async getHotComment({ songmid }, page = 1, limit = 100) {
-    if (this._requestObj2) this._requestObj2.cancelHttp()
-
+  async getHotComment({ songmid }, page = 1, limit = 100, signal) {
     const id = 'R_SO_4_' + songmid
 
     const _requestObj2 = httpFetch(`https://music.163.com/weapi/v1/resource/hotcomments/${id}`, {
@@ -166,7 +160,7 @@ export default {
         beforeTime: Date.now().toString(),
       }),
     })
-    const { body, statusCode } = await _requestObj2.promise
+    const { body, statusCode } = await waitForRequest(_requestObj2, signal)
     if (statusCode != 200 || body.code !== 200) throw new Error('获取热门评论失败')
     const total = body.total ?? 0
     return { source: 'wy', comments: this.filterComment(body.hotComments), total, page, limit, maxPage: Math.ceil(total / limit) || 1 }

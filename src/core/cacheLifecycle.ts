@@ -15,7 +15,7 @@ import { clearSongListCache } from '@/utils/musicSdk/kg/songList'
  * 当前播放队列/正在播放的歌曲对象不在这些缓存里；页面 hold 的记录也由各自的 release 跳过。
  */
 export const releaseIdleCaches = () => {
-  releaseIdleListCaches() // TEMP 条件释放 + 用户列表 prune
+  releaseIdleListCaches(true)
   releaseIdleSonglistCaches() // 歌单详情/广场列表
   releaseIdleSingerCaches() // 歌手/专辑详情
   clearOtherSourceCache() // 换源结果

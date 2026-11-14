@@ -68,6 +68,7 @@ const List = forwardRef<ListType, ListProps>(({
   const visibleRef = useRef(visible)
   visibleRef.current = visible
   const [currentList, setList] = useState<LX.Music.MusicInfoOnline[]>([])
+  const [listRevision, setListRevision] = useState(0)
   const [showSource, setShowSource] = useState(false)
   const isMultiSelectModeRef = useRef(false)
   const selectModeRef = useRef<SelectMode>('single')
@@ -97,6 +98,7 @@ const List = forwardRef<ListType, ListProps>(({
     setList(list, isAppend, showSource) {
       if (!visibleRef.current) return
       setList(list)
+      setListRevision(value => value + 1)
       setShowSource(showSource)
       if (!isAppend && selectedListRef.current.length) setSelectedList(selectedListRef.current = [])
     },
@@ -255,6 +257,7 @@ const List = forwardRef<ListType, ListProps>(({
       ref={flatListRef}
       style={styles.list}
       data={currentList}
+      extraData={listRevision}
       {...scrollRestore}
       numColumns={rowInfo.current.rowNum}
       horizontal={false}

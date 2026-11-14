@@ -1,6 +1,4 @@
 import { Navigation } from 'react-native-navigation'
-// import { InteractionManager } from 'react-native'
-
 import {
   HOME_SCREEN,
   PLAY_DETAIL_SCREEN,
@@ -22,10 +20,6 @@ import { getStatusBarStyle } from './utils'
 import { windowSizeTools } from '@/utils/windowSizeTools'
 import { type ListInfoItem } from '@/store/songlist/state'
 import { type SingerDetailParams, type AlbumDetailParams } from '@/store/singer/state'
-
-// const store = getStore()
-// const getTheme = () => getter('common', 'theme')(store.getState())
-
 export async function pushHomeScreen() {
   /*
     Navigation.setDefaultOptions({
@@ -184,13 +178,6 @@ export function pushPlayDetailScreen(componentId: string, skipAnimation = false)
                   },
                 },
               ],
-              // content: {
-              //   translationX: {
-              //     from: windowSizeTools.getSize().width,
-              //     to: 0,
-              //     duration: 300,
-              //   },
-              // },
             },
             pop: {
               content: {
@@ -258,23 +245,6 @@ export function pushSonglistDetailScreen(componentId: string, info: ListInfoItem
                   },
                 },
               ],
-              // content: {
-              //   scaleX: {
-              //     from: 1.2,
-              //     to: 1,
-              //     duration: 200,
-              //   },
-              //   scaleY: {
-              //     from: 1.2,
-              //     to: 1,
-              //     duration: 200,
-              //   },
-              //   alpha: {
-              //     from: 0,
-              //     to: 1,
-              //     duration: 200,
-              //   },
-              // },
             },
             pop: {
               sharedElementTransitions: [
@@ -297,13 +267,6 @@ export function pushSonglistDetailScreen(componentId: string, info: ListInfoItem
                   },
                 },
               ],
-              // content: {
-              //   alpha: {
-              //     from: 1,
-              //     to: 0,
-              //     duration: 200,
-              //   },
-              // },
             },
           },
         },
@@ -537,89 +500,6 @@ export function pushCommentScreen(componentId: string) {
     })
   })
 }
-
-// export function pushSettingScreen(componentId: string) {
-//   /*
-//     Navigation.setDefaultOptions({
-//       topBar: {
-//         background: {
-//           color: '#039893',
-//         },
-//         title: {
-//           color: 'white',
-//         },
-//         backButton: {
-//           title: '', // Remove previous screen name from back button
-//           color: 'white',
-//         },
-//         buttonColor: 'white',
-//       },
-//       statusBar: {
-//         style: 'light',
-//       },
-//       layout: {
-//         orientation: ['portrait'],
-//       },
-//       bottomTabs: {
-//         titleDisplayMode: 'alwaysShow',
-//       },
-//       bottomTab: {
-//         textColor: 'gray',
-//         selectedTextColor: 'black',
-//         iconColor: 'gray',
-//         selectedIconColor: 'black',
-//       },
-//     })
-//   */
-//     const theme = themeState.theme
-
-//     void Navigation.push(componentId, {
-//       component: {
-//         name: SETTING_SCREEN,
-//         options: {
-//           topBar: {
-//             visible: false,
-//             height: 0,
-//             drawBehind: false,
-//           },
-//           statusBar: {
-//             drawBehind: true,
-//             visible: true,
-//             style: getStatusBarStyle(theme.isDark),
-//             backgroundColor: 'transparent',
-//           },
-//           navigationBar: {
-//             // visible: false,
-//             backgroundColor: theme['c-content-background'],
-//           },
-//           layout: {
-//             componentBackgroundColor: theme['c-content-background'],
-//           },
-//           animations: {
-//             push: {
-//               content: {
-//                 translationX: {
-//                   from: windowSizeTools.getSize().width,
-//                   to: 0,
-//                   duration: 300,
-//                 },
-//               },
-//             },
-//             pop: {
-//               content: {
-//                 translationX: {
-//                   from: 0,
-//                   to: windowSizeTools.getSize().width,
-//                   duration: 300,
-//                 },
-//               },
-//             },
-//           },
-//         },
-//       },
-//   })
-// }
-
 /*
 export function pushSingleScreenApp() {
   Navigation.setRoot({

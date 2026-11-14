@@ -1,34 +1,6 @@
 import { NativeModules, NativeEventEmitter } from 'react-native'
 
 const { LyricModule } = NativeModules
-
-// export const themes = [
-//   { id: 'green', value: '#07c556' },
-//   { id: 'yellow', value: '#fffa12' },
-//   { id: 'blue', value: '#19b5fe' },
-//   { id: 'red', value: '#ff1222' },
-//   { id: 'pink', value: '#f1828d' },
-//   { id: 'purple', value: '#c851d4' },
-//   { id: 'orange', value: '#ffad12' },
-//   { id: 'grey', value: '#bdc3c7' },
-//   { id: 'black', value: '#333333' },
-//   { id: 'white', value: '#ffffff' },
-// ]
-
-// export const textPositionX = [
-//   { id: 'left', value: 'LEFT' },
-//   { id: 'center', value: 'CENTER' },
-//   { id: 'right', value: 'RIGHT' },
-// ]
-// export const textPositionY = [
-//   { id: 'top', value: 'TOP' },
-//   { id: 'center', value: 'CENTER' },
-//   { id: 'bottom', value: 'BOTTOM' },
-// ]
-
-// const getThemeColor = themeId => (themes.find(t => t.id == themeId) || themes[0]).value
-// const getTextPositionX = x => (textPositionX.find(t => t.id == x) || textPositionX[0]).value
-// const getTextPositionY = y => (textPositionY.find(t => t.id == y) || textPositionY[0]).value
 const getAlpha = (num: number) => num / 100
 const getTextSize = (num: number) => num / 10
 
@@ -105,7 +77,6 @@ export const showDesktopLyricView = async({
 export const hideDesktopLyricView = async(): Promise<void> => {
   return LyricModule.hideDesktopLyric()
 }
-
 
 /**
  * play lyric
@@ -209,10 +180,6 @@ export const setVerticalRotateLatin = async(rotateLatin: boolean): Promise<void>
   return LyricModule.setVerticalRotateLatin(rotateLatin)
 }
 
-export const setPosition = async(x: number, y: number): Promise<void> => {
-  return LyricModule.setPosition(x, y)
-}
-
 export const setMaxLineNum = async(maxLineNum: number): Promise<void> => {
   return LyricModule.setMaxLineNum(maxLineNum)
 }
@@ -220,11 +187,6 @@ export const setMaxLineNum = async(maxLineNum: number): Promise<void> => {
 export const setWidth = async(width: number): Promise<void> => {
   return LyricModule.setWidth(width)
 }
-
-// export const fixViewPosition = async(): Promise<void> => {
-//   return LyricModule.fixViewPosition()
-// }
-
 export const setLyricTextPosition = async(textX: LX.AppSetting['desktopLyric.textPosition.x'], textY: LX.AppSetting['desktopLyric.textPosition.y']): Promise<void> => {
   return LyricModule.setLyricTextPosition(textX.toUpperCase(), textY.toUpperCase())
 }

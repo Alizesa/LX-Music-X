@@ -3,6 +3,32 @@ const { test } = require('node:test')
 const { spawnSync } = require('node:child_process')
 const { harness, task, song, deferred, flush } = require('./helpers/download-runtime.cjs')
 
+for (const operation of ['pauseAllTasks', 'resumeAllTasks']) {
+  test(`${operation} limits 1000 native controls and shares a single directory read`, async() => {
+    const gate = deferred(); const url = deferred()
+    const active = Array.from({ length: 1000 }, (_, id) => ({ ...task(String(id)), status: 'pause', nativeId: 'native-' + id }))
+    let pending = 0; let peak = 0; let calls = 0; let reads = 0
+    const native = async() => {
+      calls++; pending++; peak = Math.max(peak, pending)
+      try { await gate.promise } finally { pending-- }
+    }
+    const h = harness({ active, pause: native, remove: native, url: () => url.promise, data: { getDownloadActiveTasks: async() => active } })
+    await h.api.initDownloads()
+    if (operation === 'pauseAllTasks') active.forEach(task => { task.status = 'run' })
+    h.data.getDownloadPath = async() => { reads++; return { uri: 'content://directory' } }
+    const work = h.api[operation]()
+    await flush()
+    assert.equal(calls, 4)
+    gate.resolve()
+    await work
+    assert.equal(peak, 4)
+    assert.equal(calls, 1000)
+    assert.equal(reads, operation === 'resumeAllTasks' ? 1 : 0)
+    await h.api.pauseAllTasks()
+    url.resolve('https://fixture.test/late')
+  })
+}
+
 test('bulk download preparation bounds file operations and processes every path despite individual failures', async() => {
   const gate = deferred(); const url = deferred()
   let pending = 0; let peak = 0; let count = 0

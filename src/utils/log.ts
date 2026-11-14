@@ -1,151 +1,31 @@
-// import { requestStoragePermission } from '@/utils/common'
-import { temporaryDirectoryPath, existsFile, appendFile, unlink, writeFile, readFile, stat } from '@/utils/fs'
+import { temporaryDirectoryPath, existsFile, appendFile, unlink, writeFile, readFile, stat, moveFile } from '@/utils/fs'
+import BackgroundTimer from 'react-native-background-timer'
+import { createDebugLogWriter } from './debugLogWriter'
 
-const logPath = temporaryDirectoryPath + '/error.log'
-// 日志文件上限：超过 1MB 时只保留最后 512KB，避免读取/追加无限增长
-const LOG_MAX_BYTES = 1024 * 1024
-const LOG_KEEP_BYTES = 512 * 1024
-let logBytes = 0
-let rotating = false
+const writer = createDebugLogWriter(
+  { existsFile, appendFile, unlink, writeFile, readFile, stat, moveFile },
+  BackgroundTimer,
+  temporaryDirectoryPath + '/error.log',
+  { fileLimit: 512 * 1024, bufferLimit: 64 * 1024 },
+)
 
-const rotateLog = async() => {
-  if (rotating) return
-  rotating = true
-  try {
-    const data = String(await readFile(logPath))
-    const keep = data.slice(-LOG_KEEP_BYTES)
-    await writeFile(logPath, keep)
-    logBytes = keep.length
-  } catch (error) {
-    console.warn('rotate log failed:', error instanceof Error ? error.message : error)
-  } finally {
-    // 单线程下 rotating 只会在进入时同步置位，这里复位是安全的
-    // eslint-disable-next-line require-atomic-updates
-    rotating = false
-  }
-}
+// 初始化失败后仍遵守缓冲上限；后续 flush 会重新尝试打开文件。
+export const init = async() => { await writer.flush().catch(() => {}) }
+export const getLogs = async() => writer.read()
+export const clearLogs = async() => writer.clear()
 
-const logTools = {
-  tempLog: [] as Array<{ time: string, type: 'LOG' | 'WARN' | 'ERROR', text: string }> | null,
-  writeLog(msg: string) {
-    console.log(msg)
-    const line = '\n----lx log----\n' + msg
-    void appendFile(logPath, line).then(() => {
-      logBytes += line.length
-      if (logBytes > LOG_MAX_BYTES) void rotateLog()
-    }).catch(() => {})
-  },
-  async initLogFile() {
-    try {
-      let isExists = await existsFile(logPath)
-      // console.log(isExists)
-      if (!isExists) await writeFile(logPath, '')
-      try {
-        logBytes = (await stat(logPath)).size
-        if (logBytes > LOG_MAX_BYTES) await rotateLog()
-      } catch {}
-      if (this.tempLog?.length) this.writeLog(this.tempLog.map(m => `${m.time} ${m.type} ${m.text}`).join('\n----lx log----\n'))
-      this.tempLog = null
-    } catch (err) {
-      console.log(err)
-    }
-  },
-}
-
-export const init = async() => {
-  return logTools.initLogFile()
-}
-
-export const getLogs = async() => {
-  return readFile(logPath)
-}
-
-export const clearLogs = async() => {
-  return unlink(logPath).then(async() => writeFile(logPath, ''))
+const write = (type: 'LOG' | 'WARN' | 'ERROR', msgs: unknown[]) => {
+  const msg = msgs.map(value => {
+    if (typeof value === 'string') return value
+    if (value instanceof Error) return value.stack ?? value.message
+    try { return JSON.stringify(value) } catch { return String(value) }
+  }).join(' ')
+  if (type === 'LOG' && msg.startsWith('%c')) return
+  writer.append('----lx log----\n' + new Date().toLocaleString() + ' ' + type + ' ' + msg)
 }
 
 export const log = {
-  info(...msgs: any[]) {
-    // console.info(...msgs)
-    const msg = msgs.map(m => typeof m == 'string' ? m : m instanceof Error ? m.stack ?? m.message : JSON.stringify(m)).join(' ')
-    if (msg.startsWith('%c')) return
-    const time = new Date().toLocaleString()
-    if (logTools.tempLog) {
-      logTools.tempLog.push({ type: 'LOG', time, text: msg })
-    } else logTools.writeLog(`${time} LOG ${msg}`)
-  },
-  warn(...msgs: any[]) {
-    // console.warn(...msgs)
-    const msg = msgs.map(m => typeof m == 'string' ? m : m instanceof Error ? m.stack ?? m.message : JSON.stringify(m)).join(' ')
-    const time = new Date().toLocaleString()
-    if (logTools.tempLog) {
-      logTools.tempLog.push({ type: 'WARN', time, text: msg })
-    } else logTools.writeLog(`${time} WARN ${msg}`)
-  },
-  error(...msgs: any[]) {
-    const msg = msgs.map(m => typeof m == 'string' ? m : m instanceof Error ? m.stack ?? m.message : JSON.stringify(m)).join(' ')
-    const time = new Date().toLocaleString()
-    if (logTools.tempLog) {
-      logTools.tempLog.push({ type: 'ERROR', time, text: msg })
-    } else {
-      logTools.writeLog(`${time} ERROR ${msg}`)
-    }
-  },
+  info(...msgs: unknown[]) { write('LOG', msgs) },
+  warn(...msgs: unknown[]) { write('WARN', msgs) },
+  error(...msgs: unknown[]) { write('ERROR', msgs) },
 }
-/*
-if (process.env.NODE_ENV !== 'development') {
-  const logPath = externalDirectoryPath + '/debug.log'
-
-  let tempLog = []
-
-  const log = window.console.log
-  const error = window.console.error
-  const warn = window.console.warn
-
-  const writeLog = msg => appendFile(logPath, '\n' + msg)
-
-  window.console.log = (...msgs) => {
-    log(...msgs)
-    const msg = msgs.map(m => typeof m == 'string' ? m : JSON.stringify(m)).join(' ')
-    if (msg.startsWith('%c')) return
-    const time = new Date().toLocaleString()
-    if (tempLog) {
-      tempLog({ type: 'LOG', time, text: msg })
-    } else writeLog(`${time} LOG ${msg}`)
-  }
-  window.console.error = (...msgs) => {
-    error(...msgs)
-    const msg = msgs.map(m => typeof m == 'string' ? m : JSON.stringify(m)).join(' ')
-    const time = new Date().toLocaleString()
-    if (tempLog) {
-      tempLog({ type: 'ERROR', time, text: msg })
-    } else writeLog(`${time} ERROR ${msg}`)
-  }
-  window.console.warn = (...msgs) => {
-    warn(...msgs)
-    const msg = msgs.map(m => typeof m == 'string' ? m : JSON.stringify(m)).join(' ')
-    const time = new Date().toLocaleString()
-    if (tempLog) {
-      tempLog({ type: 'WARN', time, text: msg })
-    } else writeLog(`${time} WARN ${msg}`)
-  }
-
-  const init = async() => {
-    try {
-      let result = await requestStoragePermission()
-      if (!result) return
-      let isExists = await existsFile(logPath)
-      console.log(logPath, isExists)
-      if (!isExists) await writeFile(logPath, '')
-      writeLog(tempLog(m => `${m.time} ${m.type} ${m.text}`).join('\n'))
-      tempLog = null
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-
-  init()
-}
-
- */

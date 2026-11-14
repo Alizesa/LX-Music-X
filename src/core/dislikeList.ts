@@ -9,10 +9,6 @@ export const overwirteDislikeInfo = async(rules: string) => {
   await global.dislike_event.dislike_data_overwrite(rules)
 }
 
-export const clearDislikeInfo = async() => {
-  await global.dislike_event.dislike_music_clear()
-}
-
 
 export const hasDislike = (info: LX.Music.MusicInfo | LX.Download.ListItem | null) => {
   if (!info) return false

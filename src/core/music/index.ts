@@ -71,20 +71,22 @@ export const getPicPath = async({
   isRefresh = false,
   listId,
   onToggleSource,
+  signal,
 }: {
   musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   listId?: string | null
   isRefresh?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
+  signal?: AbortSignal
 }): Promise<string> => {
   if ('progress' in musicInfo) {
     return getDownloadPicUrl({ musicInfo, isRefresh, listId, onToggleSource })
   } else if (musicInfo.source == 'local') {
-    return getLocalPicUrl({ musicInfo, isRefresh, listId, onToggleSource })
+    return getLocalPicUrl({ musicInfo, isRefresh, listId, onToggleSource, signal })
   } else {
     if (!isRefresh) {
       const localMusicInfo = await findLocalMusicInfo(musicInfo)
-      if (localMusicInfo) return getLocalPicUrl({ musicInfo: localMusicInfo, isRefresh: false, listId: LIST_IDS.LOCAL, onToggleSource })
+      if (localMusicInfo) return getLocalPicUrl({ musicInfo: localMusicInfo, isRefresh: false, listId: LIST_IDS.LOCAL, onToggleSource, signal })
     }
     return getOnlinePicUrl({ musicInfo, isRefresh, listId, onToggleSource })
   }
@@ -94,19 +96,21 @@ export const getLyricInfo = async({
   musicInfo,
   isRefresh = false,
   onToggleSource,
+  signal,
 }: {
   musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   isRefresh?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
+  signal?: AbortSignal
 }): Promise<LX.Player.LyricInfo> => {
   if ('progress' in musicInfo) {
     return getDownloadLyricInfo({ musicInfo, isRefresh, onToggleSource })
   } else if (musicInfo.source == 'local') {
-    return getLocalLyricInfo({ musicInfo, isRefresh, onToggleSource })
+    return getLocalLyricInfo({ musicInfo, isRefresh, onToggleSource, signal })
   } else {
     if (!isRefresh) {
       const localMusicInfo = await findLocalMusicInfo(musicInfo)
-      if (localMusicInfo) return getLocalLyricInfo({ musicInfo: localMusicInfo, isRefresh: false, onToggleSource })
+      if (localMusicInfo) return getLocalLyricInfo({ musicInfo: localMusicInfo, isRefresh: false, onToggleSource, signal })
     }
     return getOnlineLyricInfo({ musicInfo, isRefresh, onToggleSource })
   }

@@ -3,11 +3,8 @@ import { BorderRadius } from '@/theme'
 import { createStyle } from '@/utils/tools'
 import { type ComponentProps, memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { View, type ViewProps, StyleSheet, Image as FastImage } from 'react-native'
-// import FastImage, { type FastImageProps } from 'react-native-fast-image'
 import Text from './Text'
 import { useLayout } from '@/utils/hooks'
-// export type { OnLoadEvent } from 'react-native-fast-image'
-
 export interface ImageProps extends ViewProps {
   style: ComponentProps<typeof FastImage>['style']
   url?: string | number | null
@@ -16,7 +13,6 @@ export interface ImageProps extends ViewProps {
   resizeMethod?: ComponentProps<typeof FastImage>['resizeMethod']
   onError?: (url: string | number) => void
 }
-
 
 export const defaultHeaders = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36',

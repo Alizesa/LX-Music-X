@@ -4,10 +4,6 @@ import musicSdk from '@/utils/musicSdk'
 import { invalidateSearchResult, restoreSearchResult } from './cache'
 import { beginSearchRequest, finishSearchRequest } from './request'
 
-export const setSearchText: typeof searchSingerActions['setSearchText'] = (text) => {
-  searchSingerActions.setSearchText(text)
-}
-
 /**
  * 返回要显示的列表；返回 null 表示这次结果作废（已被更新的请求顶掉，或关键词为空），
  * 调用方拿到 null 时不要动列表——把“作废”和“确实没有结果”混成同一个空数组，
