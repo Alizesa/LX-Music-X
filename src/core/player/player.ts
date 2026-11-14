@@ -522,11 +522,11 @@ export const addToPlayQueue = async(list: LX.Player.PlayMusic[]): Promise<number
 }
 
 export const clearQueue = async() => {
-  listSelectionGeneration++
+  const requestId = ++listSelectionGeneration
   const generation = ++selectionGeneration
   // 清空队列不算「不要这次推荐了」：存档留到跨天或手动点「刷新」为止
   await parkRecommendQueue()
-  if (generation !== selectionGeneration) return
+  if (requestId !== listSelectionGeneration || generation !== selectionGeneration) return
   clearTempPlayeList()
   const saved = clearPlayQueue()
   await Promise.all([saved, handleToggleStop()])

@@ -181,3 +181,40 @@ for (const method of ['playList', 'playListById']) {
     assert.equal(h.state.playMusicInfo.musicInfo.id, 'local')
   })
 }
+
+for (const method of ['playQQMusicDailyPlaylist', 'playQQMusicHeartRadarPlaylist']) {
+  test(`an older queue clear cannot invalidate a pending ${method} selection`, async() => {
+    const h = await setup()
+    await h.recommend.startRecommendQueue(recommendations(), 6)
+    const saving = deferred()
+    const position = deferred()
+    const save = h.data.saveQQMusicRecommendSession
+    h.data.saveQQMusicRecommendSession = async value => { await saving.promise; await save(value) }
+    h.dailyData[method === 'playQQMusicDailyPlaylist' ? 'getQQMusicDailyPosition' : 'getQQMusicHeartRadarPosition'] = () => position.promise
+
+    const clearing = h.player.clearQueue()
+    await flush()
+    const selected = h.daily[method]([song('latest-selection')])
+    await flush()
+    saving.resolve()
+    await clearing
+    assert.equal(h.state.playMusicInfo.musicInfo?.id, 'recommend-6', 'an obsolete clear must leave playback alone while the new selection loads')
+    assert.equal(h.queue.getPlayQueue().length, 20)
+
+    position.resolve(null)
+    await selected
+    assert.equal(h.state.playMusicInfo.musicInfo.id, 'latest-selection')
+    assert.equal(h.player.isPlayRequested(), true)
+  })
+}
+
+test('the latest queue clear still stops playback and preserves its recommendation archive', async() => {
+  const h = await setup()
+  await h.recommend.startRecommendQueue(recommendations(), 6)
+  await h.player.clearQueue()
+  assert.equal(h.state.playMusicInfo.musicInfo, null)
+  assert.equal(h.queue.getPlayQueue().length, 0)
+  assert.equal(h.player.isPlayRequested(), false)
+  assert.equal(h.disk.session.index, 6)
+  assert.equal(h.disk.session.songs.length, 20)
+})
