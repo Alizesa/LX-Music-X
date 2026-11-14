@@ -261,14 +261,16 @@ const forEachFileOperation = async<T>(items: readonly T[], action: (item: T) => 
   await Promise.all(Array.from({ length: Math.min(4, items.length) }, worker))
 }
 
-const updateTask = async(id: string, update: Partial<LX.Download.DownloadTask>, immediate = false) => {
-  const task = tasks.find(item => item.id == id)
-  if (!task) return
+const updateTask = async(task: LX.Download.DownloadTask, update: Partial<LX.Download.DownloadTask>, immediate = false) => {
+  // 同一歌曲重建会复用 ID；旧任务的异步结果只能修改原来的对象。
+  if (!tasks.includes(task)) return false
   Object.assign(task, update)
   dirtyTasks.add(task.id)
   if (immediate) await persistNow()
   else schedulePersist()
+  if (!tasks.includes(task)) return false
   global.app_event.downloadTaskUpdate(toListItem(task))
+  return true
 }
 
 const calculateSpeed = (taskId: string, downloaded: number) => {
@@ -361,7 +363,7 @@ const completeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
     delete task.pendingCompletion
     // 中转文件已经不可信，清掉，用户点重试时是干干净净重下一次
     await clearPartialFile(task.id)
-    await updateTask(task.id, {
+    await updateTask(task, {
       status: 'error',
       error: global.i18n.t('download_bad_size', {
         size: sizeFormate(actualSize),
@@ -371,12 +373,12 @@ const completeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
     }, true)
     return
   }
-  await updateTask(task.id, {
+  if (!await updateTask(task, {
     status: 'finalizing',
     filePath: state.filePath,
     fileName: state.fileName ?? task.fileName,
     error: undefined,
-  }, true)
+  }, true)) return
   await writeEmbeddedMetadata(task)
   const localInfo: LX.Music.MusicInfoLocal = {
     id: state.filePath,
@@ -494,7 +496,7 @@ const handleNativeUpdate = (state: NativeDownloadState) => {
   }
   if (task.status === 'finalizing') return
   const progress = state.total > 0 ? state.downloaded / state.total : 0
-  void updateTask(task.id, {
+  void updateTask(task, {
     nativeId: state.nativeId || task.nativeId,
     status: state.status,
     error: state.error,
@@ -559,7 +561,7 @@ const processQueue = async() => {
         const task = tasks.find(item => item.id == id)
         if (!task || task.status != 'waiting' || task.nativeId) continue
         try {
-          await updateTask(task.id, { status: 'resolving', error: undefined }, true)
+          await updateTask(task, { status: 'resolving', error: undefined }, true)
           if (!tasks.includes(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') continue
           const url = await resolveTaskUrl(task)
           if (url === null) continue
@@ -580,7 +582,7 @@ const processQueue = async() => {
               await removeNativeDownload(nativeId, task.id, false).catch(() => {})
               continue
             }
-            await updateTask(task.id, { nativeId, status: enqueuedTask.status === 'resolving' ? 'waiting' : enqueuedTask.status }, true)
+            await updateTask(task, { nativeId, status: enqueuedTask.status === 'resolving' ? 'waiting' : enqueuedTask.status }, true)
             const pending = early.get(nativeId)
             if (pending && getDownloadTaskItem(task.id)?.status === 'waiting') handleNativeUpdate(pending)
           } finally {
@@ -588,7 +590,7 @@ const processQueue = async() => {
           }
         } catch (error: unknown) {
           if (!tasks.includes(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') continue
-          await updateTask(task.id, {
+          await updateTask(task, {
             status: 'error',
             error: error instanceof Error ? error.message : String(error),
           }, true)

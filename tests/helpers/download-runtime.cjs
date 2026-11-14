@@ -16,7 +16,7 @@ const task = id => ({
 })
 const copy = value => JSON.parse(JSON.stringify(value))
 
-const harness = ({ active = [], history = [], unlink = async() => {}, url = async() => 'https://fixture.test/audio', enqueue, remove = async() => {}, save, data: extraData = {} } = {}) => {
+const harness = ({ active = [], history = [], unlink = async() => {}, url = async() => 'https://fixture.test/audio', enqueue, remove = async() => {}, getState = async() => null, save, data: extraData = {} } = {}) => {
   const clock = new Map()
   let timerId = 0
   const timers = {
@@ -29,6 +29,7 @@ const harness = ({ active = [], history = [], unlink = async() => {}, url = asyn
     downloadTaskUpdate(value) { this.emit('downloadTaskUpdate', value) },
   })
   const writes = []; const enqueued = []; const removed = []
+  let nativeUpdate
   let saved = copy(active)
   const entries = new Map(history.map(item => [item.id, item]))
   const data = {
@@ -68,16 +69,16 @@ const harness = ({ active = [], history = [], unlink = async() => {}, url = asyn
     '@/utils/fs': { privateStorageDirectoryPath: '/private', temporaryDirectoryPath: '/temp', unlink },
     '@/utils/localMediaMetadata': {},
     '@/utils/nativeModules/download': {
-      onDownloadUpdate() {},
-      getDownloadState: async() => null,
+      onDownloadUpdate: listener => { nativeUpdate = listener },
+      getDownloadState: getState,
       enqueueDownload: async args => { enqueued.push(args); return enqueue ? enqueue(args) : `work-${args.taskId}` },
       removeDownload: async(...args) => { removed.push(args); await remove(...args) },
       pauseDownload: async() => {},
     },
     '@/utils/tools': { toMD5: text => createHash('md5').update(text).digest('hex') },
-    '@/utils/common': {},
+    '@/utils/common': { sizeFormate: String },
   }, { ...timers, global: { app_event: app, i18n: { t: key => key }, lx: {} } })
-  return { api, app, data, writes, enqueued, removed, saved: () => saved, clock }
+  return { api, app, data, writes, enqueued, removed, saved: () => saved, clock, emitNative: update => nativeUpdate(update) }
 }
 
 module.exports = { harness, task, song, copy, load, deferred, flush, constants }
