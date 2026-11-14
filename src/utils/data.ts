@@ -18,7 +18,6 @@ const userListKey = storageDataPrefix.userList
 const viewPrevStateKey = storageDataPrefix.viewPrevState
 const listScrollPositionKey = storageDataPrefix.listScrollPosition
 const listUpdateInfoKey = storageDataPrefix.listUpdateInfo
-const ignoreVersionKey = storageDataPrefix.ignoreVersion
 const ignoreVersionFailTipTimeKey = storageDataPrefix.ignoreVersionFailTipTimeKey
 const searchSettingKey = storageDataPrefix.searchSetting
 const searchHistoryListKey = storageDataPrefix.searchHistoryList
@@ -138,24 +137,8 @@ export const overwriteListUpdateInfo = async(ids: string[]) => {
   saveListUpdateInfoThrottle()
 }
 
-let ignoreVersion: string | null
 export const getUpdatePreferences = async() => getData<UpdatePreferences>(storageDataPrefix.updatePreferences)
 export const saveUpdatePreferences = async(preferences: UpdatePreferences) => saveData(storageDataPrefix.updatePreferences, preferences)
-
-export const saveIgnoreVersion = (version: string | null) => {
-  ignoreVersion = version
-  if (version == null) {
-    void removeData(ignoreVersionKey)
-  } else {
-    void saveData(ignoreVersionKey, version)
-  }
-}
-// 获取忽略更新的版本号
-export const getIgnoreVersion = async() => {
-  // eslint-disable-next-line require-atomic-updates
-  if (ignoreVersion === undefined) ignoreVersion = (await getData<string | null>(ignoreVersionKey)) ?? null
-  return ignoreVersion
-}
 
 let ignoreVersionFailTipTime: number | null
 export const saveIgnoreVersionFailTipTime = (time: number | null) => {
