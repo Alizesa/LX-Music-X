@@ -28,7 +28,7 @@ import { checkIgnoringBatteryOptimization, checkNotificationPermission, debounce
 import { LIST_IDS } from '@/config/constant'
 import { setQQMusicTrackLiked } from '@/core/qqMusicFavorite'
 import { addDislikeInfo, hasDislike } from '@/core/dislikeList'
-import { clearPlayQueue, getPlayQueue, insertPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
+import { clearPlayQueue, getPlayQueue, getPlayQueueSessionId, insertPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
 import { parkRecommendQueue } from '@/core/qqMusicRecommendSession'
 import { releaseLocalList, retainLocalList } from '@/core/localList'
 import { cancelPreload, takePreloadedMusicUrl } from './preload'
@@ -43,6 +43,7 @@ let selectionGeneration = 0
 let listSelectionGeneration = 0
 let committedListSelection = 0
 export const isPlayRequested = () => playRequested
+export { completePlayQueue, getPlayQueueSessionId } from './playQueue'
 
 /** 在异步读列表/存档之前登记点播；后来的选择、暂停或停止会使这次操作失效。 */
 export const createPlaySelection = () => {
@@ -453,7 +454,7 @@ export const playListById = async(listId: string, id: string) => {
  */
 export const playList = async(listId: string, index: number, isCurrentSelection: () => boolean = createPlaySelection()) => {
   // LOCAL 是延迟加载的：从本地列表起播前必须先把整表读进来。
-  // 建完队列后 isPlayQueueFromList(LOCAL) 会把列表钉住，这里只管操作期间的占用
+  // 队列持有自己的歌曲对象，完整 LOCAL 只需在建队列期间占用。
   const isLocal = listId === LIST_IDS.LOCAL
   if (isLocal) await retainLocalList('player:playList')
   try {
@@ -480,7 +481,9 @@ export const playList = async(listId: string, index: number, isCurrentSelection:
     setPlayMusicInfo(LIST_IDS.PLAY_QUEUE, item.musicInfo)
     if (settingState.setting['player.isAutoCleanPlayedList'] || prevListId != LIST_IDS.PLAY_QUEUE) clearPlayedList()
     clearTempPlayeList()
+    const queueSession = getPlayQueueSessionId()
     await Promise.all([saved, handlePlay()])
+    return queueSession
   } finally {
     if (isLocal) releaseLocalList('player:playList')
   }

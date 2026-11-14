@@ -50,7 +50,7 @@ const setup = async(kind, stage = 'save', playIndex) => {
     start = () => action.handlePlay('fixture', songs)
   } else if (kind === 'songlist') {
     const action = load('src/screens/SonglistDetail/listAction.ts', dependencies)
-    start = () => action.handlePlay('fixture', 'tx', stage === 'save' ? songs : undefined)
+    start = () => action.handlePlay('fixture', 'tx', stage === 'save' ? songs : undefined, playIndex ?? 0)
   } else if (kind === 'deeplink') {
     const action = load('src/core/init/deeplink/playSonglist.ts', dependencies)
     start = () => action.playSonglist('tx', 'fixture', playIndex)
@@ -220,7 +220,7 @@ for (const kind of ['songlist', 'deeplink']) {
     h.gate.resolve()
     await pending
     await flush()
-    assert.deepEqual(Array.from(h.writes.at(-1).songs, item => item.id), h.full.map(item => item.id))
+    assert.deepEqual(Array.from(h.queue.getPlayQueueMusic(), item => item.id), h.full.map(item => item.id))
     assert.equal(h.state.playMusicInfo.musicInfo.id, 'entry-song')
     assert.deepEqual(h.requests, ['first', 'all'])
   })
@@ -235,6 +235,85 @@ for (const kind of ['songlist', 'deeplink']) {
     await flush()
     assert.equal(h.state.playMusicInfo.musicInfo.id, 'entry-song')
     assert.equal(h.writes.length, 1)
+  })
+
+  for (const mode of ['list', 'listLoop']) {
+    test(`${kind} first-song playback continues beyond the initial page in ${mode} mode`, async() => {
+      const h = await setup(kind, 'full list')
+      h.setting['player.togglePlayMethod'] = mode
+      const pending = h.start()
+      await flush()
+      h.gate.resolve()
+      await pending
+      await h.player.playNext(true)
+      await h.player.playNext(true)
+      assert.equal(h.state.playMusicInfo.musicInfo.id, 'later-page')
+      assert.equal(h.state.playInfo.playerPlayIndex, 2)
+      assert.deepEqual(h.requests, ['first', 'all'])
+    })
+  }
+
+  for (const control of ['pause', 'stop', 'next', 'previous']) {
+    test(`${kind} completion preserves a later ${control} within the same queue`, async() => {
+      const h = await setup(kind, 'full list')
+      const pending = h.start()
+      await flush()
+      if (control === 'next') await h.player.playNext()
+      else if (control === 'previous') await h.player.playPrev()
+      else await h.player[control]()
+      const playback = h.state.playMusicInfo
+      const requested = h.player.isPlayRequested()
+      const index = h.state.playInfo.playerPlayIndex
+      h.gate.resolve()
+      await pending
+      assert.equal(h.state.playMusicInfo, playback)
+      assert.equal(h.player.isPlayRequested(), requested)
+      assert.equal(h.state.playInfo.playerPlayIndex, index)
+      assert.deepEqual(Array.from(h.queue.getPlayQueueMusic(), item => item.id), h.full.map(item => item.id))
+    })
+  }
+
+  test(`${kind} completion preserves queue edits and does not restore removed songs`, async() => {
+    const h = await setup(kind, 'full list')
+    const pending = h.start()
+    await flush()
+    await h.player.addToPlayQueue([song('manual'), h.full[2]])
+    await h.player.removeQueueMusic(2)
+    await h.player.moveQueueMusic(0, 2)
+    await h.player.removeQueueMusic(1)
+    h.full.push(song('fourth'))
+    const playback = h.state.playMusicInfo
+    const index = h.state.playInfo.playerPlayIndex
+    h.gate.resolve()
+    await pending
+    assert.deepEqual(Array.from(h.queue.getPlayQueueMusic(), item => item.id), ['manual', 'entry-song', 'fourth'])
+    assert.equal(h.state.playMusicInfo, playback)
+    assert.equal(h.state.playInfo.playerPlayIndex, index)
+  })
+
+  test(`${kind} completion cannot refill a cleared queue or an identical replacement`, async() => {
+    for (const replace of [false, true]) {
+      const h = await setup(kind, 'full list')
+      const pending = h.start()
+      await flush()
+      if (replace) await h.player.playList(constants.LIST_IDS.TEMP, 0)
+      else await h.player.clearQueue()
+      const expected = Array.from(h.queue.getPlayQueueMusic(), item => item.id)
+      h.gate.resolve()
+      await pending
+      assert.deepEqual(Array.from(h.queue.getPlayQueueMusic(), item => item.id), expected)
+    }
+  })
+
+  test(`${kind} completion does not apply the recommendation queue size cap`, async() => {
+    const h = await setup(kind, 'full list')
+    h.full.push(...Array.from({ length: 600 }, (_, index) => song('extra-' + index)))
+    const pending = h.start()
+    await flush()
+    h.gate.resolve()
+    await pending
+    assert.equal(h.queue.getPlayQueueMusic().length, h.full.length)
+    assert.equal(h.state.playMusicInfo.musicInfo.id, 'entry-song')
   })
 }
 

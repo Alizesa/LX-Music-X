@@ -5,7 +5,7 @@ const { load, song, constants, assert } = require('./helpers/playback.cjs')
 
 const metadataKeys = ['sessionId', 'sourceFirstMusicId', 'sourceBatchKey']
 const source = constants.QQ_DAILY_RECOMMEND_QUEUE_SOURCE
-const setup = (saved = []) => {
+const setup = (saved = [], globals = {}) => {
   let stored = structuredClone(saved)
   let writes = 0
   let reads = 0
@@ -18,7 +18,7 @@ const setup = (saved = []) => {
     '@/config/constant': constants,
     '@/store/player/state': { default: state },
     '@/store/player/action': { default: { prunePlayedList() {}, updatePlayIndex: (playIndex, playerPlayIndex) => { Object.assign(state.playInfo, { playIndex, playerPlayIndex }) } } },
-  }, { global: { app_event: { playQueueUpdate() {} } } })
+  }, { global: { app_event: { playQueueUpdate() {} } }, ...globals })
   return { queue, state, disk: () => structuredClone(stored), reads: () => reads, writes: () => writes }
 }
 const metadata = queue => ({
@@ -33,6 +33,27 @@ const assertSingleOwner = (rows, expected) => {
   }
 }
 const original = () => Array.from({ length: 20 }, (_, index) => song('original-' + index))
+
+test('late completion cannot enter an identical queue created in the same clock tick', async() => {
+  class ClockDate extends Date { static now() { return 1 } }
+  const h = setup([], { Date: ClockDate })
+  const first = [song('first')]
+  const full = [...first, song('second'), song('second')]
+  await h.queue.replacePlayQueue('songs', first)
+  const previous = h.queue.getPlayQueueSessionId()
+  await h.queue.replacePlayQueue('songs', first)
+  await h.queue.completePlayQueue(previous, full)
+  assert.equal(h.queue.getPlayQueueMusic().length, 1)
+  const current = h.queue.getPlayQueueSessionId()
+  await h.queue.completePlayQueue(current, full)
+  assert.deepEqual(Array.from(h.queue.getPlayQueueMusic(), item => item.id), ['first', 'second'])
+  await h.queue.removePlayQueueItem(1)
+  await h.queue.completePlayQueue(current, full)
+  assert.equal(h.queue.getPlayQueueMusic().length, 1)
+  await h.queue.replacePlayQueue('songs', first)
+  await h.queue.completePlayQueue(h.queue.getPlayQueueSessionId(), full)
+  assert.equal(h.queue.getPlayQueueMusic().length, 2)
+})
 
 test('repeated head moves keep one metadata copy and a stable serialized queue size', async() => {
   const h = setup()

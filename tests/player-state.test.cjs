@@ -94,7 +94,7 @@ const restoreHarness = () => {
     '@/config/constant': { LIST_IDS: { PLAY_QUEUE: 'queue' } },
     '@/core/qqMusicFavorite': {},
     '@/core/dislikeList': {},
-    './playQueue': { getPlayQueue: () => songs.map(musicInfo => ({ musicInfo })) },
+    './playQueue': { getPlayQueue: () => songs.map(musicInfo => ({ musicInfo })), getPlayQueueSessionId: () => 'restore-queue' },
     '@/core/qqMusicRecommendSession': {},
     '@/core/localList': {},
     './preload': {},

@@ -1,8 +1,7 @@
 import { setTempList } from '@/core/list'
-import { createPlaySelection, playList } from '@/core/player/player'
+import { completePlayQueue, createPlaySelection, getPlayQueueSessionId, playList } from '@/core/player/player'
 import { getListDetail, getListDetailAll } from '@/core/songlist'
 import { LIST_IDS } from '@/config/constant'
-import listState from '@/store/list/state'
 import { getQQMusicPlaylists, getQQMusicSession, isQQMusicSessionCurrent, QQMusicSessionExpiredError, updateQQMusicPlaylistsCache } from '@/core/qqMusic'
 import { toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
 import { toast } from '@/utils/tools'
@@ -13,23 +12,21 @@ const getListId = (id: string, source: LX.OnlineSource) => `${source}__${id}`
 export const handlePlay = async(id: string, source: Source, list?: LX.Music.MusicInfoOnline[], index = 0) => {
   const selection = createPlaySelection()
   const listId = getListId(id, source)
-  let isPlayingList = false
+  let queueSession: string | undefined
   // console.log(list)
   if (!list?.length) list = (await getListDetail(id, source, 1)).list
   if (!selection()) return
   if (list?.length) {
     await setTempList(listId, [...list])
     if (!selection()) return
-    await playList(LIST_IDS.TEMP, index, selection)
-    isPlayingList = true
+    queueSession = await playList(LIST_IDS.TEMP, index, selection)
+    if (!queueSession) return
   }
-  if (!selection.isLatest()) return
+  if (queueSession ? queueSession !== getPlayQueueSessionId() : !selection()) return
   const fullList = await getListDetailAll(source, id)
-  if (!fullList.length || !selection.isLatest()) return
-  if (isPlayingList) {
-    if (listState.tempListMeta.id == listId) {
-      await setTempList(listId, [...fullList])
-    }
+  if (!fullList.length) return
+  if (queueSession) {
+    await completePlayQueue(queueSession, fullList)
   } else {
     if (!selection()) return
     await setTempList(listId, [...fullList])

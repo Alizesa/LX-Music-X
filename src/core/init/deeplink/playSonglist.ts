@@ -1,8 +1,7 @@
 import { LIST_IDS } from '@/config/constant'
 import { setTempList } from '@/core/list'
-import { createPlaySelection, playList } from '@/core/player/player'
+import { completePlayQueue, createPlaySelection, getPlayQueueSessionId, playList } from '@/core/player/player'
 import { getListDetail, getListDetailAll } from '@/core/songlist'
-import listState from '@/store/list/state'
 
 const getListPlayIndex = (list: LX.Music.MusicInfoOnline[], index?: number) => {
   if (index == null) {
@@ -18,7 +17,7 @@ const playSongListDetail = async(source: LX.OnlineSource, link: string, playInde
   // console.log(source, link, playIndex)
   if (link == null) return
   const selection = createPlaySelection()
-  let isPlayingList = false
+  let queueSession: string | undefined
   const id = decodeURIComponent(link)
   const playListId = `${source}__${id}`
   let list = (await getListDetail(id, source, 1)).list
@@ -28,14 +27,14 @@ const playSongListDetail = async(source: LX.OnlineSource, link: string, playInde
   if (list.length && (playIndex == null || list.length > playIndex)) {
     await setTempList(playListId, list)
     if (!selection()) return
-    await playList(LIST_IDS.TEMP, getListPlayIndex(list, playIndex), selection)
-    isPlayingList = true
+    queueSession = await playList(LIST_IDS.TEMP, getListPlayIndex(list, playIndex), selection)
+    if (!queueSession) return
   }
-  if (!selection.isLatest()) return
+  if (queueSession ? queueSession !== getPlayQueueSessionId() : !selection()) return
   list = await getListDetailAll(source, id)
-  if (!list.length || !selection.isLatest()) return
-  if (isPlayingList) {
-    if (listState.tempListMeta.id == playListId) await setTempList(playListId, list)
+  if (!list.length) return
+  if (queueSession) {
+    await completePlayQueue(queueSession, list)
   } else {
     if (!selection()) return
     await setTempList(playListId, list)
