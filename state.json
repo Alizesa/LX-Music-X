@@ -98,21 +98,30 @@
       "version": "1.9.3-next.6",
       "versionCode": 100006,
       "tag": "v1.9.3-next.6",
-      "status": "allocated"
+      "status": "published",
+      "notes": {
+        "version": "1.9.3-next.6",
+        "desc": "- fix: guard cache recovery, release promotion and lyric seeking (da7ec1bc)\n- fix: bound runtime caches and cancel stale work (f0b96601)\n- chore: remove test-only APIs and cover the production entry points (4d901108)\n- chore: remove obsolete manual release helpers and metadata (733f6c93)\n- refactor: use the playlist cursor as the single paging path (89d30920)\n- chore: remove unused legacy update and quality helpers (3e087123)\n- chore: remove obsolete playback and visibility hooks (1fdc4104)\n- chore: remove the unused JavaScript scroll animation module (46d508fe)\n- fix: preserve legacy Kugou playlist totals across pages (0196b2e3)\n- fix: merge favorite changes against the latest cached state (0695df25)\n- fix: preserve newer download controls during asynchronous resume (57824456)\n- fix: bind asynchronous download updates to task instances (f55206ce)\n- fix: complete online playback queues without overriding user edits (fe17e32a)"
+      },
+      "publishedAt": "2026-11-14T13:15:18.907Z"
     }
   },
   "channels": {
     "next": {
       "schemaVersion": 1,
       "channel": "next",
-      "version": "1.9.3-next.5",
-      "versionCode": 100005,
-      "tag": "v1.9.3-next.5",
-      "sourceSha": "8a9115adc42c2ad6a1175a95b4ee527f6252c5fb",
-      "publishedAt": "2026-11-14T08:05:15.900Z",
-      "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.3-next.5",
-      "desc": "- perf: reduce runtime memory and harden resource lifecycles (8a9115ad)\n- fix: build complete queues for deeplinks at page boundaries (91ab7c7d)\n- fix: preserve user selections around dislike actions (d2b0558e)\n- fix: preserve active playback when queue clearing is cancelled (b41c82c9)\n- fix: keep queue metadata on a single head item (e147ba4a)\n- fix: reject partial matches when migrating legacy recommendation queues (47bcda91)\n- fix: cancel updater failure cleanup without retaining release objects (4e2e522d)\n- fix: preserve user playback intents across automatic track changes (4218c2fc)\n- chore: lint CJS files and normalize the regression tests (1db2ec09)\n- fix: use the supported placeholder in update error details (9dd812fe)\n- docs: clarify the default stable update channel (3f921a6a)\n- fix: guard asynchronous playback across online list entry points (9b7303e0)\n- fix: reuse durable update preferences during startup (4e681e0b)\n- fix: release cancelled updater waiters before native downloads finish (83a1a00a)\n- fix: preserve complete recommendation batch identity across restores (02e8e925)\n- fix: preserve newer playback selections while clearing the queue (6f1cd408)",
+      "version": "1.9.3-next.6",
+      "versionCode": 100006,
+      "tag": "v1.9.3-next.6",
+      "sourceSha": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628",
+      "publishedAt": "2026-11-14T13:15:18.907Z",
+      "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.3-next.6",
+      "desc": "- fix: guard cache recovery, release promotion and lyric seeking (da7ec1bc)\n- fix: bound runtime caches and cancel stale work (f0b96601)\n- chore: remove test-only APIs and cover the production entry points (4d901108)\n- chore: remove obsolete manual release helpers and metadata (733f6c93)\n- refactor: use the playlist cursor as the single paging path (89d30920)\n- chore: remove unused legacy update and quality helpers (3e087123)\n- chore: remove obsolete playback and visibility hooks (1fdc4104)\n- chore: remove the unused JavaScript scroll animation module (46d508fe)\n- fix: preserve legacy Kugou playlist totals across pages (0196b2e3)\n- fix: merge favorite changes against the latest cached state (0695df25)\n- fix: preserve newer download controls during asynchronous resume (57824456)\n- fix: bind asynchronous download updates to task instances (f55206ce)\n- fix: complete online playback queues without overriding user edits (fe17e32a)",
       "history": [
+        {
+          "version": "1.9.3-next.5",
+          "desc": "- perf: reduce runtime memory and harden resource lifecycles (8a9115ad)\n- fix: build complete queues for deeplinks at page boundaries (91ab7c7d)\n- fix: preserve user selections around dislike actions (d2b0558e)\n- fix: preserve active playback when queue clearing is cancelled (b41c82c9)\n- fix: keep queue metadata on a single head item (e147ba4a)\n- fix: reject partial matches when migrating legacy recommendation queues (47bcda91)\n- fix: cancel updater failure cleanup without retaining release objects (4e2e522d)\n- fix: preserve user playback intents across automatic track changes (4218c2fc)\n- chore: lint CJS files and normalize the regression tests (1db2ec09)\n- fix: use the supported placeholder in update error details (9dd812fe)\n- docs: clarify the default stable update channel (3f921a6a)\n- fix: guard asynchronous playback across online list entry points (9b7303e0)\n- fix: reuse durable update preferences during startup (4e681e0b)\n- fix: release cancelled updater waiters before native downloads finish (83a1a00a)\n- fix: preserve complete recommendation batch identity across restores (02e8e925)\n- fix: preserve newer playback selections while clearing the queue (6f1cd408)"
+        },
         {
           "version": "1.9.3-next.4",
           "desc": "- fix: guard source changes and asynchronous UI feedback (3ac9ed1a)\n- ui: drag to reorder sources and select update channels from a dropdown (3bbc7374)\n- fix: release download resources and guard recommendation playback (3e86c26e)"
@@ -133,38 +142,38 @@
       "assets": [
         {
           "abi": "arm64-v8a",
-          "fileName": "lx-music-mobile-v1.9.3-next.5-arm64-v8a.apk",
-          "size": 25047579,
-          "sha256": "9f17348ffb8dec682f27a007f536fae5babeea99e55cab7a81b399c391cea763",
-          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.5/lx-music-mobile-v1.9.3-next.5-arm64-v8a.apk"
+          "fileName": "lx-music-mobile-v1.9.3-next.6-arm64-v8a.apk",
+          "size": 25050936,
+          "sha256": "fd7f731ef690dc95583ef5da93ade46a2691f8f5e46c07df60429232531e81ba",
+          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.6/lx-music-mobile-v1.9.3-next.6-arm64-v8a.apk"
         },
         {
           "abi": "armeabi-v7a",
-          "fileName": "lx-music-mobile-v1.9.3-next.5-armeabi-v7a.apk",
-          "size": 20151974,
-          "sha256": "60cbb2e6fa8f19c9020727905ff365d7f35f158fdc002adc35db4a17fe2a9189",
-          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.5/lx-music-mobile-v1.9.3-next.5-armeabi-v7a.apk"
+          "fileName": "lx-music-mobile-v1.9.3-next.6-armeabi-v7a.apk",
+          "size": 20155329,
+          "sha256": "6134fc27dfbfb545ef10abfe8773d955ef9d5f39877eb7d28ca299981e55aeb0",
+          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.6/lx-music-mobile-v1.9.3-next.6-armeabi-v7a.apk"
         },
         {
           "abi": "x86_64",
-          "fileName": "lx-music-mobile-v1.9.3-next.5-x86_64.apk",
-          "size": 25814526,
-          "sha256": "58a89050e81742844c319cc56a9c32cb5977d629b7828d13d7a1e9446837c25b",
-          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.5/lx-music-mobile-v1.9.3-next.5-x86_64.apk"
+          "fileName": "lx-music-mobile-v1.9.3-next.6-x86_64.apk",
+          "size": 25817890,
+          "sha256": "0ca6abd852274dd36508ead4d09814a6f11b06c7562582d5bf918786a5284438",
+          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.6/lx-music-mobile-v1.9.3-next.6-x86_64.apk"
         },
         {
           "abi": "x86",
-          "fileName": "lx-music-mobile-v1.9.3-next.5-x86.apk",
-          "size": 25357118,
-          "sha256": "64ecf17aae9f5f59d7f24217b6eaabe6041cd5d8a0bee2b53ce866625844271a",
-          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.5/lx-music-mobile-v1.9.3-next.5-x86.apk"
+          "fileName": "lx-music-mobile-v1.9.3-next.6-x86.apk",
+          "size": 25360476,
+          "sha256": "ff53b1643708deea14d51043c9601b0456768478ebf0a360126e97068d13a360",
+          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.6/lx-music-mobile-v1.9.3-next.6-x86.apk"
         },
         {
           "abi": "universal",
-          "fileName": "lx-music-mobile-v1.9.3-next.5-universal.apk",
-          "size": 67705868,
-          "sha256": "3c98a63c17f79fa9996bc8105eb46ae12d2c53953fc7bbb625f09cdc230c8ca5",
-          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.5/lx-music-mobile-v1.9.3-next.5-universal.apk"
+          "fileName": "lx-music-mobile-v1.9.3-next.6-universal.apk",
+          "size": 67709216,
+          "sha256": "4ccaa2bd0812103e14d9a3cf98e1ca7304661f46686a14893aa74c07f00c5673",
+          "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3-next.6/lx-music-mobile-v1.9.3-next.6-universal.apk"
         }
       ],
       "signingCertificateSha256": "37bf055966cdf9bb76a14f8298d9fe5898c264cd266997508f3bcac2e36c0814"
