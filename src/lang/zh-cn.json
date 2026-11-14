@@ -577,6 +577,6 @@
 , "setting_about_download": "本项目安装包："
 , "setting_about_upgrade": "覆盖升级需使用本项目相同签名的安装包。上游 LX Music 安装包不能用于升级 LX Music X。"
 , "setting_about_upstream_author": "上游作者："
-, "version_check_error_details": "详细原因：\n{{message}}"
+, "version_check_error_details": "详细原因：\n{message}"
 , "source_priority_drag": "拖动排序"
 }

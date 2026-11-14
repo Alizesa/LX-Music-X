@@ -577,6 +577,6 @@
 , "setting_about_download": "本專案安裝包："
 , "setting_about_upgrade": "覆蓋升級須使用本專案相同簽章的安裝包。上游 LX Music 安裝包不能用於升級 LX Music X。"
 , "setting_about_upstream_author": "上游作者："
-, "version_check_error_details": "詳細原因：\n{{message}}"
+, "version_check_error_details": "詳細原因：\n{message}"
 , "source_priority_drag": "拖動排序"
 }
