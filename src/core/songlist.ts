@@ -4,8 +4,7 @@ import { deduplicationList, toNewMusicInfo } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
 
 
-interface DetailPageCache { data: ListDetailInfo, sourcePage: number }
-type LimitDetailCache = Map<string, DetailPageCache>
+type LimitDetailCache = Map<number, ListDetailInfo>
 interface DetailCursor {
   sourcePage: number
   nextPage: number
@@ -52,7 +51,7 @@ const touchCache = (key: string) => {
 const countCachedSongs = (value: LimitDetailCache) => {
   let total = detailCursors.get(value)?.pending.length ?? 0
   for (const page of value.values()) {
-    total += page.data.list.length
+    total += page.list.length
   }
   return total
 }
@@ -121,39 +120,38 @@ const loadDetailSourcePage = async(source: LX.OnlineSource, id: string, listKey:
   let offset = 0
   while (buffered.length - offset >= LIST_LOAD_LIMIT || (cursor.done && offset < buffered.length)) {
     const page = cursor.nextPage++
-    value.set(`${listKey}__${page}`, {
-      data: makeDetailPage(cursor, page, buffered.slice(offset, offset + LIST_LOAD_LIMIT)),
-      sourcePage: cursor.sourcePage,
-    })
+    value.set(page, makeDetailPage(cursor, page, buffered.slice(offset, offset + LIST_LOAD_LIMIT)))
     offset += LIST_LOAD_LIMIT
   }
   cursor.pending = buffered.slice(offset)
   if (cursor.done) {
     // 源总数可能含无效/被过滤的歌曲；读完后用实际行数结束，不继续请求空页。
-    for (const { data } of value.values()) {
+    for (const data of value.values()) {
       data.total = cursor.loaded
       data.maxPage = Math.ceil(cursor.loaded / LIST_LOAD_LIMIT)
     }
   }
 }
 
-const getListDetailLimit = async(source: LX.OnlineSource, id: string, page: number): Promise<ListDetailInfo> => {
+/** 同一源游标顺序推进到目标 UI 页，缺失的前页由该循环一并补齐。 */
+const getListDetailLimit = async(source: LX.OnlineSource, id: string, page: number, isRefresh = false): Promise<ListDetailInfo> => {
   const listKey = detailKey(source, id)
   let value = cache.get(listKey)
-  if (!value) {
+  if (!value || isRefresh) {
     value = new Map()
     cache.set(listKey, value)
   } else touchCache(listKey)
   const listCache = value
+  const cached = listCache.get(page)
+  if (cached) return cached
   let current = detailCursors.get(listCache)
   if (!current) {
     current = { sourcePage: 0, nextPage: 1, loaded: 0, pending: [], ids: new Set(), done: false, info: null, loading: null }
     detailCursors.set(listCache, current)
   }
   const cursor = current
-  const pageKey = `${listKey}__${page}`
   return withDetailCache(listCache, async() => {
-    while (!listCache.has(pageKey) && !cursor.done) {
+    while (!listCache.has(page) && !cursor.done) {
       // 并发页面/全量点播共享同一源请求，失败只重试尚未成功的源页。
       if (!cursor.loading) {
         const request = loadDetailSourcePage(source, id, listKey, listCache, cursor).finally(() => {
@@ -164,7 +162,7 @@ const getListDetailLimit = async(source: LX.OnlineSource, id: string, page: numb
       await cursor.loading
       if (cache.get(listKey) !== listCache) throw new Error('Songlist request superseded')
     }
-    return listCache.get(pageKey)?.data ?? makeDetailPage(cursor, page, [])
+    return listCache.get(page) ?? makeDetailPage(cursor, page, [])
   })
 }
 
@@ -186,21 +184,6 @@ export const clearListDetail = () => {
 }
 
 /**
- * 详情缓存被淘汰后，从首个源页重建游标和之前的 UI 页，避免把源第一页
- * 当成第 N 页。正在加载的请求共用游标，不重复请求成功的源页。
- * 只有长期没打开、缓存已被淘汰的歌单继续往下翻时才会走到这里。
- */
-const ensurePreviousPages = async(source: LX.OnlineSource, id: string, page: number) => {
-  if (page <= 1) return
-  const listKey = `sdetail__${source}__${id}`
-  for (let p = 1; p < page; p++) {
-    const listCache = cache.get(listKey)
-    if (listCache?.get(`${listKey}__${p}`)) continue
-    await getListDetailLimit(source, id, p)
-  }
-}
-
-/**
  * 获取歌单内单页歌曲
  * @param id 歌单id
  * @param source 歌单源
@@ -208,25 +191,7 @@ const ensurePreviousPages = async(source: LX.OnlineSource, id: string, page: num
  * @returns
  */
 export const getListDetail = async(id: string, source: LX.OnlineSource, page: number, isRefresh = false): Promise<ListDetailInfo> => {
-  const listKey = `sdetail__${source}__${id}`
-  const pageKey = `sdetail__${source}__${id}__${page}`
-
-  let listCache = cache.get(listKey)
-  if (!listCache || isRefresh) {
-    listCache = new Map()
-    cache.set(listKey, listCache)
-  } else {
-    touchCache(listKey)
-  }
-
-  let pageCache = listCache.get(pageKey)
-  if (pageCache) return pageCache.data
-
-  await ensurePreviousPages(source, id, page)
-  // 重建前面的页时，一次音源请求可能已经填好了当前页，优先复用，避免重复取页覆盖结果。
-  pageCache = cache.get(listKey)?.get(pageKey)
-  if (pageCache) return pageCache.data
-  return getListDetailLimit(source, id, page)
+  return getListDetailLimit(source, id, page, isRefresh)
 }
 
 /**
@@ -250,8 +215,7 @@ export const getListDetailAll = async(source: LX.OnlineSource, id: string, isRef
   return withDetailCache(heldCache, async() => {
     const loadData = async(page: number): Promise<ListDetailInfo> => {
       if (cache.get(listKey) !== heldCache) throw new Error('Songlist request superseded')
-      const pageKey = `${listKey}__${page}`
-      return heldCache.get(pageKey)?.data ?? getListDetailLimit(source, id, page)
+      return heldCache.get(page) ?? getListDetailLimit(source, id, page)
     }
     const first = await loadData(1)
     if (first.total <= first.limit) return deduplicationList(first.list)
