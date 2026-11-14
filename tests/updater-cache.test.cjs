@@ -7,9 +7,12 @@ const shared = require('../shared/release')
 test('a slower forced channel response cannot replace a newer response or regress the next cached check', async() => {
   const requests = []
   const updater = load('src/utils/version.js', {
-    '../../package.json': { name: packageName }, '../../shared/release': shared,
+    '../../package.json': { name: packageName },
+    '../../shared/release': shared,
     '@/utils/request': { httpGet: (url, options, callback) => { requests.push({ url, callback }) } },
-    '@/utils/fs': {}, '@/utils/nativeModules/utils': {}, '@/config/constant': {},
+    '@/utils/fs': {},
+    '@/utils/nativeModules/utils': {},
+    '@/config/constant': {},
   })
   const oldCheck = updater.getVersionInfo('stable', true)
   const newCheck = updater.getVersionInfo('stable', true)
@@ -29,15 +32,18 @@ test('a slower forced channel response cannot replace a newer response or regres
 
 test('a failed write from an earlier channel selection cannot overwrite the latest selection or its successful check', async() => {
   const blockedWrite = deferred()
-  const changes = [], writes = [], checkedChannels = [], messages = [], cancellations = []
+  const changes = []; const writes = []; const checkedChannels = []; const messages = []; const cancellations = []
   let saved
-  const globals = { global: {
-    i18n: { t: key => key },
-    state_event: {
-      versionInfoUpdated: info => changes.push(info),
-      versionInfoIgnoreVersionUpdated() {}, versionDownloadProgressUpdated() {},
+  const globals = {
+    global: {
+      i18n: { t: key => key },
+      state_event: {
+        versionInfoUpdated: info => changes.push(info),
+        versionInfoIgnoreVersionUpdated() {},
+        versionDownloadProgressUpdated() {},
+      },
     },
-  } }
+  }
   const state = load('src/store/version/state.ts', { '../../../package.json': { version: '1.9.2' } }).default
   const actions = load('src/store/version/action.ts', { './state': { default: state } }, globals).default
   const core = load('src/core/version.ts', {
@@ -45,11 +51,14 @@ test('a failed write from an earlier channel selection cannot overwrite the late
     '@/utils/version': {
       getVersionInfo: async channel => { checkedChannels.push(channel); return { manifests: [manifest()], incomplete: false } },
       cancelUpdateDownload: () => cancellations.push(state.versionInfo.channel),
-      cleanupUpdateDownloads: async() => {}, hasDownloadedUpdate: () => false,
-      downloadNewVersion: async() => {}, updateApp: async() => {},
+      cleanupUpdateDownloads: async() => {},
+      hasDownloadedUpdate: () => false,
+      downloadNewVersion: async() => {},
+      updateApp: async() => {},
     },
     '@/utils/nativeModules/utils': { getInstalledAppInfo: async() => ({ version: '1.9.2', versionCode: 79003 }) },
-    '@/store/version/action': { default: actions }, '@/store/version/state': { default: state },
+    '@/store/version/action': { default: actions },
+    '@/store/version/state': { default: state },
     '@/utils/data': {
       getUpdatePreferences: async() => saved,
       saveUpdatePreferences: async value => {
@@ -57,7 +66,8 @@ test('a failed write from an earlier channel selection cannot overwrite the late
         if (writes.length === 2) await blockedWrite.promise
         saved = structuredClone(value)
       },
-      getIgnoreVersionFailTipTime: async() => Date.now(), saveIgnoreVersionFailTipTime() {},
+      getIgnoreVersionFailTipTime: async() => Date.now(),
+      saveIgnoreVersionFailTipTime() {},
     },
     '@/navigation': { showVersionModal() {} },
     'react-native-navigation': { Navigation: { dismissOverlay: async() => {} } },
@@ -88,12 +98,17 @@ test('a failed write from an earlier channel selection cannot overwrite the late
 const previewTransport = () => {
   const requests = []
   const updater = load('src/utils/version.js', {
-    '../../package.json': { name: packageName }, '../../shared/release': shared,
-    '@/utils/request': { httpGet: (url, options, callback) => {
-      if (url.endsWith('/stable.json')) callback(null, { statusCode: 404 })
-      else requests.push(callback)
-    } },
-    '@/utils/fs': {}, '@/utils/nativeModules/utils': {}, '@/config/constant': {},
+    '../../package.json': { name: packageName },
+    '../../shared/release': shared,
+    '@/utils/request': {
+      httpGet: (url, options, callback) => {
+        if (url.endsWith('/stable.json')) callback(null, { statusCode: 404 })
+        else requests.push(callback)
+      },
+    },
+    '@/utils/fs': {},
+    '@/utils/nativeModules/utils': {},
+    '@/config/constant': {},
   })
   return { requests, updater }
 }

@@ -579,7 +579,7 @@ test('rejected account URLs do not consume the six-candidate probe budget', asyn
 })
 
 test('an account URL rejected while its probe is pending cannot beat a healthy CDN', async() => {
-  const first = deferred(), second = deferred(), rejectedUrls = new Set()
+  const first = deferred(); const second = deferred(); const rejectedUrls = new Set()
   const bad = 'https://bad.example/M500media.mp3'
   const h = harness({
     ticket: () => response('M500media.mp3', { sip: ['https://bad.example/', 'https://audio.example/'] }),

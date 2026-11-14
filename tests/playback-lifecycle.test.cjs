@@ -10,10 +10,15 @@ const finishUrl = async(h, index = h.sourceRequests.length - 1) => {
 }
 const plays = h => h.nativeCalls.filter(call => call.action === 'play')
 const addErrorHandling = h => load('src/core/init/player/playerEvent.ts', {
-  '@/core/player/player': h.player, '@/core/player/playStatus': h.status, '@/plugins/player': h.plugin,
-  '@/utils/tools': { isActive: () => true }, 'react-native-background-timer': { default: h.clock },
-  '@/store/player/state': { default: h.state }, '@/core/player/progress': h.progress,
-  '@/store/setting/state': { default: { setting: h.setting } }, '@/core/player/playHistory': {},
+  '@/core/player/player': h.player,
+  '@/core/player/playStatus': h.status,
+  '@/plugins/player': h.plugin,
+  '@/utils/tools': { isActive: () => true },
+  'react-native-background-timer': { default: h.clock },
+  '@/store/player/state': { default: h.state },
+  '@/core/player/progress': h.progress,
+  '@/store/setting/state': { default: { setting: h.setting } },
+  '@/core/player/playHistory': {},
   '@/utils/apiSourceOrder': load('src/utils/apiSourceOrder.ts'),
 }, { global: h.globals, setTimeout: h.clock.setTimeout }).default()
 
@@ -175,11 +180,14 @@ test('consecutive buffer timeouts reach the third selected source without skippi
   const priority = load('src/core/music/sourcePriority.ts', {
     '@/store/setting/state': { default: { setting: h.setting } },
     '@/store/userApi': { state: { list: ids.map(id => ({ id })) } },
-    '@/utils/apiSourceOrder': load('src/utils/apiSourceOrder.ts'), '@/utils/message': message,
-    '@/core/userApiRuntime': { requestUserApiMusicUrl: async(id, music, quality) => {
-      calls.push({ id, song: music.id })
-      return { url: `https://audio.test/${id}`, type: quality }
-    } },
+    '@/utils/apiSourceOrder': load('src/utils/apiSourceOrder.ts'),
+    '@/utils/message': message,
+    '@/core/userApiRuntime': {
+      requestUserApiMusicUrl: async(id, music, quality) => {
+        calls.push({ id, song: music.id })
+        return { url: `https://audio.test/${id}`, type: quality }
+      },
+    },
     '@/core/qqMusicUrl': { validateQQMusicUrl: async() => {} },
   }, { global: h.globals })
   h.music.getMusicUrl = async args => (await priority.getMusicUrlByPriority({ ...args, quality: '128k' })).url

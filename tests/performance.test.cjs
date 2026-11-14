@@ -11,9 +11,9 @@ const compiled = new Map()
 const copy = value => value == null ? value : JSON.parse(JSON.stringify(value))
 const flush = async() => { for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)) }
 const deferred = () => {
-  let resolve, reject
-  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
-  return { promise, resolve, reject }
+  let resolvePromise, rejectPromise
+  const promise = new Promise((resolve, reject) => { resolvePromise = resolve; rejectPromise = reject })
+  return { promise, resolve: resolvePromise, reject: rejectPromise }
 }
 const timers = () => {
   let next = 0
@@ -29,11 +29,17 @@ const timers = () => {
   }
 }
 const load = (file, mocks = {}, globals = {}) => {
-  if (!compiled.has(file)) compiled.set(file, ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-  }).outputText)
+  if (!compiled.has(file)) {
+    compiled.set(file, ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText)
+  }
   const context = {
-    exports: {}, AbortController, Buffer, setTimeout, clearTimeout,
+    exports: {},
+    AbortController,
+    Buffer,
+    setTimeout,
+    clearTimeout,
     console: { log() {}, warn() {}, error() {} },
     require: name => { assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${file}: ${name}`); return mocks[name] },
     ...globals,
@@ -47,7 +53,7 @@ const historyKey = item => `${constants.storageDataPrefix.downloadHistoryItem}${
 
 const historyHarness = ({ count = 0, legacy = [], migrated = true } = {}) => {
   const records = new Map(Array.from({ length: count }, (_, i) => { const item = historyItem(i); return [historyKey(item), item] }))
-  const reads = [], writes = []
+  const reads = []; const writes = []
   let old = copy(legacy)
   const data = {
     getDownloadHistoryKeys: async() => [...records.keys()],
@@ -124,7 +130,13 @@ test('a failed history write does not poison later writes and duplicate completi
 })
 
 const activeTask = id => ({
-  id, nativeId: `work-${id}`, status: 'pause', quality: '320k', fileName: `${id}.mp3`, directoryUri: 'content://fixture/dir', createdAt: 200000,
+  id,
+  nativeId: `work-${id}`,
+  status: 'pause',
+  quality: '320k',
+  fileName: `${id}.mp3`,
+  directoryUri: 'content://fixture/dir',
+  createdAt: 200000,
   progress: { progress: 0, downloaded: 0, total: 0, speed: '' },
   musicInfo: { id, name: id, singer: 'Artist', source: 'tx', interval: '03:00', meta: { albumName: 'Album', _qualitys: {} } },
 })
@@ -133,14 +145,15 @@ const downloadHarness = ({ count = 0, active = [], nativeState = async() => null
   const clock = timers()
   let nativeUpdate
   let savedActive = copy(active)
-  const events = [], localWrites = [], deleted = [], nativeQueries = [], tagWrites = [], urlRequests = []
+  const events = []; const localWrites = []; const deleted = []; const nativeQueries = []; const tagWrites = []; const urlRequests = []
   const app = Object.assign(new EventEmitter(), {
     downloadListUpdate() { events.push(['list']); this.emit('downloadListUpdate') },
     downloadCountUpdate(count) { events.push(['count', count]); this.emit('downloadCountUpdate', count) },
     downloadTaskUpdate(item) { events.push(['item', copy(item)]); this.emit('downloadTaskUpdate', item) },
   })
   const data = {
-    getDownloadTasksMigrated: async() => true, removeDownloadTasks: async() => {},
+    getDownloadTasksMigrated: async() => true,
+    removeDownloadTasks: async() => {},
     getDownloadActiveTasks: async() => copy(savedActive),
     saveDownloadActiveTasks: async value => { savedActive = copy(value) },
     getDownloadPath: async() => ({ uri: 'content://fixture/dir' }),
@@ -150,23 +163,41 @@ const downloadHarness = ({ count = 0, active = [], nativeState = async() => null
     '@/core/music': { getPicPath: async() => null, getLyricInfo: async() => null, getMusicUrl: async info => { urlRequests.push(info); return url(info) } },
     '@/config/constant': constants,
     '@/store/setting/state': { default: { setting: { 'download.fileName': '歌名 - 歌手', 'download.quality': '320k', ...setting } } },
-    '@/utils': { filterFileName: name => name }, '@/utils/lrcTools': {},
-    '@/utils/data': data, './downloadHistory': h.api,
+    '@/utils': { filterFileName: name => name },
+    '@/utils/lrcTools': {},
+    '@/utils/data': data,
+    './downloadHistory': h.api,
     '@/utils/fs': { privateStorageDirectoryPath: '/private', temporaryDirectoryPath: '/temp', unlink: async file => { deleted.push(file) } },
     '@/utils/localMediaMetadata': { writeDownloadMetadata: async(...args) => { tagWrites.push(args); await tags(...args) } },
     '@/utils/nativeModules/download': {
       onDownloadUpdate: callback => { nativeUpdate = callback },
       getDownloadState: async id => { nativeQueries.push(id); return nativeState(id) },
       enqueueDownload: enqueue,
-      removeDownload: async() => {}, pauseDownload: async() => {},
+      removeDownload: async() => {},
+      pauseDownload: async() => {},
     },
-    '@/utils/tools': { toMD5: value => createHash('md5').update(value).digest('hex') }, '@/utils/common': {},
+    '@/utils/tools': { toMD5: value => createHash('md5').update(value).digest('hex') },
+    '@/utils/common': {},
   }, {
     ...clock,
     global: { i18n: { t: key => key }, lx: { qualityList: { tx: ['128k'] } }, app_event: app },
   })
-  return { ...h, api, historyApi: h.api, clock, app, events, localWrites, deleted, nativeQueries, tagWrites, urlRequests, activeData: data,
-    update: state => nativeUpdate(state), savedActive: () => savedActive }
+  return {
+    ...h,
+    api,
+    historyApi: h.api,
+    clock,
+    app,
+    events,
+    localWrites,
+    deleted,
+    nativeQueries,
+    tagWrites,
+    urlRequests,
+    activeData: data,
+    update: state => nativeUpdate(state),
+    savedActive: () => savedActive,
+  }
 }
 const completed = id => ({ taskId: id, nativeId: `work-${id}`, status: 'completed', downloaded: 100, total: 100, filePath: `content://fixture/${id}` })
 
@@ -206,8 +237,10 @@ test('startup resumes unfinished URL resolution once without restarting paused o
 })
 
 test('startup reconciles a resolving snapshot with an existing worker instead of resolving another URL', async() => {
-  const h = downloadHarness({ active: [{ ...activeTask('existing'), status: 'resolving' }],
-    nativeState: async nativeId => ({ nativeId, status: 'run', downloaded: 30, total: 100 }) })
+  const h = downloadHarness({
+    active: [{ ...activeTask('existing'), status: 'resolving' }],
+    nativeState: async nativeId => ({ nativeId, status: 'run', downloaded: 30, total: 100 }),
+  })
   await h.api.initDownloads()
   await flush()
   assert.equal(h.urlRequests.length, 0)
@@ -216,7 +249,8 @@ test('startup reconciles a resolving snapshot with an existing worker instead of
 })
 
 test('four progress events create no history snapshots, list refreshes or count updates', async() => {
-  const h = downloadHarness({ count: 10000,
+  const h = downloadHarness({
+    count: 10000,
     active: [activeTask('a'), activeTask('b')].map(item => ({ ...item, status: 'waiting' })),
     nativeState: async nativeId => ({ nativeId, status: 'waiting', downloaded: 0, total: 100 }),
   })
@@ -247,7 +281,7 @@ test('download initialization and list access do not wait for native recovery', 
   const gate = deferred()
   const h = downloadHarness({ active: [{ ...activeTask('a'), status: 'run' }], nativeState: () => gate.promise })
   let ready = false
-  void h.api.initDownloads().then(() => { ready = true })
+  h.api.initDownloads().then(() => { ready = true })
   await flush()
   assert.equal(ready, true)
   assert.equal((await h.api.getDownloadList()).length, 1)
@@ -343,8 +377,14 @@ test('a durable archive updates the visible list even when saving the active sna
 })
 
 test('pending finalization survives restart without relying on a retained WorkManager record', async() => {
-  const h = downloadHarness({ active: [{ ...activeTask('a'), status: 'error',
-    filePath: 'content://fixture/a', pendingCompletion: { downloaded: 100, total: 100 } }] })
+  const h = downloadHarness({
+    active: [{
+      ...activeTask('a'),
+      status: 'error',
+      filePath: 'content://fixture/a',
+      pendingCompletion: { downloaded: 100, total: 100 },
+    }],
+  })
   await h.api.initDownloads()
   await flush()
   await h.clock.run(250)
@@ -436,7 +476,9 @@ const qqSearchHarness = respond => {
   const clock = timers()
   const requests = []
   const api = load('src/utils/musicSdk/tx/musicSearch.js', {
-    '../../index': {}, '../utils': {}, '@/utils/abort': abort,
+    '../../index': {},
+    '../utils': {},
+    '@/utils/abort': abort,
     './utils': { comm: {}, signRequest: async(...args) => { requests.push(args); return respond(args) } },
   }, clock).default
   return { api, clock, requests }
@@ -480,7 +522,8 @@ test('cancelling during QQ signing never starts an HTTP request', async() => {
   let httpCalls = 0
   const api = load('src/utils/musicSdk/tx/utils/index.js', {
     '@/utils/request': { httpFetch: () => { httpCalls++; throw new Error('unexpected request') } },
-    './crypto': { zzcSign: () => gate.promise }, '@/utils/abort': abort,
+    './crypto': { zzcSign: () => gate.promise },
+    '@/utils/abort': abort,
   })
   const controller = new AbortController()
   const result = api.signRequest({}, 'musics.fcg', controller.signal)
@@ -495,7 +538,7 @@ const searchCacheHarness = () => {
   const empty = () => ({ key: null, list: [], page: 0, limit: 30, maxPage: 0, total: 0 })
   const music = { listInfos: { tx: empty(), kw: empty(), all: empty() }, sources: ['all', 'tx', 'kw'], maxPages: {}, source: 'tx', searchText: '' }
   const songlist = { listInfos: { tx: empty(), kw: empty(), all: empty() }, sources: ['all', 'tx', 'kw'], maxPages: {}, source: 'tx', searchText: '' }
-  const singer = { listInfo: empty(), searchText: '' }, album = { listInfo: empty(), searchText: '' }
+  const singer = { listInfo: empty(), searchText: '' }; const album = { listInfo: empty(), searchText: '' }
   const disk = new Map()
   const data = {
     getSearchResultCache: async key => copy(disk.get(key)),
@@ -504,9 +547,12 @@ const searchCacheHarness = () => {
   }
   const request = load('src/core/search/request.ts')
   const createApi = () => load('src/core/search/cache.ts', {
-    '@/store/search/music/state': { default: music }, '@/store/search/songlist/state': { default: songlist },
-    '@/store/search/singer/state': { default: singer }, '@/store/search/album/state': { default: album },
-    '@/utils/data': data, './request': request,
+    '@/store/search/music/state': { default: music },
+    '@/store/search/songlist/state': { default: songlist },
+    '@/store/search/singer/state': { default: singer },
+    '@/store/search/album/state': { default: album },
+    '@/utils/data': data,
+    './request': request,
   }, clock)
   return { api: createApi(), createApi, music, songlist, singer, album, disk, data, request, clock }
 }
@@ -531,8 +577,11 @@ const searchResultHarness = (kind = 'music', source = 'tx', respond = async() =>
     songList: { search: () => request(source) },
   }]))
   const api = load(`src/core/search/${kind}.ts`, {
-    [`@/store/search/${kind}/state`]: { default: state }, [`@/store/search/${kind}/action`]: actions,
-    '@/utils/musicSdk': { default: sdk }, './cache': h.api, './request': h.request,
+    [`@/store/search/${kind}/state`]: { default: state },
+    [`@/store/search/${kind}/action`]: actions,
+    '@/utils/musicSdk': { default: sdk },
+    './cache': h.api,
+    './request': h.request,
   })
   const seed = async() => {
     Object.assign(info, { list: [{ id: 'old', mid: 'old' }], key: kind === 'songlist' ? `1__${source}__query` : '1__query', page: 1, total: 1, maxPage: 1 })
@@ -598,7 +647,7 @@ test('a cancelled search cannot invalidate its previous disk result when an empt
 test('an empty search result removes a stale snapshot even when that snapshot is still being written', async() => {
   const h = searchResultHarness()
   await h.seed()
-  const gate = deferred(), save = h.data.saveSearchResultCache
+  const gate = deferred(); const save = h.data.saveSearchResultCache
   h.data.saveSearchResultCache = async(...args) => { await gate.promise; await save(...args) }
   const evicting = h.api.releaseIdleSearchCaches()
   await flush()
@@ -672,15 +721,21 @@ test('superseded QQ results cannot overwrite the newest search and other provide
   const h = searchCacheHarness()
   Object.assign(h.music.listInfos.tx, { list: [{ id: 'previous' }], key: '1__previous', page: 1 })
   const pending = []
-  const sdk = { tx: { musicSearch: { search: (...args) => { const gate = deferred(); pending.push({ ...gate, args }); return gate.promise } } },
-    kw: { musicSearch: { search: async(...args) => { assert.equal(args.length, 3); return { list: [], source: 'kw' } } } } }
+  const sdk = {
+    tx: { musicSearch: { search: (...args) => { const gate = deferred(); pending.push({ ...gate, args }); return gate.promise } } },
+    kw: { musicSearch: { search: async(...args) => { assert.equal(args.length, 3); return { list: [], source: 'kw' } } } },
+  }
   const api = load('src/core/search/music.ts', {
-    '@/store/search/music/state': { default: h.music }, '@/utils/musicSdk': { default: sdk },
-    './cache': h.api, './request': h.request,
-    '@/store/search/music/action': { default: {
-      setSearchText: text => { h.music.searchText = text },
-      setListInfo: (result, page) => { Object.assign(h.music.listInfos[result.source], { list: result.list, page }); return result.list },
-    } },
+    '@/store/search/music/state': { default: h.music },
+    '@/utils/musicSdk': { default: sdk },
+    './cache': h.api,
+    './request': h.request,
+    '@/store/search/music/action': {
+      default: {
+        setSearchText: text => { h.music.searchText = text },
+        setListInfo: (result, page) => { Object.assign(h.music.listInfos[result.source], { list: result.list, page }); return result.list },
+      },
+    },
   })
   const first = api.search('old', 1, 'tx')
   await flush()
@@ -701,7 +756,7 @@ const hookHost = () => {
   let current
   const react = {
     useState(initial) {
-      const frame = current, index = frame.cursor++
+      const frame = current; const index = frame.cursor++
       if (!frame.slots[index]) {
         const slot = { value: typeof initial === 'function' ? initial() : initial }
         slot.set = next => { slot.value = typeof next === 'function' ? next(slot.value) : next }
@@ -711,7 +766,7 @@ const hookHost = () => {
       return [slot.value, slot.set]
     },
     useEffect(effect, deps) {
-      const frame = current, index = frame.cursor++
+      const frame = current; const index = frame.cursor++
       const previous = frame.slots[index]
       if (previous && deps.every((value, i) => Object.is(value, previous.deps[i]))) return
       const slot = { deps }
@@ -719,7 +774,7 @@ const hookHost = () => {
       frame.effects.push(() => { previous?.cleanup?.(); slot.cleanup = effect() })
     },
     useRef(initial) {
-      const frame = current, index = frame.cursor++
+      const frame = current; const index = frame.cursor++
       return frame.slots[index] ??= { current: initial }
     },
     useCallback(callback, deps) {
@@ -746,9 +801,11 @@ const hookHost = () => {
 
 const downloadHookHarness = options => {
   const h = downloadHarness(options)
-  const host = hookHost(), frame = host.frame()
+  const host = hookHost(); const frame = host.frame()
   const hooks = load('src/store/download/hook.ts', {
-    react: host.react, './state': { default: { count: 0 } }, '@/core/download': h.api,
+    react: host.react,
+    './state': { default: { count: 0 } },
+    '@/core/download': h.api,
     '@/utils/hooks/useScreenVisible': { useScreenVisible: host.visible },
   }, { global: { app_event: h.app } })
   return { ...h, frame, render: () => host.render(frame, hooks.useDownloadTasks) }
@@ -788,7 +845,7 @@ test('a page read that finishes after hiding cannot retain rows or skip the next
   const h = downloadHookHarness({ count: 300 })
   h.render()
   await flush()
-  const gate = deferred(), read = h.data.getDownloadHistoryItems
+  const gate = deferred(); const read = h.data.getDownloadHistoryItems
   h.data.getDownloadHistoryItems = async keys => { await gate.promise; return read(keys) }
   h.render().loadMore()
   await flush()
@@ -827,7 +884,7 @@ test('downloads keep completing and archiving while their hidden page releases i
 
 const bufferHarness = (getBuffered = async() => 50, getState = async() => 'playing') => {
   const host = hookHost()
-  const intervals = new Map(), listeners = new Set()
+  const intervals = new Map(); const listeners = new Set()
   let next = 0
   const api = load('src/plugins/player/hook.ts', {
     react: host.react,
@@ -851,7 +908,7 @@ const bufferHarness = (getBuffered = async() => 50, getState = async() => 'playi
 
 test('visible player bars share one buffer poll and all hidden bars stop it', async() => {
   const h = bufferHarness()
-  const a = h.host.frame(), b = h.host.frame()
+  const a = h.host.frame(); const b = h.host.frame()
   h.render(a)
   h.render(b)
   await flush()

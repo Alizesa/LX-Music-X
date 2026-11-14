@@ -170,7 +170,7 @@ for (const [method, requestMethod, cacheGetter, day] of [
 ]) {
   for (const change of ['logout', 'switch account']) {
     test(`${method} rejects an old response after ${change} without restoring cleared caches`, async() => {
-      const h = harness(), response = gate()
+      const h = harness(); const response = gate()
       let dropped = 0
       const home = homeApi(h, { [requestMethod]: async() => { await response.wait(); return [{ id: 'old-account-song' }] } }, async() => { dropped++ })
       const session = await h.account.getQQMusicSession()
@@ -190,7 +190,7 @@ for (const [method, requestMethod, cacheGetter, day] of [
 }
 
 test('logout waits for a home cache write and removes both its data and refresh-day marker', async() => {
-  const h = harness(), writing = gate()
+  const h = harness(); const writing = gate()
   const save = h.data.saveQQMusicDailyPlaylistCache
   h.data.saveQQMusicDailyPlaylistCache = async songs => { await writing.wait(); await save(songs) }
   const home = homeApi(h, { getQQMusicDailyPlaylist: async() => [{ id: 'old-account-song' }] })

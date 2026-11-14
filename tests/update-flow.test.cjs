@@ -37,7 +37,10 @@ const publishSnapshot = async(server, { branch = 'master', source = 'a', before 
   // The APK build/Android tools are deliberately replaced by metadata fixtures.
   // Actual injection, file hashes, manifest generation and publication still run.
   await pipeline.prepare(server.client(), record, file => ({
-    version: pkg.version, versionCode: pkg.versionCode, applicationId: fixtureConfig.applicationId, certificateSha256: fingerprint,
+    version: pkg.version,
+    versionCode: pkg.versionCode,
+    applicationId: fixtureConfig.applicationId,
+    certificateSha256: fingerprint,
     ...inspectOverride?.(file),
   }))
   const prepared = JSON.parse(pipeline.files.get('update.json'))
@@ -125,14 +128,24 @@ test('turning automatic checking off in the real settings component persists acr
   const host = hookHost()
   const frame = host.frame()
   const Version = load('src/screens/Home/Views/Setting/settings/Version.tsx', {
-    react: host.react, 'react/jsx-runtime': { jsx, jsxs: jsx }, 'react-native': { View: 'View', StyleSheet: { create: value => value } },
-    '../components/Section': { default: 'Section' }, '../components/SubTitle': { default: 'SubTitle' }, '../components/Button': { default: 'Button' },
-    '../components/CheckBoxItem': { default: 'CheckBox' }, '@/components/common/Text': { default: 'Text' },
-    '@/components/common/DorpDownMenu': { default: 'Dropdown' }, '@/components/common/Icon': { IconIonicons: 'Icon' },
-    '@/store/theme/hook': { useTheme: () => ({}) }, '@/utils/pixelRatio': { scaleSizeW: value => value },
-    '@/utils': { sizeFormate: String }, '@/lang': { useI18n: () => key => messages[key] },
+    react: host.react,
+    'react/jsx-runtime': { jsx, jsxs: jsx },
+    'react-native': { View: 'View', StyleSheet: { create: value => value } },
+    '../components/Section': { default: 'Section' },
+    '../components/SubTitle': { default: 'SubTitle' },
+    '../components/Button': { default: 'Button' },
+    '../components/CheckBoxItem': { default: 'CheckBox' },
+    '@/components/common/Text': { default: 'Text' },
+    '@/components/common/DorpDownMenu': { default: 'Dropdown' },
+    '@/components/common/Icon': { IconIonicons: 'Icon' },
+    '@/store/theme/hook': { useTheme: () => ({}) },
+    '@/utils/pixelRatio': { scaleSizeW: value => value },
+    '@/utils': { sizeFormate: String },
+    '@/lang': { useI18n: () => key => messages[key] },
     '@/store/version/hook': { useVersionInfo: () => app.versionState.versionInfo, useVersionDownloadProgressUpdated: () => app.versionState.progress },
-    '@/store/setting/hook': { useSettingValue: key => app.settingState.setting[key] }, '@/core/common': { updateSetting: app.changeSetting }, '@/core/version': app.core,
+    '@/store/setting/hook': { useSettingValue: key => app.settingState.setting[key] },
+    '@/core/common': { updateSetting: app.changeSetting },
+    '@/core/version': app.core,
   }).default
   let tree = host.render(frame, Version)
   assert.equal(elements(tree, 'Dropdown')[0].props.activeId, 'stable')
@@ -168,8 +181,8 @@ test('first-launch agreement acceptance triggers the enabled startup check once'
   assert.equal(app.pacts.length, 1)
   const host = hookHost()
   const frame = host.frame()
-  let now = 0, sequence = 0
-  const timers = new Map(), alerts = []
+  let now = 0; let sequence = 0
+  const timers = new Map(); const alerts = []
   const setTimer = (callback, ms) => { const id = ++sequence; timers.set(id, { callback, at: now + ms }); return id }
   const advance = ms => {
     const target = now + ms
@@ -183,13 +196,20 @@ test('first-launch agreement acceptance triggers the enabled startup check once'
     now = target
   }
   const Pact = load('src/navigation/components/PactModal.tsx', {
-    react: host.react, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
+    react: host.react,
+    'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
     'react-native': { View: 'View', ScrollView: 'ScrollView', Alert: { alert: (...args) => alerts.push(args) } },
     'react-native-navigation': { Navigation: { dismissOverlay: async() => {} } },
-    '@/components/common/Button': { default: 'Button' }, '@/components/common/Text': { default: 'Text' }, './ModalContent': { default: 'Modal' },
-    '@/utils/tools': { createStyle: value => value, openUrl: async() => {} }, '@/utils/nativeModules/utils': { exitApp() {} },
-    '@/store/setting/hook': { useSettingValue: key => app.settingState.setting[key] }, '@/store/theme/hook': { useTheme: () => ({}) },
-    '@/core/common': { updateSetting: app.changeSetting }, '@/core/version': app.core, '@/core/init/deeplink': { initDeeplink: async() => {} },
+    '@/components/common/Button': { default: 'Button' },
+    '@/components/common/Text': { default: 'Text' },
+    './ModalContent': { default: 'Modal' },
+    '@/utils/tools': { createStyle: value => value, openUrl: async() => {} },
+    '@/utils/nativeModules/utils': { exitApp() {} },
+    '@/store/setting/hook': { useSettingValue: key => app.settingState.setting[key] },
+    '@/store/theme/hook': { useTheme: () => ({}) },
+    '@/core/common': { updateSetting: app.changeSetting },
+    '@/core/version': app.core,
+    '@/core/init/deeplink': { initDeeplink: async() => {} },
     '@/store/setting/state': { default: app.settingState },
   }, { setTimeout: setTimer, clearTimeout: id => timers.delete(id) }).default
   const footer = Pact({ componentId: 'pact' }).props.children.find(child => child.props?.componentId === 'pact')
@@ -220,10 +240,15 @@ test('mismatched Android metadata stops preparation before any release can be pu
 test('About downloads, source code and issue feedback lead to this repository, with a separate upstream attribution', async() => {
   const urls = []
   const About = load('src/screens/Home/Views/Setting/settings/About.tsx', {
-    react: { memo: value => value }, 'react/jsx-runtime': { jsx, jsxs: jsx }, 'react-native': { View: 'View', TouchableOpacity: 'Link' },
-    '../components/Section': { default: 'Section' }, '@/utils/tools': { createStyle: value => value, openUrl: async url => urls.push(url) },
-    '@/store/theme/hook': { useTheme: () => ({}) }, '@/lang': { useI18n: () => key => messages[key] },
-    '@/components/common/Text': { default: 'Text' }, '@/core/common': { showPactModal() {} },
+    react: { memo: value => value },
+    'react/jsx-runtime': { jsx, jsxs: jsx },
+    'react-native': { View: 'View', TouchableOpacity: 'Link' },
+    '../components/Section': { default: 'Section' },
+    '@/utils/tools': { createStyle: value => value, openUrl: async url => urls.push(url) },
+    '@/store/theme/hook': { useTheme: () => ({}) },
+    '@/lang': { useI18n: () => key => messages[key] },
+    '@/components/common/Text': { default: 'Text' },
+    '@/core/common': { showPactModal() {} },
   }).default
   const tree = About()
   const links = elements(tree, 'Link')

@@ -20,7 +20,7 @@ const clock = () => {
 
 for (const restart of [false, true]) {
   test(`${restart ? 'debouncing' : 'throttling'} keeps only the latest call and supports cancellation and reentry`, () => {
-    const timers = clock(), calls = []
+    const timers = clock(); const calls = []
     const run = scheduled.createScheduledTask(value => { calls.push(value); if (value === 'latest') run('next') }, 100, restart, timers)
     run('first')
     run('latest')
@@ -68,16 +68,28 @@ test('long-lived scheduled callbacks do not retain completed or cancelled payloa
 const song = (id = 'one') => ({ id, source: 'tx', name: id, singer: 'Artist', interval: '04:00', meta: { albumName: 'Album' } })
 
 test('all playback UI subscriptions stop while hidden and restore fresh mutable-store snapshots', () => {
-  const host = hookHost(), frame = host.frame(), events = new EventEmitter()
-  const state = { musicInfo: { name: 'old' }, playMusicInfo: { musicInfo: song() }, playInfo: { playIndex: 0 },
-    statusText: 'old', isPlay: false, progress: { nowPlayTime: 0 } }
+  const host = hookHost(); const frame = host.frame(); const events = new EventEmitter()
+  const state = {
+    musicInfo: { name: 'old' },
+    playMusicInfo: { musicInfo: song() },
+    playInfo: { playIndex: 0 },
+    statusText: 'old',
+    isPlay: false,
+    progress: { nowPlayTime: 0 },
+  }
   const hooks = load('src/store/player/hook.ts', {
-    react: host.react, './state': { default: state }, '@/utils/tools': { isActive: () => true },
+    react: host.react,
+    './state': { default: state },
+    '@/utils/tools': { isActive: () => true },
     '@/utils/hooks/useScreenVisible': { useScreenVisible: host.visible },
   }, { global: { state_event: events } })
   const render = () => host.render(frame, () => ({
-    music: hooks.usePlayerMusicInfo(), playback: hooks.usePlayMusicInfo(), info: hooks.usePlayInfo(),
-    status: hooks.useStatusText(), playing: hooks.useIsPlay(), progress: hooks.useProgress(),
+    music: hooks.usePlayerMusicInfo(),
+    playback: hooks.usePlayMusicInfo(),
+    info: hooks.usePlayInfo(),
+    status: hooks.useStatusText(),
+    playing: hooks.useIsPlay(),
+    progress: hooks.useProgress(),
   }))
   render()
   const names = ['playerMusicInfoChanged', 'playMusicInfoChanged', 'playInfoChanged', 'playStateTextChanged', 'playStateChanged', 'playProgressChanged']
@@ -107,24 +119,37 @@ test('all playback UI subscriptions stop while hidden and restore fresh mutable-
 })
 
 const historyScreen = (read) => {
-  const host = hookHost(), frame = host.frame(), events = new EventEmitter()
+  const host = hookHost(); const frame = host.frame(); const events = new EventEmitter()
   const component = load('src/screens/PlayHistory/index.tsx', {
-    react: host.react, 'react/jsx-runtime': { jsx, jsxs: jsx },
+    react: host.react,
+    'react/jsx-runtime': { jsx, jsxs: jsx },
     'react-native': { FlatList: 'FlatList', View: 'View', TouchableOpacity: 'TouchableOpacity' },
-    '@/components/PageContent': {}, '@/components/common/StatusBar': {}, '@/components/SimpleHeader': {},
-    '@/components/player/PlayerBar': {}, '@/components/common/Text': {}, '@/components/common/Image': {},
-    '@/core/common': { setComponentId() {} }, '@/config/constant': { COMPONENT_IDS: {} }, '@/core/player/tempPlayList': {},
-    '@/utils/data': { getPlayHistory: read }, '@/store/theme/hook': { useTheme: () => ({}) },
-    '@/lang': { useI18n: () => key => key }, '@/utils/tools': { createStyle: value => value },
+    '@/components/PageContent': {},
+    '@/components/common/StatusBar': {},
+    '@/components/SimpleHeader': {},
+    '@/components/player/PlayerBar': {},
+    '@/components/common/Text': {},
+    '@/components/common/Image': {},
+    '@/core/common': { setComponentId() {} },
+    '@/config/constant': { COMPONENT_IDS: {} },
+    '@/core/player/tempPlayList': {},
+    '@/utils/data': { getPlayHistory: read },
+    '@/store/theme/hook': { useTheme: () => ({}) },
+    '@/lang': { useI18n: () => key => key },
+    '@/utils/tools': { createStyle: value => value },
     '@/utils/hooks/useScreenVisible': { useScreenVisible: host.visible },
     '@/utils/hooks/useListScrollRestore': { useListScrollRestore: () => ({}) },
   }, { global: { app_event: events } }).default
-  return { frame, events, render: () => elements(host.render(frame, () => component({ componentId: 'history' })), 'FlatList')[0].props,
-    unmount: () => host.unmount(frame) }
+  return {
+    frame,
+    events,
+    render: () => elements(host.render(frame, () => component({ componentId: 'history' })), 'FlatList')[0].props,
+    unmount: () => host.unmount(frame),
+  }
 }
 
 test('history screens release hidden rows and a slow initial read cannot overwrite an update', async() => {
-  const gate = deferred(), old = [{ musicInfo: song('old'), playedAt: 1 }], latest = [{ musicInfo: song('new'), playedAt: 2 }]
+  const gate = deferred(); const old = [{ musicInfo: song('old'), playedAt: 1 }]; const latest = [{ musicInfo: song('new'), playedAt: 2 }]
   let reads = 0
   const h = historyScreen(async() => ++reads === 1 ? gate.promise : latest)
   h.render()
@@ -146,7 +171,7 @@ test('history screens release hidden rows and a slow initial read cannot overwri
 })
 
 test('a late history read cannot restore rows after the screen hides', async() => {
-  const gate = deferred(), h = historyScreen(() => gate.promise)
+  const gate = deferred(); const h = historyScreen(() => gate.promise)
   h.render()
   h.frame.visible = false
   h.render()
@@ -157,7 +182,7 @@ test('a late history read cannot restore rows after the screen hides', async() =
 })
 
 test('two hundred buffering/resume events save history once, and replaying the song saves again', async() => {
-  const events = new EventEmitter(), timers = clock(), writes = []
+  const events = new EventEmitter(); const timers = clock(); const writes = []
   events.playHistoryUpdate = history => events.emit('playHistoryUpdate', history)
   const setting = { 'player.isSavePlayHistory': true, 'player.playHistoryMaxCount': 300 }
   const state = { musicInfo: { id: 'one' }, playMusicInfo: { musicInfo: song() } }
@@ -167,10 +192,16 @@ test('two hundred buffering/resume events save history once, and replaying the s
     '@/store/setting/state': { default: { setting } },
   }, { global: { app_event: events } })
   load('src/core/init/player/playerEvent.ts', {
-    '@/core/player/player': {}, '@/core/player/playStatus': { setStatusText() {} }, '@/plugins/player': {},
-    '@/utils/tools': {}, 'react-native-background-timer': { default: timers },
-    '@/store/player/state': { default: state }, '@/core/player/progress': {},
-    '@/store/setting/state': { default: { setting } }, '@/core/player/playHistory': storage, '@/utils/apiSourceOrder': {},
+    '@/core/player/player': {},
+    '@/core/player/playStatus': { setStatusText() {} },
+    '@/plugins/player': {},
+    '@/utils/tools': {},
+    'react-native-background-timer': { default: timers },
+    '@/store/player/state': { default: state },
+    '@/core/player/progress': {},
+    '@/store/setting/state': { default: { setting } },
+    '@/core/player/playHistory': storage,
+    '@/utils/apiSourceOrder': {},
   }, { global: { app_event: events } }).default()
   for (let i = 0; i < 200; i++) events.emit('playerPlaying')
   await flush()
@@ -189,15 +220,17 @@ test('two hundred buffering/resume events save history once, and replaying the s
 })
 
 test('concurrent history reads parse one snapshot and cannot overwrite a newer saved history', async() => {
-  const timers = clock(), gate = deferred()
+  const timers = clock(); const gate = deferred()
   let reads = 0
   const common = load('src/utils/common.ts', { './scheduledTask': scheduled }, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout })
   const data = load('src/utils/data.ts', {
     '@/plugins/storage': { getData: async() => { reads++; return gate.promise }, saveData: async() => {} },
     '@/config/constant': { storageDataPrefix: {}, DEFAULT_SETTING: {}, LIST_IDS: {} },
-    './legacyList': {}, './common': common, './nativeModules/secureStorage': {},
+    './legacyList': {},
+    './common': common,
+    './nativeModules/secureStorage': {},
   })
-  const first = data.getPlayHistory(), second = data.getPlayHistory()
+  const first = data.getPlayHistory(); const second = data.getPlayHistory()
   assert.equal(reads, 1)
   const latest = [{ musicInfo: song('latest'), playedAt: 2 }]
   await data.savePlayHistory(latest)
@@ -209,12 +242,13 @@ test('concurrent history reads parse one snapshot and cannot overwrite a newer s
 })
 
 test('background images share pending work and skip metadata-only updates and background tracks', async() => {
-  const events = new EventEmitter(), changes = new EventEmitter(), requests = [], applied = []
+  const events = new EventEmitter(); const changes = new EventEmitter(); const requests = []; const applied = []
   const app = { currentState: 'active', addEventListener: (event, fn) => changes.on(event, fn) }
   const state = { musicInfo: { pic: 'https://cover/a' }, loadErrorPicUrl: '' }
   const gates = new Map()
   await load('src/core/init/common.ts', {
-    'react-native': { AppState: app }, '@/store/player/state': { default: state },
+    'react-native': { AppState: app },
+    '@/store/player/state': { default: state },
     '@/components/common/ImageBackground': { prefetch: url => { requests.push(url); const gate = deferred(); gates.set(url, gate); return gate.promise } },
     '@/core/common': { setBgPic: url => { applied.push(url) } },
   }, { global: { state_event: events } }).default({ 'theme.dynamicBg': true })
@@ -242,21 +276,32 @@ test('background images share pending work and skip metadata-only updates and ba
 })
 
 const sourceHarness = () => {
-  const timers = clock(), requests = []
+  const timers = clock(); const requests = []
   let conversions = 0
   const api = load('src/core/music/utils.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/utils/musicSdk': { findMusic: info => { const gate = deferred(); requests.push({ info, ...gate }); return gate.promise } },
-    '@/utils/data': {}, '@/utils': { toNewMusicInfo: value => { conversions++; return value } },
-    '@/store/setting/state': {}, '@/utils/message': {}, 'react-native-background-timer': { default: timers },
-    '@/utils/musicSdk/api-source': {}, '@/core/qqMusicUrl': {}, '@/config/constant': {}, './sourcePriority': {},
+    '@/utils/data': {},
+    '@/utils': { toNewMusicInfo: value => { conversions++; return value } },
+    '@/store/setting/state': {},
+    '@/utils/message': {},
+    'react-native-background-timer': { default: timers },
+    '@/utils/musicSdk/api-source': {},
+    '@/core/qqMusicUrl': {},
+    '@/config/constant': {},
+    './sourcePriority': {},
   })
-  return { api, timers, requests, conversions: () => conversions,
-    resolve: async(music) => { const promise = api.getOtherSource(music); requests.at(-1).resolve([song('match')]); return promise } }
+  return {
+    api,
+    timers,
+    requests,
+    conversions: () => conversions,
+    resolve: async(music) => { const promise = api.getOtherSource(music); requests.at(-1).resolve([song('match')]); return promise },
+  }
 }
 
 test('queue/history copies of the same song share matching requests and cached alternatives', async() => {
-  const h = sourceHarness(), music = song()
+  const h = sourceHarness(); const music = song()
   const first = h.api.getOtherSource(music)
   const second = h.api.getOtherSource({ ...music, meta: { ...music.meta } })
   assert.equal(h.requests.length, 1)

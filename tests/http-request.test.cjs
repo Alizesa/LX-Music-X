@@ -4,7 +4,7 @@ const { load, flush } = require('./helpers/load.cjs')
 
 const harness = () => {
   let nextTimer = 0
-  const timers = new Map(), calls = []
+  const timers = new Map(); const calls = []
   class FormData {
     constructor() { this.parts = [] }
     append(key, value) { this.parts.push([key, value]) }
@@ -15,14 +15,17 @@ const harness = () => {
   const response = { headers: { map: { 'content-type': 'application/json' } }, text: async() => '{"ok":true}', blob: async() => 'audio', status: 200, statusText: 'OK', url: 'https://api.test/result', ok: true }
   const app = { AbortController, FormData, FileReader, fetch: async(url, options) => { calls.push({ url, options }); return response } }
   const shared = load('src/utils/httpRequest.js', {
-    'react-native-background-timer': { default: {
-      setTimeout: (fn, delay) => { timers.set(++nextTimer, { fn, delay }); return nextTimer },
-      clearTimeout: id => timers.delete(id),
-    } },
+    'react-native-background-timer': {
+      default: {
+        setTimeout: (fn, delay) => { timers.set(++nextTimer, { fn, delay }); return nextTimer },
+        clearTimeout: id => timers.delete(id),
+      },
+    },
   }, { global: app })
   const user = load('src/core/init/userApi/request.js', { '@/utils/httpRequest': shared })
   const sdk = load('src/utils/request.js', {
-    './httpRequest': shared, './musicSdk/options': { bHh: '624868746c' },
+    './httpRequest': shared,
+    './musicSdk/options': { bHh: '624868746c' },
     './message': { requestMsg: { notConnectNetwork: 'network unavailable', timeout: 'request timeout', unachievable: 'unreachable' } },
     pako: require('pako'),
   }, { process: { versions: { app: '1.9.2-beta' } } })

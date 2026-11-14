@@ -8,7 +8,10 @@ const harness = () => {
   const failures = new Set()
   const empty = () => ({ page: 0, limit: 30, total: 0, list: [], key: null, maxPage: 0 })
   const state = {
-    source: 'all', sources: ['all', ...Object.keys(pages)], searchText: '', maxPages: {},
+    source: 'all',
+    sources: ['all', ...Object.keys(pages)],
+    searchText: '',
+    maxPages: {},
     listInfos: Object.fromEntries(['all', ...Object.keys(pages)].map(source => [source, empty()])),
   }
   const actions = load('src/store/search/music/action.ts', {
@@ -16,14 +19,20 @@ const harness = () => {
     '@/utils/common': { sortInsert: (items, item) => items.push(item), similar: () => 1, arrPush: (items, next) => items.push(...next) },
     '@/utils': { toNewMusicInfo: value => value, deduplicationList: items => [...new Map(items.map(item => [item.id, item])).values()] },
   })
-  const sdk = Object.fromEntries(Object.keys(pages).map(source => [source, { musicSearch: { search: async(text, page) => {
-    calls.push(`${source}:${text}:${page}`)
-    if (failures.has(source)) throw new Error(`${source} unavailable`)
-    return { source, total: pages[source] * 30, limit: 30, allPage: pages[source], list: page > pages[source] ? [] : [{ id: `${source}-${text}-${page}`, name: text, singer: 'Artist' }] }
-  } } }]))
+  const sdk = Object.fromEntries(Object.keys(pages).map(source => [source, {
+    musicSearch: {
+      search: async(text, page) => {
+        calls.push(`${source}:${text}:${page}`)
+        if (failures.has(source)) throw new Error(`${source} unavailable`)
+        return { source, total: pages[source] * 30, limit: 30, allPage: pages[source], list: page > pages[source] ? [] : [{ id: `${source}-${text}-${page}`, name: text, singer: 'Artist' }] }
+      },
+    },
+  }]))
   const api = load('src/core/search/music.ts', {
-    '@/store/search/music/state': { default: state }, '@/store/search/music/action': actions,
-    '@/utils/musicSdk': { default: sdk }, './cache': { restoreSearchResult: async() => false, invalidateSearchResult() {} },
+    '@/store/search/music/state': { default: state },
+    '@/store/search/music/action': actions,
+    '@/utils/musicSdk': { default: sdk },
+    './cache': { restoreSearchResult: async() => false, invalidateSearchResult() {} },
     './request': load('src/core/search/request.ts'),
   })
   return { api, state, calls, failures, search: (page, text = 'song', refresh = false) => api.search(text, page, 'all', refresh) }

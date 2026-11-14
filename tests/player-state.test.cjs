@@ -40,7 +40,7 @@ for (const stage of ['migratePlayerCache', 'setupPlayer', 'setVolume']) {
 
 test('concurrent callers wait for one fully configured player', async() => {
   const h = initHarness()
-  const setup = deferred(), configure = deferred()
+  const setup = deferred(); const configure = deferred()
   h.native.setupPlayer = async() => { h.calls.push('setup'); await setup.promise }
   h.utils.updateOptions = async() => configure.promise
   let finished = 0
@@ -60,13 +60,16 @@ test('concurrent callers wait for one fully configured player', async() => {
 
 const song = id => ({ id, name: id, singer: 'Artist', source: 'tx', meta: { picUrl: `${id}-cover` } })
 const restoreHarness = () => {
-  const pic = deferred(), lyric = deferred()
+  const pic = deferred(); const lyric = deferred()
   const songs = [song('A'), song('B')]
   const state = { playInfo: { playerListId: 'queue', playerPlayIndex: 0 }, playMusicInfo: {}, progress: {}, musicInfo: {} }
-  const timers = [], events = []
-  const appGlobal = { lx: { restorePlayInfo: { time: 23, maxTime: 180 }, isPlayedStop: false }, app_event: {
-    setProgress: (...values) => events.push(values), picUpdated() {}, lyricUpdated() {}, pause() {},
-  } }
+  const timers = []; const events = []
+  const appGlobal = {
+    lx: { restorePlayInfo: { time: 23, maxTime: 180 }, isPlayedStop: false },
+    app_event: {
+      setProgress: (...values) => events.push(values), picUpdated() {}, lyricUpdated() {}, pause() {},
+    },
+  }
   const api = load('src/core/player/player.ts', {
     '@/plugins/player': { isInitialized: () => true, initTrackInfo: async() => {}, setStop: async() => {} },
     '@/core/player/playStatus': { setStatusText: value => events.push(value) },
@@ -80,12 +83,22 @@ const restoreHarness = () => {
       },
       setMusicInfo: value => { Object.assign(state.musicInfo, value) },
     },
-    '@/core/player/playedList': {}, '@/core/player/tempPlayList': { clearTempPlayeList() {} },
+    '@/core/player/playedList': {},
+    '@/core/player/tempPlayList': { clearTempPlayeList() {} },
     '@/core/music': { getPicPath: () => pic.promise, getLyricInfo: () => lyric.promise },
-    '@/utils/message': {}, '@/utils/common': {}, './utils': {}, 'react-native-background-timer': { default: {} },
-    '@/utils/tools': { debounceBackgroundTimer: () => Object.assign(() => {}, { cancel() {} }) }, '@/config/constant': { LIST_IDS: { PLAY_QUEUE: 'queue' } },
-    '@/core/qqMusicFavorite': {}, '@/core/dislikeList': {}, './playQueue': { getPlayQueue: () => songs.map(musicInfo => ({ musicInfo })) },
-    '@/core/qqMusicRecommendSession': {}, '@/core/localList': {}, './preload': {}, '@/core/music/sourcePriority': {},
+    '@/utils/message': {},
+    '@/utils/common': {},
+    './utils': {},
+    'react-native-background-timer': { default: {} },
+    '@/utils/tools': { debounceBackgroundTimer: () => Object.assign(() => {}, { cancel() {} }) },
+    '@/config/constant': { LIST_IDS: { PLAY_QUEUE: 'queue' } },
+    '@/core/qqMusicFavorite': {},
+    '@/core/dislikeList': {},
+    './playQueue': { getPlayQueue: () => songs.map(musicInfo => ({ musicInfo })) },
+    '@/core/qqMusicRecommendSession': {},
+    '@/core/localList': {},
+    './preload': {},
+    '@/core/music/sourcePriority': {},
   }, { global: appGlobal, setTimeout: fn => { timers.push(fn); return timers.length } })
   return { api, state, pic, lyric, timers, events }
 }
@@ -124,7 +137,10 @@ const filter = load('src/core/player/utils.ts', {
 const dislikeInfo = () => ({ names: new Set(), musicNames: new Set(), singerNames: new Set() })
 test('played-song filtering preserves list ownership, temporary tracks and duplicate handling', () => {
   const result = filter({
-    listId: 'queue', list: [song('A'), song('B'), song('C'), song('C')], isNext: true, dislikeInfo: dislikeInfo(),
+    listId: 'queue',
+    list: [song('A'), song('B'), song('C'), song('C')],
+    isNext: true,
+    dislikeInfo: dislikeInfo(),
     playedList: [
       { listId: 'other', musicInfo: song('A') },
       { listId: 'queue', isTempPlay: true, musicInfo: song('B') },
@@ -152,13 +168,15 @@ const sessionHarness = () => {
   }
   const api = load('src/core/qqMusicRecommendSession.ts', {
     '@/core/player/playQueue': { isPlayQueueFromList: () => true, getPlayQueueMusic: () => [song('new')], getPlayQueueSourceFirstMusicId: () => 'new', getPlayQueueSourceBatchKey: () => undefined },
-    '@/store/player/state': { default: { playInfo: { playerPlayIndex: 0 } } }, '@/utils/data': data, '@/config/constant': {},
+    '@/store/player/state': { default: { playInfo: { playerPlayIndex: 0 } } },
+    '@/utils/data': data,
+    '@/config/constant': {},
   })
   return { api, data, stored: () => stored }
 }
 
 test('clearing a recommendation snapshot invalidates an already running read', async() => {
-  const h = sessionHarness(), gate = deferred()
+  const h = sessionHarness(); const gate = deferred()
   const old = h.stored()
   h.data.getQQMusicRecommendSession = async() => { await gate.promise; return old }
   const reading = h.api.getRecommendSession()
@@ -170,7 +188,7 @@ test('clearing a recommendation snapshot invalidates an already running read', a
 })
 
 test('clearing waits for an earlier snapshot write before removing it', async() => {
-  const h = sessionHarness(), gate = deferred()
+  const h = sessionHarness(); const gate = deferred()
   const save = h.data.saveQQMusicRecommendSession
   h.data.saveQQMusicRecommendSession = async value => { await gate.promise; await save(value) }
   const parking = h.api.parkRecommendQueue()
@@ -183,7 +201,7 @@ test('clearing waits for an earlier snapshot write before removing it', async() 
 })
 
 test('a newer parked queue survives an earlier snapshot deletion', async() => {
-  const h = sessionHarness(), gate = deferred()
+  const h = sessionHarness(); const gate = deferred()
   const remove = h.data.removeQQMusicRecommendSession
   h.data.removeQQMusicRecommendSession = async() => { await gate.promise; await remove() }
   const clearing = h.api.dropRecommendSession()

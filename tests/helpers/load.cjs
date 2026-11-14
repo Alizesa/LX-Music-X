@@ -6,12 +6,18 @@ const ts = require('typescript')
 
 const compiled = new Map()
 const load = (file, mocks = {}, globals = {}) => {
-  if (!compiled.has(file)) compiled.set(file, ts.transpileModule(fs.readFileSync(path.join(__dirname, '../..', file), 'utf8'), {
-    fileName: file,
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText)
+  if (!compiled.has(file)) {
+    compiled.set(file, ts.transpileModule(fs.readFileSync(path.join(__dirname, '../..', file), 'utf8'), {
+      fileName: file,
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
+    }).outputText)
+  }
   const context = {
-    exports: {}, AbortController, Buffer, setTimeout, clearTimeout,
+    exports: {},
+    AbortController,
+    Buffer,
+    setTimeout,
+    clearTimeout,
     console: { log() {}, warn() {}, error() {} },
     require: name => {
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./playback-log.cjs')
@@ -24,9 +30,9 @@ const load = (file, mocks = {}, globals = {}) => {
   return context.exports
 }
 const deferred = () => {
-  let resolve, reject
-  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
-  return { promise, resolve, reject }
+  let resolvePromise, rejectPromise
+  const promise = new Promise((resolve, reject) => { resolvePromise = resolve; rejectPromise = reject })
+  return { promise, resolve: resolvePromise, reject: rejectPromise }
 }
 const flush = async() => { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)) }
 

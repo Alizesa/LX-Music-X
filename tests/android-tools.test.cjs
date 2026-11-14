@@ -13,8 +13,11 @@ const badging = (applicationId = source.applicationId) => `package: name='${appl
 const inspector = (overrides = {}) => {
   const calls = []
   const read = createApkInspector({
-    root: path.resolve('/source'), env: { ANDROID_HOME: path.resolve('/sdk'), JAVA_HOME: path.resolve('/jdk') },
-    platform: 'linux', readFile: () => 'buildToolsVersion = "35.0.0"\n', exists: () => true,
+    root: path.resolve('/source'),
+    env: { ANDROID_HOME: path.resolve('/sdk'), JAVA_HOME: path.resolve('/jdk') },
+    platform: 'linux',
+    readFile: () => 'buildToolsVersion = "35.0.0"\n',
+    exists: () => true,
     execute: (command, args, options) => { calls.push({ command, args, options }); return args[0] === 'dump' ? badging() : recordedOutput },
     ...overrides,
   })
@@ -37,10 +40,12 @@ test('missing declared SDK tools fail explicitly instead of selecting another in
 })
 
 test('APK inspection never trusts certificate text from a failed verification process', () => {
-  const app = inspector({ execute: (command, args) => {
-    if (args[0] === 'dump') return badging()
-    throw Object.assign(new Error('Verification failed'), { status: 1, stdout: recordedOutput, stderr: 'DOES NOT VERIFY' })
-  } })
+  const app = inspector({
+    execute: (command, args) => {
+      if (args[0] === 'dump') return badging()
+      throw Object.assign(new Error('Verification failed'), { status: 1, stdout: recordedOutput, stderr: 'DOES NOT VERIFY' })
+    },
+  })
   assert.throws(() => app.read('/cache/broken.apk'), /broken\.apk.*Android Build Tools 35\.0\.0[\s\S]*DOES NOT VERIFY/)
 })
 
@@ -71,7 +76,8 @@ test('SDK declarations must be explicit and unambiguous', () => {
 test('historical APK errors identify the release and asset before failing initialization', async() => {
   const github = {
     list: async() => [{ tag_name: 'legacy-next', draft: false, assets: [{ id: 17, name: 'legacy-arm64.apk' }] }],
-    request: async() => [], downloadAsset: async(asset, target) => fs.writeFileSync(target, 'inspection fixture'),
+    request: async() => [],
+    downloadAsset: async(asset, target) => fs.writeFileSync(target, 'inspection fixture'),
   }
   await assert.rejects(seedState(github, fixtureConfig, { version: '1.9.2', name: 'lx-music-mobile' }, () => { throw new Error('unsupported signer output') }), /legacy-next\/legacy-arm64\.apk \(asset 17\): unsupported signer output/)
 })
@@ -79,7 +85,8 @@ test('historical APK errors identify the release and asset before failing initia
 test('unrelated application version codes cannot raise or exhaust this application baseline', async() => {
   const github = {
     list: async() => [{ tag_name: 'legacy', draft: false, assets: [{ id: 18, name: 'other-app.apk' }] }],
-    request: async() => [], downloadAsset: async(asset, target) => fs.writeFileSync(target, 'inspection fixture'),
+    request: async() => [],
+    downloadAsset: async(asset, target) => fs.writeFileSync(target, 'inspection fixture'),
   }
   const state = await seedState(github, fixtureConfig, { version: '1.9.2', name: 'lx-music-mobile' }, (file, options) => {
     assert.equal(options.signingApplicationId, fixtureConfig.applicationId)

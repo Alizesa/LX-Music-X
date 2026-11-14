@@ -5,39 +5,61 @@ const { load, deferred, flush } = require('./helpers/load.cjs')
 const message = load('src/utils/message.ts')
 const abort = load('src/utils/abort.ts', { './message': message })
 const order = load('src/utils/apiSourceOrder.ts')
-const song = { id: 'tx_song', source: 'tx', name: 'Song', singer: 'Singer', interval: '04:00',
-  meta: { songId: 'song', strMediaMid: 'media', _qualitys: { '128k': {}, '320k': {}, flac: {} } } }
+const song = {
+  id: 'tx_song',
+  source: 'tx',
+  name: 'Song',
+  singer: 'Singer',
+  interval: '04:00',
+  meta: { songId: 'song', strMediaMid: 'media', _qualitys: { '128k': {}, '320k': {}, flac: {} } },
+}
 const preview = 'https://isure.stream.qqmusic.qq.com/M500media.mp3?vkey=preview'
 const full = 'https://isure.stream.qqmusic.qq.com/M500media.mp3?vkey=full'
 const audio = (durationMs = 240000, mime = 'audio/mpeg') => ({ readable: true, durationMs, mime })
 
 // Exercise the real source selector, URL cache and preloader together. Only HTTP/native IO is mocked.
-const harness = ({ cachedUrl, inspect = url => audio(url === preview ? 60000 : 240000),
-  request = id => ({ url: id === 'user_api_a' ? preview : full, type: '128k' }), account = async() => null } = {}) => {
-  const probes = [], cancelled = [], requests = [], writes = [], cacheReads = []
+const harness = ({
+  cachedUrl, inspect = url => audio(url === preview ? 60000 : 240000),
+  request = id => ({ url: id === 'user_api_a' ? preview : full, type: '128k' }), account = async() => null,
+} = {}) => {
+  const probes = []; const cancelled = []; const requests = []; const writes = []; const cacheReads = []
   const setting = {
-    'common.apiSource': 'user_api_a', 'common.apiSourceOrder': '["user_api_a","user_api_b"]',
-    'player.playQuality': '128k', 'player.urlSource': 'source', 'player.noVipStandardQuality': true,
-    'player.preloadNext': true, 'player.cacheSize': '1024',
+    'common.apiSource': 'user_api_a',
+    'common.apiSourceOrder': '["user_api_a","user_api_b"]',
+    'player.playQuality': '128k',
+    'player.urlSource': 'source',
+    'player.noVipStandardQuality': true,
+    'player.preloadNext': true,
+    'player.cacheSize': '1024',
   }
   const media = load('src/utils/nativeModules/remoteAudio.ts', {
-    'react-native': { NativeModules: { UtilsModule: {
-      startRemoteAudioProbe: async(id, url, duration, timeoutMs) => {
-        probes.push({ id, url, duration, timeoutMs })
-        return inspect(url)
+    'react-native': {
+      NativeModules: {
+        UtilsModule: {
+          startRemoteAudioProbe: async(id, url, duration, timeoutMs) => {
+            probes.push({ id, url, duration, timeoutMs })
+            return inspect(url)
+          },
+          cancelRemoteAudioProbe: id => { cancelled.push(id) },
+        },
       },
-      cancelRemoteAudioProbe: id => { cancelled.push(id) },
-    } } },
-    'react-native-background-timer': { default: { setTimeout, clearTimeout } }, '@/utils/abort': abort,
+    },
+    'react-native-background-timer': { default: { setTimeout, clearTimeout } },
+    '@/utils/abort': abort,
   })
   const qq = load('src/core/qqMusicUrl.ts', {
-    './qqMusic': {}, '@/utils/nativeModules/remoteAudio': media, '@/utils/message': message, '@/utils/abort': abort,
+    './qqMusic': {},
+    '@/utils/nativeModules/remoteAudio': media,
+    '@/utils/message': message,
+    '@/utils/abort': abort,
     'react-native-background-timer': { default: { setTimeout, clearTimeout } },
   })
   const priority = load('src/core/music/sourcePriority.ts', {
     '@/store/setting/state': { default: { setting } },
     '@/store/userApi': { state: { list: ['user_api_a', 'user_api_b', 'user_api_c'].map(id => ({ id })) } },
-    '@/utils/apiSourceOrder': order, '@/utils/message': message, '@/core/qqMusicUrl': qq,
+    '@/utils/apiSourceOrder': order,
+    '@/utils/message': message,
+    '@/core/qqMusicUrl': qq,
     '@/core/userApiRuntime': { requestUserApiMusicUrl: async(...args) => { requests.push(args[0]); return request(...args) } },
   }, { global: { i18n: { t: key => key } } })
   const cache = new Map(cachedUrl ? [[`${song.id}:128k`, cachedUrl]] : [])
@@ -47,32 +69,61 @@ const harness = ({ cachedUrl, inspect = url => audio(url === preview ? 60000 : 2
   }
   const pipeline = load('src/core/music/utils.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
-    '@/utils/musicSdk': {}, '@/utils/data': data, '@/utils': {},
-    '@/store/setting/state': { default: { setting } }, '@/utils/message': message,
+    '@/utils/musicSdk': {},
+    '@/utils/data': data,
+    '@/utils': {},
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/message': message,
     'react-native-background-timer': { default: { setTimeout, clearTimeout } },
-    '@/utils/musicSdk/api-source': {}, '@/core/qqMusicUrl': { ...qq, getQQMusicUrlByAccount: account },
-    '@/config/constant': {}, './sourcePriority': priority,
+    '@/utils/musicSdk/api-source': {},
+    '@/core/qqMusicUrl': { ...qq, getQQMusicUrlByAccount: account },
+    '@/config/constant': {},
+    './sourcePriority': priority,
   })
   const online = load('src/core/music/online.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
-    '@/utils/data': data, '@/core/list': {}, '@/store/setting/state': { default: { setting } },
-    '@/utils/message': message, '@/core/qqMusicUrl': qq, './utils': pipeline, './sourcePriority': priority,
+    '@/utils/data': data,
+    '@/core/list': {},
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/message': message,
+    '@/core/qqMusicUrl': qq,
+    './utils': pipeline,
+    './sourcePriority': priority,
   })
   const music = load('src/core/music/index.ts', {
-    './online': online, './download': {},
+    './online': online,
+    './download': {},
     './local': { findLocalMusicInfo: async() => null, getMusicUrl: async() => 'content://local/song' },
-    '@/utils/music': {}, '@/config/constant': {},
+    '@/utils/music': {},
+    '@/config/constant': {},
   })
   const preload = load('src/core/player/preload.ts', {
-    '@/core/music': music, '@/core/music/sourcePriority': priority, '@/store/setting/state': { default: { setting } },
-    '@/utils/message': message, '@/utils/apiSourceOrder': order,
-    '@/plugins/player/preload': { canPreloadAudio: () => true, preloadAudio: async(url, bytes) => {
-      cacheReads.push({ url, bytes })
-      return { cachedBytes: bytes, complete: true }
-    } },
+    '@/core/music': music,
+    '@/core/music/sourcePriority': priority,
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/message': message,
+    '@/utils/apiSourceOrder': order,
+    '@/plugins/player/preload': {
+      canPreloadAudio: () => true,
+      preloadAudio: async(url, bytes) => {
+        cacheReads.push({ url, bytes })
+        return { cachedBytes: bytes, complete: true }
+      },
+    },
   })
-  return { setting, probes, cancelled, requests, writes, cacheReads, cache, priority, pipeline, preload,
-    resolve: options => music.getMusicUrl({ musicInfo: song, quality: '128k', allowToggleSource: false, ...options }) }
+  return {
+    setting,
+    probes,
+    cancelled,
+    requests,
+    writes,
+    cacheReads,
+    cache,
+    priority,
+    pipeline,
+    preload,
+    resolve: options => music.getMusicUrl({ musicInfo: song, quality: '128k', allowToggleSource: false, ...options }),
+  }
 }
 
 for (const urlSourceOrder of ['sourceFirst', 'sourceOnly', 'accountFirst']) {
@@ -98,7 +149,7 @@ test('preloading rejects a readable preview before writing audio bytes or handin
 })
 
 test('account-first waits for the account, then each custom script and its audio check in the selected order', async() => {
-  const accountGate = deferred(), scriptGate = deferred(), probeGate = deferred()
+  const accountGate = deferred(); const scriptGate = deferred(); const probeGate = deferred()
   const h = harness({
     account: () => accountGate.promise,
     request: id => id === 'user_api_b' ? scriptGate.promise : { url: full, type: '128k' },
@@ -128,8 +179,11 @@ test('account-first waits for the account, then each custom script and its audio
 test('QQ previews behind a proxy are checked on both fresh resolution and cached playback', async() => {
   const proxy = 'https://audio.example/proxy/song'
   for (const cachedUrl of [undefined, proxy]) {
-    const h = harness({ cachedUrl, inspect: url => audio(url === proxy ? 60000 : 240000),
-      request: id => ({ url: id === 'user_api_a' ? proxy : full, type: '128k' }) })
+    const h = harness({
+      cachedUrl,
+      inspect: url => audio(url === proxy ? 60000 : 240000),
+      request: id => ({ url: id === 'user_api_a' ? proxy : full, type: '128k' }),
+    })
     assert.equal(await h.resolve(), full)
     assert.deepEqual(h.writes.map(item => item.url), [full])
     assert.equal(h.probes.filter(item => item.url === proxy).length, 1)
@@ -141,7 +195,10 @@ test('cross-platform fallback rejects newly resolved and cached QQ previews befo
     const h = harness({ cachedUrl })
     const accepted = []
     const result = await h.pipeline.getOnlineOtherSourceMusicUrl({
-      musicInfos: [song], quality: '128k', isRefresh: false, onToggleSource() {},
+      musicInfos: [song],
+      quality: '128k',
+      isRefresh: false,
+      onToggleSource() {},
       validateUrl: async url => { accepted.push(url) },
     })
     assert.equal(result.url, full)
@@ -256,7 +313,7 @@ test('forced source refresh does not trust an earlier full-duration probe', asyn
 
 test('cancelling source duration inspection stops native IO without fallback or cache writes', async() => {
   const gate = deferred()
-  let checking = true, cancel
+  let checking = true; let cancel
   const h = harness({ inspect: () => checking ? gate.promise : audio() })
   const pending = h.resolve({ onCancel: fn => { cancel = fn } })
   const rejection = assert.rejects(pending, { message: message.requestMsg.cancelRequest })
@@ -294,7 +351,10 @@ test('cancellation during a cross-platform cache lookup prevents all subsequent 
   const h = harness({ cachedUrl: preview })
   let cancel
   const pending = h.pipeline.getOnlineOtherSourceMusicUrl({
-    musicInfos: [song], quality: '128k', isRefresh: false, onToggleSource() {},
+    musicInfos: [song],
+    quality: '128k',
+    isRefresh: false,
+    onToggleSource() {},
     onCancel: fn => { cancel = fn },
   })
   cancel()

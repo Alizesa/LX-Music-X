@@ -8,26 +8,38 @@ const ts = require('typescript')
 
 const compiled = new Map()
 const load = (file, mocks = {}, globals = {}) => {
-  if (!compiled.has(file)) compiled.set(file, ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-  }).outputText)
-  const context = { exports: {}, setTimeout, clearTimeout, console: { log() {} },
-    require(name) { if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs'); assert.ok(Object.hasOwn(mocks, name), `Unexpected import ${name} in ${file}`); return mocks[name] }, ...globals }
+  if (!compiled.has(file)) {
+    compiled.set(file, ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText)
+  }
+  const context = {
+    exports: {},
+    setTimeout,
+    clearTimeout,
+    console: { log() {} },
+    require(name) { if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs'); assert.ok(Object.hasOwn(mocks, name), `Unexpected import ${name} in ${file}`); return mocks[name] },
+    ...globals,
+  }
   vm.runInNewContext(compiled.get(file), context, { filename: file })
   return context.exports
 }
 const flush = async() => { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)) }
 const deferred = () => {
-  let resolve, reject
-  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
-  return { promise, resolve, reject }
+  let resolvePromise, rejectPromise
+  const promise = new Promise((resolve, reject) => { resolvePromise = resolve; rejectPromise = reject })
+  return { promise, resolve: resolvePromise, reject: rejectPromise }
 }
 const message = { requestMsg: { cancelRequest: 'cancelled' }, isRequestCancelled: error => error?.message === 'cancelled' }
 const order = load('src/utils/apiSourceOrder.ts')
 const song = id => ({ id, source: 'tx', name: id, singer: 'Singer', meta: { _qualitys: { '128k': {}, '320k': {}, flac: {} } } })
 const settings = () => ({
-  'common.apiSource': 'user_api_a', 'common.apiSourceOrder': '["user_api_a","user_api_b"]',
-  'player.preloadNext': true, 'player.cacheSize': '1024', 'player.playQuality': '320k', 'player.urlSource': 'source',
+  'common.apiSource': 'user_api_a',
+  'common.apiSourceOrder': '["user_api_a","user_api_b"]',
+  'player.preloadNext': true,
+  'player.cacheSize': '1024',
+  'player.playQuality': '320k',
+  'player.urlSource': 'source',
 })
 
 test('legacy source selection migrates while explicit empty selection and valid ordering are preserved', () => {
@@ -45,7 +57,8 @@ const priorityHarness = (request = async id => ({ url: `https://audio.test/${id}
     '@/core/qqMusicUrl': { validateQQMusicUrl: async() => {} },
     '@/store/setting/state': { default: { setting } },
     '@/store/userApi': { state: { list: ['a', 'b', 'c'].map(id => ({ id: `user_api_${id}` })) } },
-    '@/utils/apiSourceOrder': order, '@/utils/message': message,
+    '@/utils/apiSourceOrder': order,
+    '@/utils/message': message,
     '@/core/userApiRuntime': { requestUserApiMusicUrl: async(...args) => { calls.push(args[0]); return request(...args) } },
   }, { Date: { now: () => now }, global: { i18n: { t: key => key } } })
   return { api, setting, calls, advance: ms => { now += ms }, get: extra => api.getMusicUrlByPriority({ musicInfo: song('one'), quality: '320k', ...extra }) }
@@ -140,14 +153,28 @@ test('with no selected scripts, account fallback does not trigger pointless cros
   const api = load('src/core/music/utils.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/utils/musicSdk': { default: {}, findMusic: async() => { searches++; return [] } },
-    '@/utils/data': {}, '@/utils': {}, '@/store/setting/state': { default: { setting: settings() } },
-    '@/utils/message': message, 'react-native-background-timer': { default: { setTimeout, clearTimeout } },
-    '@/utils/musicSdk/api-source': {}, '@/core/qqMusicUrl': { getQQMusicUrlByAccount: async() => ({ url: 'https://audio.test/account', quality: '128k' }) },
-    '@/config/constant': {}, './sourcePriority': { getEnabledMusicSourceIds: () => [], isMusicUrlFailed: () => false,
-      getMusicUrlByPriority: async() => { throw new Error('no source') } },
+    '@/utils/data': {},
+    '@/utils': {},
+    '@/store/setting/state': { default: { setting: settings() } },
+    '@/utils/message': message,
+    'react-native-background-timer': { default: { setTimeout, clearTimeout } },
+    '@/utils/musicSdk/api-source': {},
+    '@/core/qqMusicUrl': { getQQMusicUrlByAccount: async() => ({ url: 'https://audio.test/account', quality: '128k' }) },
+    '@/config/constant': {},
+    './sourcePriority': {
+      getEnabledMusicSourceIds: () => [],
+      isMusicUrlFailed: () => false,
+      getMusicUrlByPriority: async() => { throw new Error('no source') },
+    },
   })
-  const result = await api.handleGetOnlineMusicUrl({ musicInfo: song('one'), quality: '128k', allowToggleSource: true,
-    isRefresh: false, urlSourceOrder: 'sourceFirst', onToggleSource() {} })
+  const result = await api.handleGetOnlineMusicUrl({
+    musicInfo: song('one'),
+    quality: '128k',
+    allowToggleSource: true,
+    isRefresh: false,
+    urlSourceOrder: 'sourceFirst',
+    onToggleSource() {},
+  })
   assert.equal(result.url, 'https://audio.test/account')
   assert.equal(searches, 0)
 })
@@ -157,14 +184,21 @@ test('a lower-quality account result advances to the selected source for downloa
   const options = []
   const api = load('src/core/music/utils.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
-    '@/utils/musicSdk': {}, '@/utils/data': {}, '@/utils': {},
+    '@/utils/musicSdk': {},
+    '@/utils/data': {},
+    '@/utils': {},
     '@/store/setting/state': { default: { setting: { ...settings(), 'player.playQuality': 'flac' } } },
-    '@/utils/message': message, 'react-native-background-timer': {}, '@/utils/musicSdk/api-source': {},
-    '@/core/qqMusicUrl': { getQQMusicUrlByAccount: async(music, preferred, max, opts) => {
-      options.push(opts)
-      return { url: 'https://audio.test/account.mp3', quality: '128k' }
-    } },
-    '@/config/constant': {}, './sourcePriority': source.api,
+    '@/utils/message': message,
+    'react-native-background-timer': {},
+    '@/utils/musicSdk/api-source': {},
+    '@/core/qqMusicUrl': {
+      getQQMusicUrlByAccount: async(music, preferred, max, opts) => {
+        options.push(opts)
+        return { url: 'https://audio.test/account.mp3', quality: '128k' }
+      },
+    },
+    '@/config/constant': {},
+    './sourcePriority': source.api,
   }, { global: { lx: { qualityList: { tx: ['flac', '128k'] } } } })
   const request = { musicInfo: song('one'), isRefresh: true, allowToggleSource: false, urlSourceOrder: 'accountFirst', onToggleSource() {} }
   const download = await api.handleGetOnlineMusicUrl({ ...request, quality: 'flac' })
@@ -181,33 +215,49 @@ test('a lower-quality account result advances to the selected source for downloa
 
 const preloadHarness = ({ local = false, resolveGate, cacheHeadGate, nativeAvailable = true, cacheWritable = true } = {}) => {
   const setting = settings()
-  const resolutions = [], cacheCalls = [], cancelledCache = [], failed = new Set()
+  const resolutions = []; const cacheCalls = []; const cancelledCache = []; const failed = new Set()
   const background = []
   let cancelledResolve = 0
   let nextUrl = local ? 'content://local/song' : 'https://audio.test/one'
   const api = load('src/core/player/preload.ts', {
-    '@/store/setting/state': { default: { setting } }, '@/utils/apiSourceOrder': order, '@/utils/message': message,
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/apiSourceOrder': order,
+    '@/utils/message': message,
     '@/core/music/sourcePriority': { isMusicUrlFailed: url => failed.has(url), markMusicUrlFailed: url => failed.add(url) },
-    '@/core/music': { getMusicUrl: async options => {
-      resolutions.push(options)
-      options.onCancel(() => { cancelledResolve++ })
-      if (resolveGate) await resolveGate.promise
-      const url = nextUrl
-      if (!local) await options.validateUrl(url)
-      return url
-    } },
-    '@/plugins/player/preload': { canPreloadAudio: () => nativeAvailable, preloadAudio: async(url, bytes, onCancel) => {
-      const entry = { url, bytes }
-      cacheCalls.push(entry)
-      const gate = bytes > 0 ? cacheHeadGate : deferred()
-      onCancel(() => { cancelledCache.push(entry); gate?.reject(new Error('cancelled')) })
-      if (bytes === 0) background.push(gate)
-      if (gate) await gate.promise
-      return cacheWritable ? { cachedBytes: bytes, complete: false } : null
-    } },
+    '@/core/music': {
+      getMusicUrl: async options => {
+        resolutions.push(options)
+        options.onCancel(() => { cancelledResolve++ })
+        if (resolveGate) await resolveGate.promise
+        const url = nextUrl
+        if (!local) await options.validateUrl(url)
+        return url
+      },
+    },
+    '@/plugins/player/preload': {
+      canPreloadAudio: () => nativeAvailable,
+      preloadAudio: async(url, bytes, onCancel) => {
+        const entry = { url, bytes }
+        cacheCalls.push(entry)
+        const gate = bytes > 0 ? cacheHeadGate : deferred()
+        onCancel(() => { cancelledCache.push(entry); gate?.reject(new Error('cancelled')) })
+        if (bytes === 0) background.push(gate)
+        if (gate) await gate.promise
+        return cacheWritable ? { cachedBytes: bytes, complete: false } : null
+      },
+    },
   })
-  return { api, setting, resolutions, cacheCalls, cancelledCache, background, failed, cancelledResolve: () => cancelledResolve,
-    setUrl: url => { nextUrl = url } }
+  return {
+    api,
+    setting,
+    resolutions,
+    cacheCalls,
+    cancelledCache,
+    background,
+    failed,
+    cancelledResolve: () => cancelledResolve,
+    setUrl: url => { nextUrl = url },
+  }
 }
 
 test('preloading reads audio bytes and foreground playback takes over the same URL and cache', async() => {
@@ -312,12 +362,14 @@ test('preloading honors a saved alternate recording and invalidates it when that
 
 test('cancelled cache lookups cannot start validation or source requests', async() => {
   const gate = deferred()
-  let cancel, requests = 0, validations = 0
+  let cancel; let requests = 0; let validations = 0
   const api = load('src/core/music/online.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/core/qqMusicUrl': {},
-    '@/utils/data': { getMusicUrl: () => gate.promise }, '@/core/list': {},
-    '@/store/setting/state': { default: { setting: settings() } }, '@/utils/message': message,
+    '@/utils/data': { getMusicUrl: () => gate.promise },
+    '@/core/list': {},
+    '@/store/setting/state': { default: { setting: settings() } },
+    '@/utils/message': message,
     './sourcePriority': { isMusicUrlFailed: () => false },
     './utils': { getPlayQuality: quality => quality, handleGetOnlineMusicUrl: async() => { requests++ } },
   })
@@ -331,14 +383,17 @@ test('cancelled cache lookups cannot start validation or source requests', async
 })
 
 test('a late source response after cancellation is never persisted to the URL cache', async() => {
-  const gate = deferred(), writes = []
+  const gate = deferred(); const writes = []
   let cancel
   const api = load('src/core/music/online.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/core/qqMusicUrl': {},
-    '@/utils/data': { getMusicUrl: async() => '', saveMusicUrl: async(...args) => writes.push(args) }, '@/core/list': {},
-    '@/store/setting/state': { default: { setting: settings() } }, '@/utils/message': message,
-    './sourcePriority': {}, './utils': { getPlayQuality: quality => quality, handleGetOnlineMusicUrl: () => gate.promise },
+    '@/utils/data': { getMusicUrl: async() => '', saveMusicUrl: async(...args) => writes.push(args) },
+    '@/core/list': {},
+    '@/store/setting/state': { default: { setting: settings() } },
+    '@/utils/message': message,
+    './sourcePriority': {},
+    './utils': { getPlayQuality: quality => quality, handleGetOnlineMusicUrl: () => gate.promise },
   })
   const pending = api.getMusicUrl({ musicInfo: song('one'), isRefresh: false, onCancel: fn => { cancel = fn } })
   const rejection = assert.rejects(pending, /cancelled/)
@@ -766,18 +821,24 @@ test('removing a temporary track without playing it still cancels its pending pr
 const timers = () => {
   let id = 0
   const entries = new Map()
-  return { setTimeout: (fn, ms) => { entries.set(++id, { fn, ms }); return id }, clearTimeout: key => entries.delete(key),
-    fire: async ms => { for (const [key, entry] of [...entries]) if (entry.ms === ms) { entries.delete(key); entry.fn() }; await flush() }, entries }
+  return {
+    setTimeout: (fn, ms) => { entries.set(++id, { fn, ms }); return id },
+    clearTimeout: key => entries.delete(key),
+    fire: async ms => { for (const [key, entry] of [...entries]) if (entry.ms === ms) { entries.delete(key); entry.fn() }; await flush() },
+    entries,
+  }
 }
 
 const runtimeHarness = ({ autoReply = true, autoInit = true, primary, apiReady = Promise.resolve(true) } = {}) => {
-  const setting = settings(), clock = timers(), handlers = new Map(), loaded = [], destroyed = [], sent = [], http = []
+  const setting = settings(); const clock = timers(); const handlers = new Map(); const loaded = []; const destroyed = []; const sent = []; const http = []
   const info = id => ({ id, name: id, sources: { tx: { type: 'music', actions: ['musicUrl'], qualitys: ['128k', '320k'] } } })
   const api = load('src/core/userApiRuntime.ts', {
     'react-native-background-timer': { default: clock },
     '@/store/userApi': { state: { list: ['a', 'b', 'c'].map(id => info(`user_api_${id}`)) } },
-    '@/store/setting/state': { default: { setting } }, '@/utils/data': { getUserApiScript: async() => 'fixture script' },
-    '@/utils': { toOldMusicInfo: music => music }, '@/utils/message': message,
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/data': { getUserApiScript: async() => 'fixture script' },
+    '@/utils': { toOldMusicInfo: music => music },
+    '@/utils/message': message,
     '@/core/init/userApi/request': { fetchData: () => { const gate = deferred(); const item = { request: gate.promise, abort: () => { item.aborted = true; gate.reject(new Error('aborted')) } }; http.push(item); return item } },
     '@/utils/nativeModules/userApi': {
       supportsIsolatedUserApi: () => true,
@@ -789,11 +850,15 @@ const runtimeHarness = ({ autoReply = true, autoInit = true, primary, apiReady =
         if (autoReply && action === 'request') handlers.get(id)({ action: 'response', data: { status: true, requestKey: data.requestKey, result: { data: { url: `https://audio.test/${id}` } } } })
       },
     },
-  }, { global: { lx: {
-    apiInitPromise: [apiReady],
-    qualityList: { tx: ['128k', '320k'] },
-    apis: { tx: { getMusicUrl: primary ?? (() => ({ canceleFn() {}, promise: Promise.resolve({ url: 'https://audio.test/main' }) })) } },
-  } } })
+  }, {
+    global: {
+      lx: {
+        apiInitPromise: [apiReady],
+        qualityList: { tx: ['128k', '320k'] },
+        apis: { tx: { getMusicUrl: primary ?? (() => ({ canceleFn() {}, promise: Promise.resolve({ url: 'https://audio.test/main' }) })) } },
+      },
+    },
+  })
   return { api, setting, clock, handlers, loaded, destroyed, sent, http }
 }
 
@@ -814,9 +879,14 @@ test('simultaneous backup source requests have isolated responses and release bo
   await flush()
   const requests = h.sent.filter(item => item.action === 'request')
   assert.notEqual(requests[0].id, requests[1].id)
-  for (const item of [...requests].reverse()) h.handlers.get(item.id)({ action: 'response', data: {
-    status: true, requestKey: item.data.requestKey, result: { data: { url: `https://audio.test/${item.data.data.info.musicInfo.id}` } },
-  } })
+  for (const item of [...requests].reverse()) {
+    h.handlers.get(item.id)({
+      action: 'response',
+      data: {
+        status: true, requestKey: item.data.requestKey, result: { data: { url: `https://audio.test/${item.data.data.info.musicInfo.id}` } },
+      },
+    })
+  }
   assert.equal((await first).url, 'https://audio.test/one')
   assert.equal((await second).url, 'https://audio.test/two')
   assert.equal(h.destroyed.length, 2)
@@ -864,14 +934,22 @@ test('a script cancellation cleanup error cannot leave the caller or timeout pen
 })
 
 test('native script events are routed to their runtime and retain that script metadata', () => {
-  const hub = new EventEmitter(), sent = [], loaded = []
-  const native = { loadScript() {}, loadScriptForRuntime: (id) => loaded.push(id), destroy() {}, destroyRuntime() {},
-    sendAction: (...args) => sent.push(['main', ...args]), sendActionForRuntime: (...args) => sent.push(args) }
-  const bridge = load('src/utils/nativeModules/userApi.ts', { 'react-native': {
-    NativeModules: { UserApiModule: native },
-    NativeEventEmitter: class { addListener(name, handler) { hub.on(name, handler); return { remove: () => hub.off(name, handler) } } },
-  } })
-  const main = [], backup = []
+  const hub = new EventEmitter(); const sent = []; const loaded = []
+  const native = {
+    loadScript() {},
+    loadScriptForRuntime: (id) => loaded.push(id),
+    destroy() {},
+    destroyRuntime() {},
+    sendAction: (...args) => sent.push(['main', ...args]),
+    sendActionForRuntime: (...args) => sent.push(args),
+  }
+  const bridge = load('src/utils/nativeModules/userApi.ts', {
+    'react-native': {
+      NativeModules: { UserApiModule: native },
+      NativeEventEmitter: class { addListener(name, handler) { hub.on(name, handler); return { remove: () => hub.off(name, handler) } } },
+    },
+  })
+  const main = []; const backup = []
   bridge.loadScript({ id: 'a', name: 'Primary', script: '' })
   bridge.loadScript({ id: 'b', name: 'Backup', script: '' }, 'backup')
   const offMain = bridge.onScriptAction(event => main.push(event))
@@ -887,12 +965,18 @@ test('native script events are routed to their runtime and retain that script me
 })
 
 test('audio prefetch uses the actual native module and enforces a deadline for the first bytes', async() => {
-  const clock = timers(), gate = deferred(), cancelled = [], started = []
+  const clock = timers(); const gate = deferred(); const cancelled = []; const started = []
   const api = load('src/plugins/player/preload.ts', {
-    'react-native': { NativeModules: { TrackPlayerModule: {
-      preloadMusic: (...args) => { started.push(args); return gate.promise }, cancelPreloadMusic: id => { cancelled.push(id); throw new Error('cleanup failed') },
-    } } },
-    '@/utils/message': message, './playList': { defaultUserAgent: 'fixture-agent' }, 'react-native-background-timer': { default: clock },
+    'react-native': {
+      NativeModules: {
+        TrackPlayerModule: {
+          preloadMusic: (...args) => { started.push(args); return gate.promise }, cancelPreloadMusic: id => { cancelled.push(id); throw new Error('cleanup failed') },
+        },
+      },
+    },
+    '@/utils/message': message,
+    './playList': { defaultUserAgent: 'fixture-agent' },
+    'react-native-background-timer': { default: clock },
   })
   assert.equal(api.canPreloadAudio(), true)
   const result = api.preloadAudio('https://audio.test/a', 262144, () => {})
@@ -907,7 +991,7 @@ test('audio prefetch uses the actual native module and enforces a deadline for t
 })
 
 test('native playback errors allow all selected backup sources to be tried before skipping', async() => {
-  const app = new EventEmitter(), clock = timers(), requests = []
+  const app = new EventEmitter(); const clock = timers(); const requests = []
   const setting = settings()
   setting['common.apiSourceOrder'] = '["user_api_a","user_api_b","user_api_c","user_api_d"]'
   const player = { musicInfo: { id: 'one' }, playMusicInfo: { musicInfo: song('one') } }
@@ -916,9 +1000,12 @@ test('native playback errors allow all selected backup sources to be tried befor
     '@/core/player/player': { isPlayRequested: () => true, playNext: async() => {}, setMusicUrl: (...args) => requests.push(args) },
     '@/core/player/playStatus': { setStatusText() {} },
     '@/plugins/player': { getPosition: async() => 0, isEmpty: () => false, setStop: async() => { stopped++ } },
-    '@/utils/tools': { isActive: () => true }, 'react-native-background-timer': { default: clock },
-    '@/store/player/state': { default: player }, '@/core/player/progress': { setNowPlayTime() {} },
-    '@/store/setting/state': { default: { setting } }, '@/core/player/playHistory': { addPlayHistory: async() => {} },
+    '@/utils/tools': { isActive: () => true },
+    'react-native-background-timer': { default: clock },
+    '@/store/player/state': { default: player },
+    '@/core/player/progress': { setNowPlayTime() {} },
+    '@/store/setting/state': { default: { setting } },
+    '@/core/player/playHistory': { addPlayHistory: async() => {} },
     '@/utils/apiSourceOrder': order,
   }, { global: { app_event: app, lx: { isPlayedStop: false }, i18n: { t: key => key } } })
   api.default()
@@ -959,8 +1046,11 @@ test('a downgraded playback URL keeps its actual quality and the requested-quali
   const api = load('src/core/music/online.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/core/qqMusicUrl': {},
-    '@/utils/data': { getMusicUrl: async() => '', saveMusicUrl: async(...args) => writes.push(args) }, '@/core/list': {},
-    '@/store/setting/state': { default: { setting } }, '@/utils/message': message, './sourcePriority': {},
+    '@/utils/data': { getMusicUrl: async() => '', saveMusicUrl: async(...args) => writes.push(args) },
+    '@/core/list': {},
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/message': message,
+    './sourcePriority': {},
     './utils': { getPlayQuality: quality => quality, handleGetOnlineMusicUrl: async() => ({ musicInfo: song('one'), url: 'https://audio.test/128k', quality: '128k' }) },
   })
   assert.equal(await api.getMusicUrl({ musicInfo: song('one'), isRefresh: false }), 'https://audio.test/128k')
@@ -1000,10 +1090,13 @@ test('a buffer query started before pause cannot start preloading immediately af
 test('legacy download items retain cancellation through the online fallback', async() => {
   const gate = deferred()
   const download = load('src/core/music/download.ts', {
-    './utils': {}, './online': { getMusicUrl: options => {
-      options.onCancel?.(() => gate.reject(new Error('cancelled')))
-      return gate.promise
-    } },
+    './utils': {},
+    './online': {
+      getMusicUrl: options => {
+        options.onCancel?.(() => gate.reject(new Error('cancelled')))
+        return gate.promise
+      },
+    },
   })
   const api = load('src/core/music/index.ts', {
     './online': {}, './download': download, './local': {}, '@/utils/music': {}, '@/config/constant': {},
@@ -1018,13 +1111,19 @@ test('legacy download items retain cancellation through the online fallback', as
 
 test('cancelling a missing local file stops source requests without searching more song names', async() => {
   const gate = deferred()
-  let searches = 0, writes = 0
+  let searches = 0; let writes = 0
   const api = load('src/core/music/local.ts', {
     '@/store/setting/state': { default: { setting: settings() } },
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
-    '@/utils/data': { saveMusicUrl: async() => { writes++ } }, '@/core/list': {},
-    '@/utils/music': { getLocalFilePath: async() => null }, '@/utils/localMediaMetadata': {}, '@/utils/fs': {},
-    '@/utils/localMatchIndex': {}, '@/core/localList': {}, '@/config/constant': {}, '@/utils/message': message,
+    '@/utils/data': { saveMusicUrl: async() => { writes++ } },
+    '@/core/list': {},
+    '@/utils/music': { getLocalFilePath: async() => null },
+    '@/utils/localMediaMetadata': {},
+    '@/utils/fs': {},
+    '@/utils/localMatchIndex': {},
+    '@/core/localList': {},
+    '@/config/constant': {},
+    '@/utils/message': message,
     './utils': {
       getOnlineOtherSourceMusicUrlByLocal: (music, refresh, options) => {
         options.onCancel(() => gate.reject(new Error('cancelled')))
@@ -1034,8 +1133,11 @@ test('cancelling a missing local file stops source requests without searching mo
     },
   })
   let cancel
-  const pending = api.getMusicUrl({ musicInfo: { id: 'local', source: 'local', name: 'Singer - Song', meta: { filePath: '/missing.mp3' } }, isRefresh: false,
-    onCancel: fn => { cancel = fn } })
+  const pending = api.getMusicUrl({
+    musicInfo: { id: 'local', source: 'local', name: 'Singer - Song', meta: { filePath: '/missing.mp3' } },
+    isRefresh: false,
+    onCancel: fn => { cancel = fn },
+  })
   const rejection = assert.rejects(pending, /cancelled/)
   await flush()
   cancel()

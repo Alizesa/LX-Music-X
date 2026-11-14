@@ -6,8 +6,8 @@ const { jsx, hookHost, elements } = require('./helpers/react.cjs')
 
 const writerModule = load('src/utils/debugLogWriter.ts')
 const ioHarness = () => {
-  const values = new Map(), calls = [], timers = new Map()
-  let now = 1000, nextTimer = 0
+  const values = new Map(); const calls = []; const timers = new Map()
+  let now = 1000; let nextTimer = 0
   const files = {
     privateStorageDirectoryPath: '/private',
     existsFile: async path => { calls.push('exists'); return values.has(path) },
@@ -26,7 +26,13 @@ const ioHarness = () => {
     constructor(value = now) { super(value) }
     static now() { return now }
   }
-  return { files, values, calls, timers, clock, Date: ClockDate,
+  return {
+    files,
+    values,
+    calls,
+    timers,
+    clock,
+    Date: ClockDate,
     advance: async ms => {
       const target = now + ms
       for (let count = 0; count < 1000; count++) {
@@ -49,25 +55,37 @@ const logHarness = () => {
 
 const diagnosticSong = { id: 'tx_diagnostic', source: 'tx', interval: '03:00', meta: { songId: 'diagnostic', strMediaMid: 'media' } }
 const diagnosticUrl = 'https://audio.test/M500media.mp3?vkey=private-value'
-const audioDiagnosticsHarness = ({ inspect = async() => ({ readable: true, mime: 'audio/mpeg', durationMs: 180000 }),
+const audioDiagnosticsHarness = ({
+  inspect = async() => ({ readable: true, mime: 'audio/mpeg', durationMs: 180000 }),
   response = param => ({ code: 0, req_1: { data: { midurlinfo: [{ result: 0, purl: `${diagnosticUrl}&channel=${param.platform}` }] } } }),
-  cookie = 'uin=123; qm_keyst=private-value' } = {}) => {
-  const h = logHarness(), channels = [], cancelled = [], probes = []
+  cookie = 'uin=123; qm_keyst=private-value',
+} = {}) => {
+  const h = logHarness(); const channels = []; const cancelled = []; const probes = []
   const message = load('src/utils/message.ts')
   const abort = load('src/utils/abort.ts', { './message': message })
   const remote = load('src/utils/nativeModules/remoteAudio.ts', {
-    'react-native': { NativeModules: { UtilsModule: {
-      startRemoteAudioProbe: (_id, url) => { probes.push(url); return inspect(url) }, cancelRemoteAudioProbe: id => { cancelled.push(id) },
-    } } },
-    'react-native-background-timer': { default: h.clock }, '@/utils/abort': abort,
+    'react-native': {
+      NativeModules: {
+        UtilsModule: {
+          startRemoteAudioProbe: (_id, url) => { probes.push(url); return inspect(url) }, cancelRemoteAudioProbe: id => { cancelled.push(id) },
+        },
+      },
+    },
+    'react-native-background-timer': { default: h.clock },
+    '@/utils/abort': abort,
   }, { Date: h.Date })
   const qq = load('src/core/qqMusicUrl.ts', {
     './qqMusic': {
-      getQQMusicSession: async() => ({ cookie }), getQQMusicUin: () => '123', QQMusicSessionExpiredError: class extends Error {},
+      getQQMusicSession: async() => ({ cookie }),
+      getQQMusicUin: () => '123',
+      QQMusicSessionExpiredError: class extends Error {},
       postAuthedMusicu: async(_cookie, body) => { channels.push(body.req_1.param.platform); return response(body.req_1.param) },
     },
-    '@/utils/nativeModules/remoteAudio': remote, '@/utils/message': message, '@/utils/abort': abort,
-    'react-native-background-timer': { default: h.clock }, '@/utils/playbackLog': h.log,
+    '@/utils/nativeModules/remoteAudio': remote,
+    '@/utils/message': message,
+    '@/utils/abort': abort,
+    'react-native-background-timer': { default: h.clock },
+    '@/utils/playbackLog': h.log,
   }, { Date: h.Date })
   h.log.setPlaybackLogEnabled(true)
   return { ...h, qq, channels, cancelled, probes }
@@ -89,8 +107,16 @@ test('audio diagnostics distinguish a probe deadline from an observed short prev
   assert.equal(timedOut.urlId, 'url-one')
   assert.equal(timeout.cancelled.length, 1)
 
-  const preview = audioDiagnosticsHarness({ inspect: async() => ({ readable: true, mime: 'audio/mpeg', durationMs: 30000,
-    requests: 1, bytesRead: 65536, httpStatus: 206 }) })
+  const preview = audioDiagnosticsHarness({
+    inspect: async() => ({
+      readable: true,
+      mime: 'audio/mpeg',
+      durationMs: 30000,
+      requests: 1,
+      bytesRead: 65536,
+      httpStatus: 206,
+    }),
+  })
   await assert.rejects(preview.qq.validateQQMusicUrl(diagnosticSong, diagnosticUrl), { code: 'duration_mismatch', message: 'QQ Music audio is incomplete' })
   const checked = (await preview.entries()).find(entry => entry.event === 'url.audio_check').data
   assert.equal(checked.reason, 'duration_mismatch')
@@ -128,8 +154,10 @@ test('account diagnostics explain missing login and empty channel responses with
 })
 
 test('an account candidate batch deadline is recorded before the web channel takes over', async() => {
-  const h = audioDiagnosticsHarness({ inspect: url => url.endsWith('23') ? new Promise(() => {})
-    : Promise.resolve({ readable: true, mime: 'audio/mpeg', durationMs: 180000 }) })
+  const h = audioDiagnosticsHarness({
+    inspect: url => url.endsWith('23') ? new Promise(() => {})
+      : Promise.resolve({ readable: true, mime: 'audio/mpeg', durationMs: 180000 }),
+  })
   const pending = h.qq.getQQMusicUrlByAccount(diagnosticSong, '128k', '128k')
   await flush()
   await h.advance(5000)
@@ -181,7 +209,9 @@ test('all exported fields, URLs and error messages are redacted, including beare
   const h = logHarness()
   h.log.setPlaybackLogEnabled(true)
   h.log.playbackLog('credentials', {
-    url: 'https://user:secret@audio.test/private/path?vkey=secret', Cookie: 'secret', headers: { Authorization: 'Bearer secret' },
+    url: 'https://user:secret@audio.test/private/path?vkey=secret',
+    Cookie: 'secret',
+    headers: { Authorization: 'Bearer secret' },
     error: new Error('request https://audio.test/private?token=secret failed; Authorization: Bearer secret'),
     nested: { access_token: 'secret', text: 'vkey=secret' },
     jsonError: new Error('{"api_token":"secret","sign":"secret","p_skey":"secret"}'),
@@ -230,9 +260,9 @@ test('rotation caps both files by UTF-8 bytes, including Chinese and emoji', asy
 })
 
 test('slow storage keeps a bounded recent batch and serializes writes', async() => {
-  const h = ioHarness(), blocked = deferred()
+  const h = ioHarness(); const blocked = deferred()
   const append = h.files.appendFile
-  let writes = 0, maximum = 0
+  let writes = 0; let maximum = 0
   h.files.appendFile = async(...args) => { maximum = Math.max(maximum, ++writes); await blocked.promise; await append(...args); writes-- }
   const writer = writerModule.createDebugLogWriter(h.files, h.clock, '/log', { fileLimit: 512, bufferLimit: 128 })
   writer.append('first')
@@ -250,7 +280,7 @@ test('slow storage keeps a bounded recent batch and serializes writes', async() 
 })
 
 test('clear cannot resurrect a batch from before clearing, even when a write is in flight', async() => {
-  const h = ioHarness(), blocked = deferred()
+  const h = ioHarness(); const blocked = deferred()
   const append = h.files.appendFile
   h.files.appendFile = async(...args) => { await blocked.promise; await append(...args) }
   const writer = writerModule.createDebugLogWriter(h.files, h.clock, '/log')
@@ -286,16 +316,21 @@ test('oversized pre-existing diagnostic files are bounded before they are read',
 
 for (const available of [true, false]) {
   test(`persistent startup flag enables JS diagnostics with native detail support ${available}`, async() => {
-    const h = logHarness(), events = new EventEmitter(), nativeEvents = new EventEmitter(), changes = []
+    const h = logHarness(); const events = new EventEmitter(); const nativeEvents = new EventEmitter(); const changes = []
     let appState
     const setting = { 'player.debugLog': true, 'player.preloadNext': true, 'player.cacheSize': '1024' }
     const native = { preloadMusic() {} }
     if (available) native.setPreloadDebugLogging = enabled => { changes.push(enabled) }
     load('src/core/init/playbackLog.ts', {
-      'react-native': { NativeModules: { TrackPlayerModule: native }, Platform: { OS: 'android', Version: 34 },
+      'react-native': {
+        NativeModules: { TrackPlayerModule: native },
+        Platform: { OS: 'android', Version: 34 },
         AppState: { currentState: 'active', addEventListener: (event, callback) => { appState = callback } },
-        DeviceEventEmitter: { addListener: (event, callback) => { nativeEvents.on(event, callback); return { remove: () => nativeEvents.off(event, callback) } } } },
-      '../../../package.json': { version: 'fixture', versionCode: 1 }, '@/store/setting/state': { default: { setting } }, '@/utils/playbackLog': h.log,
+        DeviceEventEmitter: { addListener: (event, callback) => { nativeEvents.on(event, callback); return { remove: () => nativeEvents.off(event, callback) } } },
+      },
+      '../../../package.json': { version: 'fixture', versionCode: 1 },
+      '@/store/setting/state': { default: { setting } },
+      '@/utils/playbackLog': h.log,
     }, { global: { state_event: events } }).default(setting)
     nativeEvents.emit('playback-preload-debug', { audioId: 'audio-1', stage: 'read_started' })
     appState('background')
@@ -313,23 +348,36 @@ for (const available of [true, false]) {
 }
 
 const schedulerScenario = async enabled => {
-  const h = logHarness(), app = new EventEmitter(), events = new EventEmitter()
-  const current = { id: 'A' }, next = { id: 'B' }
+  const h = logHarness(); const app = new EventEmitter(); const events = new EventEmitter()
+  const current = { id: 'A' }; const next = { id: 'B' }
   const state = { isPlay: true, playMusicInfo: { musicInfo: current } }
   const setting = { 'player.preloadNext': true, 'player.cacheSize': '1024' }
   const calls = { position: 0, buffered: 0, duration: 0, selection: 0, preload: 0 }
-  let buffer = 6, exists = false
+  let buffer = 6; let exists = false
   h.log.setPlaybackLogEnabled(enabled)
   load('src/core/init/player/preloadNextMusic.ts', {
-    'react-native-track-player': { default: {
-      getPosition: async() => { calls.position++; return 2 }, getBufferedPosition: async() => { calls.buffered++; return buffer }, getDuration: async() => { calls.duration++; return 180 },
-    } }, 'react-native-background-timer': { default: h.clock },
+    'react-native-track-player': {
+      default: {
+        getPosition: async() => { calls.position++; return 2 }, getBufferedPosition: async() => { calls.buffered++; return buffer }, getDuration: async() => { calls.duration++; return 180 },
+      },
+    },
+    'react-native-background-timer': { default: h.clock },
     '@/core/player/player': { getNextPlayMusicInfo: async() => { calls.selection++; return { musicInfo: next } }, resetRandomNextMusicInfo() {} },
-    '@/core/player/preload': { cancelPreload() {}, keepPreloadFor() {}, pausePreload() {}, hasPreloadMusic: () => exists, isPreloadPaused: () => false,
-      isPreloadCacheClearing: () => false, onPreloadCacheClearingChanged() {},
-      preloadMusic: () => { calls.preload++; exists = true; return Promise.resolve('ready') } },
-    '@/plugins/player/preload': { canPreloadAudio: () => true }, '@/store/player/state': { default: state }, '@/store/setting/state': { default: { setting } },
-    '@/utils/message': { isRequestCancelled: () => false }, '@/utils/playbackLog': h.log,
+    '@/core/player/preload': {
+      cancelPreload() {},
+      keepPreloadFor() {},
+      pausePreload() {},
+      hasPreloadMusic: () => exists,
+      isPreloadPaused: () => false,
+      isPreloadCacheClearing: () => false,
+      onPreloadCacheClearingChanged() {},
+      preloadMusic: () => { calls.preload++; exists = true; return Promise.resolve('ready') },
+    },
+    '@/plugins/player/preload': { canPreloadAudio: () => true },
+    '@/store/player/state': { default: state },
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/message': { isRequestCancelled: () => false },
+    '@/utils/playbackLog': h.log,
   }, { Date: h.Date, global: { app_event: app, state_event: events, lx: { isPlayedStop: false } } }).default()
   await h.advance(3000)
   assert.equal(calls.preload, 0)
@@ -354,23 +402,35 @@ test('diagnostics reveal the blocking gate and do not add native queries or sour
 })
 
 const viewerHarness = (read = async() => 'recent log') => {
-  const host = hookHost(), frame = host.frame(), listeners = new Set(), frames = [], writes = [], copies = [], changes = []
+  const host = hookHost(); const frame = host.frame(); const listeners = new Set(); const frames = []; const writes = []; const copies = []; const changes = []
   const setting = { 'player.debugLog': false }
   const fullText = 'LX Music diagnostic\n{"event":"full-log"}\n'
   const t = (key, values) => key === 'playback_log_status' ? values.status : key
   const log = {
-    readPlaybackLogs: read, exportPlaybackLogs: async() => fullText, clearPlaybackLogs: async() => {},
+    readPlaybackLogs: read,
+    exportPlaybackLogs: async() => fullText,
+    clearPlaybackLogs: async() => {},
     getPlaybackLogSnapshot: () => ({ log: { enabled: setting['player.debugLog'] }, scheduler: { reason: 'buffer_low', bufferSeconds: 4 }, environment: { nativeDetails: true } }),
     onPlaybackLogUpdate: fn => { listeners.add(fn); return () => listeners.delete(fn) },
   }
   const component = load('src/screens/Home/Views/Setting/settings/Other/PlaybackLog.tsx', {
-    react: host.react, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' }, 'react-native': { View: 'View' },
-    '../../components/SubTitle': { default: 'SubTitle' }, '../../components/Button': { default: 'Button' }, '../../components/CheckBoxItem': { default: 'CheckBox' },
-    '@/components/common/ConfirmAlert': { default: 'Alert' }, '@/components/common/ChoosePath': { default: 'ChoosePath' }, '@/components/common/Text': { default: 'Text' },
-    '@/lang': { useI18n: () => t }, '@/store/setting/hook': { useSettingValue: key => setting[key] },
+    react: host.react,
+    'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
+    'react-native': { View: 'View' },
+    '../../components/SubTitle': { default: 'SubTitle' },
+    '../../components/Button': { default: 'Button' },
+    '../../components/CheckBoxItem': { default: 'CheckBox' },
+    '@/components/common/ConfirmAlert': { default: 'Alert' },
+    '@/components/common/ChoosePath': { default: 'ChoosePath' },
+    '@/components/common/Text': { default: 'Text' },
+    '@/lang': { useI18n: () => t },
+    '@/store/setting/hook': { useSettingValue: key => setting[key] },
     '@/core/common': { updateSetting: values => { changes.push(values); Object.assign(setting, values) } },
-    '@/utils/tools': { clipboardWriteText: value => copies.push(value), toast() {} }, '@/utils/fs': { writeFile: async(...args) => writes.push(args) },
-    '@/utils/common': { debounce: fn => Object.assign(fn, { cancel() {} }) }, '@/utils/hooks/useScreenVisible': { useScreenVisible: host.visible }, '@/utils/playbackLog': log,
+    '@/utils/tools': { clipboardWriteText: value => copies.push(value), toast() {} },
+    '@/utils/fs': { writeFile: async(...args) => writes.push(args) },
+    '@/utils/common': { debounce: fn => Object.assign(fn, { cancel() {} }) },
+    '@/utils/hooks/useScreenVisible': { useScreenVisible: host.visible },
+    '@/utils/playbackLog': log,
   }, { requestAnimationFrame: fn => { frames.push(fn); return frames.length }, cancelAnimationFrame() {} }).default
   frame.connect = tree => {
     for (const item of elements(tree, 'Alert')) item.props.ref.current = { setVisible() {} }
@@ -382,7 +442,7 @@ const viewerHarness = (read = async() => 'recent log') => {
 }
 
 test('the hidden viewer releases its subscription and cannot display a late disk read', async() => {
-  const gate = deferred(), h = viewerHarness(() => gate.promise)
+  const gate = deferred(); const h = viewerHarness(() => gate.promise)
   h.press(h.render(), 'setting_other_log_btn_show')
   h.render()
   assert.equal(h.listeners.size, 1)
@@ -414,10 +474,16 @@ test('the switch uses saved settings and copy/export include full plain text ins
 
 for (const writable of [true, false]) {
   test(`source resolution, native prefetch and foreground takeover share one trace when cache is writable=${writable}`, async() => {
-    const h = logHarness(), reads = []
+    const h = logHarness(); const reads = []
     h.log.setPlaybackLogEnabled(true)
-    const setting = { 'player.preloadNext': true, 'player.cacheSize': '1024', 'player.playQuality': '128k',
-      'player.urlSource': 'source', 'common.apiSource': 'user_api_A', 'common.apiSourceOrder': '["user_api_A"]' }
+    const setting = {
+      'player.preloadNext': true,
+      'player.cacheSize': '1024',
+      'player.playQuality': '128k',
+      'player.urlSource': 'source',
+      'common.apiSource': 'user_api_A',
+      'common.apiSourceOrder': '["user_api_A"]',
+    }
     const music = { id: 'next', source: 'kw', meta: { _qualitys: { '128k': {} } } }
     const message = load('src/utils/message.ts')
     const order = load('src/utils/apiSourceOrder.ts')
@@ -426,30 +492,64 @@ for (const writable of [true, false]) {
     const data = { getMusicUrl: async() => '', saveMusicUrl: async() => {} }
     const qq = { validateQQMusicUrl: async() => {} }
     const priority = load('src/core/music/sourcePriority.ts', {
-      '@/store/setting/state': { default: { setting } }, '@/store/userApi': { state: { list: [{ id: 'user_api_A' }] } }, '@/utils/apiSourceOrder': order,
-      '@/utils/message': message, '@/core/qqMusicUrl': qq, '@/utils/playbackLog': h.log,
+      '@/store/setting/state': { default: { setting } },
+      '@/store/userApi': { state: { list: [{ id: 'user_api_A' }] } },
+      '@/utils/apiSourceOrder': order,
+      '@/utils/message': message,
+      '@/core/qqMusicUrl': qq,
+      '@/utils/playbackLog': h.log,
       '@/core/userApiRuntime': { requestUserApiMusicUrl: async() => ({ url: 'https://audio.test/track?token=secret', type: '128k' }) },
     }, { global: globalState })
     const pipeline = load('src/core/music/utils.ts', {
-      '@/utils/musicSdk': {}, '@/utils/data': data, '@/utils': {}, '@/store/setting/state': { default: { setting } }, '@/utils/message': message,
-      'react-native-background-timer': { default: h.clock }, '@/utils/musicSdk/api-source': {}, '@/core/qqMusicUrl': qq,
-      '@/config/constant': {}, './sourcePriority': priority, '@/utils/musicUrlCache': cache, '@/utils/playbackLog': h.log,
+      '@/utils/musicSdk': {},
+      '@/utils/data': data,
+      '@/utils': {},
+      '@/store/setting/state': { default: { setting } },
+      '@/utils/message': message,
+      'react-native-background-timer': { default: h.clock },
+      '@/utils/musicSdk/api-source': {},
+      '@/core/qqMusicUrl': qq,
+      '@/config/constant': {},
+      './sourcePriority': priority,
+      '@/utils/musicUrlCache': cache,
+      '@/utils/playbackLog': h.log,
     }, { global: globalState })
     const online = load('src/core/music/online.ts', {
-      '@/utils/data': data, '@/core/list': {}, '@/store/setting/state': { default: { setting } }, './sourcePriority': priority,
-      '@/utils/message': message, '@/core/qqMusicUrl': qq, '@/utils/musicUrlCache': cache, './utils': pipeline, '@/utils/playbackLog': h.log,
+      '@/utils/data': data,
+      '@/core/list': {},
+      '@/store/setting/state': { default: { setting } },
+      './sourcePriority': priority,
+      '@/utils/message': message,
+      '@/core/qqMusicUrl': qq,
+      '@/utils/musicUrlCache': cache,
+      './utils': pipeline,
+      '@/utils/playbackLog': h.log,
     })
     const native = load('src/plugins/player/preload.ts', {
-      'react-native': { NativeModules: { TrackPlayerModule: { preloadMusic: async(id, url, agent, maxBytes) => {
-        reads.push({ id, maxBytes })
-        return writable ? { cachedBytes: maxBytes || 999999, complete: maxBytes === 0 } : null
-      }, cancelPreloadMusic() {} } } },
-      '@/utils/message': message, './playList': { defaultUserAgent: 'fixture' }, 'react-native-background-timer': { default: h.clock }, '@/utils/playbackLog': h.log,
+      'react-native': {
+        NativeModules: {
+          TrackPlayerModule: {
+            preloadMusic: async(id, url, agent, maxBytes) => {
+              reads.push({ id, maxBytes })
+              return writable ? { cachedBytes: maxBytes || 999999, complete: maxBytes === 0 } : null
+            },
+            cancelPreloadMusic() {},
+          },
+        },
+      },
+      '@/utils/message': message,
+      './playList': { defaultUserAgent: 'fixture' },
+      'react-native-background-timer': { default: h.clock },
+      '@/utils/playbackLog': h.log,
     })
     const preload = load('src/core/player/preload.ts', {
-      '@/core/music': { getMusicUrl: online.getMusicUrl }, '@/core/music/sourcePriority': priority,
-      '@/store/setting/state': { default: { setting } }, '@/plugins/player/preload': native,
-      '@/utils/message': message, '@/utils/apiSourceOrder': order, '@/utils/playbackLog': h.log,
+      '@/core/music': { getMusicUrl: online.getMusicUrl },
+      '@/core/music/sourcePriority': priority,
+      '@/store/setting/state': { default: { setting } },
+      '@/plugins/player/preload': native,
+      '@/utils/message': message,
+      '@/utils/apiSourceOrder': order,
+      '@/utils/playbackLog': h.log,
     })
     await preload.preloadMusic(music, undefined, 'play-current')
     await flush()

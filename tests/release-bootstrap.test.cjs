@@ -94,7 +94,7 @@ test('an already initialized branch does not skip failed missing pushes', async(
 
 test('a waiting reserve refreshes bootstrap after the previous initializer fails, with bounded polling', async() => {
   const app = githubFixture(createState('1.9.2', 100000))
-  let now = 0, runQueries = 0
+  let now = 0; let runQueries = 0
   class Clock extends Date { static now() { return now } }
   const pipeline = loadRelease(releaseManifest({ version: '1.9.3-next.1', versionCode: 100001, sourceSha: sha('b') }), {
     clock: Clock, delay: async ms => { now += ms },
@@ -124,7 +124,9 @@ test('a signer-parser failure leaves no reservation and the fixed next push init
   const source = require('./fixtures/apksigner/source.json')
   const output = fs.readFileSync(path.join(__dirname, 'fixtures/apksigner/build-tools-37.txt'), 'utf8')
   const fixedInspector = createApkInspector({
-    env: { ANDROID_HOME: '/sdk' }, readFile: () => 'buildToolsVersion = "37.0.0"\n', exists: () => true,
+    env: { ANDROID_HOME: '/sdk' },
+    readFile: () => 'buildToolsVersion = "37.0.0"\n',
+    exists: () => true,
     execute: (command, args) => args[0] === 'dump' ? `package: name='${source.applicationId}' versionCode='79003' versionName='1.9.2'` : output,
   })
   const attempt = async(value, before, failed) => {

@@ -91,4 +91,3 @@ test('APK selection follows device ABI preference, with universal fallback and n
   assert.equal(selectAsset(assets, ['unknown']).abi, 'universal')
   assert.throws(() => selectAsset(assets.filter(asset => asset.abi !== 'universal'), ['unknown']))
 })
-

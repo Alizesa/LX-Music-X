@@ -5,21 +5,26 @@ const { manifest, packageName } = require('./helpers/release.cjs')
 const shared = require('../shared/release')
 
 const client = ({ installed = { version: '1.9.2', versionCode: 79003 }, saved, getVersionInfo = async() => ({ manifests: [], incomplete: false }), utilities = {}, savePreferences = async() => {} } = {}) => {
-  const writes = [], writeAttempts = [], modals = [], messages = [], changes = []
-  const globals = { Error, global: {
-    i18n: { t: key => key },
-    state_event: {
-      versionInfoUpdated: info => changes.push(info),
-      versionInfoIgnoreVersionUpdated() {}, versionDownloadProgressUpdated() {},
+  const writes = []; const writeAttempts = []; const modals = []; const messages = []; const changes = []
+  const globals = {
+    Error,
+    global: {
+      i18n: { t: key => key },
+      state_event: {
+        versionInfoUpdated: info => changes.push(info),
+        versionInfoIgnoreVersionUpdated() {},
+        versionDownloadProgressUpdated() {},
+      },
     },
-  } }
+  }
   const state = load('src/store/version/state.ts', { '../../../package.json': { version: installed.version } }).default
   const actions = load('src/store/version/action.ts', { './state': { default: state } }, globals).default
   const core = load('src/core/version.ts', {
     '../../shared/release': shared,
     '@/utils/version': { getVersionInfo, cancelUpdateDownload() {}, cleanupUpdateDownloads: async() => {}, hasDownloadedUpdate: () => false, downloadNewVersion: async() => {}, updateApp: async() => {}, ...utilities },
     '@/utils/nativeModules/utils': { getInstalledAppInfo: async() => ({ ...installed }) },
-    '@/store/version/action': { default: actions }, '@/store/version/state': { default: state },
+    '@/store/version/action': { default: actions },
+    '@/store/version/state': { default: state },
     '@/utils/data': {
       getUpdatePreferences: async() => saved,
       saveUpdatePreferences: async value => {
@@ -28,7 +33,8 @@ const client = ({ installed = { version: '1.9.2', versionCode: 79003 }, saved, g
         saved = structuredClone(value)
         writes.push(saved)
       },
-      getIgnoreVersionFailTipTime: async() => Date.now(), saveIgnoreVersionFailTipTime() {},
+      getIgnoreVersionFailTipTime: async() => Date.now(),
+      saveIgnoreVersionFailTipTime() {},
     },
     '@/navigation': { showVersionModal: () => modals.push(state.versionInfo.newVersion?.tag) },
     'react-native-navigation': { Navigation: { dismissOverlay: async() => {} } },
@@ -195,17 +201,22 @@ test('initialization failures expose their own cause and a successful retry clea
 })
 
 const updater = ({ size = 12345, checksum = 'b'.repeat(64), statusCode = 200, supportedAbis = ['arm64-v8a'], downloadGate, request, fileSystem = {}, install = async() => {}, installed = { version: '1.9.2', versionCode: 79003 } } = {}) => {
-  const downloads = [], removals = [], installs = [], stops = [], reads = [], requests = []
+  const downloads = []; const removals = []; const installs = []; const stops = []; const reads = []; const requests = []
   let currentChecksum = checksum
   const utilities = load('src/utils/version.js', {
-    '../../package.json': { name: packageName }, '../../shared/release': shared,
-    '@/utils/request': { httpGet: (url, options, callback) => {
-      requests.push({ url, options })
-      if (request) request(url, options, callback)
-      else callback(null, { statusCode: 200 }, manifest())
-    } },
+    '../../package.json': { name: packageName },
+    '../../shared/release': shared,
+    '@/utils/request': {
+      httpGet: (url, options, callback) => {
+        requests.push({ url, options })
+        if (request) request(url, options, callback)
+        else callback(null, { statusCode: 200 }, manifest())
+      },
+    },
     '@/utils/fs': {
-      temporaryDirectoryPath: '/cache', stopDownload: id => stops.push(id), unlink: async path => removals.push(path),
+      temporaryDirectoryPath: '/cache',
+      stopDownload: id => stops.push(id),
+      unlink: async path => removals.push(path),
       readDir: async() => [],
       stat: async path => { reads.push(['stat', path]); return { size } },
       hash: async(path, algorithm) => { reads.push([algorithm, path]); return currentChecksum },
@@ -216,7 +227,8 @@ const updater = ({ size = 12345, checksum = 'b'.repeat(64), statusCode = 200, su
       ...fileSystem,
     },
     '@/utils/nativeModules/utils': {
-      getInstalledAppInfo: async() => ({ ...installed }), getSupportedAbis: async() => supportedAbis,
+      getInstalledAppInfo: async() => ({ ...installed }),
+      getSupportedAbis: async() => supportedAbis,
       installApk: async(path, provider) => { installs.push({ path, provider }); await install(path, provider) },
     },
     '@/config/constant': { APP_PROVIDER_NAME: 'io.github.alizesa.lxmusicx.provider' },
@@ -270,12 +282,14 @@ test('checks cache by channel and tag, and a forced check refreshes only this re
 
 for (const failure of ['network', 'HTTP 503', 'invalid manifest']) {
   test(`a mirror 404 cannot conceal a canonical ${failure} or report the installed APK as latest`, async() => {
-    const transport = updater({ request: (url, options, callback) => {
-      if (url.startsWith('https://cdn.jsdelivr.net/')) callback(null, { statusCode: 404 })
-      else if (failure === 'network') callback(new Error('Canonical request failed'))
-      else if (failure === 'HTTP 503') callback(null, { statusCode: 503 })
-      else callback(null, { statusCode: 200 }, { schemaVersion: 99 })
-    } })
+    const transport = updater({
+      request: (url, options, callback) => {
+        if (url.startsWith('https://cdn.jsdelivr.net/')) callback(null, { statusCode: 404 })
+        else if (failure === 'network') callback(new Error('Canonical request failed'))
+        else if (failure === 'HTTP 503') callback(null, { statusCode: 503 })
+        else callback(null, { statusCode: 200 }, { schemaVersion: 99 })
+      },
+    })
     const result = await transport.utilities.getVersionInfo('stable', true)
     assert.equal(result.manifests.length, 0)
     assert.equal(result.incomplete, true)
@@ -307,10 +321,12 @@ test('a canonical 404 confirms a channel has no publication without consulting i
 
 test('a validated mirror manifest still recovers a canonical failure', async() => {
   const candidate = manifest()
-  const transport = updater({ request: (url, options, callback) => {
-    if (url.startsWith('https://raw.githubusercontent.com/')) callback(null, { statusCode: 503 })
-    else callback(null, { statusCode: 200 }, candidate)
-  } })
+  const transport = updater({
+    request: (url, options, callback) => {
+      if (url.startsWith('https://raw.githubusercontent.com/')) callback(null, { statusCode: 503 })
+      else callback(null, { statusCode: 200 }, candidate)
+    },
+  })
   const result = await transport.utilities.getVersionInfo('stable', true)
   assert.equal(result.manifests[0].tag, candidate.tag)
   assert.equal(result.incomplete, false)
@@ -461,10 +477,12 @@ test('a failed channel write rolls back the selection and permits retrying the s
 
 test('the last failed selection rolls back to the last successful queued write', async() => {
   const nextWrite = deferred()
-  const app = client({ savePreferences: async(value, attempt) => {
-    if (attempt === 2) await nextWrite.promise
-    if (attempt === 3) throw new Error('latest write failed')
-  } })
+  const app = client({
+    savePreferences: async(value, attempt) => {
+      if (attempt === 2) await nextWrite.promise
+      if (attempt === 3) throw new Error('latest write failed')
+    },
+  })
   await app.core.initializeVersion()
   const next = app.core.setUpdateChannel('next')
   await flush()
@@ -479,9 +497,12 @@ test('the last failed selection rolls back to the last successful queued write',
 
 test('a newer preference write can recover an earlier channel write without rolling the UI back', async() => {
   const failedWrite = deferred()
-  const app = client({ getVersionInfo: async() => ({ manifests: [manifest()], incomplete: false }), savePreferences: async(value, attempt) => {
-    if (attempt === 2) await failedWrite.promise
-  } })
+  const app = client({
+    getVersionInfo: async() => ({ manifests: [manifest()], incomplete: false }),
+    savePreferences: async(value, attempt) => {
+      if (attempt === 2) await failedWrite.promise
+    },
+  })
   await app.core.initializeVersion()
   const selection = app.core.setUpdateChannel('next')
   await flush()

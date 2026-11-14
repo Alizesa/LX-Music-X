@@ -9,44 +9,87 @@ const message = load('src/utils/message.ts')
 const song = { id: 'tx_song', source: 'tx', name: 'Song', singer: 'Singer', interval: '03:00', meta: { _qualitys: { '128k': {}, '320k': {}, flac: {} } } }
 
 const harness = ({ request = async(id, music, quality) => ({ url: `https://audio.test/${id}`, type: quality }), account = async() => null, cacheWriteGate } = {}) => {
-  const values = new Map(), requests = [], accountRequests = []
-  const setting = { 'common.apiSource': 'user_api_A', 'common.apiSourceOrder': '["user_api_A","user_api_B"]',
-    'player.playQuality': '128k', 'player.urlSource': 'source', 'player.noVipStandardQuality': false }
+  const values = new Map(); const requests = []; const accountRequests = []
+  const setting = {
+    'common.apiSource': 'user_api_A',
+    'common.apiSourceOrder': '["user_api_A","user_api_B"]',
+    'player.playQuality': '128k',
+    'player.urlSource': 'source',
+    'player.noVipStandardQuality': false,
+  }
   const appGlobal = { lx: { qualityList: { tx: ['128k'] } }, i18n: { t: key => key } }
   const storage = cacheWriteGate ? load('src/plugins/storage.ts', {
-    '@react-native-async-storage/async-storage': { default: {
-      getItem: async key => values.has(key) ? JSON.stringify(values.get(key)) : null,
-      multiGet: async keys => keys.map(key => [key, values.has(key) ? JSON.stringify(values.get(key)) : null]),
-      multiSet: async entries => { await cacheWriteGate.promise; for (const [key, value] of entries) values.set(key, JSON.parse(value)) },
-      multiRemove: async keys => { for (const key of keys) values.delete(key) },
-    } }, '@/utils/log': { log: { error() {} } },
-  }) : { getData: async key => values.get(key), saveData: async(key, value) => { values.set(key, structuredClone(value)) },
-    getDataMultiple: async keys => keys.map(key => [key, values.get(key)]), removeDataMultiple: async keys => { for (const key of keys) values.delete(key) } }
+    '@react-native-async-storage/async-storage': {
+      default: {
+        getItem: async key => values.has(key) ? JSON.stringify(values.get(key)) : null,
+        multiGet: async keys => keys.map(key => [key, values.has(key) ? JSON.stringify(values.get(key)) : null]),
+        multiSet: async entries => { await cacheWriteGate.promise; for (const [key, value] of entries) values.set(key, JSON.parse(value)) },
+        multiRemove: async keys => { for (const key of keys) values.delete(key) },
+      },
+    },
+    '@/utils/log': { log: { error() {} } },
+  }) : {
+    getData: async key => values.get(key),
+    saveData: async(key, value) => { values.set(key, structuredClone(value)) },
+    getDataMultiple: async keys => keys.map(key => [key, values.get(key)]),
+    removeDataMultiple: async keys => { for (const key of keys) values.delete(key) },
+  }
   const data = load('src/utils/data.ts', {
     '@/plugins/storage': storage,
-    '@/config/constant': constants, './legacyList': {}, './common': { throttle: fn => fn }, './nativeModules/secureStorage': {},
+    '@/config/constant': constants,
+    './legacyList': {},
+    './common': { throttle: fn => fn },
+    './nativeModules/secureStorage': {},
   })
   const qq = { validateQQMusicUrl: async() => {}, getQQMusicUrlByAccount: async(...args) => { accountRequests.push(args); return account(...args) } }
   const priority = load('src/core/music/sourcePriority.ts', {
-    '@/store/setting/state': { default: { setting } }, '@/store/userApi': { state: { list: ['user_api_A', 'user_api_B'].map(id => ({ id })) } },
-    '@/utils/apiSourceOrder': order, '@/utils/message': message, '@/core/qqMusicUrl': qq,
+    '@/store/setting/state': { default: { setting } },
+    '@/store/userApi': { state: { list: ['user_api_A', 'user_api_B'].map(id => ({ id })) } },
+    '@/utils/apiSourceOrder': order,
+    '@/utils/message': message,
+    '@/core/qqMusicUrl': qq,
     '@/core/userApiRuntime': { requestUserApiMusicUrl: async(...args) => { requests.push(args); return request(...args) } },
   }, { global: appGlobal })
   const pipeline = load('src/core/music/utils.ts', {
-    '@/utils/musicUrlCache': cacheContext, '@/utils/musicSdk': {}, '@/utils/data': data, '@/utils': {},
-    '@/store/setting/state': { default: { setting } }, '@/utils/message': message,
-    'react-native-background-timer': { default: { setTimeout, clearTimeout } }, '@/utils/musicSdk/api-source': {},
-    '@/core/qqMusicUrl': qq, '@/config/constant': constants, './sourcePriority': priority,
+    '@/utils/musicUrlCache': cacheContext,
+    '@/utils/musicSdk': {},
+    '@/utils/data': data,
+    '@/utils': {},
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/message': message,
+    'react-native-background-timer': { default: { setTimeout, clearTimeout } },
+    '@/utils/musicSdk/api-source': {},
+    '@/core/qqMusicUrl': qq,
+    '@/config/constant': constants,
+    './sourcePriority': priority,
   }, { global: appGlobal })
   const online = load('src/core/music/online.ts', {
-    '@/utils/musicUrlCache': cacheContext, '@/utils/data': data, '@/core/list': {}, '@/store/setting/state': { default: { setting } },
-    '@/utils/message': message, '@/core/qqMusicUrl': qq, './utils': pipeline, './sourcePriority': priority,
+    '@/utils/musicUrlCache': cacheContext,
+    '@/utils/data': data,
+    '@/core/list': {},
+    '@/store/setting/state': { default: { setting } },
+    '@/utils/message': message,
+    '@/core/qqMusicUrl': qq,
+    './utils': pipeline,
+    './sourcePriority': priority,
   }, { global: appGlobal })
   const download = load('src/core/music/download.ts', { './online': online, './utils': {} })
-  return { values, setting, requests, accountRequests, data, pipeline, global: appGlobal,
+  return {
+    values,
+    setting,
+    requests,
+    accountRequests,
+    data,
+    pipeline,
+    global: appGlobal,
     resolve: options => online.getMusicUrl({ musicInfo: song, isRefresh: false, allowToggleSource: false, ...options }),
-    resolveDownload: options => download.getMusicUrl({ musicInfo: { metadata: { musicInfo: song } },
-      isRefresh: false, allowToggleSource: false, ...options }) }
+    resolveDownload: options => download.getMusicUrl({
+      musicInfo: { metadata: { musicInfo: song } },
+      isRefresh: false,
+      allowToggleSource: false,
+      ...options,
+    }),
+  }
 }
 
 test('unchanged source selection reuses a URL, but a new order and an empty selection do not', async() => {
@@ -130,9 +173,11 @@ test('a 320k playback request reuses the account standard-quality result without
 })
 
 test('a script downgrade is reusable for playback while an exact download must request its own quality', async() => {
-  const h = harness({ request: async(id, music, quality, onCancel, allowFallback) => ({
-    url: `https://audio.test/${id}-${allowFallback ? '128k' : quality}`, type: allowFallback ? '128k' : quality,
-  }) })
+  const h = harness({
+    request: async(id, music, quality, onCancel, allowFallback) => ({
+      url: `https://audio.test/${id}-${allowFallback ? '128k' : quality}`, type: allowFallback ? '128k' : quality,
+    }),
+  })
   h.setting['player.playQuality'] = '320k'
   assert.equal(await h.resolve(), 'https://audio.test/user_api_A-128k')
   assert.equal(await h.resolve(), 'https://audio.test/user_api_A-128k')
@@ -154,10 +199,12 @@ test('an account downgrade does not satisfy an explicit higher-quality download'
 })
 
 test('an unavailable exact download rejects instead of accepting its playback downgrade', async() => {
-  const h = harness({ request: async(id, music, quality, onCancel, allowFallback) => {
-    if (!allowFallback) throw new Error('Unsupported music quality')
-    return { url: 'https://audio.test/standard', type: '128k' }
-  } })
+  const h = harness({
+    request: async(id, music, quality, onCancel, allowFallback) => {
+      if (!allowFallback) throw new Error('Unsupported music quality')
+      return { url: 'https://audio.test/standard', type: '128k' }
+    },
+  })
   h.setting['player.playQuality'] = '320k'
   await h.resolve()
   await assert.rejects(h.resolveDownload({ quality: '320k' }), /toggle_source_failed/)
@@ -198,13 +245,19 @@ test('a late downgrade cannot replace the new source request-quality mapping', a
 })
 
 test('an internal exact-quality fallback ignores a playback request-quality mapping', async() => {
-  const h = harness({ request: async(id, music, quality, onCancel, allowFallback) => ({
-    url: `https://audio.test/${allowFallback ? '128k' : quality}`, type: allowFallback ? '128k' : quality,
-  }) })
+  const h = harness({
+    request: async(id, music, quality, onCancel, allowFallback) => ({
+      url: `https://audio.test/${allowFallback ? '128k' : quality}`, type: allowFallback ? '128k' : quality,
+    }),
+  })
   h.setting['player.playQuality'] = '320k'
   await h.resolve()
-  const result = await h.pipeline.getOnlineOtherSourceMusicUrl({ musicInfos: [song], quality: '320k',
-    isRefresh: false, onToggleSource() {} })
+  const result = await h.pipeline.getOnlineOtherSourceMusicUrl({
+    musicInfos: [song],
+    quality: '320k',
+    isRefresh: false,
+    onToggleSource() {},
+  })
   assert.equal(result.url, 'https://audio.test/320k')
   assert.equal(result.quality, '320k')
   assert.equal(h.requests[1][4], false)

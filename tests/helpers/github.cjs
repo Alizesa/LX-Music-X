@@ -44,20 +44,26 @@ const loadRelease = (info, { config = fixtureConfig, clock = Date, delay, apkIns
     appendFileSync: (file, data) => files.set(path.basename(file), Buffer.concat([files.get(path.basename(file)) ?? Buffer.alloc(0), Buffer.from(data)])),
   }
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../publish/release.cjs'), 'utf8'), {
-    module: loaded, __dirname: path.resolve(__dirname, '../../publish'),
+    module: loaded,
+    __dirname: path.resolve(__dirname, '../../publish'),
     Date: clock,
-    process: { env: { GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1' } }, console: { log() {} },
+    process: { env: { GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1' } },
+    console: { log() {} },
     require: name => {
       if (name === 'node:fs') return virtualFs
       if (name === 'node:timers/promises' && delay) return { setTimeout: delay }
       if (name === './android-tools.cjs' && apkInspector) return { createApkInspector: () => apkInspector }
       if (name === './release-config.json' && config) return config
-      if (name === 'node:child_process') return { execFileSync: (executable, args) => {
-        assert.equal(executable, 'git')
-        if (args[0] === 'log') return '- Update flow fixture\n'
-        assert.deepEqual([...args], ['rev-parse', 'HEAD'])
-        return info.sourceSha + '\n'
-      } }
+      if (name === 'node:child_process') {
+        return {
+          execFileSync: (executable, args) => {
+            assert.equal(executable, 'git')
+            if (args[0] === 'log') return '- Update flow fixture\n'
+            assert.deepEqual([...args], ['rev-parse', 'HEAD'])
+            return info.sourceSha + '\n'
+          },
+        }
+      }
       return name.startsWith('.') ? require(path.resolve(__dirname, '../../publish', name)) : require(name)
     },
   })
@@ -66,7 +72,7 @@ const loadRelease = (info, { config = fixtureConfig, clock = Date, delay, apkIns
 
 const githubFixture = initial => {
   const state = initial ? { ...structuredClone(initial), repository } : null
-  let head = state ? 'commit0' : null, objectId = 0, assetId = 0, releaseId = 0
+  let head = state ? 'commit0' : null; let objectId = 0; let assetId = 0; let releaseId = 0
   const commits = new Map([['commit0', { tree: { sha: 'tree0' } }]])
   const initialFiles = new Map([['state.json', 'blob0']])
   const trees = new Map([['tree0', initialFiles]])
@@ -76,7 +82,7 @@ const githubFixture = initial => {
     initialFiles.set(`channels/${channel}.json`, blob)
     blobs.set(blob, JSON.stringify(info))
   }
-  const tags = new Map(), releases = [], assets = new Map(), calls = [], failures = []
+  const tags = new Map(); const releases = []; const assets = new Map(); const calls = []; const failures = []
   let latestId = null
   const addAsset = (release, name, bytes) => {
     const asset = { id: ++assetId, name, size: bytes.length, state: 'uploaded', digest: `sha256:${digest(bytes)}` }
@@ -178,8 +184,14 @@ const githubFixture = initial => {
     return blob ? JSON.parse(blobs.get(blob)) : null
   }
   return {
-    github: client(), client, calls, releases, addRelease, get state() { return readFile('state.json') },
-    channel: channel => readFile(`channels/${channel}.json`), get latest() { return releases.find(item => item.id === latestId) },
+    github: client(),
+    client,
+    calls,
+    releases,
+    addRelease,
+    get state() { return readFile('state.json') },
+    channel: channel => readFile(`channels/${channel}.json`),
+    get latest() { return releases.find(item => item.id === latestId) },
     failOnce: (when, error = new Error('simulated API failure')) => failures.push({ when, error }),
     assetBytes: (tag, fileName) => {
       const release = releases.find(item => item.tag_name === tag && !item.draft)
