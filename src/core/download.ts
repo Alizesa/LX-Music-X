@@ -99,6 +99,7 @@ const createUrlRequest = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quali
   }
 }
 const resolvingUrls = new Map<LX.Download.DownloadTask, ReturnType<typeof createUrlRequest>>()
+const resumeRequests = new WeakMap<LX.Download.DownloadTask, symbol>()
 const cancelTaskUrl = (task: LX.Download.DownloadTask) => {
   const request = resolvingUrls.get(task)
   resolvingUrls.delete(task)
@@ -780,7 +781,10 @@ export const addTasks = async(musicInfos: LX.Music.MusicInfoOnline[], quality: L
 const pauseTaskInternal = async(id: string, persist: boolean) => {
   await init()
   const task = tasks.find(item => item.id == id)
-  if (!task || task.status == 'completed' || task.status == 'pause' || task.status == 'finalizing') return
+  if (!task || task.status == 'completed' || task.status == 'finalizing') return
+  // 等待目录/原生取消时仍可能显示 pause，重复暂停也必须作废旧恢复。
+  resumeRequests.delete(task)
+  if (task.status == 'pause') return
   const nativeId = task.nativeId
   task.status = 'pause'
   cancelTaskUrl(task)
@@ -800,24 +804,35 @@ const retryTaskInternal = async(id: string, persist: boolean, process: boolean) 
   const task = tasks.find(item => item.id == id)
   if (!task || task.status == 'completed' || task.status == 'finalizing') return
   if (resumeFinalization(task)) return
+  const request = Symbol('download-resume')
+  resumeRequests.set(task, request)
+  const isCurrent = () => resumeRequests.get(task) === request && tasks.includes(task) &&
+    task.status !== 'completed' && task.status !== 'finalizing' && !task.pendingCompletion
   cancelTaskUrl(task)
-  const directory = await getDownloadPath()
-  if (!directory) throw new Error(global.i18n.t('download_path_required'))
-  task.directoryUri = directory.uri
-  // 先把旧的原生任务撤掉再重下：入队用的是同名唯一任务（REPLACE 会取消旧的），
-  // 但旧 worker 可能正卡在写中转文件 / 复制那一步，等它停了再开始，
-  // 免得两个任务同时读写同一个 .part。deletePartial=false，保留断点续传的进度。
-  if (task.nativeId) await removeNativeDownload(task.nativeId, task.id, false).catch(() => {})
-  task.nativeId = undefined
-  task.status = 'waiting'
-  task.error = undefined
-  task.progress.speed = ''
-  dirtyTasks.add(task.id)
-  if (persist) {
-    await persistNow()
-    notify()
+  try {
+    const directory = await getDownloadPath()
+    if (!isCurrent()) return
+    if (!directory) throw new Error(global.i18n.t('download_path_required'))
+    // 等旧 worker 停止后才复用 .part；保留断点续传的进度。
+    if (task.nativeId) await removeNativeDownload(task.nativeId, task.id, false).catch(() => {})
+    if (!isCurrent()) return
+    task.directoryUri = directory.uri
+    task.nativeId = undefined
+    task.status = 'waiting'
+    task.error = undefined
+    task.progress.speed = ''
+    dirtyTasks.add(task.id)
+    if (persist) {
+      await persistNow()
+      if (!isCurrent()) return
+      notify()
+    }
+    if (process) void processQueue().catch(logDownloadError)
+  } catch (error) {
+    if (isCurrent()) throw error
+  } finally {
+    if (resumeRequests.get(task) === request) resumeRequests.delete(task)
   }
-  if (process) void processQueue().catch(logDownloadError)
 }
 
 export const retryTask = async(id: string) => retryTaskInternal(id, true, true)
@@ -857,7 +872,7 @@ export const removeTasks = async(ids: string[], deleteFile = false) => {
     try {
       const historyTargets = await removeDownloadHistory(idSet, deleteFile)
       tasks.splice(0, tasks.length, ...tasks.filter(task => !idSet.has(task.id)))
-      activeTargets.forEach(task => { cancelTaskUrl(task); speedSamples.delete(task.id) })
+      activeTargets.forEach(task => { resumeRequests.delete(task); cancelTaskUrl(task); speedSamples.delete(task.id) })
       await forEachFileOperation(activeTargets, async task =>
         removeNativeDownload(task.nativeId, task.id, task.status != 'completed').catch(() => {}),
       )
