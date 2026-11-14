@@ -306,3 +306,56 @@ test('an explicit temporary-track selection still supersedes pending user playba
   assert.equal(selection.isLatest(), false)
   assert.equal(h.state.playMusicInfo.musicInfo.id, 'temporary')
 })
+
+for (const phase of ['URL resolution', 'native loading']) {
+  for (const action of ['play', 'pause', 'finish clearing']) {
+    test(`a queue clear during ${phase} preserves the later ${action} decision and current resource`, async() => {
+      const loading = deferred()
+      let nativeQueries = 0
+      const h = await setup(phase === 'native loading' ? {
+        beforeCurrent: () => { nativeQueries++; return loading.promise },
+      } : undefined)
+      await h.recommend.startRecommendQueue(recommendations(), 6)
+      await h.advance(200)
+      assert.equal(h.sourceRequests.length, 1)
+      const request = h.sourceRequests[0]
+      if (phase === 'native loading') {
+        request.gate.resolve('https://audio.test/recommend-6.mp3')
+        await flush()
+        assert.ok(nativeQueries > 0, 'the native resource must already be loading before clearing')
+      }
+      const saving = deferred()
+      const save = h.data.saveQQMusicRecommendSession
+      h.data.saveQQMusicRecommendSession = async value => { await saving.promise; await save(value) }
+      const clearing = h.player.clearQueue()
+      await flush()
+      if (action === 'play') h.player.play()
+      else if (action === 'pause') await h.player.pause()
+      saving.resolve()
+      await clearing
+      if (phase === 'URL resolution') request.gate.resolve('https://audio.test/recommend-6.mp3')
+      else loading.resolve()
+      await h.advance(0)
+
+      const plays = () => h.nativeCalls.filter(call => call.action === 'play')
+      if (action === 'finish clearing') {
+        assert.equal(h.queue.getPlayQueue().length, 0)
+        assert.equal(h.state.playMusicInfo.musicInfo, null)
+        assert.equal(h.player.isPlayRequested(), false)
+        assert.equal(plays().length, 0, 'a completed clear must reject the late resource')
+      } else {
+        assert.equal(h.queue.getPlayQueue().length, 20)
+        assert.equal(h.state.playMusicInfo.musicInfo.id, 'recommend-6')
+        if (action === 'pause') {
+          assert.equal(plays().length, 0, 'a cancelled clear must preserve the pause decision')
+          h.player.play()
+          await flush()
+        }
+        assert.equal(h.player.isPlayRequested(), true)
+        assert.deepEqual(plays().map(call => call.id), ['recommend-6'])
+      }
+      assert.equal(h.globals.lx.gettingUrlId, '')
+      assert.equal(h.sourceRequests.length, 1, 'reuse the original resource without requesting the source again')
+    })
+  }
+}
