@@ -23,7 +23,9 @@ const playSongListDetail = async(source: LX.OnlineSource, link: string, playInde
   const playListId = `${source}__${id}`
   let list = (await getListDetail(id, source, 1)).list
   if (!selection()) return
-  if (list.length && (playIndex == null || list.length >= playIndex)) {
+  // 指定首屏末曲时先取完整歌单，保证下一曲也进入实际播放队列。
+  // 播放队列是 TEMP 的快照；后续补写 TEMP 不会扩展已经建立的队列。
+  if (list.length && (playIndex == null || list.length > playIndex)) {
     await setTempList(playListId, list)
     if (!selection()) return
     await playList(LIST_IDS.TEMP, getListPlayIndex(list, playIndex), selection)

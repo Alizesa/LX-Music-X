@@ -2,7 +2,7 @@ const { test } = require('node:test')
 const { harness, song, load, deferred, flush, constants, assert } = require('./helpers/playback.cjs')
 const { hookHost, jsx, elements } = require('./helpers/react.cjs')
 
-const setup = async(kind, stage = 'save') => {
+const setup = async(kind, stage = 'save', playIndex) => {
   const h = await harness()
   await h.player.playList('library', 0)
   const gate = deferred()
@@ -53,7 +53,7 @@ const setup = async(kind, stage = 'save') => {
     start = () => action.handlePlay('fixture', 'tx', stage === 'save' ? songs : undefined)
   } else if (kind === 'deeplink') {
     const action = load('src/core/init/deeplink/playSonglist.ts', dependencies)
-    start = () => action.playSonglist('tx', 'fixture')
+    start = () => action.playSonglist('tx', 'fixture', playIndex)
   } else if (kind === 'online menu') {
     let commits = 0
     h.io.savePlayQueue = async() => { if (++commits === 1 && stage === 'save') await gate.promise }
@@ -237,3 +237,97 @@ for (const kind of ['songlist', 'deeplink']) {
     assert.equal(h.writes.length, 1)
   })
 }
+
+for (const mode of ['list', 'listLoop']) {
+  test(`a deeplink to the first page boundary continues into later pages in ${mode} mode`, async() => {
+    const h = await setup('deeplink', 'full list', 2)
+    h.setting['player.togglePlayMethod'] = mode
+    const pending = h.start()
+    await flush()
+    h.gate.resolve()
+    await pending
+    assert.equal(h.state.playMusicInfo.musicInfo.id, 'second-song')
+    assert.deepEqual(Array.from(h.queue.getPlayQueueMusic(), item => item.id), h.full.map(item => item.id))
+    assert.equal(h.state.playInfo.playerPlayIndex, 1)
+    h.globals.app_event.playerEnded()
+    await flush()
+    assert.equal(h.state.playMusicInfo.musicInfo.id, 'later-page')
+    assert.equal(h.state.playInfo.playerPlayIndex, 2)
+    assert.deepEqual(h.requests, ['first', 'all'])
+  })
+}
+
+test('a deeplink at the first page boundary survives the previous track ending before the full list arrives', async() => {
+  const h = await setup('deeplink', 'full list', 2)
+  const pending = h.start()
+  await flush()
+  h.globals.app_event.playerEnded()
+  await flush()
+  h.gate.resolve()
+  await pending
+  assert.equal(h.state.playMusicInfo.musicInfo.id, 'second-song')
+  assert.deepEqual(Array.from(h.queue.getPlayQueueMusic(), item => item.id), h.full.map(item => item.id))
+})
+
+for (const action of ['pause', 'stop', 'new playback', 'pending selection']) {
+  test(`a deeplink at the first page boundary cannot override a newer ${action}`, async() => {
+    const h = await setup('deeplink', 'full list', 2)
+    const pending = h.start()
+    await flush()
+    let selection
+    if (action === 'pending selection') selection = h.player.createPlaySelection()
+    else if (action === 'new playback') await h.player.playList('library', 2)
+    else await h.player[action]()
+    const current = h.state.playMusicInfo
+    const requested = h.player.isPlayRequested()
+    const queue = [...h.queue.getPlayQueue()]
+    const writes = h.writes.length
+    h.gate.resolve()
+    await pending
+    assert.equal(h.state.playMusicInfo, current)
+    assert.equal(h.player.isPlayRequested(), requested)
+    assert.deepEqual([...h.queue.getPlayQueue()], queue)
+    assert.equal(h.writes.length, writes)
+    if (selection) {
+      assert.equal(selection(), true)
+      await h.player.playList('library', 2, selection)
+      assert.equal(h.state.playMusicInfo.musicInfo.id, 'C')
+    }
+  })
+}
+
+test('a failed full-list read at the deeplink boundary does not leave a truncated replacement queue', async() => {
+  const h = await setup('deeplink', 'full list', 2)
+  const queue = [...h.queue.getPlayQueue()]
+  const current = h.state.playMusicInfo
+  const pending = h.start().catch(error => error)
+  await flush()
+  h.gate.reject(new Error('full list unavailable'))
+  assert.match((await pending).message, /Get play list failed/)
+  assert.equal(h.state.playMusicInfo, current)
+  assert.deepEqual([...h.queue.getPlayQueue()], queue)
+  assert.equal(h.writes.length, 0)
+})
+
+test('a deeplink at the last song still starts when the complete list fits on one page', async() => {
+  const h = await setup('deeplink', 'full list', 2)
+  h.full.pop()
+  const pending = h.start()
+  await flush()
+  h.gate.resolve()
+  await pending
+  assert.equal(h.state.playMusicInfo.musicInfo.id, 'second-song')
+  assert.equal(h.state.playInfo.playerPlayIndex, 1)
+  assert.deepEqual(Array.from(h.queue.getPlayQueueMusic(), item => item.id), h.full.map(item => item.id))
+})
+
+test('a deeplink to a later page selects the requested song from the complete queue', async() => {
+  const h = await setup('deeplink', 'full list', 3)
+  const pending = h.start()
+  await flush()
+  h.gate.resolve()
+  await pending
+  assert.equal(h.state.playMusicInfo.musicInfo.id, 'later-page')
+  assert.equal(h.state.playInfo.playerPlayIndex, 2)
+  assert.deepEqual(Array.from(h.queue.getPlayQueueMusic(), item => item.id), h.full.map(item => item.id))
+})
