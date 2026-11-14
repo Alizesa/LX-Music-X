@@ -204,3 +204,178 @@ test('cancelled updater promises release callback payloads and manifests while n
   `], { cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 15000 })
   assert.equal(result.status, 0, result.stderr || result.stdout)
 })
+
+for (const phase of ['native failure', 'integrity failure', 'installation retry']) {
+  for (const outcome of ['resolve', 'reject']) {
+    test(`cancelling already-started ${phase} cleanup settles before deletion can ${outcome}`, async() => {
+      const h = updateDownloadHarness()
+      const deletion = deferred()
+      let deleting = false
+      const remove = h.fileApi.unlink
+      h.fileApi.unlink = async file => { deleting = true; await deletion.promise; await remove(file) }
+      let pending
+      if (phase === 'installation retry') {
+        const download = h.updater.downloadNewVersion(manifest())
+        await flush()
+        h.bridge.jobs.values().next().value.resolve({ statusCode: 200, bytesWritten: 12345 })
+        await download
+        h.fileApi.hash = async() => 'c'.repeat(64)
+        pending = observe(h.updater.updateApp())
+      } else {
+        if (phase === 'integrity failure') h.fileApi.hash = async() => 'c'.repeat(64)
+        pending = observe(h.updater.downloadNewVersion(manifest()))
+        await flush()
+        const job = h.bridge.jobs.values().next().value
+        if (phase === 'native failure') job.reject(new Error('native failure'))
+        else job.resolve({ statusCode: 200, bytesWritten: 12345 })
+      }
+      await flush()
+      assert.equal(deleting, true)
+      assert.equal(pending.settled, false)
+      h.updater.cancelUpdateDownload()
+      await flush()
+      assert.equal(pending.settled, true)
+      assert.match(pending.error.message, /UPDATE_CANCELLED/)
+      deletion[outcome](outcome === 'reject' ? new Error('late unlink failure') : undefined)
+      await flush()
+      assert.equal(h.installs.length, phase === 'installation retry' ? 1 : 0)
+    })
+  }
+}
+
+for (const outcome of ['resolve', 'reject']) {
+  test(`a replacement download does not repeat or await failed cleanup that will ${outcome} later`, async() => {
+    const h = updateDownloadHarness()
+    const deletion = deferred()
+    const remove = h.fileApi.unlink
+    let deletions = 0
+    h.fileApi.unlink = async file => { deletions++; await deletion.promise; await remove(file) }
+    const old = observe(h.updater.downloadNewVersion(manifest()))
+    await flush()
+    const oldJob = h.bridge.jobs.values().next().value
+    oldJob.reject(new Error('native failure'))
+    await flush()
+    assert.equal(deletions, 1)
+    h.updater.cancelUpdateDownload()
+    await flush()
+    const next = h.updater.downloadNewVersion(manifest('1.9.4', 100004))
+    await flush()
+    assert.equal(h.bridge.jobs.size, 2, 'an already deleting old path must not block or duplicate cleanup for the replacement')
+    assert.equal(deletions, 1)
+    const newJob = [...h.bridge.jobs.values()][1]
+    newJob.resolve({ statusCode: 200, bytesWritten: 12345 })
+    await next
+    assert.equal(old.settled, true)
+    deletion[outcome](outcome === 'reject' ? new Error('late unlink failure') : undefined)
+    await flush()
+    h.fileApi.unlink = remove
+    await h.updater.cleanupUpdateDownloads()
+    assert.equal(h.updater.hasDownloadedUpdate('v1.9.4'), true)
+    assert.equal(h.files.size, 1)
+    assert.equal(h.files.has(newJob.options.toFile), true)
+    assert.deepEqual(h.removals, [oldJob.options.toFile])
+  })
+}
+
+test('cancellation releases manifests and callbacks retained by already-started failure cleanup', () => {
+  const result = spawnSync(process.execPath, ['--expose-gc', '-e', `
+    const assert = require('node:assert/strict')
+    const { updateDownloadHarness } = require('./tests/helpers/update-download.cjs')
+    const { manifest } = require('./tests/helpers/release.cjs')
+    const { deferred, flush } = require('./tests/helpers/load.cjs')
+    async function check(phase) {
+      const h = updateDownloadHarness(), deletion = deferred(), references = []
+      let deleting = false, settled = false
+      h.fileApi.unlink = () => { deleting = true; return deletion.promise }
+      const start = () => {
+        const candidate = manifest(), payload = { rows: new Array(10000).fill('progress') }
+        references.push(new WeakRef(candidate), new WeakRef(payload))
+        return h.updater.downloadNewVersion(candidate, () => payload.rows.length)
+      }
+      let operation
+      if (phase === 'installation') {
+        const initial = start()
+        await flush()
+        h.bridge.jobs.values().next().value.resolve({ statusCode: 200, bytesWritten: 12345 })
+        await initial
+        h.fileApi.hash = async() => 'c'.repeat(64)
+        operation = h.updater.updateApp()
+      } else {
+        if (phase === 'integrity') h.fileApi.hash = async() => 'c'.repeat(64)
+        operation = start()
+      }
+      const result = operation.catch(error => { settled = true; return error.message })
+      await flush()
+      if (phase !== 'installation') {
+        const job = h.bridge.jobs.values().next().value
+        if (phase === 'native') job.reject(new Error('native failure'))
+        else job.resolve({ statusCode: 200, bytesWritten: 12345 })
+        await flush()
+      }
+      assert.equal(deleting, true)
+      h.updater.cancelUpdateDownload()
+      await flush()
+      global.gc()
+      assert.equal(settled, true)
+      assert.ok(references.every(reference => reference.deref() === undefined), phase + ' cleanup retained a manifest or callback')
+      assert.equal(await result, 'UPDATE_CANCELLED')
+      deletion.reject(new Error('late unlink failure'))
+      await flush()
+    }
+    ;(async() => { for (const phase of ['native', 'integrity', 'installation']) await check(phase) })()
+      .catch(error => { console.error(error); process.exitCode = 1 })
+  `], { cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 15000 })
+  assert.equal(result.status, 0, result.stderr || result.stdout)
+})
+
+test('cancelled native verification and installer queries retain only scalar inputs', () => {
+  const result = spawnSync(process.execPath, ['--expose-gc', '-e', `
+    const assert = require('node:assert/strict')
+    const { updateDownloadHarness } = require('./tests/helpers/update-download.cjs')
+    const { manifest } = require('./tests/helpers/release.cjs')
+    const { deferred, flush } = require('./tests/helpers/load.cjs')
+    async function check(stage, retry) {
+      const h = updateDownloadHarness(), waiting = deferred(), references = []
+      let entered = false, settled = false
+      const start = () => {
+        const candidate = manifest(), payload = { rows: new Array(10000).fill('progress') }
+        references.push(new WeakRef(candidate), new WeakRef(payload))
+        return h.updater.downloadNewVersion(candidate, () => payload.rows.length)
+      }
+      if (retry) {
+        const download = start()
+        await flush()
+        h.bridge.jobs.values().next().value.resolve({ statusCode: 200, bytesWritten: 12345 })
+        await download
+      }
+      const wait = () => { entered = true; return waiting.promise }
+      let value
+      if (stage === 'stat') { h.fileApi.stat = wait; value = { size: 12345 } }
+      if (stage === 'hash') { h.fileApi.hash = wait; value = 'b'.repeat(64) }
+      if (stage === 'installer') {
+        let calls = 0
+        value = { version: '1.9.2', versionCode: 79003 }
+        h.nativeApi.getInstalledAppInfo = async() => !retry && ++calls === 1 ? value : wait()
+      }
+      const operation = (retry ? h.updater.updateApp() : start()).catch(error => { settled = true; return error.message })
+      await flush()
+      if (!retry) {
+        h.bridge.jobs.values().next().value.resolve({ statusCode: 200, bytesWritten: 12345 })
+        await flush()
+      }
+      assert.equal(entered, true)
+      h.updater.cancelUpdateDownload()
+      await flush()
+      global.gc()
+      assert.equal(settled, true)
+      assert.ok(references.every(reference => reference.deref() === undefined), stage + ' retained a cancelled manifest or progress callback')
+      assert.equal(await operation, 'UPDATE_CANCELLED')
+      waiting.resolve(value)
+      await flush()
+      assert.equal(h.installs.length, retry ? 1 : 0)
+    }
+    ;(async() => { for (const stage of ['stat', 'hash', 'installer']) for (const retry of [false, true]) await check(stage, retry) })()
+      .catch(error => { console.error(error); process.exitCode = 1 })
+  `], { cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 15000 })
+  assert.equal(result.status, 0, result.stderr || result.stdout)
+})

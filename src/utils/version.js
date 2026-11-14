@@ -111,6 +111,7 @@ let downloaded = null
 let installation = null
 let cleanupQueue = Promise.resolve()
 const protectedFiles = new Set()
+const deletingFiles = new Set()
 const downloadTasks = new Set()
 
 const settleDownloadWaiter = (waiter, failed, value) => {
@@ -164,7 +165,7 @@ export const cleanupUpdateDownloads = (installedVersion) => {
       const legacy = entry.name === `${name}.apk`
       if (!version && !legacy) continue
       const path = `${temporaryDirectoryPath}/${entry.name}`
-      if (protectedFiles.has(path)) continue
+      if (protectedFiles.has(path) || deletingFiles.has(path)) continue
       // Startup removes installed/obsolete APKs and day-old abandoned files.
       // Starting a replacement download can also discard unclaimed future APKs.
       const expired = Number.isFinite(entry.lastModified) && entry.lastModified > 0 && Date.now() - entry.lastModified > 86400000
@@ -174,14 +175,20 @@ export const cleanupUpdateDownloads = (installedVersion) => {
   return cleanupQueue
 }
 
-const discardDownload = async({ path }) => {
+// Pass scalars to async I/O helpers: destructured object parameters can still
+// retain the original file/manifest while a native Promise is pending.
+const discardDownload = async(path) => {
   if (downloaded?.path === path) downloaded = null
-  if (protectedFiles.delete(path)) await unlink(path).catch(() => {})
+  if (!protectedFiles.delete(path)) return
+  // A cancelled caller releases its waiter immediately. Keep only the path
+  // while deletion runs so a replacement download cannot queue it again.
+  deletingFiles.add(path)
+  try { await unlink(path).catch(() => {}) } finally { deletingFiles.delete(path) }
 }
 
 const finishNativeDownload = async(completion) => {
   completion.settled = true
-  if (completion.discard) await discardDownload(completion)
+  if (completion.discard) await discardDownload(completion.path)
 }
 
 export const hasDownloadedUpdate = tag => downloaded !== null && downloaded.manifest.tag === tag
@@ -198,13 +205,13 @@ export const cancelUpdateDownload = () => {
   downloadJobId = null
   const previous = downloaded
   downloaded = null
-  if (previous) discardDownload(previous).catch(() => {})
+  if (previous) discardDownload(previous.path).catch(() => {})
 }
 
 const assertCurrent = generation => {
   if (generation !== downloadGeneration) throw new Error('UPDATE_CANCELLED')
 }
-const verifyDownload = async({ path, asset: { size, sha256 } }, generation) => {
+const verifyDownload = async(path, size, sha256, generation) => {
   const details = await stat(path)
   assertCurrent(generation)
   if (details.size !== size || (await hash(path, 'sha256')).toLowerCase() !== sha256) {
@@ -212,11 +219,11 @@ const verifyDownload = async({ path, asset: { size, sha256 } }, generation) => {
   }
 }
 
-const openInstaller = async({ path, manifest: { version, versionCode } }, generation) => {
+const openInstaller = async(path, version, versionCode, generation) => {
   const installed = await getInstalledAppInfo()
   assertCurrent(generation)
   if (!canUpgrade(installed.version, installed.versionCode, { version, versionCode })) {
-    await discardDownload({ path })
+    await discardDownload(path)
     throw new Error('APK is no longer an eligible upgrade')
   }
   await installApk(path, APP_PROVIDER_NAME)
@@ -229,13 +236,11 @@ export const updateApp = async() => {
   const generation = downloadGeneration
   const task = createDownloadTask(null)
   const promise = (async() => {
-    try { await waitForDownloadTask(task, verifyDownload(file, generation)) } catch (error) {
-      const cleanup = discardDownload(file)
-      if (task.cancelled) cleanup.catch(() => {})
-      else await cleanup
+    try { await waitForDownloadTask(task, verifyDownload(file.path, file.asset.size, file.asset.sha256, generation)) } catch (error) {
+      await waitForDownloadTask(task, discardDownload(file.path))
       throw error
     }
-    await waitForDownloadTask(task, openInstaller(file, generation))
+    await waitForDownloadTask(task, openInstaller(file.path, file.manifest.version, file.manifest.versionCode, generation))
   })()
   installation = { file, promise }
   try { await promise } finally {
@@ -274,22 +279,18 @@ export const downloadNewVersion = async(info, onDownload = () => {}) => {
       const result = await waitForDownloadTask(task, promise.finally(finishNativeDownload.bind(null, completion)))
       assertCurrent(generation)
       if (result.statusCode !== 200 || result.bytesWritten !== asset.size) throw new Error('UPDATE_INTEGRITY_FAILED')
-      await waitForDownloadTask(task, verifyDownload(file, generation))
+      await waitForDownloadTask(task, verifyDownload(file.path, asset.size, asset.sha256, generation))
       assertCurrent(generation)
       downloaded = file
     } catch (error) {
       if (completion && !completion.settled) completion.discard = true
-      else {
-        const cleanup = discardDownload(file)
-        if (task.cancelled) cleanup.catch(() => {})
-        else await cleanup
-      }
+      else await waitForDownloadTask(task, discardDownload(file.path))
       throw error
     } finally {
       if (generation === downloadGeneration) downloadJobId = null
     }
     // Installer failures preserve the verified APK for an explicit retry.
-    const promise = waitForDownloadTask(task, openInstaller(file, generation))
+    const promise = waitForDownloadTask(task, openInstaller(file.path, manifest.version, manifest.versionCode, generation))
     installation = { file, promise }
     try { await promise } finally {
       if (installation?.promise === promise) installation = null
