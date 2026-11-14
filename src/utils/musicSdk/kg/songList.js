@@ -522,15 +522,24 @@ export default {
 
   async getUserListDetail4(songInfo, chain, page) {
     const limit = 100
-    const [listInfo, list] = await Promise.all([
+    const [listInfo, result] = await Promise.all([
       this.getListInfoByChain(chain),
       this.getUserListDetailById(songInfo.id, page, limit),
     ])
+    const end = (page - 1) * limit + result.rawCount
+    let total = [listInfo.songcount, listInfo.count, result.total, songInfo.count, songInfo.total]
+      .map(Number).find(value => Number.isSafeInteger(value) && value >= end)
+    if (total == null) {
+      // 转换歌曲详情会过滤无效行，结束判断必须使用源页的原始条数。
+      // 满页但没有可靠总数时交给已有 PC 备用链路，不能悄悄截断为 100 首。
+      if (result.rawCount >= limit) throw new Error('Missing legacy songlist total')
+      total = end
+    }
     return {
-      list: list || [],
+      list: result.list,
       page,
       limit,
-      total: list.length ?? 0,
+      total,
       source: 'kg',
       info: {
         name: listInfo.specialname,
@@ -573,10 +582,12 @@ export default {
       },
     })
 
-    // console.log(info)
-    let result = await this.getMusicInfos(info.info)
-    // console.log(info, songInfo)
-    return result
+    if (!Array.isArray(info.info)) throw new Error('get list error')
+    return {
+      list: await this.getMusicInfos(info.info),
+      rawCount: info.info.length,
+      total: info.total ?? info.count ?? info.songcount,
+    }
   },
 
   async getUserListDetail(link, page = 1, retryNum = 0) {

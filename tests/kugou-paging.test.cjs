@@ -6,12 +6,91 @@ const { load, deferred, flush } = require('./helpers/load.cjs')
 const song = id => ({ id, hash: id, source: 'kg', name: id })
 const rows = (page, limit, total) => Array.from({ length: Math.max(0, Math.min(limit, total - (page - 1) * limit)) }, (_, i) => song(String((page - 1) * limit + i)))
 const sdk = () => load('src/utils/musicSdk/kg/songList.js', {
-  '../../request': {}, '../../index': { formatPlayCount: String }, './vendors/infSign.min': {}, './util': { signatureParams: () => 'signature' },
+  '../../request': {},
+  '../../index': { formatPlayCount: String },
+  './vendors/infSign.min': { default: (params, ignored, options) => options.callback({ signature: 'signature' }) },
+  './util': { signatureParams: () => 'signature' },
 }).default
 const core = provider => load('src/core/songlist.ts', {
   '@/store/songlist/action': {},
   '@/utils': { deduplicationList: items => items, toNewMusicInfo: item => item },
   '@/utils/musicSdk': { default: { kg: { songList: provider } } },
+})
+
+const legacyShare = ({ total = 250, totalAt = 'metadata', filter = false, fallbackFails = false } = {}) => {
+  const provider = sdk()
+  const requested = []
+  let fallbacks = 0
+  const select = list => filter ? list.filter(item => Number(item.id) % 2 === 0) : list
+  provider.getListInfoByChain = async() => ({ specialname: 'Legacy', ...(totalAt === 'metadata' ? { songcount: String(total) } : {}) })
+  provider.createHttp = async url => {
+    if (url.includes('/schain/')) return { id: 'legacy', ...(totalAt === 'transfer' ? { count: total } : {}) }
+    assert.ok(url.includes('/get_other_list_file'))
+    const params = new URL(url).searchParams
+    const page = Number(params.get('page'))
+    const limit = Number(params.get('pagesize'))
+    assert.equal(limit, 100)
+    requested.push(page)
+    return {
+      info: rows(page, limit, total),
+      ...(totalAt === 'total' ? { total } : totalAt === 'count' ? { count: String(total) } : {}),
+    }
+  }
+  provider.getMusicInfos = async list => select(list)
+  provider.getUserListDetailByPcChain = async() => {
+    fallbacks++
+    if (fallbackFails) throw new Error('PC fallback unavailable')
+    return select(rows(1, total, total))
+  }
+  return { api: core(provider), id: 'https://m.kugou.com/share?chain=legacy', requested, fallbacks: () => fallbacks }
+}
+
+for (const totalAt of ['metadata', 'total', 'count', 'transfer']) {
+  test(`legacy chain paging preserves the ${totalAt} total across source pages`, async() => {
+    const h = legacyShare({ totalAt })
+    const first = await h.api.getListDetail(h.id, 'kg', 1)
+    assert.equal(first.total, 250)
+    assert.equal(first.list.length, 30)
+    const all = await h.api.getListDetailAll('kg', h.id)
+    assert.deepEqual(Array.from(all, item => item.id), rows(1, 250, 250).map(item => item.id))
+    assert.deepEqual(h.requested, [1, 2, 3])
+    assert.equal(h.fallbacks(), 0)
+  })
+}
+
+test('legacy paging uses raw source counts when song-detail filtering removes rows', async() => {
+  const h = legacyShare({ filter: true })
+  const all = await h.api.getListDetailAll('kg', h.id)
+  assert.equal(all.length, 125)
+  assert.deepEqual(h.requested, [1, 2, 3])
+  assert.equal((await h.api.getListDetail(h.id, 'kg', 1)).total, 125)
+  assert.equal(h.fallbacks(), 0)
+})
+
+for (const filter of [false, true]) {
+  test(`a full legacy page without a total uses the complete fallback${filter ? ' after filtering' : ''}`, async() => {
+    const h = legacyShare({ totalAt: 'missing', filter })
+    const all = await h.api.getListDetailAll('kg', h.id)
+    assert.equal(all.length, filter ? 125 : 250)
+    assert.deepEqual(h.requested, [1])
+    assert.equal(h.fallbacks(), 1)
+  })
+}
+
+for (const total of [0, 75]) {
+  test(`a short legacy page of ${total} rows can finish without a declared total`, async() => {
+    const h = legacyShare({ total, totalAt: 'missing' })
+    const all = await h.api.getListDetailAll('kg', h.id)
+    assert.equal(all.length, total)
+    assert.deepEqual(h.requested, [1])
+    assert.equal(h.fallbacks(), 0)
+  })
+}
+
+test('a legacy full page with neither a total nor a working fallback fails instead of truncating', async() => {
+  const h = legacyShare({ totalAt: 'missing', fallbackFails: true })
+  await assert.rejects(h.api.getListDetailAll('kg', h.id), /PC fallback unavailable/)
+  assert.deepEqual(h.requested, [1])
 })
 
 test('a large global-collection share loads one source page and reuses it across ten UI pages', async() => {
