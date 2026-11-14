@@ -429,13 +429,104 @@ export const getDownloadTasks = async(): Promise<LX.Download.DownloadTask[]> => 
 /** @deprecated 旧版单 key，仅用于迁移读取/删除 */
 export const removeDownloadTasks = async() => removeData(downloadTasksKey)
 
-export const getDownloadActiveTasks = async(): Promise<LX.Download.DownloadTask[]> => {
-  return await getData<LX.Download.DownloadTask[]>(downloadTasksActiveKey) ?? []
+// 活跃下载按任务保存。只缓存轻量 ID 索引；状态变化不再序列化整表歌曲元数据。
+let downloadActiveIds: string[] | null | undefined
+let downloadActiveIdSet = new Set<string>()
+let downloadActiveOperations: Promise<void> = Promise.resolve()
+let downloadActiveOrphansPruned = false
+let downloadActiveLegacyRemoved = false
+const activeTaskKey = (id: string) => storageDataPrefix.downloadActiveItem + encodeURIComponent(id)
+const withDownloadActiveStorage = async<T>(work: () => Promise<T>): Promise<T> => {
+  const result = downloadActiveOperations.then(work)
+  downloadActiveOperations = result.then(() => {}, () => {})
+  return result
+}
+const loadDownloadActiveIds = async() => {
+  if (downloadActiveIds !== undefined) return downloadActiveIds
+  const index = await getData<{ v: number, ids: string[] }>(storageDataPrefix.downloadActiveIndex)
+  if (index == null) {
+    // JSON 损坏在通用存储层返回 null；已存在的损坏索引不能当成首次迁移。
+    if ((await getAllKeys()).includes(storageDataPrefix.downloadActiveIndex)) throw new Error('Invalid active download index')
+    // 所有入口都经 withDownloadActiveStorage 串行调用。
+    // eslint-disable-next-line require-atomic-updates
+    downloadActiveIds = null
+  } else {
+    if (index.v !== 1 || !Array.isArray(index.ids) || !index.ids.every(id => typeof id === 'string') || new Set(index.ids).size !== index.ids.length) {
+      throw new Error('Invalid active download index')
+    }
+    // eslint-disable-next-line require-atomic-updates
+    downloadActiveIds = index.ids
+    downloadActiveIdSet = new Set(index.ids)
+  }
+  return downloadActiveIds
+}
+const removeActiveLegacy = async() => {
+  if (downloadActiveLegacyRemoved) return
+  try {
+    await removeData(downloadTasksActiveKey)
+    // withDownloadActiveStorage 保证旧数据清理不会并发执行。
+    // eslint-disable-next-line require-atomic-updates
+    downloadActiveLegacyRemoved = true
+  } catch (error) { console.warn('[Download] legacy active cleanup:', error) }
 }
 
-export const saveDownloadActiveTasks = async(tasks: LX.Download.DownloadTask[]) => {
-  await saveData(downloadTasksActiveKey, tasks)
-}
+export const getDownloadActiveTasks = async(): Promise<LX.Download.DownloadTask[]> => withDownloadActiveStorage(async() => {
+  const ids = await loadDownloadActiveIds()
+  if (ids === null) {
+    // 首次成功保存会将旧数组和新索引/记录一起迁移，失败时旧数组仍可恢复。
+    const legacy = await getData<LX.Download.DownloadTask[]>(downloadTasksActiveKey)
+    if (legacy != null && !Array.isArray(legacy)) throw new Error('Invalid legacy active downloads')
+    return legacy ?? []
+  }
+  const tasks: LX.Download.DownloadTask[] = []
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const page = ids.slice(offset, offset + 100)
+    const records = await getDataMultiple(page.map(activeTaskKey))
+    records.forEach(([, value], index) => {
+      const task = value as LX.Download.DownloadTask | null
+      if (!task || task.id !== page[index]) throw new Error('Missing or invalid active download: ' + page[index])
+      tasks.push(task)
+    })
+  }
+  if (!downloadActiveOrphansPruned) {
+    try {
+      const keep = new Set(ids.map(activeTaskKey))
+      const orphans = (await getAllKeys()).filter(key => key.startsWith(storageDataPrefix.downloadActiveItem) && !keep.has(key))
+      if (orphans.length) await removeDataMultiple(orphans)
+      // 扫描、删除和后续保存共用同一条队列。
+      // eslint-disable-next-line require-atomic-updates
+      downloadActiveOrphansPruned = true
+    } catch (error) { console.warn('[Download] orphan active cleanup:', error) }
+  }
+  await removeActiveLegacy()
+  return tasks
+})
+
+/** changedIds 省略表示完整替换；运行中只保存脏任务，成员变化与新记录原子提交。 */
+export const saveDownloadActiveTasks = async(tasks: LX.Download.DownloadTask[], changedIds?: ReadonlySet<string>) => withDownloadActiveStorage(async() => {
+  const previous = await loadDownloadActiveIds()
+  const ids = tasks.map(task => task.id)
+  const indexChanged = previous === null || previous.length !== ids.length || previous.some((id, index) => id !== ids[index])
+  const records: Array<[string, unknown]> = tasks
+    .filter(task => previous === null || !changedIds || changedIds.has(task.id) || !downloadActiveIdSet.has(task.id))
+    .map(task => [activeTaskKey(task.id), task])
+  if (indexChanged) records.push([storageDataPrefix.downloadActiveIndex, { v: 1, ids }])
+  // saveDataMultiple 在同一原生事务写入索引、完整记录和必要分片。
+  // 保存失败前不改变内存索引，也不删除旧记录。
+  if (records.length) await saveDataMultiple(records)
+  if (indexChanged) {
+    downloadActiveIds = ids
+    downloadActiveIdSet = new Set(ids)
+    const removed = previous?.filter(id => !downloadActiveIdSet.has(id)).map(activeTaskKey) ?? []
+    if (removed.length) {
+      try { await removeDataMultiple(removed) } catch (error) {
+        downloadActiveOrphansPruned = false
+        console.warn('[Download] removed active cleanup:', error)
+      }
+    }
+  }
+  await removeActiveLegacy()
+})
 
 export const getDownloadHistory = async(): Promise<LX.Download.DownloadHistoryItem[]> => {
   return await getData<LX.Download.DownloadHistoryItem[]>(downloadTasksHistoryKey) ?? []

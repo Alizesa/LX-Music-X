@@ -67,6 +67,7 @@ export const createLyricScroll = ({ getList, isPlaying, onPositioned, onManualCh
   }
   const cancelPosition = () => {
     clearPositionTimer()
+    if (pending) pending.lines = []
     pending = null
     stopNativeAnimation()
   }
@@ -199,9 +200,10 @@ export const createLyricScroll = ({ getList, isPlaying, onPositioned, onManualCh
       const previous = snapshot
       if (!disposed && previous.lines === next.lines && previous.line === next.line && previous.visible === next.visible) return
       disposed = false
-      snapshot = next
+      snapshot = next.visible ? next : { lines: [], line: -1, visible: false }
       cancelPosition()
       if (previous.lines !== next.lines || !next.visible) {
+        positionedLines = null
         clearResumeTimer()
         setManual(false)
       }
@@ -280,6 +282,8 @@ export const createLyricScroll = ({ getList, isPlaying, onPositioned, onManualCh
     isManual: () => manual,
     dispose() {
       disposed = true
+      snapshot = { lines: [], line: -1, visible: false }
+      positionedLines = null
       clearResumeTimer()
       cancelPosition()
     },

@@ -127,6 +127,7 @@ const harness = ({
   account.getQQMusicPlaylists = playlists
   const favorite = load('src/core/qqMusicFavorite.ts', {
     react: {},
+    '@/utils/hooks/useScreenVisible': {},
     './qqMusic': account,
     '@/utils/data': data,
     './qqMusicPlaylistSongsCache': { dropCachedPlaylistSongs: async() => {} },

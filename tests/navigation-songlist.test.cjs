@@ -181,3 +181,44 @@ test('failed pagination can retry and explicit refresh fetches fresh playlist da
   await h.api.getListDetailAll('tx', 'retry', true)
   assert.deepEqual(h.requests.map(request => request.page), [1, 2, 2, 1, 2])
 })
+
+test('two consumers of the same playlist retain its cache until both release it', async() => {
+  const h = songlistHarness()
+  h.api.retainSonglistDetail('tx', 'shared')
+  h.api.retainSonglistDetail('tx', 'shared')
+  await h.api.getListDetail('shared', 'tx', 1)
+  h.api.releaseSonglistDetail('tx', 'shared')
+  h.api.releaseIdleSonglistCaches()
+  await h.api.getListDetail('shared', 'tx', 1)
+  assert.equal(h.requests.length, 1)
+  h.api.releaseSonglistDetail('tx', 'shared')
+  h.api.releaseIdleSonglistCaches()
+  await h.api.getListDetail('shared', 'tx', 1)
+  assert.equal(h.requests.length, 2)
+})
+
+test('concurrent UI and full-playlist reads share source pages without corrupting the first page', async() => {
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  const h = songlistHarness(async() => gate)
+  const first = h.api.getListDetail('shared', 'tx', 1)
+  const all = h.api.getListDetailAll('tx', 'shared')
+  await new Promise(resolve => setImmediate(resolve))
+  release()
+  assert.deepEqual(ids((await first).list), expectedIds('shared', 1, 30))
+  assert.deepEqual(ids(await all), expectedIds('shared'))
+  assert.deepEqual(h.requests.map(request => request.page), [1, 2])
+})
+
+test('cache pressure cannot evict a full-playlist load between its source pages', async() => {
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  const h = songlistHarness(async({ page }) => { if (page === 1) await gate })
+  const pending = Array.from({ length: 10 }, (_, i) => h.api.getListDetailAll('tx', `list-${i}`))
+  await new Promise(resolve => setImmediate(resolve))
+  h.api.releaseIdleSonglistCaches()
+  release()
+  const lists = await Promise.all(pending)
+  lists.forEach((list, index) => { assert.deepEqual(ids(list), expectedIds(`list-${index}`)) })
+  assert.equal(h.requests.length, 20)
+})

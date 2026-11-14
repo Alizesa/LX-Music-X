@@ -43,6 +43,7 @@ const harness = (saved = {}) => {
     '@/store/player/state': { default: state },
     '@/store/player/action': {
       default: {
+        prunePlayedList() {},
         updatePlayIndex: (playIndex, playerPlayIndex) => { Object.assign(state.playInfo, { playIndex, playerPlayIndex }) },
       },
     },

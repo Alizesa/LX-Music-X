@@ -19,6 +19,9 @@ const clearItemMetadata = (item: LX.Player.PlayQueueItem) => {
 }
 
 const commit = async() => {
+  // 用当前队列的 ID 保留仍有用的随机去重/回退记录；
+  // 替换、删除和推荐裁剪都必须同步释放已不属于队列的歌曲。
+  playerActions.prunePlayedList(LIST_IDS.PLAY_QUEUE, queue)
   const first = queue[0]
   // 只转移一次元信息，不能让移到后面的旧队首继续携带完整批次。
   if (metadataOwner && metadataOwner !== first) clearItemMetadata(metadataOwner)

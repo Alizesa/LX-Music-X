@@ -7,6 +7,8 @@ import { stopScrollAnimation, supportsScrollAnimationCancellation } from '@/util
 import { type PlayLineType } from './PlayLine'
 import { createLyricScroll } from './lyricScroll'
 
+const EMPTY_LINES: Line[] = []
+
 export const useLyricScroll = (lyricLines: Line[], line: number, showProgress: boolean) => {
   const visible = useScreenVisible()
   const flatListRef = useRef<FlatList<Line>>(null)
@@ -30,17 +32,22 @@ export const useLyricScroll = (lyricLines: Line[], line: number, showProgress: b
   }), [])
 
   useLayoutEffect(() => {
-    if (linesRef.current !== lyricLines) {
+    const lines = visible ? lyricLines : EMPTY_LINES
+    if (!visible || linesRef.current !== lines) {
       layoutRef.current.lineHeights = []
-      linesRef.current = lyricLines
+      setPositionedLines(null)
     }
-    playLineRef.current?.updateLyricLines(lyricLines)
-    controller.update({ lines: lyricLines, line, visible })
+    linesRef.current = lines
+    playLineRef.current?.updateLyricLines(lines)
+    playLineRef.current?.updateLayoutInfo(layoutRef.current)
+    // 重新订阅时等待当前位置校准，避免先显示第 0 行再跳到当前句。
+    controller.update({ lines, line, visible: visible && line >= 0 })
   }, [controller, line, lyricLines, visible])
 
   useLayoutEffect(() => () => { controller.dispose() }, [controller])
 
   useEffect(() => {
+    if (!visible) return
     const frame = requestAnimationFrame(() => {
       playLineRef.current?.updateLayoutInfo(layoutRef.current)
       playLineRef.current?.updateLyricLines(lyricLines)
@@ -48,7 +55,7 @@ export const useLyricScroll = (lyricLines: Line[], line: number, showProgress: b
       if (controller.isManual()) playLineRef.current?.setVisible(true)
     })
     return () => { cancelAnimationFrame(frame) }
-  }, [controller, lyricLines, showProgress])
+  }, [controller, lyricLines, showProgress, visible])
 
   const handleScroll = useCallback(({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollInfoRef.current = nativeEvent

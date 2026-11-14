@@ -3,6 +3,7 @@ import { filterVisiblePlaylists, getQQMusicPlaylistSongs, getQQMusicPlaylists, g
 import { getQQMusicLikedSongsCache, getQQMusicLikedSongsStale, getQQMusicPlaylistsCache, removeQQMusicLikedSongsCache, removeQQMusicLikedSongsStale, saveQQMusicLikedSongsCache, saveQQMusicLikedSongsStale } from '@/utils/data'
 import { clearPlaylistSongsCache, dropCachedPlaylistSongs, getPlaylistSongsCacheVersion } from './qqMusicPlaylistSongsCache'
 import { toast } from '@/utils/tools'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 // 「我喜欢」是 dirid=201 的虚拟歌单
 const LIKED_DIRID = '201'
@@ -59,6 +60,7 @@ const readSongType = (musicInfo: LX.Music.MusicInfo_tx) => {
 let likedSongs: LX.Music.MusicInfoOnline[] | null = null
 let likedIds: Set<string> | null = null
 let fetchPromise: Promise<void> | null = null
+let cacheRead: Promise<LX.Music.MusicInfoOnline[]> | null = null
 
 // 完整数组只在「我喜欢」页打开期间保留：页面挂载 retain、卸载 release。
 // id 集合（心形状态）始终保留，释放数组不影响任何心形显示。
@@ -140,6 +142,30 @@ export const releaseQQMusicLikedSongs = (reason: string) => {
   maybeReleaseLikedSongs()
 }
 
+const readLikedSongsCache = async() => {
+  if (!cacheRead) {
+    const version = likedSessionVersion
+    const reading = (async() => {
+      while (true) {
+        if (version !== likedSessionVersion) return []
+        const writes = likedCacheQueue
+        await writes.catch(() => {})
+        if (version !== likedSessionVersion) return []
+        if (writes !== likedCacheQueue) continue
+        const songs = await getQQMusicLikedSongsCache()
+        if (version !== likedSessionVersion) return []
+        // 读取中途有新的增删/清理，等其落盘后再读，不能把旧数组重新装回内存。
+        if (writes !== likedCacheQueue) continue
+        return songs
+      }
+    })().finally(() => {
+      if (cacheRead === reading) cacheRead = null
+    })
+    cacheRead = reading
+  }
+  return cacheRead
+}
+
 /**
  * 只加载心形状态需要的 id 集合，不把整份歌曲数组留在内存。
  * 「我喜欢」页需要完整数组时走 loadQQMusicLikedSongsCache。
@@ -147,10 +173,7 @@ export const releaseQQMusicLikedSongs = (reason: string) => {
 export const ensureQQMusicLikedIds = async(): Promise<void> => {
   if (likedIds) return
   const version = likedSessionVersion
-  // 等换号清理/在途写落定再读，否则可能读到刚被清掉的旧账号缓存
-  await likedCacheQueue.catch(() => {})
-  if (version !== likedSessionVersion || likedIds != null) return
-  const cached = await getQQMusicLikedSongsCache()
+  const cached = await readLikedSongsCache()
   // 读盘期间换号/清理过：这次读到的可能是旧账号数据，丢弃
   if (version !== likedSessionVersion) return
   // 读盘期间可能已经被页面/刷新加载好了
@@ -181,13 +204,11 @@ export const getQQMusicLikedSongs = () => likedSongs
 export const loadQQMusicLikedSongsCache = async(): Promise<LX.Music.MusicInfoOnline[]> => {
   if (likedSongs) return likedSongs
   const version = likedSessionVersion
-  // 同上：先等清理/在途写完成，避免读到旧账号的缓存
-  await likedCacheQueue.catch(() => {})
-  if (version !== likedSessionVersion) return []
-  const cached = await getQQMusicLikedSongsCache()
+  const cached = await readLikedSongsCache()
   // 读盘期间换号/清理过：不要拿旧账号的数组填进内存
   if (version !== likedSessionVersion) return []
-  if (cached.length) setLikedSongs(cached)
+  if (likedSongs) return likedSongs
+  setLikedSongs(cached)
   return cached
 }
 
@@ -311,6 +332,7 @@ export const clearQQMusicLikedSongs = () => {
   cancelScheduledRelease()
   // 允许新账号重新发起请求；旧请求结束时按身份清理，不会误清新请求
   fetchPromise = null
+  cacheRead = null
   setLikedSongs(null)
   // 排到在途写之后：等旧账号排队的读写跑完再删，避免旧数据在清理后回写
   likedCacheQueue = likedCacheQueue.catch(() => {}).then(async() => {
@@ -756,17 +778,21 @@ const assertPlaylistMember = async(
  */
 export const useQQMusicLiked = (id: string | null | undefined) => {
   const [liked, setLiked] = useState(() => isQQMusicTrackLiked(id))
+  const visible = useScreenVisible()
 
   useEffect(() => {
+    if (!visible) return
     setLiked(isQQMusicTrackLiked(id))
+    if (!id) return
+    let active = true
+    const update = () => { if (active) setLiked(isQQMusicTrackLiked(id)) }
     if (likedIds == null) {
       // 心形只需要 id 集合，不要为了它把整份「我喜欢」数组装进内存
-      void ensureQQMusicLikedIds().then(() => { setLiked(isQQMusicTrackLiked(id)) }).catch(() => {})
+      void ensureQQMusicLikedIds().then(update).catch(() => {})
     }
-    const update = () => { setLiked(isQQMusicTrackLiked(id)) }
     global.app_event.on('qqMusicLikedUpdated', update)
-    return () => { global.app_event.off('qqMusicLikedUpdated', update) }
-  }, [id])
+    return () => { active = false; global.app_event.off('qqMusicLikedUpdated', update) }
+  }, [id, visible])
 
   return liked
 }

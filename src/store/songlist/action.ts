@@ -10,7 +10,8 @@ export default {
     state.listDetailInfo.list = page == 1 ? [...result.list] : [...state.listDetailInfo.list, ...result.list]
     state.listDetailInfo.id = id
     state.listDetailInfo.source = result.source
-    if (page == 1 || (result.total && result.list.length)) state.listDetailInfo.total = result.total
+    // 空尾页也携带有效总数，不能按“本次请求页数 × 每页大小”虚增歌曲数量。
+    if (page == 1 || (Number.isFinite(result.total) && result.total >= 0)) state.listDetailInfo.total = result.total
     else state.listDetailInfo.total = result.limit * page
     state.listDetailInfo.limit = result.limit
     state.listDetailInfo.page = page

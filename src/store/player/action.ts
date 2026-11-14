@@ -75,6 +75,26 @@ export default {
 
     global.state_event.playPlayedListChanged({ ...state.playedList })
   },
+  prunePlayedList(listId: string, queue: readonly LX.Player.PlayQueueItem[]) {
+    if (!state.playedList.length) return
+    const songs = new Map(queue.map(item => [item.musicInfo.id, item.musicInfo]))
+    let changed = false
+    const next: LX.Player.PlayMusicInfo[] = []
+    for (const played of state.playedList) {
+      if (played.listId !== listId) { next.push(played); continue }
+      const musicInfo = songs.get(played.musicInfo.id)
+      if (!musicInfo) { changed = true; continue }
+      if (played.musicInfo === musicInfo) next.push(played)
+      else {
+        // 同一 ID 的新队列可能带来更新的元数据，不再钉住旧歌曲对象。
+        next.push({ ...played, musicInfo })
+        changed = true
+      }
+    }
+    if (!changed) return
+    state.playedList = next
+    global.state_event.playPlayedListChanged([...next])
+  },
   clearPlayedList() {
     state.playedList = []
 

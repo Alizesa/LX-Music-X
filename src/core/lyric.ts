@@ -20,11 +20,13 @@ import playerState from '@/store/player/state'
 import settingState from '@/store/setting/state'
 import { updateNowPlayingTitles } from '@/plugins/player/utils'
 
+let playbackRevision = 0
+
 /**
  * init lyric
  */
 export const init = async() => {
-  return lrcInit()
+  return lrcInit(async() => (await getPosition()) * 1000)
 }
 
 /**
@@ -47,6 +49,7 @@ const handleSetLyric = async(lyric: string, translation = '', romalrc = '') => {
  * @param time play time
  */
 export const handlePlay = (time: number) => {
+  playbackRevision++
   lrcPlay(time)
   void playDesktopLyric(time)
 }
@@ -55,6 +58,7 @@ export const handlePlay = (time: number) => {
  * pause lyric
  */
 export const pause = () => {
+  playbackRevision++
   lrcPause()
   void pauseDesktopLyric()
 }
@@ -63,6 +67,7 @@ export const pause = () => {
  * stop lyric
  */
 export const stop = () => {
+  playbackRevision++
   void handleSetLyric('')
 }
 
@@ -73,13 +78,7 @@ export const stop = () => {
 export const setPlaybackRate = async(playbackRate: number) => {
   lrcSetPlaybackRate(playbackRate)
   await setDesktopLyricPlaybackRate(playbackRate)
-  if (playerState.isPlay) {
-    setTimeout(() => {
-      void getPosition().then((position) => {
-        handlePlay(position * 1000)
-      })
-    })
-  }
+  if (playerState.isPlay) play()
 }
 
 /**
@@ -103,9 +102,12 @@ export const toggleRoma = async(isShowLyricRoma: boolean) => {
 }
 
 export const play = () => {
+  const generation = ++playbackRevision
+  const playback = playerState.playMusicInfo
   void getPosition().then((position) => {
+    if (generation !== playbackRevision || playback !== playerState.playMusicInfo || !playerState.isPlay) return
     handlePlay(position * 1000)
-  })
+  }).catch(() => {})
 }
 
 

@@ -513,7 +513,12 @@ export const moveQueueMusic = async(from: number, to: number) => {
  */
 export const addToPlayQueue = async(list: LX.Player.PlayMusic[]): Promise<number> => {
   const queue = getPlayQueue()
-  const musicList = list.filter(musicInfo => !queue.some(item => item.musicInfo.id == musicInfo.id))
+  const ids = new Set(queue.map(item => item.musicInfo.id))
+  const musicList = list.filter(musicInfo => {
+    if (ids.has(musicInfo.id)) return false
+    ids.add(musicInfo.id)
+    return true
+  })
   if (!musicList.length) return 0
   const { playerListId, playerPlayIndex } = playerState.playInfo
   const index = playerListId == LIST_IDS.PLAY_QUEUE && playerPlayIndex >= 0 && playerPlayIndex < queue.length
@@ -531,6 +536,7 @@ export const clearQueue = async() => {
   // 确认清空后再由 stopPlayback 作废当前取址/原生装载。
   // 等待存档时若被新的播放或暂停取消，当前请求仍须能够完成。
   clearTempPlayeList()
+  clearPlayedList()
   const saved = clearPlayQueue()
   await Promise.all([saved, handleToggleStop(false)])
 }

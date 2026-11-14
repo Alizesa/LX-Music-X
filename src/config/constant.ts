@@ -87,6 +87,8 @@ export const storageDataPrefix = {
   // 旧版：活跃 + 已完成历史同一个数组，仅保留用于迁移
   downloadTasks: '@download_tasks',
   downloadTasksActive: '@download_tasks_active',
+  downloadActiveIndex: '@download_active_index',
+  downloadActiveItem: '@download_active_item__',
   downloadTasksHistory: '@download_tasks_history',
   downloadHistoryItem: '@download_history_item__',
   downloadHistoryMigrated: '@download_history_items_migrated',

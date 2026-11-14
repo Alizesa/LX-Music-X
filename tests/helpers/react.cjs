@@ -58,7 +58,10 @@ const hookHost = () => {
         const tree = component()
         current = null
         frame.connect(tree)
-        frame.effects.forEach(effect => effect())
+        // React 提交后不会保留已执行 effect 队列；测试宿主也要释放旧依赖和 cleanup。
+        const effects = frame.effects
+        frame.effects = []
+        effects.forEach(effect => effect())
         if (!frame.dirty) return tree
       }
       throw new Error('Render did not settle')
