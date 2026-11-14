@@ -302,13 +302,22 @@ const markLiked = async(musicInfo: LX.Music.MusicInfo, liked: boolean, version: 
   try {
     await ensureQQMusicLikedIds()
     if (version !== likedSessionVersion) return
-    const ids = new Set(likedIds ?? [])
-    if (liked) ids.add(musicInfo.id)
-    else ids.delete(musicInfo.id)
     // 先标脏再更新 id 集合：曲目数同步看到 stale 就不会把可能不完整的数量写进歌单缓存
-    await saveQQMusicLikedSongsStale(true)
+    // 标脏也排在同一写队列内，换号清理必须等旧标记写完后再删除。
+    likedCacheQueue = likedCacheQueue.catch(() => {}).then(async() => {
+      if (version !== likedSessionVersion) return
+      await saveQQMusicLikedSongsStale(true)
+    })
+    await likedCacheQueue
     if (version !== likedSessionVersion) return
-    setLikedIds(ids)
+    // 等待期间可能完成了其他增删或重新打开了完整列表，使用此刻的状态应用增量。
+    if (likedSongs) setLikedSongs(applyLiked(likedSongs, musicInfo, liked))
+    else {
+      const ids = new Set(likedIds ?? [])
+      if (liked) ids.add(musicInfo.id)
+      else ids.delete(musicInfo.id)
+      setLikedIds(ids)
+    }
     // 串行读改写，避免快速连点/换号时互相覆盖
     likedCacheQueue = likedCacheQueue.catch(() => {}).then(async() => {
       if (version !== likedSessionVersion) return
