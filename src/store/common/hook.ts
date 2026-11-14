@@ -1,6 +1,5 @@
-import { type COMPONENT_IDS } from '@/config/constant'
 import { useEffect, useState } from 'react'
-import state, { type InitState } from './state'
+import state from './state'
 import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 export const useFontSize = () => {
@@ -28,29 +27,6 @@ export const useStatusbarHeight = () => {
 
   return value
 }
-
-const hasVisible = (visibleNames: COMPONENT_IDS[], ids: InitState['componentIds']) => {
-  const names = Object.keys(ids)
-  return names.length == visibleNames.length ? visibleNames.every(n => names.includes(n)) : false
-}
-export const usePageVisible = (visibleNames: COMPONENT_IDS[], onChange: (visible: boolean) => void) => {
-  useEffect(() => {
-    let visible = hasVisible(visibleNames, state.componentIds)
-    const handlecheck = (ids: InitState['componentIds']) => {
-      const res = hasVisible(visibleNames, ids)
-      // console.log(visible, res, res == visible)
-      if (res == visible) return
-      visible = res
-      onChange(visible)
-    }
-    global.state_event.on('componentIdsUpdated', handlecheck)
-    return () => {
-      global.state_event.off('componentIdsUpdated', handlecheck)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-}
-
 
 export const useNavActiveId = () => {
   const [value, update] = useState(state.navActiveId)
