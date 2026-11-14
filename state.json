@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 5,
+  "sequence": 6,
   "lastStableVersion": "1.9.2",
   "nextTargetVersion": "1.9.3",
   "branches": {
-    "Next": "8a9115adc42c2ad6a1175a95b4ee527f6252c5fb"
+    "Next": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628"
   },
   "events": {},
   "builds": {
@@ -88,6 +88,17 @@
         "desc": "- perf: reduce runtime memory and harden resource lifecycles (8a9115ad)\n- fix: build complete queues for deeplinks at page boundaries (91ab7c7d)\n- fix: preserve user selections around dislike actions (d2b0558e)\n- fix: preserve active playback when queue clearing is cancelled (b41c82c9)\n- fix: keep queue metadata on a single head item (e147ba4a)\n- fix: reject partial matches when migrating legacy recommendation queues (47bcda91)\n- fix: cancel updater failure cleanup without retaining release objects (4e2e522d)\n- fix: preserve user playback intents across automatic track changes (4218c2fc)\n- chore: lint CJS files and normalize the regression tests (1db2ec09)\n- fix: use the supported placeholder in update error details (9dd812fe)\n- docs: clarify the default stable update channel (3f921a6a)\n- fix: guard asynchronous playback across online list entry points (9b7303e0)\n- fix: reuse durable update preferences during startup (4e681e0b)\n- fix: release cancelled updater waiters before native downloads finish (83a1a00a)\n- fix: preserve complete recommendation batch identity across restores (02e8e925)\n- fix: preserve newer playback selections while clearing the queue (6f1cd408)"
       },
       "publishedAt": "2026-11-14T08:05:15.900Z"
+    },
+    "Next/da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628": {
+      "branch": "Next",
+      "sourceSha": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628",
+      "before": "8a9115adc42c2ad6a1175a95b4ee527f6252c5fb",
+      "channel": "next",
+      "sequence": 6,
+      "version": "1.9.3-next.6",
+      "versionCode": 100006,
+      "tag": "v1.9.3-next.6",
+      "status": "allocated"
     }
   },
   "channels": {
