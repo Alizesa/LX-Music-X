@@ -27,7 +27,7 @@ import BackgroundTimer from 'react-native-background-timer'
 import { checkIgnoringBatteryOptimization, checkNotificationPermission, debounceBackgroundTimer, toast } from '@/utils/tools'
 import { LIST_IDS } from '@/config/constant'
 import { setQQMusicTrackLiked } from '@/core/qqMusicFavorite'
-import { addDislikeInfo } from '@/core/dislikeList'
+import { addDislikeInfo, hasDislike } from '@/core/dislikeList'
 import { clearPlayQueue, getPlayQueue, insertPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
 import { parkRecommendQueue } from '@/core/qqMusicRecommendSession'
 import { releaseLocalList, retainLocalList } from '@/core/localList'
@@ -666,11 +666,14 @@ export const playTempPlayMusic = async(index: number): Promise<void> => {
 /**
  * 下一曲
  * @param isAutoToggle 是否自动切换
+ * @param isCurrentSelection 已登记的用户操作；可沿用自动播放模式而不丢失用户选择保护
  * @returns
  */
-export const playNext = async(isAutoToggle = false): Promise<void> => {
-  if (!isAutoToggle) listSelectionGeneration++
+export const playNext = async(isAutoToggle = false, isCurrentSelection?: () => boolean): Promise<void> => {
+  if (!isCurrentSelection && !isAutoToggle) listSelectionGeneration++
   const requestId = listSelectionGeneration
+  const isCurrent = isCurrentSelection ?? (() => isAutoToggle || requestId === listSelectionGeneration)
+  if (!isCurrent()) return
   if (playerState.tempPlayList.length) { // 如果稍后播放列表存在歌曲则直接播放改列表的歌曲
     await selectTempPlayMusic(0)
     return
@@ -726,7 +729,7 @@ export const playNext = async(isAutoToggle = false): Promise<void> => {
     isNext: true,
   })
 
-  if (generation !== selectionGeneration || playMusicInfo !== playerState.playMusicInfo || (!isAutoToggle && requestId !== listSelectionGeneration)) return
+  if (generation !== selectionGeneration || playMusicInfo !== playerState.playMusicInfo || !isCurrent()) return
   if (!filteredList.length) return handleToggleStop(false)
   // let currentIndex: number = filteredList.indexOf(currentList[playInfo.playerPlayIndex])
   if (playerIndex == -1 && filteredList.length) playerIndex = 0
@@ -973,7 +976,8 @@ export const setMusicCollected = async(musicInfo: LX.Music.MusicInfo, liked: boo
 export const dislikeMusic = async() => {
   if (!playerState.playMusicInfo.musicInfo) return
   const minfo = 'progress' in playerState.playMusicInfo.musicInfo ? playerState.playMusicInfo.musicInfo.metadata.musicInfo : playerState.playMusicInfo.musicInfo
+  const selection = createPlaySelection()
   await addDislikeInfo([{ name: minfo.name, singer: minfo.singer }])
-  await playNext(true)
+  if (selection() && hasDislike(playerState.playMusicInfo.musicInfo)) await playNext(true, selection)
 }
 

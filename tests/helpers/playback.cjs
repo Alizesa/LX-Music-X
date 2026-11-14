@@ -35,7 +35,8 @@ const harness = async(options = {}) => {
   const played = load('src/core/player/playedList.ts', { '@/store/player/action': { default: actions } })
   const playerProxy = {}
   const temp = load('src/core/player/tempPlayList.ts', { '@/store/player/action': { default: actions }, '@/store/player/state': { default: state }, './player': playerProxy })
-  const filters = load('src/core/player/utils.ts', { './playedList': played, '@/config/constant': constants, '@/store/dislikeList': { state: { dislikeInfo: { names: new Set(), musicNames: new Set(), singerNames: new Set() } } } })
+  const dislikeState = options.dislikeState ?? { dislikeInfo: { names: new Set(), musicNames: new Set(), singerNames: new Set() } }
+  const filters = load('src/core/player/utils.ts', { './playedList': played, '@/config/constant': constants, '@/store/dislikeList': { state: dislikeState } })
   const nativeCalls = []; const nativeTracks = []; const listeners = new Map()
   let current = null; let known = null; let position = 0
   const emitNative = (name, data) => { setImmediate(() => { for (const fn of listeners.get(name) ?? []) fn(data) }) }
@@ -93,7 +94,7 @@ const harness = async(options = {}) => {
     '@/utils/tools': tools,
     '@/config/constant': constants,
     '@/core/qqMusicFavorite': {},
-    '@/core/dislikeList': {},
+    '@/core/dislikeList': options.dislikeList ?? {},
     './playQueue': queue,
     '@/core/qqMusicRecommendSession': recommendSession,
     '@/core/localList': options.localList ?? {},

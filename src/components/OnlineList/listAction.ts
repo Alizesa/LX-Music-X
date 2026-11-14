@@ -62,10 +62,11 @@ export const handleDislikeMusic = async(musicInfo: LX.Music.MusicInfoOnline) => 
     bgClose: false,
   })
   if (!confirm) return
+  const selection = createPlaySelection()
   await addDislikeInfo([{ name: musicInfo.name, singer: musicInfo.singer }])
   toast(global.i18n.t('lists_dislike_music_add_tip'))
-  if (hasDislike(playerState.playMusicInfo.musicInfo)) {
-    void playNext(true)
+  if (selection() && hasDislike(playerState.playMusicInfo.musicInfo)) {
+    await playNext(true, selection)
   }
 }
 
