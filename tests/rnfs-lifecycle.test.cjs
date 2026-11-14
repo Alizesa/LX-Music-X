@@ -74,7 +74,7 @@ test('update cancellation and retry use the actual RNFS cleanup path', async() =
     updater.cancelUpdateDownload()
     assert.equal(h.listeners.size, 0)
     job.reject(new Error('Download has been aborted'))
-    assert.match((await pending).message, /aborted/)
+    assert.match((await pending).message, /UPDATE_CANCELLED/)
   }
   const pending = updater.downloadNewVersion(candidate)
   await flush()
