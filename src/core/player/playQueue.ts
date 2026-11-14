@@ -8,11 +8,21 @@ let initialized = false
 let sessionId = ''
 let sourceFirstMusicId: string | undefined
 let sourceBatchKey: string | undefined
+let metadataOwner: LX.Player.PlayQueueItem | undefined
 // 推荐续播会无限追加，保留最近一段即可；普通列表建队列不受这个上限影响
 const MAX_PLAY_QUEUE = 500
 
+const clearItemMetadata = (item: LX.Player.PlayQueueItem) => {
+  delete item.sessionId
+  delete item.sourceFirstMusicId
+  delete item.sourceBatchKey
+}
+
 const commit = async() => {
   const first = queue[0]
+  // 只转移一次元信息，不能让移到后面的旧队首继续携带完整批次。
+  if (metadataOwner && metadataOwner !== first) clearItemMetadata(metadataOwner)
+  metadataOwner = first
   if (first) {
     // 元信息随队列落盘，不能随当前队首被裁剪、删除或移动而改变
     first.sessionId = sessionId ||= first.queueId
@@ -40,6 +50,11 @@ export const initPlayQueue = async() => {
   sessionId = queue[0]?.sessionId ?? queue[0]?.queueId ?? ''
   sourceFirstMusicId = queue[0]?.sourceFirstMusicId ?? queue[0]?.musicInfo.id
   sourceBatchKey = queue[0]?.sourceBatchKey
+  if (metadataOwner && metadataOwner !== queue[0]) clearItemMetadata(metadataOwner)
+  metadataOwner = queue[0]
+  // 旧快照可能把元信息复制到了多行。读入时清理一次，随下一次正常
+  // 队列变更一并保存，不为元信息迁移额外增加启动写盘。
+  for (let index = 1; index < queue.length; index++) clearItemMetadata(queue[index])
 }
 
 export const getPlayQueue = () => queue
