@@ -1,11 +1,12 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 6,
-  "lastStableVersion": "1.9.2",
-  "nextTargetVersion": "1.9.3",
+  "sequence": 7,
+  "lastStableVersion": "1.9.3",
+  "nextTargetVersion": "1.9.4",
   "branches": {
-    "Next": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628"
+    "Next": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628",
+    "master": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628"
   },
   "events": {},
   "builds": {
@@ -104,6 +105,17 @@
         "desc": "- fix: guard cache recovery, release promotion and lyric seeking (da7ec1bc)\n- fix: bound runtime caches and cancel stale work (f0b96601)\n- chore: remove test-only APIs and cover the production entry points (4d901108)\n- chore: remove obsolete manual release helpers and metadata (733f6c93)\n- refactor: use the playlist cursor as the single paging path (89d30920)\n- chore: remove unused legacy update and quality helpers (3e087123)\n- chore: remove obsolete playback and visibility hooks (1fdc4104)\n- chore: remove the unused JavaScript scroll animation module (46d508fe)\n- fix: preserve legacy Kugou playlist totals across pages (0196b2e3)\n- fix: merge favorite changes against the latest cached state (0695df25)\n- fix: preserve newer download controls during asynchronous resume (57824456)\n- fix: bind asynchronous download updates to task instances (f55206ce)\n- fix: complete online playback queues without overriding user edits (fe17e32a)"
       },
       "publishedAt": "2026-11-14T13:15:18.907Z"
+    },
+    "master/da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628": {
+      "branch": "master",
+      "sourceSha": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628",
+      "before": "45bbb96c4e319ecc583a30eaa35b64d94a7eea50",
+      "channel": "stable",
+      "sequence": 7,
+      "version": "1.9.3",
+      "versionCode": 100007,
+      "tag": "v1.9.3",
+      "status": "allocated"
     }
   },
   "channels": {
