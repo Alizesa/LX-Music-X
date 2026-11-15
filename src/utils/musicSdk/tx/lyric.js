@@ -3,22 +3,28 @@ import { QQ_LYRIC_CACHE_VERSION } from '@/config/constant'
 import { httpFetch } from '../../request'
 import { requestMsg } from '../../message'
 import { decodeQrc } from './qrcDecode'
+import { throwIfAborted } from '@/utils/abort'
 
 // 同一接口可能返回 QRC 密文、Base64 或明文，crypt=0 时也可能仍有 QRC 密文。
-const decodeLyricText = async(raw) => {
+const decodeLyricText = async(raw, signal) => {
+  throwIfAborted(signal)
   if (typeof raw != 'string') return ''
   const text = raw.trim()
   if (!text) return ''
   if (text.includes('[') || text.includes('LyricContent=')) return text
   if (/^[\da-f]+$/i.test(text) && text.length % 16 === 0) {
-    const decoded = await decodeQrc(text)
+    const decoded = await decodeQrc(text, signal)
+    throwIfAborted(signal)
     if (decoded) return decoded
   }
   return Buffer.from(text, 'base64').toString('utf8')
 }
 
-export const decodeLyric = async(lrc, tlrc, rlrc) => {
-  const [lyric, tlyric, rlyric] = await Promise.all([lrc, tlrc, rlrc].map(decodeLyricText))
+export const decodeLyric = async(lrc, tlrc, rlrc, signal) => {
+  const decoded = []
+  for (const raw of [lrc, tlrc, rlrc]) decoded.push(await decodeLyricText(raw, signal))
+  throwIfAborted(signal)
+  const [lyric, tlyric, rlyric] = decoded
   return { lyric, tlyric, rlyric }
 }
 
@@ -135,19 +141,20 @@ const LYRIC_HEADERS = {
 }
 
 export default {
-  async parseLyric(lrc, tlrc, rlrc) {
-    const { lyric, tlyric, rlyric } = await decodeLyric(lrc, tlrc, rlrc)
+  async parseLyric(lrc, tlrc, rlrc, signal = this.requestSignal) {
+    const { lyric, tlyric, rlyric } = await decodeLyric(lrc, tlrc, rlrc, signal)
+    throwIfAborted(signal)
     return parseTools.parse(lyric, tlyric, rlyric)
   },
   getLyric(mInfo) {
     let cancelled = false
     let pendingRequest = null
     const throwIfCancelled = () => {
-      if (cancelled) throw new Error(requestMsg.cancelRequest)
+      if (cancelled || this.requestSignal?.aborted) throw new Error(requestMsg.cancelRequest)
     }
     const request = async(url, options = {}) => {
       throwIfCancelled()
-      pendingRequest = httpFetch(url, { ...options, headers: LYRIC_HEADERS })
+      pendingRequest = httpFetch(url, { ...options, headers: LYRIC_HEADERS }, this.requestSignal)
       const { body, statusCode } = await pendingRequest.promise
       throwIfCancelled()
       if (statusCode < 200 || statusCode >= 300) throw new Error(`QQ lyric HTTP ${statusCode}`)

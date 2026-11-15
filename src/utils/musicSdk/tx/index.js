@@ -1,3 +1,4 @@
+import { withRequestSignal } from '@/utils/musicSdk/requestScope'
 import lyric from './lyric'
 import songList from './songList'
 import musicSearch from './musicSearch'
@@ -14,7 +15,7 @@ const tx = {
   hotSearch,
   comment,
   getLyric(songInfo) {
-    return lyric.getLyric(songInfo)
+    return withRequestSignal(lyric, this.requestSignal).getLyric(songInfo)
   },
   async getPic(songInfo) {
     return `https://y.gtimg.cn/music/photo_new/T002R500x500M000${songInfo.albumId}.jpg`

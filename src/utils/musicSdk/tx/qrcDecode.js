@@ -1,4 +1,5 @@
 import { inflate, constants } from 'pako'
+import { throwIfAborted } from '@/utils/abort'
 
 /**
  * QRC 歌词解密（3DES-ECB + zlib inflate）
@@ -227,7 +228,8 @@ const handleInflate = (data) => new Promise((resolve, reject) => {
  * @param {string} hexData 服务端返回的十六进制字符串
  * @returns {Promise<string>} 解密并解压后的歌词文本（解析失败时返回空字符串）
  */
-export const decodeQrc = async(hexData) => {
+export const decodeQrc = async(hexData, signal) => {
+  throwIfAborted(signal)
   if (!hexData || hexData.length % 2 !== 0) return ''
   const encrypted = Buffer.from(hexData, 'hex')
   if (encrypted.length === 0) return ''
@@ -242,8 +244,10 @@ export const decodeQrc = async(hexData) => {
 
   try {
     const result = await handleInflate(encrypted)
+    throwIfAborted(signal)
     return Buffer.from(result).toString('utf-8')
   } catch {
+    throwIfAborted(signal)
     return ''
   }
 }

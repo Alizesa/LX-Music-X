@@ -22,6 +22,8 @@ import { getLocalFilePath } from '@/utils/music'
 import { LIST_IDS } from '@/config/constant'
 import { type ValidateMusicUrl } from './sourcePriority'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
+import { throwIfAborted } from '@/utils/abort'
+import { waitForPromise } from '@/utils/abortable'
 
 
 export const getMusicUrl = async({
@@ -79,16 +81,17 @@ export const getPicPath = async({
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
   signal?: AbortSignal
 }): Promise<string> => {
+  throwIfAborted(signal)
   if ('progress' in musicInfo) {
-    return getDownloadPicUrl({ musicInfo, isRefresh, listId, onToggleSource })
+    return getDownloadPicUrl({ musicInfo, isRefresh, listId, onToggleSource, signal })
   } else if (musicInfo.source == 'local') {
     return getLocalPicUrl({ musicInfo, isRefresh, listId, onToggleSource, signal })
   } else {
     if (!isRefresh) {
-      const localMusicInfo = await findLocalMusicInfo(musicInfo)
+      const localMusicInfo = await waitForPromise(findLocalMusicInfo(musicInfo), signal)
       if (localMusicInfo) return getLocalPicUrl({ musicInfo: localMusicInfo, isRefresh: false, listId: LIST_IDS.LOCAL, onToggleSource, signal })
     }
-    return getOnlinePicUrl({ musicInfo, isRefresh, listId, onToggleSource })
+    return getOnlinePicUrl({ musicInfo, isRefresh, listId, onToggleSource, signal })
   }
 }
 
@@ -103,15 +106,16 @@ export const getLyricInfo = async({
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
   signal?: AbortSignal
 }): Promise<LX.Player.LyricInfo> => {
+  throwIfAborted(signal)
   if ('progress' in musicInfo) {
-    return getDownloadLyricInfo({ musicInfo, isRefresh, onToggleSource })
+    return getDownloadLyricInfo({ musicInfo, isRefresh, onToggleSource, signal })
   } else if (musicInfo.source == 'local') {
     return getLocalLyricInfo({ musicInfo, isRefresh, onToggleSource, signal })
   } else {
     if (!isRefresh) {
-      const localMusicInfo = await findLocalMusicInfo(musicInfo)
+      const localMusicInfo = await waitForPromise(findLocalMusicInfo(musicInfo), signal)
       if (localMusicInfo) return getLocalLyricInfo({ musicInfo: localMusicInfo, isRefresh: false, onToggleSource, signal })
     }
-    return getOnlineLyricInfo({ musicInfo, isRefresh, onToggleSource })
+    return getOnlineLyricInfo({ musicInfo, isRefresh, onToggleSource, signal })
   }
 }

@@ -24,6 +24,7 @@ import { getMusicUrlCacheContext } from '@/utils/musicUrlCache'
 import settingState from '@/store/setting/state'
 import { playbackLog } from '@/utils/playbackLog'
 import { waitForPromise } from '@/utils/abortable'
+import { throwIfAborted } from '@/utils/abort'
 
 const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handler: (infos: LX.Music.MusicInfoOnline[]) => Promise<T>, assertActive: () => void = () => {}) => {
   const search = async(info: LX.Music.MusicInfoLocal, isRefresh = false) => {
@@ -179,7 +180,7 @@ export const getPicUrl = async({ musicInfo, listId, isRefresh, skipFilePic, onTo
 
   onToggleSource()
   return getOtherSourceByLocal(musicInfo, async(otherSource) => {
-    return getOnlineOtherSourcePicUrl({ musicInfos: [...otherSource], onToggleSource, isRefresh }).then(({ url, musicInfo: targetMusicInfo, isFromCache }) => {
+    return getOnlineOtherSourcePicUrl({ musicInfos: [...otherSource], onToggleSource, isRefresh, signal }).then(({ url, musicInfo: targetMusicInfo, isFromCache }) => {
       if (listId) {
         musicInfo.meta.picUrl = url
         // 匹配结果是从索引重建的，不能整对象写回 LOCAL（会丢 toggleMusicInfo）；
@@ -190,7 +191,7 @@ export const getPicUrl = async({ musicInfo, listId, isRefresh, skipFilePic, onTo
 
       return url
     })
-  })
+  }, () => { throwIfAborted(signal) })
 }
 
 export const parseLyric = (lrc: string): LX.Music.LyricInfo => {
@@ -255,17 +256,17 @@ export const getLyricInfo = async({ musicInfo, isRefresh, skipFileLyric, onToggl
 }): Promise<LX.Player.LyricInfo> => {
   if (!isRefresh && !skipFileLyric) {
     const rawlrcInfo = await waitForPromise(getMusicFileLyric(musicInfo.meta.filePath), signal)
-    if (rawlrcInfo) return buildLyricInfo(rawlrcInfo)
+    if (rawlrcInfo) return buildLyricInfo(rawlrcInfo, signal)
 
-    const lyricInfo = await waitForPromise(getCachedLyricInfo(musicInfo), signal)
-    if (lyricInfo?.lyric) return buildLyricInfo(lyricInfo)
+    const lyricInfo = await waitForPromise(getCachedLyricInfo(musicInfo, false, signal), signal)
+    if (lyricInfo?.lyric) return buildLyricInfo(lyricInfo, signal)
   }
 
   try {
     // eslint-disable-next-line @typescript-eslint/promise-function-async
     return await getOnlineOtherSourceLyricByLocal(musicInfo, isRefresh, signal).then(({ lyricInfo, isFromCache }) => {
       if (!isFromCache) void saveLyric(musicInfo, lyricInfo)
-      return buildLyricInfo(lyricInfo)
+      return buildLyricInfo(lyricInfo, signal)
     })
   } catch (error) {
     if (isRequestCancelled(error) || signal?.aborted) throw error
@@ -273,13 +274,13 @@ export const getLyricInfo = async({ musicInfo, isRefresh, skipFileLyric, onToggl
 
   onToggleSource()
   return getOtherSourceByLocal(musicInfo, async(otherSource) => {
-    return getOnlineOtherSourceLyricInfo({ musicInfos: [...otherSource], onToggleSource, isRefresh }).then(async({ lyricInfo, musicInfo: targetMusicInfo, isFromCache }) => {
+    return getOnlineOtherSourceLyricInfo({ musicInfos: [...otherSource], onToggleSource, isRefresh, signal }).then(async({ lyricInfo, musicInfo: targetMusicInfo, isFromCache }) => {
       void saveLyric(musicInfo, lyricInfo)
 
-      if (isFromCache) return buildLyricInfo(lyricInfo)
+      if (isFromCache) return buildLyricInfo(lyricInfo, signal)
       void saveLyric(targetMusicInfo, lyricInfo)
 
-      return buildLyricInfo(lyricInfo)
+      return buildLyricInfo(lyricInfo, signal)
     })
-  })
+  }, () => { throwIfAborted(signal) })
 }

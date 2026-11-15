@@ -2,7 +2,7 @@
 import { httpFetch } from '../../request'
 import { weapi } from './utils/crypto'
 
-export default songmid => {
+export default (songmid, signal) => {
   const requestObj = httpFetch('https://music.163.com/weapi/v3/song/detail', {
     method: 'post',
     headers: {
@@ -14,7 +14,7 @@ export default songmid => {
       c: `[{"id":${songmid}}]`,
       ids: `[${songmid}]`,
     }),
-  })
+  }, signal)
   requestObj.promise = requestObj.promise.then(({ body }) => {
     // console.log(body)
     if (body.code !== 200 || !body.songs.length) return Promise.reject(new Error('获取歌曲信息失败'))

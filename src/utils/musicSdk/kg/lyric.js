@@ -1,4 +1,5 @@
 import { httpFetch } from '../../request'
+import { throwIfAborted } from '@/utils/abort'
 import { decodeLyric } from './util'
 import { decodeName } from '../../index'
 
@@ -96,7 +97,7 @@ export default {
         'KG-THash': 'expand_search_manager.cpp:852736169:451',
         'User-Agent': 'KuGou2012-9020-ExpandSearchManager',
       },
-    })
+    }, this.requestSignal)
     requestObj.promise = requestObj.promise.then(({ body, statusCode }) => {
       if (statusCode !== 200) {
         if (tryNum > 5) return Promise.reject(new Error('歌词获取失败'))
@@ -119,7 +120,7 @@ export default {
         'KG-THash': 'expand_search_manager.cpp:852736169:451',
         'User-Agent': 'KuGou2012-9020-ExpandSearchManager',
       },
-    })
+    }, this.requestSignal)
     requestObj.promise = requestObj.promise.then(({ body, statusCode }) => {
       if (statusCode !== 200) {
         if (tryNum > 5) return Promise.reject(new Error('歌词获取失败'))
@@ -130,7 +131,10 @@ export default {
 
       switch (body.fmt) {
         case 'krc':
-          return decodeLyric(body.content).then(result => parseLyric(result))
+          return decodeLyric(body.content).then(result => {
+            throwIfAborted(this.requestSignal)
+            return parseLyric(result)
+          })
         case 'lrc':
           return {
             lyric: Buffer.from(body.content, 'base64').toString('utf-8'),

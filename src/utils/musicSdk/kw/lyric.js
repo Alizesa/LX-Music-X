@@ -1,6 +1,7 @@
 import { httpFetch } from '../../request'
 import { decodeLyric, lrcTools } from './util'
 import { decodeName } from '../../index'
+import { throwIfAborted } from '@/utils/abort'
 
 /*
 export default {
@@ -230,10 +231,11 @@ export default {
     const requestObj = httpFetch(`http://mlyric.kuwo.cn/mobi.s?f=web&type=lyric&lrcx=${isGetLyricx ? 1 : 0}&rid=${musicInfo.songmid}&encode=utf8`, {
       cache: false,
       binary: true,
-    })
+    }, this.requestSignal)
     requestObj.promise = requestObj.promise.then(async({ statusCode, body }) => {
       if (statusCode != 200) return Promise.reject(new Error(JSON.stringify(body)))
       const lrcText = await decodeLyric({ lrcBuffer: body, isGetLyricx })
+      throwIfAborted(this.requestSignal)
       // console.log(lrcText)
       // let lrcInfo
       // try {

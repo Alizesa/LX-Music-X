@@ -1,3 +1,4 @@
+import { withRequestSignal } from '@/utils/musicSdk/requestScope'
 import tipSearch from './tipSearch'
 import musicSearch from './musicSearch'
 import lyric from './lyric'
@@ -13,11 +14,11 @@ const kw = {
   hotSearch,
   comment,
   getLyric(songInfo, isGetLyricx) {
-    return lyric.getLyric(songInfo, isGetLyricx)
+    return withRequestSignal(lyric, this.requestSignal).getLyric(songInfo, isGetLyricx)
   },
 
   getPic(songInfo) {
-    return pic.getPic(songInfo)
+    return withRequestSignal(pic, this.requestSignal).getPic(songInfo)
   },
 
   getMusicDetailPageUrl(songInfo) {

@@ -54,7 +54,7 @@ const mrcTools = {
         'User-Agent': 'Mozilla/5.0 (Linux; Android 5.1.1; Nexus 6 Build/LYZ28E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Mobile Safari/537.36',
         channel: '0146921',
       },
-    })
+    }, this.requestSignal)
     return requestObj.promise.then(({ statusCode, body }) => {
       if (statusCode == 200) return body
       if (tryNum > 5 || statusCode == 404) return Promise.reject(new Error('歌词获取失败'))
@@ -75,7 +75,7 @@ const mrcTools = {
   },
   async getMusicInfo(songInfo) {
     return songInfo.mrcUrl == null
-      ? getMusicInfo(songInfo.songmid)
+      ? getMusicInfo(songInfo.songmid, this.requestSignal)
       : songInfo
   },
   getLyric(songInfo) {
@@ -97,7 +97,7 @@ const mrcTools = {
 
 export default {
   getLyric(songInfo) {
-    let requestObj = mrcTools.getLyric(songInfo)
+    let requestObj = mrcTools.getLyric.call({ ...mrcTools, requestSignal: this.requestSignal }, songInfo)
     return requestObj
   },
 }

@@ -3,7 +3,7 @@ import { eapi } from './utils/crypto'
 // import { decodeName } from '../..'
 
 
-const eapiRequest = (url, data) => {
+const eapiRequest = (url, data, signal) => {
   return httpFetch('https://interface3.music.163.com/eapi/song/lyric/v1', {
     method: 'post',
     headers: {
@@ -12,7 +12,7 @@ const eapiRequest = (url, data) => {
 
     },
     form: eapi(url, data),
-  })
+  }, signal)
 }
 
 const parseTools = {
@@ -228,7 +228,7 @@ const fixTimeLabel = (lrc, tlrc, romalrc) => {
 }
 
 // https://github.com/Binaryify/NeteaseCloudMusicApi/blob/master/module/lyric_new.js
-export default songmid => {
+export default (songmid, signal) => {
   const requestObj = eapiRequest('/api/song/lyric/v1', {
     id: songmid,
     cp: false,
@@ -239,7 +239,7 @@ export default songmid => {
     yv: 0,
     ytv: 0,
     yrv: 0,
-  })
+  }, signal)
   requestObj.promise = requestObj.promise.then(({ body }) => {
     // console.log(body)
     if (body.code !== 200 || !body?.lrc?.lyric) return Promise.reject(new Error('Get lyric failed'))

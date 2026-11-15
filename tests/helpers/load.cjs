@@ -28,7 +28,7 @@ const load = (file, mocks = {}, globals = {}) => {
       if ((name === '@/utils/abort' || name === './abort') && !Object.hasOwn(mocks, name)) return load('src/utils/abort.ts', { './message': load('src/utils/message.ts') })
       if (name === '@/utils/musicSdk/requestScope' && !Object.hasOwn(mocks, name)) return load('src/utils/musicSdk/requestScope.ts')
       if (name === '@/utils/listPage' && !Object.hasOwn(mocks, name)) return load('src/utils/listPage.ts')
-      if ((name === '@/utils/temporaryPaths' || name === './temporaryPaths') && !Object.hasOwn(mocks, name)) return load('src/utils/temporaryPaths.ts', { 'react-native': mocks['react-native'] ?? { NativeModules: {} } })
+      if ((name === '@/utils/temporaryPaths' || name === './temporaryPaths') && !Object.hasOwn(mocks, name)) return load('src/utils/temporaryPaths.ts', { 'react-native': { NativeModules: {}, ...mocks['react-native'] } })
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${file}: ${name}`)
       return mocks[name]
     },

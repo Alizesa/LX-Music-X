@@ -11,10 +11,10 @@ const wy = {
   hotSearch,
   comment,
   getLyric(songInfo) {
-    return getLyric(songInfo.songmid)
+    return getLyric(songInfo.songmid, this.requestSignal)
   },
   getPic(songInfo) {
-    const requestObj = getMusicInfo(songInfo.songmid)
+    const requestObj = getMusicInfo(songInfo.songmid, this.requestSignal)
     return requestObj.promise.then(info => info.al.picUrl)
   },
   getMusicDetailPageUrl(songInfo) {

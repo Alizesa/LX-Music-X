@@ -2,7 +2,7 @@ import { sizeFormate, formatPlayTime } from '../../index'
 import { createHttpFetch } from './utils'
 import { formatSingerName } from '../utils'
 
-const createGetMusicInfosTask = (ids) => {
+const createGetMusicInfosTask = (ids, signal) => {
   let list = ids
   let tasks = []
   while (list.length) {
@@ -12,6 +12,7 @@ const createGetMusicInfosTask = (ids) => {
   }
   let url = 'https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do?resourceType=2'
   return Promise.all(tasks.map(task => createHttpFetch(url, {
+    signal,
     method: 'POST',
     form: {
       resourceId: task.join('|'),
@@ -154,10 +155,10 @@ export const filterMusicInfoListV5 = (rawList) => {
 }
 
 
-export const getMusicInfo = async(copyrightId) => {
-  return getMusicInfos([copyrightId]).then(data => data[0])
+export const getMusicInfo = async(copyrightId, signal) => {
+  return getMusicInfos([copyrightId], signal).then(data => data[0])
 }
 
-export const getMusicInfos = async(copyrightIds) => {
-  return filterMusicInfoList(await Promise.all(createGetMusicInfosTask(copyrightIds)).then(data => data.flat()))
+export const getMusicInfos = async(copyrightIds, signal) => {
+  return filterMusicInfoList((await createGetMusicInfosTask(copyrightIds, signal)).flat())
 }

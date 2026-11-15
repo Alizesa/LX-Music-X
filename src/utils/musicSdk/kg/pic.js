@@ -35,7 +35,7 @@ export default {
           userid: 2626431536,
           vip: 1,
         },
-      },
+      }, this.requestSignal,
     )
     return requestObj.promise.then(({ body }) => {
       if (body.error_code !== 0) return Promise.reject(new Error('图片获取失败'))

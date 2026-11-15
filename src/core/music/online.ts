@@ -10,6 +10,8 @@ import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { validateQQMusicUrl } from '@/core/qqMusicUrl'
 import { getMusicUrlCacheContext } from '@/utils/musicUrlCache'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
+import { throwIfAborted } from '@/utils/abort'
+import { waitForPromise } from '@/utils/abortable'
 
 import {
   buildLyricInfo,
@@ -86,15 +88,18 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   })
 }
 
-export const getPicUrl = async({ musicInfo, listId, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
+export const getPicUrl = async({ musicInfo, listId, isRefresh, allowToggleSource = true, onToggleSource = () => {}, signal }: {
   musicInfo: LX.Music.MusicInfoOnline
   listId?: string | null
   isRefresh: boolean
   allowToggleSource?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
+  signal?: AbortSignal
 }): Promise<string> => {
+  throwIfAborted(signal)
   if (musicInfo.meta.picUrl && !isRefresh) return musicInfo.meta.picUrl
-  return handleGetOnlinePicUrl({ musicInfo, onToggleSource, isRefresh, allowToggleSource }).then(({ url, musicInfo: targetMusicInfo, isFromCache }) => {
+  return handleGetOnlinePicUrl({ musicInfo, onToggleSource, isRefresh, allowToggleSource, signal }).then(({ url, musicInfo: targetMusicInfo, isFromCache }) => {
+    throwIfAborted(signal)
     // picRequest = null
     if (listId) {
       musicInfo.meta.picUrl = url
@@ -104,32 +109,37 @@ export const getPicUrl = async({ musicInfo, listId, isRefresh, allowToggleSource
     return url
   })
 }
-export const getLyricInfo = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
+export const getLyricInfo = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {}, signal }: {
   musicInfo: LX.Music.MusicInfoOnline
   isRefresh: boolean
   allowToggleSource?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
+  signal?: AbortSignal
 }): Promise<LX.Player.LyricInfo> => {
-  const cached = isRefresh ? null : await getCachedLyricInfo(musicInfo, true)
-  if (cached && !isLyricCacheStale(musicInfo, cached)) return buildLyricInfo(cached)
+  throwIfAborted(signal)
+  const cached = isRefresh ? null : await waitForPromise(getCachedLyricInfo(musicInfo, true, signal), signal)
+  if (cached && !isLyricCacheStale(musicInfo, cached)) return waitForPromise(buildLyricInfo(cached, signal), signal)
 
   try {
     const { lyricInfo, musicInfo: targetMusicInfo, isFromCache } = await handleGetOnlineLyricInfo({
       musicInfo,
       onToggleSource,
       isRefresh,
+      signal,
       // 旧缓存升级失败时继续显示已有歌词，避免断网时丢歌词或切到别的版本。
       allowToggleSource: cached ? false : allowToggleSource,
     })
+    throwIfAborted(signal)
     // 主接口暂时失败时，网页备用结果不能覆盖已有的翻译和逐字时间。
-    if (cached && isLyricCacheStale(targetMusicInfo, lyricInfo)) return buildLyricInfo(cached)
-    if (isFromCache) return buildLyricInfo(lyricInfo)
+    if (cached && isLyricCacheStale(targetMusicInfo, lyricInfo)) return waitForPromise(buildLyricInfo(cached, signal), signal)
+    if (isFromCache) return waitForPromise(buildLyricInfo(lyricInfo, signal), signal)
     if (targetMusicInfo.id == musicInfo.id) void saveLyric(musicInfo, lyricInfo)
     else void saveLyric(targetMusicInfo, lyricInfo)
 
-    return buildLyricInfo(lyricInfo)
+    return waitForPromise(buildLyricInfo(lyricInfo, signal), signal)
   } catch (error) {
-    if (cached) return buildLyricInfo(cached)
+    throwIfAborted(signal)
+    if (cached) return waitForPromise(buildLyricInfo(cached, signal), signal)
     throw error
   }
 }

@@ -1,3 +1,4 @@
+import { withRequestSignal } from '@/utils/musicSdk/requestScope'
 import songList from './songList'
 import musicSearch from './musicSearch'
 import pic from './pic'
@@ -11,10 +12,10 @@ const mg = {
   hotSearch,
   comment,
   getLyric(songInfo) {
-    return lyric.getLyric(songInfo)
+    return withRequestSignal(lyric, this.requestSignal).getLyric(songInfo)
   },
   getPic(songInfo) {
-    return pic.getPic(songInfo)
+    return withRequestSignal(pic, this.requestSignal).getPic(songInfo)
   },
   getMusicDetailPageUrl(songInfo) {
     return `http://music.migu.cn/v3/music/song/${songInfo.copyrightId}`
