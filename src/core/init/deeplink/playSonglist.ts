@@ -1,7 +1,8 @@
 import { LIST_IDS } from '@/config/constant'
 import { setTempList } from '@/core/list'
-import { completePlayQueue, createPlaySelection, getPlayQueueSessionId, playList } from '@/core/player/player'
+import { completePlayQueue, createPlaySelection, getPlayQueueSessionId, getPlayQueueSignal, playList } from '@/core/player/player'
 import { getListDetail, getListDetailAll } from '@/core/songlist'
+import { isRequestCancelled } from '@/utils/message'
 
 const getListPlayIndex = (list: LX.Music.MusicInfoOnline[], index?: number) => {
   if (index == null) {
@@ -20,7 +21,7 @@ const playSongListDetail = async(source: LX.OnlineSource, link: string, playInde
   let queueSession: string | undefined
   const id = decodeURIComponent(link)
   const playListId = `${source}__${id}`
-  let list = (await getListDetail(id, source, 1)).list
+  let list = (await getListDetail(id, source, 1, false, selection.signal)).list
   if (!selection()) return
   // 指定首屏末曲时先取完整歌单，保证下一曲也进入实际播放队列。
   // 播放队列是 TEMP 的快照；后续补写 TEMP 不会扩展已经建立的队列。
@@ -31,7 +32,7 @@ const playSongListDetail = async(source: LX.OnlineSource, link: string, playInde
     if (!queueSession) return
   }
   if (queueSession ? queueSession !== getPlayQueueSessionId() : !selection()) return
-  list = await getListDetailAll(source, id)
+  list = await getListDetailAll(source, id, false, queueSession ? getPlayQueueSignal() : selection.signal)
   if (!list.length) return
   if (queueSession) {
     await completePlayQueue(queueSession, list)
@@ -45,6 +46,7 @@ export const playSonglist = async(source: LX.OnlineSource, link: string, playInd
   try {
     await playSongListDetail(source, link, playIndex)
   } catch (err) {
+    if (isRequestCancelled(err)) return
     console.error(err)
     throw new Error('Get play list failed.')
   }

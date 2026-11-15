@@ -5,6 +5,9 @@ import { sizeFormate, formatPlayTime } from '../../index'
 import { eapiRequest } from './utils/index'
 
 export default {
+  eapiRequest(url, data) {
+    return eapiRequest(url, data, this.requestSignal)
+  },
   limit: 30,
   total: 0,
   page: 0,
@@ -17,7 +20,7 @@ export default {
     //   total: page == 1,
     //   offset: limit * (page - 1),
     // })
-    const searchRequest = eapiRequest('/api/search/song/list/page', {
+    const searchRequest = this.eapiRequest('/api/search/song/list/page', {
       keyword: str,
       needCorrect: '1',
       channel: 'typing',

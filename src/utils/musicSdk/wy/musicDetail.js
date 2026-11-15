@@ -4,6 +4,9 @@ import { formatPlayTime, sizeFormate } from '../../index'
 // https://github.com/Binaryify/NeteaseCloudMusicApi/blob/master/module/song_detail.js
 
 export default {
+  httpFetch(url, options) {
+    return httpFetch(url, options, this.requestSignal)
+  },
   getSinger(singers) {
     let arr = []
     singers?.forEach(singer => {
@@ -93,7 +96,7 @@ export default {
   async getList(ids = [], retryNum = 0) {
     if (retryNum > 2) return Promise.reject(new Error('try max num'))
 
-    const requestObj = httpFetch('https://music.163.com/weapi/v3/song/detail', {
+    const requestObj = this.httpFetch('https://music.163.com/weapi/v3/song/detail', {
       method: 'post',
       headers: {
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',

@@ -72,6 +72,9 @@ const handleSignature = (id, page, limit) => new Promise((resolve, reject) => {
 })
 
 export default {
+  httpFetch(url, options) {
+    return httpFetch(url, options, this.requestSignal)
+  },
   listDetailLimit: 10000,
   cache: shareCache,
   regExps: {
@@ -119,7 +122,7 @@ export default {
     if (++retry > 2) throw new Error('failed')
     // console.log(id)
     const params = `specialid=0&need_sort=1&module=CloudMusic&clientver=11409&pagesize=${limit}&global_collection_id=${id}&userid=0&page=${page}&type=1&area_code=1&appid=1005`
-    return httpFetch(`http://pubsongscdn.tx.kugou.com/v2/get_other_list_file?${params}&signature=${signatureParams(params)}`, {
+    return this.httpFetch(`http://pubsongscdn.tx.kugou.com/v2/get_other_list_file?${params}&signature=${signatureParams(params)}`, {
       cache: 'default',
     }).promise.then(({ body }) => {
       // console.log(body)
@@ -139,7 +142,7 @@ export default {
   async getListDetailBySpecialId(id, page, tryNum = 0) {
     if (tryNum > 2) throw new Error('try max num')
 
-    const { body } = await httpFetch(this.getSongListDetailUrl(id)).promise
+    const { body } = await this.httpFetch(this.getSongListDetailUrl(id)).promise
     let listData = body.match(this.regExps.listData)
     let listInfo = body.match(this.regExps.listInfo)
     if (!listData) return this.getListDetailBySpecialId(id, page, ++tryNum)
@@ -198,8 +201,9 @@ export default {
     let result
     options.cache = 'default'
     try {
-      result = await httpFetch(url, options).promise
+      result = await this.httpFetch(url, options).promise
     } catch (err) {
+      if (this.requestSignal?.aborted) throw err
       console.log(err)
       return this.createHttp(url, options, ++retryNum)
     }
@@ -440,7 +444,10 @@ export default {
     const generation = cacheGeneration
     let result
     if (!useGlobalApi) {
-      try { result = await this.getListDetailByGcidChain(id, chain, page) } catch { useGlobalApi = true }
+      try { result = await this.getListDetailByGcidChain(id, chain, page) } catch (error) {
+        if (this.requestSignal?.aborted) throw error
+        useGlobalApi = true
+      }
     }
     // 主链每页 50 首；备用链必须使用相同页大小，否则第 N 页会跳过歌曲。
     result ??= await this.getUserListDetail2(id, page, 50)
@@ -491,7 +498,7 @@ export default {
     const cached = getShareCache(chain)
     if (cached !== undefined) return cached
     const generation = cacheGeneration
-    const { body } = await httpFetch(`https://m.kugou.com/share/?chain=${chain}&id=${chain}`, {
+    const { body } = await this.httpFetch(`https://m.kugou.com/share/?chain=${chain}&id=${chain}`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1',
       },
@@ -507,7 +514,7 @@ export default {
     const cached = getShareCache(key)
     if (cached !== undefined) return cached
     const generation = cacheGeneration
-    const { body } = await httpFetch(`http://www.kugou.com/share/${chain}.html`, {
+    const { body } = await this.httpFetch(`http://www.kugou.com/share/${chain}.html`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
       },
@@ -614,7 +621,7 @@ export default {
 
     if (/\/zlist\/list(?:[?/]|$)/.test(link)) link = withListPage(link, page, 90)
 
-    const requestObj_listDetailLink = httpFetch(link, {
+    const requestObj_listDetailLink = this.httpFetch(link, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 9_1 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Version/9.0 Mobile/13B143 Safari/601.1',
         Referer: link,
@@ -806,7 +813,7 @@ export default {
   search(text, page, limit = 20) {
     // http://msearchretry.kugou.com/api/v3/search/special?version=9209&keyword=%E5%91%A8%E6%9D%B0%E4%BC%A6&pagesize=20&filter=0&page=1&sver=2&with_res_tag=0
     // return httpFetch(`http://ioscdn.kugou.com/api/v3/search/special?keyword=${encodeURIComponent(text)}&page=${page}&pagesize=${limit}&showtype=10&plat=2&version=7910&correct=1&sver=5`)
-    return httpFetch(`http://msearchretry.kugou.com/api/v3/search/special?keyword=${encodeURIComponent(text)}&page=${page}&pagesize=${limit}&showtype=10&filter=0&version=7910&sver=2`)
+    return this.httpFetch(`http://msearchretry.kugou.com/api/v3/search/special?keyword=${encodeURIComponent(text)}&page=${page}&pagesize=${limit}&showtype=10&filter=0&version=7910&sver=2`)
       .promise.then(({ body }) => {
         if (body.errcode != 0) throw new Error('filed')
         // console.log(body.data.info)

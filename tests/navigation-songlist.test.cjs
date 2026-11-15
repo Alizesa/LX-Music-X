@@ -12,7 +12,10 @@ const load = (file, mocks = {}) => {
   })
   const context = {
     exports: {},
+    AbortController,
     require: name => {
+      if (name === '@/utils/abort' && !Object.hasOwn(mocks, name)) return load('src/utils/abort.ts', { './message': load('src/utils/message.ts') })
+      if (name === '@/utils/musicSdk/requestScope' && !Object.hasOwn(mocks, name)) return load('src/utils/musicSdk/requestScope.ts')
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${name}`)
       return mocks[name]
     },

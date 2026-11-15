@@ -1,6 +1,7 @@
 import searchSonglistState, { type Source, type ListInfoItem } from '@/store/search/songlist/state'
 import searchSonglistActions, { type SearchResult } from '@/store/search/songlist/action'
 import musicSdk from '@/utils/musicSdk'
+import { withRequestSignal } from '@/utils/musicSdk/requestScope'
 import { invalidateSearchResult, restoreSearchResult } from './cache'
 import { beginSearchRequest, finishSearchRequest } from './request'
 
@@ -39,7 +40,9 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
       let requestError: Error | null = null
       for (const source of searchSonglistState.sources) {
         if (source == 'all' || (page > 1 && page > (searchSonglistState.maxPages[source]!))) continue
-        task.push(((musicSdk[source]?.songList.search(text, page, searchSonglistState.listInfos.all.limit) as Promise<SearchResult>) ?? Promise.reject(new Error('source not found: ' + source))).then(result => {
+        const provider = musicSdk[source]?.songList
+        const request = provider && withRequestSignal(provider, signal).search(text, page, searchSonglistState.listInfos.all.limit)
+        task.push(((request as Promise<SearchResult>) ?? Promise.reject(new Error('source not found: ' + source))).then(result => {
           hadSuccess = true
           return result
         }).catch((error: any) => {
@@ -66,7 +69,9 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
       })
     } else {
       if (!isRefresh && listInfo?.key == key && listInfo?.list.length) return listInfo?.list
-      return await ((musicSdk[sourceId]?.songList.search(text, page, listInfo.limit) as Promise<SearchResult>).then((data: SearchResult) => {
+      const provider = musicSdk[sourceId]?.songList
+      const request = provider && withRequestSignal(provider, signal).search(text, page, listInfo.limit)
+      return await ((request as Promise<SearchResult>).then((data: SearchResult) => {
         if (signal.aborted) return null
         setSearchText(text)
         const list = setListInfo(data, page, text)

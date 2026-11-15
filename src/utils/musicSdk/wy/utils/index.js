@@ -1,7 +1,7 @@
 import { httpFetch } from '../../../request'
 import { eapi } from './crypto'
 
-export const eapiRequest = (url, data) => {
+export const eapiRequest = (url, data, signal) => {
   return httpFetch('http://interface.music.163.com/eapi/batch', {
     method: 'post',
     headers: {
@@ -9,5 +9,5 @@ export const eapiRequest = (url, data) => {
       origin: 'https://music.163.com',
     },
     form: eapi(url, data),
-  })
+  }, signal)
 }

@@ -44,6 +44,8 @@ const load = (file, mocks = {}, globals = {}) => {
     require: name => {
       if (name === '@/utils/listPage') return load('src/utils/listPage.ts')
       if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return load('src/utils/abortable.ts', { './message': load('src/utils/message.ts') })
+      if (name === '@/utils/abort' && !Object.hasOwn(mocks, name)) return load('src/utils/abort.ts', { './message': load('src/utils/message.ts') })
+      if (name === '@/utils/musicSdk/requestScope' && !Object.hasOwn(mocks, name)) return load('src/utils/musicSdk/requestScope.ts')
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${file}: ${name}`)
       return mocks[name]
     },

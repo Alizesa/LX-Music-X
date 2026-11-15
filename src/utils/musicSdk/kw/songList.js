@@ -4,6 +4,9 @@ import { formatSinger, objStr2JSON } from './util'
 import album from './album'
 
 export default {
+  httpFetch(url, options) {
+    return httpFetch(url, options, this.requestSignal)
+  },
   limit_song: 1000,
   regExps: {
     mInfo: /level:(\w+),bitrate:(\d+),format:(\w+),size:([\w.]+)/,
@@ -31,7 +34,7 @@ export default {
   getListDetailDigest8(id, page, tryNum = 0) {
     if (tryNum > 2) return Promise.reject(new Error('try max num'))
 
-    const requestObj = httpFetch(this.getListDetailUrl(id, page))
+    const requestObj = this.httpFetch(this.getListDetailUrl(id, page))
     return requestObj.promise.then(({ body }) => {
       if (body.result !== 'ok') return this.getListDetail(id, page, ++tryNum)
       return {
@@ -52,7 +55,7 @@ export default {
   },
   getListDetailDigest5Info(id, tryNum = 0) {
     if (tryNum > 2) return Promise.reject(new Error('try max num'))
-    const requestObj = httpFetch(`http://qukudata.kuwo.cn/q.k?op=query&cont=ninfo&node=${id}&pn=0&rn=1&fmt=json&src=mbox&level=2`)
+    const requestObj = this.httpFetch(`http://qukudata.kuwo.cn/q.k?op=query&cont=ninfo&node=${id}&pn=0&rn=1&fmt=json&src=mbox&level=2`)
     return requestObj.promise.then(({ statusCode, body }) => {
       if (statusCode != 200 || !body.child) return this.getListDetail(id, ++tryNum)
       // console.log(body)
@@ -61,7 +64,7 @@ export default {
   },
   getListDetailDigest5Music(id, page, tryNum = 0) {
     if (tryNum > 2) return Promise.reject(new Error('try max num'))
-    const requestObj = httpFetch(`http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=${id}&pn=${page - 1}}&rn=${this.limit_song}&encode=utf-8&keyset=pl2012&identity=kuwo&pcmp4=1`)
+    const requestObj = this.httpFetch(`http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=${id}&pn=${page - 1}}&rn=${this.limit_song}&encode=utf-8&keyset=pl2012&identity=kuwo&pcmp4=1`)
     return requestObj.promise.then(({ body }) => {
       // console.log(body)
       if (body.result !== 'ok') return this.getListDetail(id, page, ++tryNum)
@@ -146,7 +149,7 @@ export default {
     return t() + t() + t() + t() + t() + t() + t() + t()
   },
   async getListDetailMusicListByBDListInfo(id, source) {
-    const { body: infoData } = await httpFetch(`https://bd-api.kuwo.cn/api/service/playlist/info/${id}?reqId=${this.getReqId()}&source=${source}`, {
+    const { body: infoData } = await this.httpFetch(`https://bd-api.kuwo.cn/api/service/playlist/info/${id}?reqId=${this.getReqId()}&source=${source}`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
         plat: 'h5',
@@ -164,7 +167,7 @@ export default {
     }
   },
   async getListDetailMusicListByBDUserPub(id) {
-    const { body: infoData } = await httpFetch(`https://bd-api.kuwo.cn/api/ucenter/users/pub/${id}?reqId=${this.getReqId()}`, {
+    const { body: infoData } = await this.httpFetch(`https://bd-api.kuwo.cn/api/ucenter/users/pub/${id}?reqId=${this.getReqId()}`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
         plat: 'h5',
@@ -183,7 +186,7 @@ export default {
     }
   },
   async getListDetailMusicListByBDList(id, source, page, tryNum = 0) {
-    const { body: listData } = await httpFetch(`https://bd-api.kuwo.cn/api/service/playlist/${id}/musicList?reqId=${this.getReqId()}&source=${source}&pn=${page}&rn=${this.limit_song}`, {
+    const { body: listData } = await this.httpFetch(`https://bd-api.kuwo.cn/api/service/playlist/${id}/musicList?reqId=${this.getReqId()}&source=${source}&pn=${page}&rn=${this.limit_song}`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36',
         plat: 'h5',
@@ -244,7 +247,7 @@ export default {
       switch (digest) {
         case '8':
           break
-        case '13': return album.getAlbumListDetail(id, page, retryNum)
+        case '13': return album.getAlbumListDetail.call({ ...album, requestSignal: this.requestSignal }, id, page, retryNum)
         case '5':
         default: return this.getListDetailDigest5(id, page, retryNum)
       }
@@ -317,7 +320,7 @@ export default {
   },
 
   search(text, page, limit = 20) {
-    return httpFetch(`http://search.kuwo.cn/r.s?all=${encodeURIComponent(text)}&pn=${page - 1}&rn=${limit}&rformat=json&encoding=utf8&ver=mbox&vipver=MUSIC_8.7.7.0_BCS37&plat=pc&devid=28156413&ft=playlist&pay=0&needliveshow=0`)
+    return this.httpFetch(`http://search.kuwo.cn/r.s?all=${encodeURIComponent(text)}&pn=${page - 1}&rn=${limit}&rformat=json&encoding=utf8&ver=mbox&vipver=MUSIC_8.7.7.0_BCS37&plat=pc&devid=28156413&ft=playlist&pay=0&needliveshow=0`)
       .promise.then(({ body }) => {
         body = objStr2JSON(body)
         // console.log(body)

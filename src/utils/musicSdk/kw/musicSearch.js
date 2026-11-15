@@ -6,6 +6,9 @@ import { formatPlayTime, decodeName } from '../../index'
 import { formatSinger } from './util'
 
 export default {
+  httpFetch(url, options) {
+    return httpFetch(url, options, this.requestSignal)
+  },
   regExps: {
     mInfo: /level:(\w+),bitrate:(\d+),format:(\w+),size:([\w.]+)/,
   },
@@ -15,7 +18,7 @@ export default {
   allPage: 1,
   // cancelFn: null,
   musicSearch(str, page, limit) {
-    const musicSearchRequestObj = httpFetch(`http://search.kuwo.cn/r.s?client=kt&all=${encodeURIComponent(str)}&pn=${page - 1}&rn=${limit}&uid=794762570&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newver=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1&issubtitle=1`)
+    const musicSearchRequestObj = this.httpFetch(`http://search.kuwo.cn/r.s?client=kt&all=${encodeURIComponent(str)}&pn=${page - 1}&rn=${limit}&uid=794762570&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newver=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1&issubtitle=1`)
     return musicSearchRequestObj.promise
   },
   // getImg(songId) {

@@ -3,12 +3,15 @@ import { decodeName, formatPlayTime, sizeFormate } from '../../index'
 import { formatSingerName } from '../utils'
 
 export default {
+  httpFetch(url, options) {
+    return httpFetch(url, options, this.requestSignal)
+  },
   limit: 30,
   total: 0,
   page: 0,
   allPage: 1,
   musicSearch(str, page, limit) {
-    const searchRequest = httpFetch(`https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(str)}&page=${page}&pagesize=${limit}&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`)
+    const searchRequest = this.httpFetch(`https://songsearch.kugou.com/song_search_v2?keyword=${encodeURIComponent(str)}&page=${page}&pagesize=${limit}&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1`)
     return searchRequest.promise.then(({ body }) => body)
   },
   filterData(rawData) {

@@ -11,6 +11,12 @@ import { eapiRequest } from './utils/index'
 import { formatSingerName } from '../utils'
 
 export default {
+  eapiRequest(url, data) {
+    return eapiRequest(url, data, this.requestSignal)
+  },
+  httpFetch(url, options) {
+    return httpFetch(url, options, this.requestSignal)
+  },
   limit_song: 100000,
   successCode: 200,
   cookie: 'MUSIC_U=',
@@ -22,7 +28,7 @@ export default {
   async handleParseId(link, retryNum = 0) {
     if (retryNum > 2) throw new Error('link try max num')
 
-    const requestObj_listDetailLink = httpFetch(link)
+    const requestObj_listDetailLink = this.httpFetch(link)
     const { url, statusCode } = await requestObj_listDetailLink.promise
     // console.log(headers)
     if (statusCode > 400) return this.handleParseId(link, ++retryNum)
@@ -56,7 +62,7 @@ export default {
     const { id, cookie } = await this.getListId(rawId)
     if (cookie) this.cookie = cookie
 
-    const requestObj_listDetail = httpFetch('https://music.163.com/api/linux/forward', {
+    const requestObj_listDetail = this.httpFetch('https://music.163.com/api/linux/forward', {
       method: 'post',
       headers: {
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
@@ -84,8 +90,9 @@ export default {
       list = this.filterListDetail(body)
     } else {
       try {
-        list = (await musicDetailApi.getList(body.playlist.trackIds.slice(rangeStart, limit * page).map(trackId => trackId.id))).list
+        list = (await musicDetailApi.getList.call({ ...musicDetailApi, requestSignal: this.requestSignal }, body.playlist.trackIds.slice(rangeStart, limit * page).map(trackId => trackId.id))).list
       } catch (err) {
+        if (this.requestSignal?.aborted) throw err
         console.log(err)
         if (err.message == 'try max num') {
           throw err
@@ -210,7 +217,7 @@ export default {
   },
 
   search(text, page, limit = 20) {
-    return eapiRequest('/api/cloudsearch/pc', {
+    return this.eapiRequest('/api/cloudsearch/pc', {
       s: text,
       type: 1000, // 1: 单曲, 10: 专辑, 100: 歌手, 1000: 歌单, 1002: 用户, 1004: MV, 1006: 歌词, 1009: 电台, 1014: 视频
       limit,

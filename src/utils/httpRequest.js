@@ -41,19 +41,32 @@ const blobToBuffer = (blob) => new Promise((resolve, reject) => {
 
 /** 共用请求、超时和响应解析；调用方只提供各自的默认项及音源签名处理。 */
 export const createFetchData = ({ timeout: defaultTimeout = 15000, defaults = {}, prepare = async(url, options) => options } = {}) =>
-  (url, { timeout = defaultTimeout, ...options } = {}) => {
+  (url, { timeout = defaultTimeout, signal, ...options } = {}) => {
     const controller = new global.AbortController()
+    const abort = () => { controller.abort() }
+    signal?.addEventListener('abort', abort)
+    if (signal?.aborted) abort()
+    const checkAborted = () => {
+      if (controller.signal.aborted) throw new Error(signal?.aborted ? 'cancelled' : 'Aborted')
+    }
     const timer = BackgroundTimer.setTimeout(() => { controller.abort() }, timeout)
     const request = Promise.resolve().then(async() => {
+      checkAborted()
       const prepared = await prepare(url, prepareOptions({ ...defaults, ...options }))
-      if (controller.signal.aborted) throw new Error('Aborted')
+      checkAborted()
       const response = await global.fetch(url, { ...prepared, signal: controller.signal })
+      checkAborted()
       let body
-      if (prepared.binary) body = await blobToBuffer(await response.blob())
-      else {
+      if (prepared.binary) {
+        const blob = await response.blob()
+        checkAborted()
+        body = await blobToBuffer(blob)
+      } else {
         body = await response.text()
+        checkAborted()
         try { body = JSON.parse(body) } catch {}
       }
+      checkAborted()
       return {
         headers: response.headers.map,
         body,
@@ -62,6 +75,9 @@ export const createFetchData = ({ timeout: defaultTimeout = 15000, defaults = {}
         url: response.url,
         ok: response.ok,
       }
-    }).finally(() => { BackgroundTimer.clearTimeout(timer) })
-    return { request, abort: () => { controller.abort() } }
+    }).finally(() => {
+      BackgroundTimer.clearTimeout(timer)
+      signal?.removeEventListener('abort', abort)
+    })
+    return { request, abort }
   }

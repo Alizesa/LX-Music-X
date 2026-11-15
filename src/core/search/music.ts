@@ -1,6 +1,7 @@
 import searchMusicState, { type Source } from '@/store/search/music/state'
 import searchMusicActions, { type SearchResult } from '@/store/search/music/action'
 import musicSdk from '@/utils/musicSdk'
+import { withRequestSignal } from '@/utils/musicSdk/requestScope'
 import { invalidateSearchResult, restoreSearchResult } from './cache'
 import { beginSearchRequest, finishSearchRequest } from './request'
 
@@ -42,7 +43,8 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
         const maxPage = searchMusicState.maxPages[source]
         // 页数只属于这份聚合搜索；首屏和新关键词必须重新询问所有音源。
         if (page > 1 && listInfo.key === `${listInfo.page}__${text}` && maxPage != null && page > maxPage) continue
-        const sdk = musicSdk[source]?.musicSearch
+        const provider = musicSdk[source]?.musicSearch
+        const sdk = provider && withRequestSignal(provider, signal)
         const request = source === 'tx'
           ? musicSdk.tx.musicSearch.search(text, page, searchMusicState.listInfos.all.limit, signal)
           : sdk?.search(text, page, searchMusicState.listInfos.all.limit)
@@ -75,7 +77,8 @@ export const search = async(text: string, page: number, sourceId: Source, isRefr
         return list
       })
     } else {
-      const sdk = musicSdk[sourceId]?.musicSearch
+      const provider = musicSdk[sourceId]?.musicSearch
+      const sdk = provider && withRequestSignal(provider, signal)
       const request = sourceId === 'tx' ? musicSdk.tx.musicSearch.search(text, page, listInfo.limit, signal) : sdk?.search(text, page, listInfo.limit)
       return await (request?.then((data: SearchResult) => {
         if (signal.aborted) return null

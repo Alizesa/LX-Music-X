@@ -1,11 +1,12 @@
 import { setTempList } from '@/core/list'
-import { completePlayQueue, createPlaySelection, getPlayQueueSessionId, playList } from '@/core/player/player'
+import { completePlayQueue, createPlaySelection, getPlayQueueSessionId, getPlayQueueSignal, playList } from '@/core/player/player'
 import { getListDetail, getListDetailAll } from '@/core/songlist'
 import { LIST_IDS } from '@/config/constant'
 import { getQQMusicPlaylists, getQQMusicSession, isQQMusicSessionCurrent, QQMusicSessionExpiredError, updateQQMusicPlaylistsCache } from '@/core/qqMusic'
 import { toggleQQMusicPlaylistCollected } from '@/core/qqMusicFavorite'
 import { toast } from '@/utils/tools'
 import songlistState, { type Source } from '@/store/songlist/state'
+import { isRequestCancelled } from '@/utils/message'
 
 const getListId = (id: string, source: LX.OnlineSource) => `${source}__${id}`
 
@@ -14,7 +15,12 @@ export const handlePlay = async(id: string, source: Source, list?: LX.Music.Musi
   const listId = getListId(id, source)
   let queueSession: string | undefined
   // console.log(list)
-  if (!list?.length) list = (await getListDetail(id, source, 1)).list
+  if (!list?.length) {
+    list = (await getListDetail(id, source, 1, false, selection.signal).catch(error => {
+      if (isRequestCancelled(error)) return { list: [] }
+      throw error
+    })).list
+  }
   if (!selection()) return
   if (list?.length) {
     await setTempList(listId, [...list])
@@ -23,7 +29,10 @@ export const handlePlay = async(id: string, source: Source, list?: LX.Music.Musi
     if (!queueSession) return
   }
   if (queueSession ? queueSession !== getPlayQueueSessionId() : !selection()) return
-  const fullList = await getListDetailAll(source, id)
+  const fullList = await getListDetailAll(source, id, false, queueSession ? getPlayQueueSignal() : selection.signal).catch(error => {
+    if (isRequestCancelled(error)) return []
+    throw error
+  })
   if (!fullList.length) return
   if (queueSession) {
     await completePlayQueue(queueSession, fullList)

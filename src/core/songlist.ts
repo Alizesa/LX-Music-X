@@ -2,6 +2,8 @@ import { type ListDetailInfo } from '@/store/songlist/state'
 import songlistActions from '@/store/songlist/action'
 import { deduplicationList, toNewMusicInfo } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
+import { withRequestSignal } from '@/utils/musicSdk/requestScope'
+import { throwIfAborted, withAbort } from '@/utils/abort'
 
 
 type LimitDetailCache = Map<number, ListDetailInfo>
@@ -14,6 +16,8 @@ interface DetailCursor {
   done: boolean
   info: ListDetailInfo | null
   loading: Promise<void> | null
+  controller: AbortController | null
+  consumers: Set<symbol>
 }
 const detailCursors = new WeakMap<LimitDetailCache, DetailCursor>()
 
@@ -101,8 +105,13 @@ const makeDetailPage = (cursor: DetailCursor, page: number, list: ListDetailInfo
   const total = cursor.done ? cursor.loaded : cursor.info!.total
   return { ...cursor.info!, list, page, total, limit: LIST_LOAD_LIMIT, maxPage: Math.ceil(total / LIST_LOAD_LIMIT) }
 }
-const loadDetailSourcePage = async(source: LX.OnlineSource, id: string, listKey: string, value: LimitDetailCache, cursor: DetailCursor) => {
-  const result: ListDetailInfo = await (musicSdk[source]?.songList.getListDetail(id, cursor.sourcePage + 1) ?? Promise.reject(new Error('source not found')))
+const loadDetailSourcePage = async(source: LX.OnlineSource, id: string, listKey: string, value: LimitDetailCache, cursor: DetailCursor, signal: AbortSignal) => {
+  throwIfAborted(signal)
+  const provider = musicSdk[source]?.songList
+  const result: ListDetailInfo = await withAbort((provider
+    ? withRequestSignal(provider, signal).getListDetail(id, cursor.sourcePage + 1)
+    : Promise.reject(new Error('source not found'))) as Promise<ListDetailInfo>, signal)
+  throwIfAborted(signal)
   if (cache.get(listKey) !== value) throw new Error('Songlist request superseded')
   const total = Number(result.total)
   const limit = Number(result.limit)
@@ -134,7 +143,8 @@ const loadDetailSourcePage = async(source: LX.OnlineSource, id: string, listKey:
 }
 
 /** 同一源游标顺序推进到目标 UI 页，缺失的前页由该循环一并补齐。 */
-const getListDetailLimit = async(source: LX.OnlineSource, id: string, page: number, isRefresh = false): Promise<ListDetailInfo> => {
+const getListDetailLimit = async(source: LX.OnlineSource, id: string, page: number, isRefresh = false, signal?: AbortSignal): Promise<ListDetailInfo> => {
+  throwIfAborted(signal)
   const listKey = detailKey(source, id)
   let value = cache.get(listKey)
   if (!value || isRefresh) {
@@ -146,23 +156,39 @@ const getListDetailLimit = async(source: LX.OnlineSource, id: string, page: numb
   if (cached) return cached
   let current = detailCursors.get(listCache)
   if (!current) {
-    current = { sourcePage: 0, nextPage: 1, loaded: 0, pending: [], ids: new Set(), done: false, info: null, loading: null }
+    current = { sourcePage: 0, nextPage: 1, loaded: 0, pending: [], ids: new Set(), done: false, info: null, loading: null, controller: null, consumers: new Set() }
     detailCursors.set(listCache, current)
   }
   const cursor = current
   return withDetailCache(listCache, async() => {
-    while (!listCache.has(page) && !cursor.done) {
-      // 并发页面/全量点播共享同一源请求，失败只重试尚未成功的源页。
-      if (!cursor.loading) {
-        const request = loadDetailSourcePage(source, id, listKey, listCache, cursor).finally(() => {
-          if (cursor.loading === request) cursor.loading = null
-        })
-        cursor.loading = request
+    const consumer = Symbol('songlist consumer')
+    cursor.consumers.add(consumer)
+    try {
+      while (!listCache.has(page) && !cursor.done) {
+        throwIfAborted(signal)
+        // 并发页面/全量点播共享同一源请求，失败只重试尚未成功的源页。
+        if (!cursor.loading) {
+          const controller = new AbortController()
+          cursor.controller = controller
+          const request = loadDetailSourcePage(source, id, listKey, listCache, cursor, controller.signal).finally(() => {
+            if (cursor.loading === request) cursor.loading = null
+            if (cursor.controller === controller) cursor.controller = null
+          })
+          cursor.loading = request
+        }
+        await withAbort(cursor.loading, signal)
+        throwIfAborted(signal)
+        if (cache.get(listKey) !== listCache) throw new Error('Songlist request superseded')
       }
-      await cursor.loading
-      if (cache.get(listKey) !== listCache) throw new Error('Songlist request superseded')
+      return listCache.get(page) ?? makeDetailPage(cursor, page, [])
+    } finally {
+      cursor.consumers.delete(consumer)
+      if (!cursor.consumers.size && cursor.loading) {
+        cursor.controller?.abort()
+        cursor.controller = null
+        cursor.loading = null
+      }
     }
-    return listCache.get(page) ?? makeDetailPage(cursor, page, [])
   })
 }
 
@@ -190,8 +216,8 @@ export const clearListDetail = () => {
  * @param isRefresh 是否跳过缓存
  * @returns
  */
-export const getListDetail = async(id: string, source: LX.OnlineSource, page: number, isRefresh = false): Promise<ListDetailInfo> => {
-  return getListDetailLimit(source, id, page, isRefresh)
+export const getListDetail = async(id: string, source: LX.OnlineSource, page: number, isRefresh = false, signal?: AbortSignal): Promise<ListDetailInfo> => {
+  return getListDetailLimit(source, id, page, isRefresh, signal)
 }
 
 /**
@@ -201,7 +227,8 @@ export const getListDetail = async(id: string, source: LX.OnlineSource, page: nu
  * @param isRefresh 是否跳过缓存
  * @returns
  */
-export const getListDetailAll = async(source: LX.OnlineSource, id: string, isRefresh = false): Promise<LX.Music.MusicInfoOnline[]> => {
+export const getListDetailAll = async(source: LX.OnlineSource, id: string, isRefresh = false, signal?: AbortSignal): Promise<LX.Music.MusicInfoOnline[]> => {
+  throwIfAborted(signal)
   const listKey = `sdetail__${source}__${id}`
   let listCache = cache.get(listKey)
   if (!listCache || isRefresh) {
@@ -214,8 +241,9 @@ export const getListDetailAll = async(source: LX.OnlineSource, id: string, isRef
   const heldCache = listCache
   return withDetailCache(heldCache, async() => {
     const loadData = async(page: number): Promise<ListDetailInfo> => {
+      throwIfAborted(signal)
       if (cache.get(listKey) !== heldCache) throw new Error('Songlist request superseded')
-      return heldCache.get(page) ?? getListDetailLimit(source, id, page)
+      return heldCache.get(page) ?? getListDetailLimit(source, id, page, false, signal)
     }
     const first = await loadData(1)
     if (first.total <= first.limit) return deduplicationList(first.list)

@@ -2,6 +2,7 @@ import { requestMsg } from './message'
 import { bHh } from './musicSdk/options'
 import { deflateRaw } from 'pako'
 import { createFetchData } from './httpRequest'
+import { throwIfAborted, withAbort } from './abort'
 
 const regx = /(?:\d\w)+/g
 const fetchData = createFetchData({
@@ -23,10 +24,11 @@ const fetchData = createFetchData({
 })
 
 /** @param {string} url @param {Record<string, any>} [options] */
-export const httpFetch = (url, options = { method: 'get' }) => {
-  const requestObj = fetchData(url, options)
+export const httpFetch = (url, options = { method: 'get' }, signal = options.signal) => {
+  throwIfAborted(signal)
+  const requestObj = fetchData(url, { ...options, signal })
   return {
-    promise: requestObj.request.catch(err => {
+    promise: withAbort(requestObj.request, signal, requestObj.abort).catch(err => {
       switch (err.message) {
         case 'socket hang up': throw new Error(requestMsg.unachievable)
         case 'Aborted': throw new Error(requestMsg.timeout)

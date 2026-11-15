@@ -6,6 +6,12 @@ import { createHttpFetch } from './utils/index'
 
 
 export default {
+  createHttpFetch(url, options) {
+    return createHttpFetch(url, { ...options, signal: this.requestSignal })
+  },
+  httpFetch(url, options) {
+    return httpFetch(url, options, this.requestSignal)
+  },
   limit_song: 30,
   successCode: '000000',
   cachedDetailInfo: {},
@@ -36,7 +42,7 @@ export default {
     //   id = id.replace(/.*(?:\?|&)id=(\d+)(?:&.*|$)/, '$1')
     // } else if ((/[?&:/]/.test(id))) id = id.replace(this.regExps.listDetailLink, '$1')
 
-    const requestObj_listDetail = httpFetch(this.getSongListDetailUrl(id, page), { headers: this.defaultHeaders })
+    const requestObj_listDetail = this.httpFetch(this.getSongListDetailUrl(id, page), { headers: this.defaultHeaders })
     return requestObj_listDetail.promise.then(({ body }) => {
       if (body.code !== this.successCode) return this.getListDetailList(id, page, ++tryNum)
       // console.log(JSON.stringify(body))
@@ -55,7 +61,7 @@ export default {
     if (tryNum > 2) return Promise.reject(new Error('try max num'))
 
     if (this.cachedDetailInfo[id]) return Promise.resolve(this.cachedDetailInfo[id])
-    const requestObj_listDetailInfo = httpFetch(`https://c.musicapp.migu.cn/MIGUM3.0/resource/playlist/v2.0?playlistId=${id}`, {
+    const requestObj_listDetailInfo = this.httpFetch(`https://c.musicapp.migu.cn/MIGUM3.0/resource/playlist/v2.0?playlistId=${id}`, {
       headers: this.defaultHeaders,
     })
     return requestObj_listDetailInfo.promise.then(({ body }) => {
@@ -76,7 +82,7 @@ export default {
   async getDetailUrl(link, page, retryNum = 0) {
     if (retryNum > 3) return Promise.reject(new Error('link try max num'))
 
-    const requestObj_listDetailLink = httpFetch(link, {
+    const requestObj_listDetailLink = this.httpFetch(link, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 9_1 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Version/9.0 Mobile/13B143 Safari/601.1',
         Referer: link,
@@ -145,7 +151,7 @@ export default {
   search(text, page, limit = 20) {
     const timeStr = Date.now().toString()
     const signResult = createSignature(timeStr, text)
-    return createHttpFetch(`https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=1&isCopyright=1&searchSwitch=%7B%22song%22%3A0%2C%22album%22%3A0%2C%22singer%22%3A0%2C%22tagSong%22%3A0%2C%22mvSong%22%3A0%2C%22bestShow%22%3A0%2C%22songlist%22%3A1%2C%22lyricSong%22%3A0%7D&pageSize=${limit}&text=${encodeURIComponent(text)}&pageNo=${page}&sort=0&sid=USS`, {
+    return this.createHttpFetch(`https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=1&isCopyright=1&searchSwitch=%7B%22song%22%3A0%2C%22album%22%3A0%2C%22singer%22%3A0%2C%22tagSong%22%3A0%2C%22mvSong%22%3A0%2C%22bestShow%22%3A0%2C%22songlist%22%3A1%2C%22lyricSong%22%3A0%7D&pageSize=${limit}&text=${encodeURIComponent(text)}&pageNo=${page}&sort=0&sid=USS`, {
       headers: {
         uiVersion: 'A_music_3.6.1',
         deviceId: signResult.deviceId,

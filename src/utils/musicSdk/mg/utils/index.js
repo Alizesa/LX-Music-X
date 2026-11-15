@@ -7,14 +7,17 @@ import { httpFetch } from '../../../request'
  * @param {*} retryNum
  */
 export const createHttpFetch = async(url, options, retryNum = 0) => {
+  if (options.signal?.aborted) throw new Error('cancelled')
   if (retryNum > 2) throw new Error('try max num')
   let result
   try {
     result = await httpFetch(url, options).promise
   } catch (err) {
+    if (options.signal?.aborted) throw err
     console.log(err)
     return createHttpFetch(url, options, ++retryNum)
   }
+  if (options.signal?.aborted) throw new Error('cancelled')
   if (result.statusCode !== 200 ||
     (
       (result.body.code !== undefined

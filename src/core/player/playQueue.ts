@@ -6,6 +6,7 @@ import playerActions from '@/store/player/action'
 const queue: LX.Player.PlayQueueItem[] = []
 let initialized = false
 let sessionId = ''
+let sessionController = new AbortController()
 let sourceFirstMusicId: string | undefined
 let sourceBatchKey: string | undefined
 let metadataOwner: LX.Player.PlayQueueItem | undefined
@@ -30,11 +31,13 @@ const commit = async() => {
   if (metadataOwner && metadataOwner !== first) clearItemMetadata(metadataOwner)
   metadataOwner = first
   if (first) {
+    if (sessionController.signal.aborted) sessionController = new AbortController()
     // 元信息随队列落盘，不能随当前队首被裁剪、删除或移动而改变
     first.sessionId = sessionId ||= first.queueId
     first.sourceFirstMusicId = sourceFirstMusicId ??= first.musicInfo.id
     first.sourceBatchKey = sourceBatchKey
   } else {
+    sessionController.abort()
     sessionId = ''
     sourceFirstMusicId = undefined
     sourceBatchKey = undefined
@@ -67,6 +70,7 @@ export const initPlayQueue = async() => {
 export const getPlayQueue = () => queue
 export const getPlayQueueMusic = () => queue.map(item => item.musicInfo)
 export const getPlayQueueSessionId = () => sessionId
+export const getPlayQueueSignal = () => sessionController.signal
 export const getPlayQueueSourceFirstMusicId = () => sourceFirstMusicId
 export const getPlayQueueSourceBatchKey = () => sourceBatchKey
 
@@ -93,6 +97,8 @@ export const restampPlayQueue = async(sourceListId: string, batchKey?: string) =
 }
 
 export const replacePlayQueue = async(sourceListId: string, list: LX.Player.PlayMusic[], firstMusicId = list[0]?.id, batchKey?: string) => {
+  sessionController.abort()
+  sessionController = new AbortController()
   // 同一毫秒重新选择相同首曲也属于新队列，不能接收上一轮补全。
   const seed = `${Date.now().toString(36)}_${++queueSequence}`
   removedMusicIds.clear()
