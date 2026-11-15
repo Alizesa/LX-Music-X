@@ -56,6 +56,8 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
       getQQMusicRecommendPlaylistsCache: async() => cache('playlists'),
     },
     '@/lang': { useI18n: () => key => key },
+    '@/utils/hooks/useScreenVisible': { useScreenVisible: host.visible },
+    '@/core/detailCache': { getDetailCache: async() => null, saveDetailCache() {} },
   }, { Error, global: { app_event: events } }).default
   const render = () => { tree = host.render(frame, component); return tree }
   const settle = async() => { await flush(); render(); await flush(); render() }
@@ -114,6 +116,42 @@ const playbackHome = async(t, cached = true) => {
   await h.mount()
   return { ...h, playback, started, temporary, fetched }
 }
+
+test('hiding recommendations releases song snapshots and its account listener and restores cached cards on return', async t => {
+  const h = harness()
+  t.after(h.unmount)
+  await h.mount()
+  assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 1)
+  h.frame.visible = false
+  assert.equal(h.render(), null)
+  assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 0)
+  assert.ok(h.frame.slots.every(slot => !Array.isArray(slot?.value) || slot.value.length === 0))
+  h.frame.visible = true
+  h.render()
+  await h.settle()
+  assert.equal(h.cover(), 'cached-A-cover')
+  assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 1)
+})
+
+test('a request from before hiding cannot overwrite a refresh after returning to the same account', async t => {
+  const h = harness(); const old = deferred()
+  t.after(h.unmount)
+  await h.mount()
+  h.replies.set(1, old.promise)
+  const pending = h.refresh()
+  h.frame.visible = false
+  h.render()
+  h.frame.visible = true
+  h.render()
+  await h.settle()
+  h.replies.set(1, songs('new'))
+  await h.refresh()
+  await h.settle()
+  old.resolve(songs('obsolete'))
+  await pending
+  await h.settle()
+  assert.equal(h.cover(), 'new-cover')
+})
 
 test('an obsolete recommendation result ends the card action without starting a fallback queue', async t => {
   const h = await playbackHome(t)

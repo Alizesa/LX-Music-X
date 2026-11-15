@@ -43,6 +43,7 @@ const load = (file, mocks = {}, globals = {}) => {
     clearTimeout,
     console: { log() {}, warn() {}, error() {} },
     require: name => {
+      if (name === './detailCache' && !Object.hasOwn(mocks, name)) return { getDetailCache: async() => null, saveDetailCache() {} }
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'Fragment' }
       if (name === '@/utils/listPage') return load('src/utils/listPage.ts')
       if (name === '@/utils/abort' && !Object.hasOwn(mocks, name)) return load('src/utils/abort.ts', { './message': load('src/utils/message.ts') })

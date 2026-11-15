@@ -4,6 +4,7 @@ import { deduplicationList, toNewMusicInfo } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
 import { withRequestSignal } from '@/utils/musicSdk/requestScope'
 import { throwIfAborted, withAbort } from '@/utils/abort'
+import { getDetailCache, saveDetailCache } from './detailCache'
 
 
 type LimitDetailCache = Map<number, ListDetailInfo>
@@ -20,6 +21,56 @@ interface DetailCursor {
   consumers: Set<symbol>
 }
 const detailCursors = new WeakMap<LimitDetailCache, DetailCursor>()
+const restoredCaches = new WeakSet<LimitDetailCache>()
+const restoringCaches = new WeakMap<LimitDetailCache, Promise<void>>()
+const releasedCaches = new WeakSet<LimitDetailCache>()
+type SavedCursor = Pick<DetailCursor, 'sourcePage' | 'nextPage' | 'loaded' | 'pending' | 'done' | 'info'> & { pages: number[] }
+
+const saveCursor = (key: string, value: LimitDetailCache, cursor: DetailCursor, firstPage: number) => {
+  for (const [page, result] of value) {
+    if (page >= firstPage) saveDetailCache(`${key}::page:${page}`, result)
+  }
+  saveDetailCache(key, {
+    sourcePage: cursor.sourcePage,
+    nextPage: cursor.nextPage,
+    loaded: cursor.loaded,
+    pending: [...cursor.pending],
+    done: cursor.done,
+    info: cursor.info,
+    pages: [...value.keys()],
+  } satisfies SavedCursor)
+}
+const restoreCursor = async(key: string, value: LimitDetailCache) => {
+  if (restoredCaches.has(value)) return
+  const pending = restoringCaches.get(value)
+  if (pending) return pending
+  const task = (async() => {
+    const saved = await getDetailCache<SavedCursor>(key)
+    if (!saved || !Array.isArray(saved.pages) || !Array.isArray(saved.pending) || !saved.info ||
+      !Number.isInteger(saved.sourcePage) || saved.sourcePage < 1 || !Number.isInteger(saved.loaded) || saved.loaded < 0 ||
+      saved.nextPage !== saved.pages.length + 1 || typeof saved.done !== 'boolean') return
+    if (detailKey(saved.info.source, saved.info.id) !== key) return
+    if (cache.get(key) !== value) return
+    const pages = new Map<number, ListDetailInfo>()
+    for (let index = 0; index < saved.pages.length; index++) {
+      const page = saved.pages[index]
+      if (page !== index + 1) return
+      const result = await getDetailCache<ListDetailInfo>(`${key}::page:${page}`)
+      if (cache.get(key) !== value) return
+      if (!result || !Array.isArray(result.list)) return
+      pages.set(page, saved.done ? { ...result, total: saved.loaded, maxPage: Math.ceil(saved.loaded / LIST_LOAD_LIMIT) } : result)
+    }
+    if (cache.get(key) !== value || value.size || detailCursors.has(value)) return
+    if ([...pages.values()].reduce((sum, page) => sum + page.list.length, saved.pending.length) !== saved.loaded) return
+    const ids = new Set<string>()
+    for (const page of pages.values()) for (const music of page.list) ids.add(music.id)
+    for (const music of saved.pending) ids.add(music.id)
+    for (const [page, result] of pages) value.set(page, result)
+    detailCursors.set(value, { ...saved, ids, loading: null, controller: null, consumers: new Set() })
+  })().finally(() => { restoredCaches.add(value); restoringCaches.delete(value) })
+  restoringCaches.set(value, task)
+  return task
+}
 
 const cache = new Map<string, LimitDetailCache>()
 const LIST_LOAD_LIMIT = 30
@@ -36,12 +87,21 @@ const detailKey = (source: LX.OnlineSource, id: string) => `sdetail__${source}__
 export const retainSonglistDetail = (source: LX.OnlineSource, id: string) => {
   const key = detailKey(source, id)
   retainedDetailKeys.set(key, (retainedDetailKeys.get(key) ?? 0) + 1)
+  const value = cache.get(key)
+  if (value) releasedCaches.delete(value)
 }
 export const releaseSonglistDetail = (source: LX.OnlineSource, id: string) => {
   const key = detailKey(source, id)
   const count = retainedDetailKeys.get(key) ?? 0
   if (count > 1) retainedDetailKeys.set(key, count - 1)
-  else retainedDetailKeys.delete(key)
+  else {
+    retainedDetailKeys.delete(key)
+    const value = cache.get(key)
+    if (value) {
+      releasedCaches.add(value)
+      if (!loadingDetailCaches.has(value)) cache.delete(key)
+    }
+  }
 }
 
 // Map 保持插入顺序：删了再塞就排到末尾，淘汰时从头部拿最久没用的
@@ -98,6 +158,9 @@ const withDetailCache = async<T>(value: LimitDetailCache, read: () => Promise<T>
     const users = loadingDetailCaches.get(value)!
     if (users > 1) loadingDetailCaches.set(value, users - 1)
     else loadingDetailCaches.delete(value)
+    if (!loadingDetailCaches.has(value) && releasedCaches.has(value)) {
+      for (const [key, current] of cache) if (current === value && !retainedDetailKeys.has(key)) cache.delete(key)
+    }
     pruneDetailCache()
   }
 }
@@ -126,6 +189,7 @@ const loadDetailSourcePage = async(source: LX.OnlineSource, id: string, listKey:
   cursor.done = total === 0 || cursor.sourcePage >= Math.ceil(total / limit)
   cursor.info = { ...result, id, source, total, key: null, list: [] }
   const buffered = [...cursor.pending, ...rows]
+  const firstPage = cursor.nextPage
   let offset = 0
   while (buffered.length - offset >= LIST_LOAD_LIMIT || (cursor.done && offset < buffered.length)) {
     const page = cursor.nextPage++
@@ -140,6 +204,7 @@ const loadDetailSourcePage = async(source: LX.OnlineSource, id: string, listKey:
       data.maxPage = Math.ceil(cursor.loaded / LIST_LOAD_LIMIT)
     }
   }
+  saveCursor(listKey, value, cursor, firstPage)
 }
 
 /** 同一源游标顺序推进到目标 UI 页，缺失的前页由该循环一并补齐。 */
@@ -150,8 +215,12 @@ const getListDetailLimit = async(source: LX.OnlineSource, id: string, page: numb
   if (!value || isRefresh) {
     value = new Map()
     cache.set(listKey, value)
+    if (isRefresh) restoredCaches.add(value)
   } else touchCache(listKey)
   const listCache = value
+  await restoreCursor(listKey, listCache)
+  throwIfAborted(signal)
+  if (cache.get(listKey) !== listCache) throw new Error('Songlist request superseded')
   const cached = listCache.get(page)
   if (cached) return cached
   let current = detailCursors.get(listCache)
@@ -234,6 +303,7 @@ export const getListDetailAll = async(source: LX.OnlineSource, id: string, isRef
   if (!listCache || isRefresh) {
     listCache = new Map()
     cache.set(listKey, listCache)
+    if (isRefresh) restoredCaches.add(listCache)
   } else {
     touchCache(listKey)
   }

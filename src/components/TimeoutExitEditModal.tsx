@@ -11,6 +11,7 @@ import CheckBox from './common/CheckBox'
 import { useSettingValue } from '@/store/setting/hook'
 import { updateSetting } from '@/core/common'
 import settingState from '@/store/setting/state'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 const MAX_MIN = 1440
 const rxp = /([1-9]\d*)/
@@ -103,8 +104,10 @@ export const useTimeInfo = () => {
     active: false,
   })
   const t = useI18n()
+  const visible = useScreenVisible()
 
   useEffect(() => {
+    if (!visible) return
     let active: boolean | null = null
     const remove = onTimeUpdate((time, isPlayedStop) => {
       if (time < 0) {
@@ -133,7 +136,7 @@ export const useTimeInfo = () => {
     return () => {
       remove()
     }
-  }, [t])
+  }, [t, visible])
 
   return exitTimeInfo
 }
@@ -150,8 +153,13 @@ export default forwardRef<TimeoutExitEditModalType, TimeoutExitEditModalProps>((
   const timeInputRef = useRef<TimeInputType>(null)
   const [visible, setVisible] = useState(false)
   const t = useI18n()
+  const screenVisible = useScreenVisible()
+  const screenVisibleRef = useRef(screenVisible)
+  screenVisibleRef.current = screenVisible
+  useEffect(() => { if (!screenVisible) setVisible(false) }, [screenVisible])
 
   const handleShow = () => {
+    if (!screenVisibleRef.current) return
     alertRef.current?.setVisible(true)
     requestAnimationFrame(() => {
       if (settingState.setting['player.timeoutExit']) timeInputRef.current?.setText(settingState.setting['player.timeoutExit'])
@@ -162,6 +170,7 @@ export default forwardRef<TimeoutExitEditModalType, TimeoutExitEditModalProps>((
   }
   useImperativeHandle(ref, () => ({
     show() {
+      if (!screenVisibleRef.current) return
       if (visible) handleShow()
       else {
         setVisible(true)
@@ -212,6 +221,7 @@ export default forwardRef<TimeoutExitEditModalType, TimeoutExitEditModalProps>((
           confirmText={timeInfo.confirmText}
           onCancel={handleCancel}
           onConfirm={handleConfirm}
+          onHide={() => { setVisible(false) }}
         >
           <View style={styles.alertContent}>
             <Status />

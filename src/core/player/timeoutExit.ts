@@ -3,6 +3,7 @@ import BackgroundTimer from 'react-native-background-timer'
 import { exitApp } from '@/core/common'
 import playerState from '@/store/player/state'
 import settingState from '@/store/setting/state'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 type Hook = (time: number, isPlayedStop: boolean) => void
 
@@ -30,9 +31,8 @@ const timeoutTools = {
     }
   },
   clearTimeout() {
-    if (!this.bgTimeout) return
-    BackgroundTimer.clearTimeout(this.bgTimeout)
-    clearInterval(this.timeout!)
+    if (this.bgTimeout != null) BackgroundTimer.clearTimeout(this.bgTimeout)
+    if (this.timeout != null) clearInterval(this.timeout)
     this.bgTimeout = null
     this.timeout = null
     this.time = -1
@@ -46,16 +46,25 @@ const timeoutTools = {
       this.clearTimeout()
       this.exit()
     }, time * 1000)
-    this.timeout = setInterval(() => {
-      this.callHooks()
-    }, 1000)
+    this.updateTicker()
+  },
+  updateTicker() {
+    if (this.time >= 0 && this.timeHooks.length) {
+      this.timeout ??= setInterval(() => { this.callHooks() }, 1000)
+    } else if (this.timeout != null) {
+      clearInterval(this.timeout)
+      this.timeout = null
+    }
   },
   addTimeHook(hook: Hook) {
     this.timeHooks.push(hook)
     hook(this.getTime(), global.lx.isPlayedStop)
+    this.updateTicker()
   },
   removeTimeHook(hook: Hook) {
-    this.timeHooks.splice(this.timeHooks.indexOf(hook), 1)
+    const index = this.timeHooks.indexOf(hook)
+    if (index >= 0) this.timeHooks.splice(index, 1)
+    this.updateTicker()
   },
 }
 
@@ -73,13 +82,15 @@ export const getTimeoutExitTime = () => {
 
 export const useTimeoutExitTimeInfo = () => {
   const [info, setInfo] = useState({ time: 0, isPlayedStop: false })
+  const visible = useScreenVisible()
   useEffect(() => {
+    if (!visible) return
     const hook: Hook = (time, isPlayedStop) => {
       setInfo({ time, isPlayedStop })
     }
     timeoutTools.addTimeHook(hook)
     return () => { timeoutTools.removeTimeHook(hook) }
-  }, [setInfo])
+  }, [setInfo, visible])
 
   return info
 }

@@ -12,6 +12,7 @@ import Image from '@/components/common/Image'
 import { useListInfo } from './state'
 import { useAnimateOnecNumber } from '@/utils/hooks/useAnimateNumber'
 import { useStatusbarHeight } from '@/store/common/hook'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 const IMAGE_WIDTH = scaleSizeW(70)
 
@@ -76,12 +77,19 @@ export default forwardRef<HeaderType, HeaderProps>(({ componentId }: { component
   const theme = useTheme()
   const info = useListInfo()
   const [detailInfo, setDetailInfo] = useState<DetailInfo>({ name: '', desc: '', playCount: '', imgUrl: info.img })
+  const visible = useScreenVisible()
 
   useImperativeHandle(ref, () => ({
     setInfo(info) {
       setDetailInfo(info)
     },
   }), [])
+
+  useEffect(() => {
+    if (!visible) setDetailInfo({ name: '', desc: '', playCount: '' })
+  }, [visible])
+
+  if (!visible) return null
 
   return (
     <View style={{ ...styles.container, paddingTop: statusBarHeight, borderBottomColor: theme['c-border-background'] }}>

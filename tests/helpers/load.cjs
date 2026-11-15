@@ -23,6 +23,7 @@ const load = (file, mocks = {}, globals = {}) => {
       if (name === './detailCache' && !Object.hasOwn(mocks, name)) return { getDetailCache: async() => null, saveDetailCache() {} }
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./playback-log.cjs')
       if (name === '@/utils/message' && !Object.hasOwn(mocks, name)) return load('src/utils/message.ts')
+      if (name === './message' && file === 'src/utils/abort.ts' && !Object.hasOwn(mocks, name)) return load('src/utils/message.ts')
       if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return load('src/utils/abortable.ts', { './message': load('src/utils/message.ts') })
       if ((name === '@/utils/abort' || name === './abort') && !Object.hasOwn(mocks, name)) return load('src/utils/abort.ts', { './message': load('src/utils/message.ts') })
       if (name === '@/utils/musicSdk/requestScope' && !Object.hasOwn(mocks, name)) return load('src/utils/musicSdk/requestScope.ts')

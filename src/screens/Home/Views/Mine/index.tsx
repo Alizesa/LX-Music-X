@@ -19,6 +19,7 @@ import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
 import { getPlayHistory, getQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
 import { useI18n } from '@/lang'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 const AVATAR_SIZE = 56
 
@@ -146,19 +147,25 @@ export default () => {
   const [refreshing, setRefreshing] = useState(false)
   const refreshingRef = useRef(false)
   const downloadCount = useDownloadCount()
+  const visible = useScreenVisible()
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
+  const lifecycle = useRef(0)
 
   const loggedIn = !!cookie && !!user
 
   // 歌单：读本地缓存，正常情况下只有「从没拉过」才联网。
   // 例外：旧版手机号登录写入的收藏列表可能没有「我喜欢」项，这种缓存要重拉一次，
   // 否则入口一直点不开（新列表里一定带 liked，见 getQQMusicPlaylists 的兜底）。
-  const loadPlaylists = useCallback(async(session: QQMusicSession) => {
-    if (!isQQMusicSessionCurrent(session)) return
+  const loadPlaylists = useCallback(async(session: QQMusicSession, version = lifecycle.current) => {
+    const current = () => visibleRef.current && version === lifecycle.current && isQQMusicSessionCurrent(session)
+    if (!current()) return
     if (!session.cookie) {
       setPlaylists([])
       return
     }
     const cachedList = filterVisiblePlaylists(await getQQMusicPlaylistsCache())
+    if (!current()) return
     // 旧缓存里的合成「我喜欢」没有曲目数：用内存或持久缓存补上，
     // 否则 Mine 入口和歌单页副标题会少一个「共 N 首」
     const likedItem = cachedList.find(item => item.liked)
@@ -167,7 +174,7 @@ export default () => {
       const likedCount = getQQMusicLikedCount() ?? await ensureQQMusicLikedCount()
       if (likedCount) likedItem.trackCount = likedCount
     }
-    if (!isQQMusicSessionCurrent(session)) return
+    if (!current()) return
     if (cachedList.some(item => item.liked)) {
       setPlaylists(cachedList)
       return
@@ -175,7 +182,7 @@ export default () => {
     if (cachedList.length) setPlaylists(cachedList)
     try {
       const fresh = await getQQMusicPlaylists(session.cookie, { requireAll: true })
-      if (!await updateQQMusicPlaylistsCache(session, () => fresh) || !isQQMusicSessionCurrent(session)) return
+      if (!await updateQQMusicPlaylistsCache(session, () => fresh) || !current()) return
       setPlaylists(filterVisiblePlaylists(fresh))
     } catch (error) {
       console.warn('[QQMusic] 拉取歌单失败:', error instanceof Error ? error.message : error)
@@ -183,17 +190,26 @@ export default () => {
   }, [])
 
   useEffect(() => {
+    const version = ++lifecycle.current
+    if (!visible) {
+      setCookie('')
+      setUser(null)
+      setPlaylists([])
+      refreshingRef.current = false
+      setRefreshing(false)
+      return
+    }
     // 读当前会话再决定加载哪个号的歌单。登录/换号、以及别处收藏了歌单时都调它
     const syncFromSession = (nextUser?: LX.QQMusic.UserInfo | null) => {
       if (nextUser !== undefined) setUser(nextUser)
       void getQQMusicSession().then(session => {
-        if (!isQQMusicSessionCurrent(session)) return
+        if (!visibleRef.current || version !== lifecycle.current || !isQQMusicSessionCurrent(session)) return
         setCookie(session.cookie)
         // 冷启动挂载时没有 nextUser，账号资料只能从会话里拿。
         // 漏了这句就是「cookie 有、user 空」，界面按未登录画。
         // 反过来 cookie 空时不能拿残留的 user 顶上：卡片会显示旧昵称却没登录
         if (nextUser === undefined) setUser(session.cookie ? session.user : null)
-        void loadPlaylists(session)
+        void loadPlaylists(session, version)
       })
     }
     syncFromSession()
@@ -210,11 +226,14 @@ export default () => {
       global.app_event.off('qqMusicAccountUpdated', handleAccountUpdate)
       global.app_event.off('qqMusicPlaylistsUpdated', handlePlaylistsUpdate)
     }
-  }, [loadPlaylists])
+  }, [loadPlaylists, visible])
 
   // 「我喜欢」歌曲数量变化时同步 Mine 入口/歌单页副标题的曲目数
   useEffect(() => {
+    if (!visible) return
+    let active = true
     const applyCount = (count: number) => {
+      if (!active) return
       setPlaylists(prev => prev.map(item => item.liked ? { ...item, trackCount: count || undefined } : item))
     }
     const updateLikedCount = () => {
@@ -226,21 +245,25 @@ export default () => {
       void ensureQQMusicLikedCount().then(applyCount).catch(() => {})
     }
     global.app_event.on('qqMusicLikedUpdated', updateLikedCount)
-    return () => { global.app_event.off('qqMusicLikedUpdated', updateLikedCount) }
-  }, [])
+    return () => { active = false; global.app_event.off('qqMusicLikedUpdated', updateLikedCount) }
+  }, [visible])
 
   useEffect(() => {
-    void getPlayHistory().then(list => { setHistoryCount(list.length) })
+    if (!visible) return
+    let active = true
+    void getPlayHistory().then(list => { if (active) setHistoryCount(list.length) })
     // 事件里已经带着最新的整份历史，别再回头读一次存储
     const handleUpdate = (history: LX.Player.PlayHistoryItem[]) => { setHistoryCount(history.length) }
     global.app_event.on('playHistoryUpdate', handleUpdate)
-    return () => { global.app_event.off('playHistoryUpdate', handleUpdate) }
-  }, [])
+    return () => { active = false; global.app_event.off('playHistoryUpdate', handleUpdate) }
+  }, [visible])
 
   // 本地歌曲数量直接读匹配索引里的 listCount，避免为了计数加载整份 LOCAL 列表
   useEffect(() => {
+    if (!visible) return
+    let active = true
     // 用 async 声明：列表事件的监听签名要求返回 Promise<void>
-    const load = async() => { setLocalCount(await getLocalMusicCount()) }
+    const load = async() => { const count = await getLocalMusicCount(); if (active) setLocalCount(count) }
     void load()
     global.list_event.on('list_music_add', load)
     global.list_event.on('list_music_remove', load)
@@ -249,6 +272,7 @@ export default () => {
     global.list_event.on('list_music_overwrite', load)
     global.list_event.on('list_data_overwrite', load)
     return () => {
+      active = false
       global.list_event.off('list_music_add', load)
       global.list_event.off('list_music_remove', load)
       global.list_event.off('list_music_clear', load)
@@ -256,7 +280,7 @@ export default () => {
       global.list_event.off('list_music_overwrite', load)
       global.list_event.off('list_data_overwrite', load)
     }
-  }, [])
+  }, [visible])
 
   const refresh = useCallback(async() => {
     // setRefreshing 要到下次渲染才生效，光靠 disabled 挡不住这个窗口内的第二次触发
@@ -354,7 +378,9 @@ export default () => {
     if (!cookie || !user || profileRefetchedRef.current) return
     if (user.avatar && !user.avatar.includes('qlogo.cn')) return
     profileRefetchedRef.current = true
+    const version = lifecycle.current
     void getQQMusicUserInfo(cookie).then(async nextUser => {
+      if (!visibleRef.current || version !== lifecycle.current) return
       // 资料接口拿不到时会回 QQ <uin> + qlogo；登录回包里的真昵称/头像不能被它覆盖
       const merged = {
         ...nextUser,
@@ -378,6 +404,8 @@ export default () => {
       { key: 'collected', title: t('mine_collected_playlists'), editable: false, count: collected.length, data: chunkList(collected, playlistColumns) },
     ]
   }, [loggedIn, playlistColumns, playlists, t])
+
+  if (!visible) return null
 
   return (
     <View style={styles.container}>

@@ -8,7 +8,7 @@ import IconAction from '@/components/common/IconAction'
 import QQMusicLoginModal, { type QQMusicLoginModalType } from '@/components/QQMusicLoginModal'
 import { useTheme } from '@/store/theme/hook'
 import { useTabletLayout } from '@/utils/hooks'
-import { createStyle, toast } from '@/utils/tools'
+import { createStyle, toMD5, toast } from '@/utils/tools'
 import { LIST_IDS, QQ_HEART_RADAR_PLAYLIST_ID } from '@/config/constant'
 import { setHomePagerHorizontalScroll } from '@/core/homePagerScroll'
 import { setTempList } from '@/core/list'
@@ -34,6 +34,8 @@ import {
   getQQMusicRefreshDay,
 } from '@/utils/data'
 import { useI18n } from '@/lang'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
+import { getDetailCache, saveDetailCache } from '@/core/detailCache'
 
 type Songs = LX.Music.MusicInfoOnline[]
 type Playlist = LX.QQMusic.PlaylistInfo
@@ -127,6 +129,12 @@ export default () => {
   const loginRef = useRef<QQMusicLoginModalType>(null)
   const [session, setSession] = useState<QQMusicSession | null>(null)
   const mounted = useRef(true)
+  const visible = useScreenVisible()
+  const lifecycle = useRef(0)
+  const visibleRef = useRef(visible)
+  if (visibleRef.current !== visible) lifecycle.current++
+  visibleRef.current = visible
+  const lifecycleVersion = lifecycle.current
   const cacheRevisions = useRef({ daily: 0, guess: 0, radar: 0, playlists: 0 })
   const guessRequestRevision = useRef(0)
   const guessPlayRevision = useRef(0)
@@ -144,7 +152,7 @@ export default () => {
   const refreshingPlaylistsRef = useRef(false)
 
   const loggedIn = !!session?.cookie
-  const isCurrent = useCallback(() => mounted.current && !!session?.cookie && isQQMusicSessionCurrent(session), [session])
+  const isCurrent = useCallback(() => mounted.current && visibleRef.current && lifecycleVersion === lifecycle.current && !!session?.cookie && isQQMusicSessionCurrent(session), [session, lifecycleVersion])
   const applyResult = useCallback(async<T,>(kind: HomeCacheKind, request: Promise<T>, update: (value: T) => void): Promise<T> => {
     const value = await request
     if (!isCurrent()) throw new QQMusicSessionExpiredError()
@@ -164,6 +172,22 @@ export default () => {
   }, [loggedIn, playlists.length])
 
   useEffect(() => {
+    if (!visible) {
+      mounted.current = false
+      setSession(null)
+      setDaily([])
+      setGuess([])
+      setRadar([])
+      setPlaylists([])
+      setSimilar({ title: '', seedName: '', songs: [] })
+      refreshingRef.current = refreshingGuessRef.current = refreshingPlaylistsRef.current = false
+      setRefreshing(false)
+      setRefreshingGuess(false)
+      setRefreshingPlaylists(false)
+      setPlaying(false)
+      setHomePagerHorizontalScroll(false)
+      return
+    }
     mounted.current = true
     let revision = 0
     const handleAccountUpdate = () => {
@@ -190,7 +214,7 @@ export default () => {
       revision++
       global.app_event.off('qqMusicAccountUpdated', handleAccountUpdate)
     }
-  }, [])
+  }, [visible])
 
   useEffect(() => {
     if (!isCurrent()) return
@@ -211,9 +235,10 @@ export default () => {
 
   // 相似推荐的种子取最近播放的第一首 QQ 歌曲
   const loadSimilar = useCallback(async(activeSession: QQMusicSession | null) => {
+    const version = lifecycle.current
     if (!activeSession?.cookie || !isQQMusicSessionCurrent(activeSession)) return
     const history = await getPlayHistory()
-    if (!mounted.current || !isQQMusicSessionCurrent(activeSession)) return
+    if (!mounted.current || !visibleRef.current || version !== lifecycle.current || !isQQMusicSessionCurrent(activeSession)) return
     const seed = history.find(item => {
       const info = 'metadata' in item.musicInfo ? item.musicInfo.metadata.musicInfo : item.musicInfo
       return info.source == 'tx' && !!info.meta.id
@@ -222,8 +247,12 @@ export default () => {
     const info = 'metadata' in seed.musicInfo ? seed.musicInfo.metadata.musicInfo : seed.musicInfo
     const seedId = (info.meta as LX.Music.MusicInfoOnline['meta'] & { id?: string }).id
     try {
-      const result = await getQQMusicSimilarSongs(activeSession.cookie, seedId!)
-      if (!mounted.current || !isQQMusicSessionCurrent(activeSession) || !result.songs.length) return
+      const cacheKey = `similar_${toMD5(activeSession.cookie)}_${seedId}`
+      const cached = await getDetailCache<LX.QQMusic.SimilarRecommendation>(cacheKey)
+      if (!mounted.current || !visibleRef.current || version !== lifecycle.current || !isQQMusicSessionCurrent(activeSession)) return
+      const result = cached ?? await getQQMusicSimilarSongs(activeSession.cookie, seedId!)
+      if (!mounted.current || !visibleRef.current || version !== lifecycle.current || !isQQMusicSessionCurrent(activeSession) || !result.songs.length) return
+      if (!cached) saveDetailCache(cacheKey, result)
       setSimilar({ title: result.title, seedName: info.name, songs: result.songs })
     } catch {
       // 相似推荐失败不影响首页其它板块，静默跳过
@@ -502,6 +531,8 @@ export default () => {
   }
 
   const similarTitle = similar.title || t('home_similar_title', { name: similar.seedName })
+
+  if (!visible) return null
 
   return (
     <View style={styles.container} onLayout={onLayout}>
