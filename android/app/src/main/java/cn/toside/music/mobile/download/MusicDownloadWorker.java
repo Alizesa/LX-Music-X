@@ -91,8 +91,10 @@ public class MusicDownloadWorker extends Worker {
         .putString(KEY_FILE_URI, destination.uri)
         .putString(KEY_FILE_NAME, destination.fileName)
         .build();
-      sendUpdate(taskId, "completed", total, total, destination.uri, null, destination.fileName);
+      DownloadCompletionStore.save(getApplicationContext(), getId().toString(), taskId, destination.uri, destination.fileName, total, total);
       completed = true;
+      // 广播失败不能重新下载已经持久记录的文件；下次 JS 恢复会读凭据。
+      try { sendUpdate(taskId, "completed", total, total, destination.uri, null, destination.fileName); } catch (RuntimeException ignored) {}
       return Result.success(output);
     } catch (InterruptedException error) {
       Thread.currentThread().interrupt();

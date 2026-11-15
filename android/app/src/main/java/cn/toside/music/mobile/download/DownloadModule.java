@@ -23,6 +23,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableMap;
+import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
@@ -192,6 +193,11 @@ public class DownloadModule extends ReactContextBaseJavaModule {
   @ReactMethod
   public void getState(String workId, Promise promise) {
     try {
+      Data completion = DownloadCompletionStore.read(reactContext, workId);
+      if (completion != null) {
+        promise.resolve(completionMap(workId, completion));
+        return;
+      }
       Futures.addCallback(WorkManager.getInstance(reactContext).getWorkInfoById(UUID.fromString(workId)),
         new FutureCallback<WorkInfo>() {
           @Override
@@ -207,6 +213,46 @@ public class DownloadModule extends ReactContextBaseJavaModule {
     } catch (Exception error) {
       promise.reject("get_download_state_failed", error);
     }
+  }
+
+  @ReactMethod
+  public void acknowledgeCompletion(String workId, Promise promise) {
+    try {
+      DownloadCompletionStore.acknowledge(reactContext, workId);
+      promise.resolve(null);
+    } catch (Exception error) {
+      promise.reject("ack_download_completion_failed", error);
+    }
+  }
+
+  @ReactMethod
+  public void getCompletionIds(Promise promise) {
+    try {
+      WritableArray result = Arguments.createArray();
+      for (String workId : DownloadCompletionStore.ids(reactContext)) {
+        Data data = DownloadCompletionStore.read(reactContext, workId);
+        if (data == null) continue;
+        WritableMap identity = Arguments.createMap();
+        identity.putString("nativeId", workId);
+        identity.putString("taskId", data.getString(MusicDownloadWorker.KEY_TASK_ID));
+        result.pushMap(identity);
+      }
+      promise.resolve(result);
+    } catch (Exception error) {
+      promise.reject("get_download_completions_failed", error);
+    }
+  }
+
+  private WritableMap completionMap(String workId, Data data) {
+    WritableMap map = Arguments.createMap();
+    map.putString("nativeId", workId);
+    map.putString("taskId", data.getString(MusicDownloadWorker.KEY_TASK_ID));
+    map.putString("status", "completed");
+    map.putDouble("downloaded", data.getLong(MusicDownloadWorker.KEY_DOWNLOADED, 0));
+    map.putDouble("total", data.getLong(MusicDownloadWorker.KEY_TOTAL, 0));
+    putString(map, "filePath", data.getString(MusicDownloadWorker.KEY_FILE_URI));
+    putString(map, "fileName", data.getString(MusicDownloadWorker.KEY_FILE_NAME));
+    return map;
   }
 
   private WritableMap toMap(WorkInfo info) {

@@ -9,13 +9,18 @@ import {
   getDownloadPath,
   getDownloadTasks,
   getDownloadTasksMigrated,
+  getDownloadCleanupRecords,
+  getDownloadCleanupKey,
+  saveDownloadCleanupRecord,
+  removeDownloadCleanupRecord,
+  type DownloadCleanupRecord,
   removeDownloadTasks,
   saveDownloadActiveTasks,
   saveDownloadHistory,
   saveDownloadPath,
   saveDownloadTasksMigrated,
 } from '@/utils/data'
-import { downloadFile, extname, privateStorageDirectoryPath, stopDownload, temporaryDirectoryPath, unlink } from '@/utils/fs'
+import { downloadFile, existsFile, extname, privateStorageDirectoryPath, stopDownload, temporaryDirectoryPath, unlink } from '@/utils/fs'
 import { waitForPromise } from '@/utils/abortable'
 import { writeDownloadMetadata } from '@/utils/localMediaMetadata'
 import {
@@ -32,6 +37,8 @@ import {
 import {
   enqueueDownload,
   getDownloadState,
+  acknowledgeDownloadCompletion,
+  getDownloadCompletionIds,
   onDownloadUpdate,
   pauseDownload as pauseNativeDownload,
   removeDownload as removeNativeDownload,
@@ -298,6 +305,58 @@ const forEachFileOperation = async<T>(items: readonly T[], action: (item: T) => 
   if (failed) throw failure
 }
 
+const cleanupRecords = new Map<string, DownloadCleanupRecord>()
+let cleanupSequence = 0
+const saveCleanup = async(record: DownloadCleanupRecord) => {
+  const identity = `${Date.now().toString(36)}_${++cleanupSequence}_${Math.random().toString(36).slice(2)}`
+  const key = getDownloadCleanupKey?.(identity) ?? '@download_cleanup__' + identity
+  await saveDownloadCleanupRecord?.(key, record)
+  cleanupRecords.set(key, record)
+  return key
+}
+const executeCleanup = async(key: string, record: DownloadCleanupRecord) => {
+  // 墓碑先落盘；任何阶段失败都保留路径，下一次操作或启动可继续。
+  await forEachFileOperation(record.targets.filter(target => target.stop), async target => {
+    await removeNativeDownload(target.nativeId, target.id, true)
+    if (!record.deleteFile || !target.nativeId) return
+    const completed = await getDownloadState(target.nativeId)
+    if (completed?.status === 'completed' && completed.filePath && completed.filePath !== target.filePath) {
+      record.targets.push({ id: target.id, filePath: completed.filePath })
+      await saveDownloadCleanupRecord?.(key, record)
+    }
+  })
+  const paths = [...new Set(record.targets.flatMap(target => target.filePath ? [target.filePath] : []))]
+  if (record.deleteFile) {
+    await forEachFileOperation(paths, async path => {
+      if (!existsFile || await existsFile(path)) await unlink(path)
+    })
+    if (paths.length) await removeListMusics(LIST_IDS.LOCAL, paths)
+  }
+  if (record.kind === 'remove') {
+    await removeDownloadHistory(new Set(record.targets.map(target => target.id)), false)
+  }
+  await forEachFileOperation(record.targets.filter(target => target.nativeId), async target => {
+    await acknowledgeDownloadCompletion?.(target.nativeId!)
+  })
+  await removeDownloadCleanupRecord?.(key)
+  cleanupRecords.delete(key)
+}
+const retryCleanups = async(ids?: ReadonlySet<string>) => {
+  for (const [key, record] of cleanupRecords) {
+    if (!ids || record.targets.some(target => ids.has(target.id))) await executeCleanup(key, record)
+  }
+}
+
+const clearRejectedFile = async(taskId: string, path: string, nativeId?: string) => {
+  const record: DownloadCleanupRecord = {
+    kind: 'files',
+    deleteFile: true,
+    targets: [{ id: taskId, filePath: path, nativeId }, { id: taskId, filePath: `${privateStorageDirectoryPath}/downloads/${taskId}.part` }],
+  }
+  const key = await saveCleanup(record)
+  await executeCleanup(key, record)
+}
+
 const updateTask = async(task: LX.Download.DownloadTask, update: Partial<LX.Download.DownloadTask>, immediate = false) => {
   // 同一歌曲重建会复用 ID；旧任务的异步结果只能修改原来的对象。
   if (!isCurrentTask(task)) return false
@@ -404,6 +463,10 @@ const flushCompletions = () => {
     // 连续完成的下载只写一次 LOCAL、重建一次匹配索引。
     await addListMusics(LIST_IDS.LOCAL, current.map(item => item.localInfo), 'bottom')
     await addDownloadHistory(current.map(item => toHistoryItem(item.task)))
+    // 档案持久化后才确认原生凭据；确认失败保留凭据供下次启动重试。
+    for (const { task } of current) {
+      if (task.nativeId) await (acknowledgeDownloadCompletion?.(task.nativeId) ?? Promise.resolve()).catch(logDownloadError)
+    }
     for (const { task } of current) {
       const index = tasks.indexOf(task)
       if (index >= 0) tasks.splice(index, 1)
@@ -426,9 +489,11 @@ const completeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
   if (isSizeAbnormal(actualSize, expectedSize)) {
     delete task.pendingCompletion
     // 中转文件已经不可信，清掉，用户点重试时是干干净净重下一次
-    await clearPartialFile(task.id)
+    await clearRejectedFile(task.id, state.filePath, task.nativeId)
     await updateTask(task, {
       status: 'error',
+      nativeId: undefined,
+      filePath: undefined,
       error: global.i18n.t('download_bad_size', {
         size: sizeFormate(actualSize),
         expect: expectedSize > 0 ? sizeFormate(expectedSize) : '-',
@@ -737,8 +802,12 @@ const loadDownloadStorage = async() => {
   await removeDownloadTasks().catch(() => {})
   const active = await getDownloadActiveTasks()
   await initDownloadHistory()
+  cleanupRecords.clear()
+  for (const [key, record] of await getDownloadCleanupRecords?.() ?? []) cleanupRecords.set(key, record)
+  const deleting = new Set([...cleanupRecords.values()].filter(record => record.kind === 'remove').flatMap(record => record.targets.map(target => target.id)))
   // 历史已写成功、活跃快照还没写就被杀时，按历史去重，避免再次下载/写标签。
-  replaceTasks(active.filter(task => !hasDownloadHistory(task.id)))
+  replaceTasks(active.filter(task => !hasDownloadHistory(task.id) && !deleting.has(task.id)))
+  if (deleting.size) await saveDownloadActiveTasks(tasks, deleting)
 }
 
 export const initDownloads = async() => {
@@ -754,6 +823,15 @@ export const initDownloads = async() => {
     reconciling = true
     // 状态查询和元数据补写不阻塞首页，也不阻塞下载页读取已有快照。
     void (async() => {
+      for (const receipt of await getDownloadCompletionIds?.() ?? []) {
+        if (hasDownloadHistory(receipt.taskId)) await (acknowledgeDownloadCompletion?.(receipt.nativeId) ?? Promise.resolve()).catch(logDownloadError)
+        else {
+          const task = tasksById.get(receipt.taskId)
+          // enqueue 已完成但保存 workId 前被杀，也能按 taskId 接回完成文件。
+          if (task && !task.nativeId && (task.status === 'resolving' || task.status === 'waiting')) task.nativeId = receipt.nativeId
+        }
+      }
+      try { await retryCleanups() } catch (error) { logDownloadError(error) }
       for (const task of [...tasks]) {
         if (isCurrentTask(task)) await reconcileTask(task)
       }
@@ -834,14 +912,6 @@ export const getDownloadList = async(limit = 100, offset = 0): Promise<LX.Downlo
 const addTasksToCatalog = async(musicInfos: LX.Music.MusicInfoOnline[], quality: LX.Quality) => {
   const directory = await getDownloadPath()
   if (!directory) throw new Error(global.i18n.t('download_path_required'))
-  // 查重只在内存里做一次：已完成历史 + 活跃（非 error）都算已存在，
-  // error 的先摘掉再按新任务加回去
-  const existing = new Set<string>(getDownloadHistoryIds())
-  for (const task of tasks) {
-    if (task.status == 'error') continue
-    existing.add(task.id)
-  }
-  const added: LX.Download.DownloadTask[] = []
   // 选了「QQ 账号」取链、而账号没会员（设置里那一项）时，账号那边只能给标准音质。
   // 任务音质得跟着降到 128k：不然取回来的是 128k 文件，后面的文件大小校验却拿
   // 320k 的预期大小去比，判成「可能下错了音质」把任务废掉。
@@ -849,6 +919,14 @@ const addTasksToCatalog = async(musicInfos: LX.Music.MusicInfoOnline[], quality:
     settingState.setting['download.urlSource'] === 'account'
   // 文件名、大小校验和各音源请求使用同一音质；不能按主音源能力提前降档。
   const targetQuality = accountOnlyStandard ? '128k' : quality
+  if (cleanupRecords.size) await retryCleanups(new Set(musicInfos.map(musicInfo => toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`))))
+  // 同 ID 的待清文件先处理完；其他失败清理不阻塞新歌曲。
+  const existing = new Set<string>(getDownloadHistoryIds())
+  for (const task of tasks) {
+    if (task.status == 'error') continue
+    existing.add(task.id)
+  }
+  const added: LX.Download.DownloadTask[] = []
   for (const musicInfo of musicInfos) {
     const id = toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`)
     if (existing.has(id)) continue
@@ -923,6 +1001,7 @@ const retryTaskInternal = async({ task, request }: NonNullable<ReturnType<typeof
   const isCurrent = () => resumeRequests.get(task) === request && isCurrentTask(task) &&
     task.status !== 'completed' && task.status !== 'finalizing' && !task.pendingCompletion
   try {
+    await retryCleanups(new Set([task.id]))
     const directory = await directoryPromise
     if (!isCurrent()) return
     if (!directory) throw new Error(global.i18n.t('download_path_required'))
@@ -993,27 +1072,34 @@ export const removeTasks = async(ids: string[], deleteFile = false) => {
   await init()
   return withCatalogWrite(async() => {
     const idSet = new Set(ids)
-    const activeTargets = tasks.filter(task => idSet.has(task.id))
-    if (!activeTargets.length && !ids.some(hasDownloadHistory)) return
     try {
-      const historyTargets = await removeDownloadHistory(idSet, deleteFile)
-      replaceTasks(tasks.filter(task => !idSet.has(task.id)))
-      activeTargets.forEach(task => { resumeRequests.delete(task); cancelTaskUrl(task); cancelFinalization(task); speedSamples.delete(task.id) })
-      await forEachFileOperation(activeTargets, async task =>
-        removeNativeDownload(task.nativeId, task.id, task.status != 'completed').catch(() => {}),
-      )
-      if (deleteFile) {
-        const filePaths: string[] = []
-        for (const task of activeTargets) if (task.filePath) filePaths.push(task.filePath)
-        for (const item of historyTargets) if (item.filePath) filePaths.push(item.filePath)
-        await forEachFileOperation(filePaths, async path => { await unlink(path).catch(() => {}) })
-        // 合并成一次：逐条删会让 LOCAL 整表保存 + 匹配索引重建 N 次
-        if (filePaths.length) await removeListMusics(LIST_IDS.LOCAL, filePaths).catch(() => {})
-      }
-      try {
+      await retryCleanups(idSet)
+      const selected = [...idSet].filter(id => tasksById.has(id) || hasDownloadHistory(id))
+      for (let offset = 0; offset < selected.length; offset += 100) {
+        const page = selected.slice(offset, offset + 100)
+        const pageIds = new Set(page)
+        const history = deleteFile ? new Map((await getDownloadHistoryByIds(page.filter(hasDownloadHistory))).map(item => [item.id, item])) : new Map<string, LX.Download.DownloadHistoryItem>()
+        if (deleteFile && page.some(id => hasDownloadHistory(id) && !history.has(id))) throw new Error('Missing download history during file cleanup')
+        const record: DownloadCleanupRecord = {
+          kind: 'remove',
+          deleteFile,
+          targets: page.map(id => {
+            const task = tasksById.get(id)
+            return { id, nativeId: task?.nativeId, filePath: task?.filePath ?? history.get(id)?.filePath, stop: !!task }
+          }),
+        }
+        const key = await saveCleanup(record)
+        for (const id of page) {
+          const task = tasksById.get(id)
+          if (!task) continue
+          resumeRequests.delete(task)
+          cancelTaskUrl(task)
+          cancelFinalization(task)
+          speedSamples.delete(id)
+        }
+        replaceTasks(tasks.filter(task => !pageIds.has(task.id)))
         await persistNow()
-      } catch (error) {
-        console.warn('[Download] 保存删除结果失败:', error instanceof Error ? error.message : error)
+        await executeCleanup(key, record)
       }
     } finally { notify(); void processQueue().catch(logDownloadError) }
   })

@@ -537,6 +537,29 @@ export const getDownloadTasksMigrated = async() =>
   (await getData<boolean>(downloadTasksMigratedKey)) === true
 export const saveDownloadTasksMigrated = async() => saveDataDirect(downloadTasksMigratedKey, true)
 
+export interface DownloadCleanupRecord {
+  kind: 'remove' | 'files'
+  deleteFile: boolean
+  targets: Array<{ id: string, nativeId?: string, filePath?: string, stop?: boolean }>
+}
+const downloadCleanupPrefix = '@download_cleanup__'
+export const getDownloadCleanupRecords = async(): Promise<Array<[string, DownloadCleanupRecord]>> => {
+  const keys = (await getAllKeys()).filter(key => key.startsWith(downloadCleanupPrefix))
+  const records = await getDataMultiple(keys)
+  return records.map(([key, raw]) => {
+    const value = raw as DownloadCleanupRecord | null
+    if (!value || (value.kind !== 'remove' && value.kind !== 'files') || typeof value.deleteFile !== 'boolean' || !Array.isArray(value.targets) ||
+      !value.targets.every(target => target && typeof target.id === 'string' && (target.filePath == null || typeof target.filePath === 'string') &&
+        (target.nativeId == null || typeof target.nativeId === 'string') && (target.stop == null || typeof target.stop === 'boolean'))) {
+      throw new Error('Invalid download cleanup record: ' + key)
+    }
+    return [key, value]
+  })
+}
+export const saveDownloadCleanupRecord = async(key: string, record: DownloadCleanupRecord) => saveData(key, record)
+export const removeDownloadCleanupRecord = async(key: string) => removeData(key)
+export const getDownloadCleanupKey = (id: string) => downloadCleanupPrefix + id
+
 export const getDownloadPath = async(): Promise<LX.Download.DownloadDirectory | null> => {
   const value = await getData<LX.Download.DownloadDirectory | string>(downloadPathKey)
   if (!value) return null
