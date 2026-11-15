@@ -158,11 +158,13 @@ test('backup intermediates and cache destinations remain protected through compr
   const pending = tools.handleSaveFile('/cache/backup.lxmc', { songs: [1] })
   const rejected = assert.rejects(pending, /compression failed/)
   await flush()
-  assert.equal(h.delete(h.createFile('/cache/tempFile.json'), 100), false)
+  const temporary = [...h.references.keys()].find(path => path.endsWith('.json'))
+  assert.ok(temporary)
+  assert.equal(h.delete(h.createFile(temporary), 100), false)
   assert.equal(h.delete(h.createFile('/cache/backup.lxmc'), 100), false)
   gate.reject(new Error('compression failed'))
   await rejected
-  assert.deepEqual(removed, ['/cache/tempFile.json'])
+  assert.deepEqual(removed, [temporary])
   assert.equal(h.references.size, 0)
 })
 

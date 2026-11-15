@@ -160,10 +160,11 @@ export const getCachedPlaylistSongs = async(id: string): Promise<LX.Music.MusicI
     await ensureMigrated()
   } catch (error) {
     // 迁移失败时退回旧 key，尽量不丢离线缓存
+    if (version !== cacheGeneration) return null
     const legacy = await getQQMusicPlaylistSongsCache().catch(
       (): Record<string, { songs: LX.Music.MusicInfoOnline[], savedAt: number }> => ({}),
     )
-    return legacy[id]?.songs ?? null
+    return version === cacheGeneration ? legacy[id]?.songs ?? null : null
   }
   if (version !== cacheGeneration) return null
 

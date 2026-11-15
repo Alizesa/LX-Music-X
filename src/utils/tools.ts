@@ -178,10 +178,13 @@ export const exitApp = () => {
   BackHandler.exitApp()
 }
 
+let backupFileSequence = 0
+const nextBackupTemporaryPath = () => `${temporaryDirectoryPath}/lx-backup-${Date.now().toString(36)}-${++backupFileSequence}.json`
+
 export const handleSaveFile = async(path: string, data: any) => {
   // if (!path.endsWith('.json')) path += '.json'
   // const buffer = gzip(data)
-  const tempFilePath = `${temporaryDirectoryPath}/tempFile.json`
+  const tempFilePath = nextBackupTemporaryPath()
   await withTemporaryPaths([tempFilePath, path], async() => {
     try {
       await writeFile(tempFilePath, JSON.stringify(data))
@@ -197,7 +200,7 @@ export const handleReadFile = async<T = unknown>(path: string): Promise<T> => {
   if (isJSON) {
     data = await readFile(path)
   } else {
-    const tempFilePath = `${temporaryDirectoryPath}/tempFile.json`
+    const tempFilePath = nextBackupTemporaryPath()
     data = await withTemporaryPaths([path, tempFilePath], async() => {
       try {
         await unGzipFile(path, tempFilePath)

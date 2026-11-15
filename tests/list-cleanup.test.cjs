@@ -14,6 +14,7 @@ const load = (file, mocks = {}) => {
   const context = {
     exports: {},
     require: name => {
+      if (name === '@/utils/message' && !Object.hasOwn(mocks, name)) return load('src/utils/message.ts')
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${name}`)
       return mocks[name]
     },

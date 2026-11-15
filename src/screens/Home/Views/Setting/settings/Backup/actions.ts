@@ -221,12 +221,18 @@ const exportAllList = async(path: string) => {
 
   await handleSaveFile(path + '/lx_list.lxmc', data)
 }
-export const handleExportList = (path: string) => {
-  toast(global.i18n.t('setting_backup_part_export_list_tip_zip'))
-  void exportAllList(path).then(() => {
-    toast(global.i18n.t('setting_backup_part_export_list_tip_success'))
-  }).catch((err: any) => {
-    log.error(err.message)
-    toast(global.i18n.t('setting_backup_part_export_list_tip_failed') + ': ' + (err.message as string))
+let exportQueue = Promise.resolve()
+export const handleExportList = async(path: string) => {
+  // 排队时只保留目标路径，轮到本次操作才读取完整列表和生成 JSON。
+  exportQueue = exportQueue.catch(() => {}).then(async() => {
+    toast(global.i18n.t('setting_backup_part_export_list_tip_zip'))
+    try {
+      await exportAllList(path)
+      toast(global.i18n.t('setting_backup_part_export_list_tip_success'))
+    } catch (err: any) {
+      log.error(err.message)
+      toast(global.i18n.t('setting_backup_part_export_list_tip_failed') + ': ' + (err.message as string))
+    }
   })
+  return exportQueue
 }
