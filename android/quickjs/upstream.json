@@ -1,0 +1,161 @@
+{
+  "wrapper": {
+    "repository": "https://github.com/HarlonWang/quickjs-wrapper",
+    "revision": "d561f7b99a09bbf9ff5017a4152eca5359eccfa3",
+    "version": "2.4.0"
+  },
+  "engine": {
+    "repository": "https://github.com/HarlonWang/quickjs",
+    "revision": "c46516996da53eaf2f9aca516264870e25719d76"
+  },
+  "patchedFiles": [
+    "src/main/native/cpp/quickjs_wrapper.cpp"
+  ],
+  "files": [
+    {
+      "source": "native/cpp/quickjs_context_jni.cpp",
+      "target": "src/main/native/cpp/quickjs_context_jni.cpp",
+      "repository": "wrapper",
+      "sha256": "e69865d65e110d7fa9eba984c173c6a85a27f49341d643b6f5adfa184c137407"
+    },
+    {
+      "source": "native/cpp/quickjs_extend_libraries.h",
+      "target": "src/main/native/cpp/quickjs_extend_libraries.h",
+      "repository": "wrapper",
+      "sha256": "14453420dc102d17df11b1bb1773e56406f30eb60a1ac7e151b6f78059cd0c0a"
+    },
+    {
+      "source": "native/cpp/quickjs_wrapper.cpp",
+      "target": "src/main/native/cpp/quickjs_wrapper.cpp",
+      "repository": "wrapper",
+      "sha256": "b11781287d92a57a0ffc06e95e523110849514b4b05f0b6a2efffa978030ad00"
+    },
+    {
+      "source": "native/cpp/quickjs_wrapper.h",
+      "target": "src/main/native/cpp/quickjs_wrapper.h",
+      "repository": "wrapper",
+      "sha256": "b8ec72a002096dd056ce3e91654cf3a93e483e4d7892f002f60d7c85dc5a63d9"
+    },
+    {
+      "source": "wrapper-android/src/main/cpp/quickjs_android.cpp",
+      "target": "src/main/native/cpp/quickjs_android.cpp",
+      "repository": "wrapper",
+      "sha256": "8f14e7f490c5f8577de8b0c0b04dbc09ebd154f7127c59e669172b0f1c4cd9a1"
+    },
+    {
+      "source": "wrapper-android/src/main/java/com/whl/quickjs/android/QuickJSLoader.java",
+      "target": "src/main/java/com/whl/quickjs/android/QuickJSLoader.java",
+      "repository": "wrapper",
+      "sha256": "1bbacc50dd3f687062fde311b3131236f110db3cfee2ec653ee466b929deb4fa"
+    },
+    {
+      "source": "LICENSE",
+      "target": "LICENSE.wrapper",
+      "repository": "wrapper",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "source": "cutils.c",
+      "target": "src/main/native/quickjs/cutils.c",
+      "repository": "engine",
+      "sha256": "c0b7815d733abd72d3ae3fcf87bbec9230e1288449922583fbdc767af58204eb"
+    },
+    {
+      "source": "cutils.h",
+      "target": "src/main/native/quickjs/cutils.h",
+      "repository": "engine",
+      "sha256": "e512be846014ba1e35411cd640d9fe57cb04d175adb3baf84901895fb86540f4"
+    },
+    {
+      "source": "libbf.c",
+      "target": "src/main/native/quickjs/libbf.c",
+      "repository": "engine",
+      "sha256": "7a89a3c82625f8752a7f3e798e8d36cf465f58a00b5106207141ea05970edb02"
+    },
+    {
+      "source": "libbf.h",
+      "target": "src/main/native/quickjs/libbf.h",
+      "repository": "engine",
+      "sha256": "a611c2990b3e705063917f8f6c0a5859823b8b64965e983725113f5b6f2fe87b"
+    },
+    {
+      "source": "libregexp-opcode.h",
+      "target": "src/main/native/quickjs/libregexp-opcode.h",
+      "repository": "engine",
+      "sha256": "a7ee95fcc6cb013c9ab1a3ba9785d4a99c56e7029e30796baf9dfbd456f523f9"
+    },
+    {
+      "source": "libregexp.c",
+      "target": "src/main/native/quickjs/libregexp.c",
+      "repository": "engine",
+      "sha256": "17e5e768475e85b052eaa81d61b141c1ee7d00e7d1d01f443cecef941fc33154"
+    },
+    {
+      "source": "libregexp.h",
+      "target": "src/main/native/quickjs/libregexp.h",
+      "repository": "engine",
+      "sha256": "66486e559d306a976c591c419157c8e4de3ee02cb46ed1a9cff9ef8c3b5c9696"
+    },
+    {
+      "source": "libunicode-table.h",
+      "target": "src/main/native/quickjs/libunicode-table.h",
+      "repository": "engine",
+      "sha256": "c8554906ba64aef45e640895a76a4674333ad2efb2e96ee9611bdc92307ebcfc"
+    },
+    {
+      "source": "libunicode.c",
+      "target": "src/main/native/quickjs/libunicode.c",
+      "repository": "engine",
+      "sha256": "23cdac70259d5fe7dbe30ff1cede8d6a2aecf131476f5ab8acad81cb15adc840"
+    },
+    {
+      "source": "libunicode.h",
+      "target": "src/main/native/quickjs/libunicode.h",
+      "repository": "engine",
+      "sha256": "41347be83b3774bd99982c65bb7e47c47c8fb4bacd336650765893e6e2c657af"
+    },
+    {
+      "source": "LICENSE",
+      "target": "src/main/native/quickjs/LICENSE",
+      "repository": "engine",
+      "sha256": "598fd7fc928e4350abce36e337ba5a1346923c5c692f5be92c3d8e29ddd7c18d"
+    },
+    {
+      "source": "list.h",
+      "target": "src/main/native/quickjs/list.h",
+      "repository": "engine",
+      "sha256": "181c6b25d9d0e4853315d36a6e6fab3b2c3554271693d898a439384ba0f67c2b"
+    },
+    {
+      "source": "quickjs-atom.h",
+      "target": "src/main/native/quickjs/quickjs-atom.h",
+      "repository": "engine",
+      "sha256": "8b04ca77924f141d363e17dc606cdaa2934533a153b05f2665f8d2d4952976c4"
+    },
+    {
+      "source": "quickjs-opcode.h",
+      "target": "src/main/native/quickjs/quickjs-opcode.h",
+      "repository": "engine",
+      "sha256": "c48b4bc7bb1db6f4fecf11cb28d3b1efa132efb6cd03443c35de13d550bd130e"
+    },
+    {
+      "source": "quickjs.c",
+      "target": "src/main/native/quickjs/quickjs.c",
+      "repository": "engine",
+      "sha256": "d1f042a31b6001dfedec27cfc81753995df8565d87aef30e60d385ffbc499710"
+    },
+    {
+      "source": "quickjs.h",
+      "target": "src/main/native/quickjs/quickjs.h",
+      "repository": "engine",
+      "sha256": "149b69b9ef7c42cc8d41d0bfdb910ece96f5c8237785e2303285f9eb3d3c6a73"
+    },
+    {
+      "source": "VERSION",
+      "target": "src/main/native/quickjs/VERSION",
+      "repository": "engine",
+      "sha256": "76698a7d2f3451d40d80725e5775d851b26ffca5889a135a2c6ead6108f473e3"
+    }
+  ],
+  "hashFormat": "SHA-256 of UTF-8 source with LF newlines"
+}

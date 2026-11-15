@@ -11,7 +11,10 @@ import cn.toside.music.mobile.crypto.RSA;
 import com.facebook.react.bridge.ReactApplicationContext;
 
 import com.whl.quickjs.android.QuickJSLoader;
+import com.whl.quickjs.wrapper.JSFunction;
+import com.whl.quickjs.wrapper.JSObject;
 import com.whl.quickjs.wrapper.QuickJSContext;
+import com.whl.quickjs.wrapper.SafeQuickJSContext;
 import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -150,14 +153,28 @@ public class QuickJS {
     // 旧上下文的定时器不能留到新上下文里执行
     timeoutHandler.removeCallbacksAndMessages(null);
     timeoutRunnables.clear();
-    this.jsContext = QuickJSContext.create();
+    this.jsContext = SafeQuickJSContext.create();
     this.jsContext.setConsole(new Console(this.eventHandler));
     String preloadScript = getPreloadScript();
     if (preloadScript == null) return false;
     createEnvObj(this.jsContext);
-    this.jsContext.evaluate(preloadScript);
-    this.jsContext.getGlobalObject().getJSFunction("lx_setup").call(this.key, id, name, desc, version, author, homepage, rawScript);
+    evaluateScript(preloadScript);
+    callFunction("lx_setup", this.key, id, name, desc, version, author, homepage, rawScript);
     return true;
+  }
+
+  private void evaluateScript(String script) {
+    Object result = this.jsContext.evaluate(script);
+    if (result instanceof JSObject) ((JSObject) result).release();
+  }
+
+  private void callFunction(String name, Object... params) {
+    JSFunction function = this.jsContext.getGlobalObject().getJSFunction(name);
+    try {
+      function.callVoid(params);
+    } finally {
+      function.release();
+    }
   }
 
   private void callNative(String action, String data) {
@@ -183,7 +200,7 @@ public class QuickJS {
       scriptInfo.getString("homepage", ""),
       script)) {
       try {
-        this.jsContext.evaluate(script);
+        evaluateScript(script);
         return "";
       } catch (Exception e) {
         Log.e("UserApi", "load script error: " + e.getMessage());
@@ -198,25 +215,25 @@ public class QuickJS {
     return "create JavaScript Env failed";
   }
 
-  public Object callJS(String action) {
+  public void callJS(String action) {
     Object[] params = new Object[]{this.key, action};
-    return callJS(params);
+    callJS(params);
   }
-  public Object callJS(String action, Object... args) {
+  public void callJS(String action, Object... args) {
     Object[] params = new Object[args.length + 2];
     params[0] = this.key;
     params[1] = action;
     System.arraycopy(args, 0, params, 2, args.length);
-    return callJS(params);
+    callJS(params);
   }
-  public Object callJS(Object[] params) {
+  public void callJS(Object[] params) {
     try {
-      return this.jsContext.getGlobalObject().getJSFunction("__lx_native__").call(params);
+      callFunction("__lx_native__", params);
     } catch (Exception e) {
       Message message = eventHandler.obtainMessage();
       message.what = HandlerWhat.LOG;
       String msg = e.getMessage();
-      if (msg == null) return null;
+      if (msg == null) return;
       if (msg.length() > 1024) msg = msg.substring(0, 1024) + "...";
       message.obj = new Object[]{"error", "Call script error: " + msg};
       eventHandler.sendMessage(message);
@@ -225,7 +242,6 @@ public class QuickJS {
         eventHandler.sendMessage(eventHandler.obtainMessage(HandlerWhat.INIT_FAILED, msg));
         this.inited = true;
       }
-      return null;
     }
   }
 
