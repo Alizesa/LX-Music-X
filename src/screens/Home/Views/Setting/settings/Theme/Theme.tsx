@@ -6,7 +6,8 @@ import { useSettingValue } from '@/store/setting/hook'
 import { useTheme } from '@/store/theme/hook'
 
 import SubTitle from '../../components/SubTitle'
-import { BG_IMAGES, getAllThemes, type LocalTheme } from '@/theme/themes'
+import { getAllThemes, type LocalTheme } from '@/theme/themes'
+import { BG_IMAGE_PREVIEWS } from '@/theme/themes/previews'
 import Text from '@/components/common/Text'
 import { createStyle } from '@/utils/tools'
 import { scaleSizeH } from '@/utils/pixelRatio'
@@ -95,7 +96,7 @@ export default memo(() => {
             return <ThemeItem
               key={id}
               color={config.themeColors['c-theme']}
-              image={config.extInfo['bg-image'] ? BG_IMAGES[config.extInfo['bg-image']] : undefined}
+              image={config.extInfo['bg-image'] ? BG_IMAGE_PREVIEWS[config.extInfo['bg-image']] : undefined}
               showAll={showAll}
               id={id}
               name={t(`theme_${id}`)}

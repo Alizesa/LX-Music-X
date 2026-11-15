@@ -1,6 +1,6 @@
 import { AppState } from 'react-native'
 import playerState from '@/store/player/state'
-import { prefetch } from '@/components/common/ImageBackground'
+import { abortPrefetch, prefetch } from '@/components/common/ImageBackground'
 import { setBgPic } from '@/core/common'
 
 const formatUri = (url: string) => url.startsWith('/') ? `file://${url}` : url
@@ -9,11 +9,21 @@ export default async(setting: LX.AppSetting) => {
   let enabled = setting['theme.dynamicBg']
   let applied: string | null = null
   let prefetched: string | null = null
-  const pending = new Set<string>()
+  let pending: { pic: string, requestId?: number } | null = null
+  const cancelPending = () => {
+    const previous = pending
+    pending = null
+    if (previous?.requestId != null) abortPrefetch(previous.requestId)
+  }
 
   const updatePic = () => {
     const pic = playerState.musicInfo.pic
-    if (!enabled || AppState.currentState !== 'active' || !pic || pic === playerState.loadErrorPicUrl || pic === applied) return
+    if (!enabled || AppState.currentState !== 'active' || !pic || pic === playerState.loadErrorPicUrl) {
+      cancelPending()
+      return
+    }
+    if (pending?.pic !== pic) cancelPending()
+    if (pic === applied) return
     const apply = () => {
       if (!enabled || AppState.currentState !== 'active' || pic !== playerState.musicInfo.pic || pic === playerState.loadErrorPicUrl || pic === applied) return
       applied = pic
@@ -23,16 +33,20 @@ export default async(setting: LX.AppSetting) => {
       apply()
       return
     }
-    if (pending.has(pic)) return
-    pending.add(pic)
+    if (pending?.pic === pic) return
+    const request = { pic, requestId: undefined as number | undefined }
+    pending = request
     // 歌词和其他元数据更新不应重复预取同一封面；后台切歌只在回到前台时取最新一张。
-    void prefetch(formatUri(pic)).then(success => {
-      if (!success) return
+    void prefetch(formatUri(pic), id => {
+      request.requestId = id
+      if (pending !== request) abortPrefetch(id)
+    }).then(success => {
+      if (!success || pending !== request) return
       prefetched = pic
       apply()
     }).catch(error => {
       console.warn('[Background] image prefetch failed:', error instanceof Error ? error.message : error)
-    }).finally(() => { pending.delete(pic) })
+    }).finally(() => { if (pending === request) pending = null })
   }
 
   const handleConfigUpdate = (keys: Array<keyof LX.AppSetting>, next: Partial<LX.AppSetting>) => {
@@ -40,6 +54,7 @@ export default async(setting: LX.AppSetting) => {
     enabled = next['theme.dynamicBg']!
     if (enabled) updatePic()
     else {
+      cancelPending()
       applied = null
       setBgPic(null)
     }
@@ -47,5 +62,5 @@ export default async(setting: LX.AppSetting) => {
   updatePic()
   global.state_event.on('playerMusicInfoChanged', updatePic)
   global.state_event.on('configUpdated', handleConfigUpdate)
-  AppState.addEventListener('change', state => { if (state === 'active') updatePic() })
+  AppState.addEventListener('change', state => { if (state === 'active') updatePic(); else cancelPending() })
 }

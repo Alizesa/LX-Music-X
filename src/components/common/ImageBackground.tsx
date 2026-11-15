@@ -54,6 +54,7 @@ export default forwardRef<View, ImageBackgroundProps>(({
   imageRef,
   importantForAccessibility,
   source,
+  resizeMethod = 'resize',
   ...props
 }, ref) => {
   const flattenedStyle = StyleSheet.flatten(style)
@@ -68,6 +69,7 @@ export default forwardRef<View, ImageBackgroundProps>(({
           <Image
             {...props}
             source={source}
+            resizeMethod={resizeMethod}
             importantForAccessibility={importantForAccessibility}
             style={[
               StyleSheet.absoluteFill,
@@ -93,6 +95,10 @@ export default forwardRef<View, ImageBackgroundProps>(({
   )
 })
 
-export const prefetch = async(url: string) => {
-  return Image.prefetch(url)
+export const prefetch = async(url: string, onRequestId?: (id: number) => void) => {
+  // RN Android 支持 requestId 回调，当前公开类型只声明了 URL 参数。
+  const nativePrefetch = Image.prefetch.bind(Image) as (url: string, callback?: (id: number) => void) => Promise<boolean>
+  return nativePrefetch(url, onRequestId)
 }
+
+export const abortPrefetch = (requestId: number) => { Image.abortPrefetch?.(requestId) }
