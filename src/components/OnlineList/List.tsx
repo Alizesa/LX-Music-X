@@ -46,6 +46,17 @@ export interface ListType {
 }
 export type Status = 'loading' | 'refreshing' | 'end' | 'error' | 'idle'
 
+interface RowInteractions {
+  press: (item: LX.Music.MusicInfoOnline, index: number) => void
+  longPress: (item: LX.Music.MusicInfoOnline, index: number) => void
+  menu: ListProps['onShowMenu']
+}
+const createRowInteractions = (handlers: { current: RowInteractions | null }) => ({
+  press: (item: LX.Music.MusicInfoOnline, index: number) => { handlers.current?.press(item, index) },
+  longPress: (item: LX.Music.MusicInfoOnline, index: number) => { handlers.current?.longPress(item, index) },
+  menu: (...args: Parameters<RowInteractions['menu']>) => { handlers.current?.menu(...args) },
+})
+
 
 const List = forwardRef<ListType, ListProps>(({
   onShowMenu,
@@ -177,6 +188,7 @@ const List = forwardRef<ListType, ListProps>(({
 
   const handlePress = (item: LX.Music.MusicInfoOnline, index: number) => {
     requestAnimationFrame(() => {
+      if (!visibleRef.current) return
       if (checkHomePagerIdle && !global.lx.homePagerIdle) return
       if (isMultiSelectModeRef.current) {
         handleSelect(item, index)
@@ -192,11 +204,17 @@ const List = forwardRef<ListType, ListProps>(({
   }
 
   const handleLongPress = (item: LX.Music.MusicInfoOnline, index: number) => {
+    if (!visibleRef.current) return
     if (isMultiSelectModeRef.current) return
     prevSelectIndexRef.current = index
     handleUpdateSelectedList([item])
     onMuiltSelectMode()
   }
+
+  const rowInteractions = useRef<RowInteractions | null>(null)
+  rowInteractions.current = { press: handlePress, longPress: handleLongPress, menu: onShowMenu }
+  // 稳定回调只引用最新交互，memo 行不会因其他行的选择变化重绘或保留旧列表作用域。
+  const rowHandlers = useMemo(() => createRowInteractions(rowInteractions), [])
 
   const handleLoadMore = () => {
     if (!visible || status != 'idle') return
@@ -209,9 +227,9 @@ const List = forwardRef<ListType, ListProps>(({
       item={item}
       index={index}
       showSource={showSource}
-      onPress={handlePress}
-      onLongPress={handleLongPress}
-      onShowMenu={onShowMenu}
+      onPress={rowHandlers.press}
+      onLongPress={rowHandlers.longPress}
+      onShowMenu={rowHandlers.menu}
       isSelected={selectedItems.has(item)}
       rowInfo={rowInfo.current}
       isShowAlbumName={isShowAlbumName}

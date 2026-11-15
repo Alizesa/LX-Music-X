@@ -31,9 +31,11 @@ test('1000 selected songs pass a boolean to each row throughout 100 deselections
   ref.current.selectAll(true)
   let tree = render()
   const retainedRows = []
+  const stablePress = tree.props.renderItem({ item: songs[0], index: 0 }).props.onPress
   for (let index = 0; index < 100; index++) {
     const row = tree.props.renderItem({ item: songs[index], index })
     assert.equal(row.props.isSelected, true)
+    assert.equal(row.props.onPress, stablePress)
     assert.equal(Object.hasOwn(row.props, 'selectedList'), false)
     retainedRows.push(row)
     row.props.onPress(songs[index], index)
