@@ -22,6 +22,7 @@ import {
 } from '@/utils/data'
 import { downloadFile, existsFile, extname, privateStorageDirectoryPath, stopDownload, temporaryDirectoryPath, unlink } from '@/utils/fs'
 import { waitForPromise } from '@/utils/abortable'
+import { retainTemporaryPath } from '@/utils/temporaryPaths'
 import { writeDownloadMetadata } from '@/utils/localMediaMetadata'
 import {
   addDownloadHistory,
@@ -381,8 +382,8 @@ const calculateSpeed = (taskId: string, downloaded: number) => {
 }
 
 // 在途原生读写仍可使用封面；终态观察者只持有路径，不持有下载业务对象。
-const cleanupCoverAfter = (promise: Promise<unknown>, path: string) => {
-  const cleanup = () => { void unlink(path).catch(() => {}) }
+const cleanupCoverAfter = (promise: Promise<unknown>, path: string, release: () => void) => {
+  const cleanup = () => { void unlink(path).catch(() => {}).finally(release) }
   void promise.then(cleanup, cleanup)
 }
 
@@ -390,6 +391,7 @@ const writeEmbeddedMetadata = async(task: LX.Download.DownloadTask, signal: Abor
   if (!task.filePath) return
   const info = task.musicInfo
   let picPath: string | null = null
+  let releaseCover: (() => void) | null = null
   let coverIO: Promise<unknown> | null = null
   let lyricText: string | null = null
   try {
@@ -397,6 +399,7 @@ const writeEmbeddedMetadata = async(task: LX.Download.DownloadTask, signal: Abor
     if (pic) {
       const picExt = extname(pic.split('?')[0]) || 'jpg'
       picPath = `${temporaryDirectoryPath}/lx-download-${task.id}.${picExt}`
+      releaseCover = retainTemporaryPath(picPath)
       const result = downloadFile(pic, picPath)
       coverIO = result.promise
       const cancel = () => { try { stopDownload(result.jobId) } catch {} }
@@ -430,7 +433,7 @@ const writeEmbeddedMetadata = async(task: LX.Download.DownloadTask, signal: Abor
   } catch (error) {
     logDownloadError(error)
   } finally {
-    if (picPath) cleanupCoverAfter(coverIO ?? Promise.resolve(), picPath)
+    if (picPath && releaseCover) cleanupCoverAfter(coverIO ?? Promise.resolve(), picPath, releaseCover)
   }
 }
 

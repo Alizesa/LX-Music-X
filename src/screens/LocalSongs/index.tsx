@@ -33,6 +33,7 @@ export default ({ componentId }: { componentId: string }) => {
   const theme = useTheme()
   const [list, setList] = useState<LX.Music.MusicInfoLocal[]>([])
   const [importing, setImporting] = useState(false)
+  const importInProgress = useRef(false)
   const visible = useScreenVisible()
   const visibleRef = useRef(visible)
   visibleRef.current = visible
@@ -67,18 +68,13 @@ export default ({ componentId }: { componentId: string }) => {
   }, [componentId, visible])
 
   const importSongs = useCallback(async() => {
-    if (importing) return
-    let folderPath = ''
-    try {
-      const folder = await selectManagedFolder(true)
-      folderPath = folder?.path ?? ''
-    } catch {
-      toast(t('local_songs_import_failed'), 'long')
-      return
-    }
-    if (!folderPath) return
+    if (importInProgress.current) return
+    importInProgress.current = true
     setImporting(true)
     try {
+      const folder = await selectManagedFolder(true)
+      const folderPath = folder?.path ?? ''
+      if (!folderPath) return
       const files = await scanAudioFiles(folderPath)
       if (!files.length) {
         toast(t('local_songs_empty'), 'long')
@@ -101,9 +97,10 @@ export default ({ componentId }: { componentId: string }) => {
     } catch (error: unknown) {
       toast(error instanceof Error ? error.message : t('local_songs_import_failed'), 'long')
     } finally {
+      importInProgress.current = false
       setImporting(false)
     }
-  }, [importing, load, t])
+  }, [load, t])
 
   return (
     <PageContent>

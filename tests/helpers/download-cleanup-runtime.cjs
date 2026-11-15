@@ -2,11 +2,13 @@ const { load, flush, deferred } = require('./load.cjs')
 const { harness: storageHarness } = require('./download-storage.cjs')
 const { task, song } = require('./download-runtime.cjs')
 
-const createHarness = async({ active = [], history = [], receipts = new Map() } = {}) => {
+const createHarness = async({ active = [], history = [], receipts = new Map(), cover } = {}) => {
   const disk = storageHarness()
   const files = new Set(history.map(item => item.filePath).filter(Boolean))
   const local = new Set(files)
   const removed = []; const enqueued = []; const acknowledged = []
+  const protectedPaths = new Set()
+  const stoppedCovers = []
   const settings = { failLocal: false, failUnlink: null, failAck: false, failTags: false }
   await disk.data.saveDownloadActiveTasks(active)
   await disk.data.saveDownloadTasksMigrated()
@@ -28,24 +30,38 @@ const createHarness = async({ active = [], history = [], receipts = new Map() } 
           paths.forEach(path => local.delete(path))
         },
       },
-      '@/core/music': { getMusicUrl: async() => { urlCalls++; return 'https://fixture/audio' }, getPicPath: async() => '', getLyricInfo: async() => ({ lyric: '' }) },
+      '@/core/music': { getMusicUrl: async() => { urlCalls++; return 'https://fixture/audio' }, getPicPath: async() => cover ? 'https://fixture/cover.jpg' : '', getLyricInfo: async() => ({ lyric: '' }) },
       '@/config/constant': constants,
       '@/store/setting/state': { default: { setting: { 'download.fileName': '歌名', 'download.quality': '128k' } } },
       '@/utils': { filterFileName: value => value },
       '@/utils/lrcTools': { buildLyrics: () => '' },
       '@/utils/data': data,
+      '@/utils/temporaryPaths': load('src/utils/temporaryPaths.ts', {
+        'react-native': {
+          NativeModules: {
+            CacheModule: {
+              protectCachePath: path => { protectedPaths.add(path); return true },
+              unprotectCachePath: path => { protectedPaths.delete(path); return true },
+            },
+          },
+        },
+      }),
       './downloadHistory': historyApi,
       '@/utils/fs': {
         privateStorageDirectoryPath: '/private',
         temporaryDirectoryPath: '/temp',
+        extname: value => value.split('.').at(-1),
+        downloadFile: (_url, path) => { files.add(path); return { jobId: 1, promise: cover.download() } },
+        stopDownload: id => { stoppedCovers.push(id) },
         existsFile: async path => files.has(path),
         unlink: async path => {
+          if (path.startsWith('/temp/') && cover.unlink) await cover.unlink(path)
           if (settings.failUnlink === path) throw new Error('unlink failed')
           if (!files.delete(path)) throw new Error('file missing')
           removed.push(path)
         },
       },
-      '@/utils/localMediaMetadata': { writeDownloadMetadata: async() => { if (settings.failTags) throw new Error('tags failed') } },
+      '@/utils/localMediaMetadata': { writeDownloadMetadata: async() => { if (cover?.metadata) await cover.metadata(); if (settings.failTags) throw new Error('tags failed') } },
       '@/utils/nativeModules/download': {
         onDownloadUpdate: callback => { listener = callback },
         getDownloadState: async id => receipts.get(id) ?? null,
@@ -77,7 +93,7 @@ const createHarness = async({ active = [], history = [], receipts = new Map() } 
       },
     }
   }
-  return { ...start(), restart: start, disk, files, local, removed, enqueued, receipts, acknowledged, settings, historyKey, urlCalls: () => urlCalls, journalKeys: () => [...disk.values.keys()].filter(key => key.startsWith('@download_cleanup__')) }
+  return { ...start(), restart: start, disk, files, local, removed, enqueued, receipts, acknowledged, settings, protectedPaths, stoppedCovers, historyKey, urlCalls: () => urlCalls, journalKeys: () => [...disk.values.keys()].filter(key => key.startsWith('@download_cleanup__')) }
 }
 
 const item = id => ({ id: String(id), name: String(id), singer: 'Singer', quality: '128k', filePath: `content://fixture/${id}`, createdAt: Number(id) + 1 })

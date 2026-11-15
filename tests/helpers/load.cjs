@@ -20,6 +20,7 @@ const load = (file, mocks = {}, globals = {}) => {
     clearTimeout,
     console: { log() {}, warn() {}, error() {} },
     require: name => {
+      if (name === './detailCache' && !Object.hasOwn(mocks, name)) return { getDetailCache: async() => null, saveDetailCache() {} }
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./playback-log.cjs')
       if (name === '@/utils/message' && !Object.hasOwn(mocks, name)) return load('src/utils/message.ts')
       if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return load('src/utils/abortable.ts', { './message': load('src/utils/message.ts') })

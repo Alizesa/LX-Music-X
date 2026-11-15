@@ -44,6 +44,7 @@ const load = (file, mocks = {}, globals = {}) => {
     require: name => {
       if (name === '@/utils/listPage') return load('src/utils/listPage.ts')
       if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return load('src/utils/abortable.ts', { './message': load('src/utils/message.ts') })
+      if (name === '@/utils/temporaryPaths' && !Object.hasOwn(mocks, name)) return load('src/utils/temporaryPaths.ts', { 'react-native': { NativeModules: {} } })
       if (name === '@/utils/abort' && !Object.hasOwn(mocks, name)) return load('src/utils/abort.ts', { './message': load('src/utils/message.ts') })
       if (name === '@/utils/musicSdk/requestScope' && !Object.hasOwn(mocks, name)) return load('src/utils/musicSdk/requestScope.ts')
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${file}: ${name}`)
@@ -506,7 +507,7 @@ test('QQ transient errors back off, while cancellation prevents the next retry',
   const h = qqSearchHarness(() => ({ body: { code: 0, req: { code: 500 } } }))
   const controller = new AbortController()
   const result = h.api.search('query', 1, 20, controller.signal)
-  const rejected = assert.rejects(result, /cancelled/)
+  const rejected = assert.rejects(result, error => error.message === '取消http请求')
   await flush()
   assert.deepEqual([...h.clock.tasks.values()].map(task => task.delay), [500])
   await h.clock.run(500)

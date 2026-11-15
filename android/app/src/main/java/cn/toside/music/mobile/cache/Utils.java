@@ -33,7 +33,7 @@ public class Utils {
    */
   static public int clearCacheFolder(File dir, long curTime) {
     int deletedFiles = 0;
-    if (dir == null || !dir.isDirectory()) return deletedFiles;
+    if (dir == null || !dir.isDirectory() || !ActiveCachePaths.canTraverse(dir)) return deletedFiles;
     File[] files = dir.listFiles();
     if (files == null) return deletedFiles;
     try {
@@ -41,11 +41,7 @@ public class Utils {
         if (child.isDirectory()) {
           deletedFiles += clearCacheFolder(child, curTime);
         }
-        if (child.lastModified() < curTime) {
-          if (child.delete()) {
-            deletedFiles++;
-          }
-        }
+        if (ActiveCachePaths.delete(child, curTime)) deletedFiles++;
       }
     } catch (Exception e) {
       e.printStackTrace();

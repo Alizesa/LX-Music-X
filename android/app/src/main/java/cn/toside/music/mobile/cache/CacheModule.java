@@ -17,11 +17,22 @@ public class CacheModule extends ReactContextBaseJavaModule {
   CacheModule(ReactApplicationContext reactContext) {
     super(reactContext);
     this.cacheModule = this;
+    ActiveCachePaths.configure(reactContext.getCacheDir(), reactContext.getExternalCacheDir());
   }
 
   @Override
   public String getName() {
     return "CacheModule";
+  }
+
+  @ReactMethod(isBlockingSynchronousMethod = true)
+  public boolean protectCachePath(String path) {
+    return ActiveCachePaths.retain(path);
+  }
+
+  @ReactMethod(isBlockingSynchronousMethod = true)
+  public boolean unprotectCachePath(String path) {
+    return ActiveCachePaths.release(path);
   }
 
 

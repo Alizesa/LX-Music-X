@@ -4,6 +4,7 @@ import { canUpgrade, compareVersions, isChannel, parseVersion, selectAsset, vali
 import { downloadFile, hash, readDir, stat, stopDownload, temporaryDirectoryPath, unlink } from '@/utils/fs'
 import { getInstalledAppInfo, getSupportedAbis, installApk } from '@/utils/nativeModules/utils'
 import { APP_PROVIDER_NAME } from '@/config/constant'
+import { retainTemporaryPath } from './temporaryPaths'
 
 export const UPDATE_REPOSITORY = 'Alizesa/LX-Music-X'
 const CHECK_DEADLINE = 20000
@@ -111,6 +112,7 @@ let downloaded = null
 let installation = null
 let cleanupQueue = Promise.resolve()
 const protectedFiles = new Set()
+const releaseProtectedFiles = new Map()
 const deletingFiles = new Set()
 const downloadTasks = new Set()
 
@@ -183,7 +185,11 @@ const discardDownload = async(path) => {
   // A cancelled caller releases its waiter immediately. Keep only the path
   // while deletion runs so a replacement download cannot queue it again.
   deletingFiles.add(path)
-  try { await unlink(path).catch(() => {}) } finally { deletingFiles.delete(path) }
+  try { await unlink(path).catch(() => {}) } finally {
+    deletingFiles.delete(path)
+    releaseProtectedFiles.get(path)?.()
+    releaseProtectedFiles.delete(path)
+  }
 }
 
 const finishNativeDownload = async(completion) => {
@@ -263,6 +269,7 @@ export const downloadNewVersion = async(info, onDownload = () => {}) => {
     const path = `${temporaryDirectoryPath}/${asset.fileName}.${generation}.apk`
     const file = { path, asset, manifest }
     protectedFiles.add(path)
+    releaseProtectedFiles.set(path, retainTemporaryPath(path))
     let completion
     try {
       const progress = reportDownloadProgress.bind(null, task, asset.size)

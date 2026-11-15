@@ -3,6 +3,7 @@ import { Platform, ToastAndroid, BackHandler, Linking, Alert, Appearance, Permis
 import Clipboard from '@react-native-clipboard/clipboard'
 import { storageDataPrefix } from '@/config/constant'
 import { gzipFile, readFile, temporaryDirectoryPath, unGzipFile, unlink, writeFile } from '@/utils/fs'
+import { withTemporaryPaths } from './temporaryPaths'
 import { getSystemLocales, isIgnoringBatteryOptimization, isNotificationsEnabled, requestNotificationPermission, requestIgnoreBatteryOptimization, shareText } from '@/utils/nativeModules/utils'
 import musicSdk from '@/utils/musicSdk'
 import { getData, removeData, saveData } from '@/plugins/storage'
@@ -181,9 +182,14 @@ export const handleSaveFile = async(path: string, data: any) => {
   // if (!path.endsWith('.json')) path += '.json'
   // const buffer = gzip(data)
   const tempFilePath = `${temporaryDirectoryPath}/tempFile.json`
-  await writeFile(tempFilePath, JSON.stringify(data))
-  await gzipFile(tempFilePath, path)
-  await unlink(tempFilePath)
+  await withTemporaryPaths([tempFilePath, path], async() => {
+    try {
+      await writeFile(tempFilePath, JSON.stringify(data))
+      await gzipFile(tempFilePath, path)
+    } finally {
+      await unlink(tempFilePath).catch(() => {})
+    }
+  })
 }
 export const handleReadFile = async<T = unknown>(path: string): Promise<T> => {
   let isJSON = path.endsWith('.json')
@@ -192,9 +198,14 @@ export const handleReadFile = async<T = unknown>(path: string): Promise<T> => {
     data = await readFile(path)
   } else {
     const tempFilePath = `${temporaryDirectoryPath}/tempFile.json`
-    await unGzipFile(path, tempFilePath)
-    data = await readFile(tempFilePath)
-    await unlink(tempFilePath)
+    data = await withTemporaryPaths([path, tempFilePath], async() => {
+      try {
+        await unGzipFile(path, tempFilePath)
+        return await readFile(tempFilePath)
+      } finally {
+        await unlink(tempFilePath).catch(() => {})
+      }
+    })
   }
   data = JSON.parse(data)
 
