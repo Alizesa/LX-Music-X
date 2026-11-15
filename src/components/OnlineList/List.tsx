@@ -74,6 +74,7 @@ const List = forwardRef<ListType, ListProps>(({
   const selectModeRef = useRef<SelectMode>('single')
   const prevSelectIndexRef = useRef(-1)
   const [selectedList, setSelectedList] = useState<LX.Music.MusicInfoOnline[]>([])
+  const selectedItems = useMemo(() => new Set(selectedList), [selectedList])
   const selectedListRef = useRef<LX.Music.MusicInfoOnline[]>([])
   const [visibleMultiSelect, setVisibleMultiSelect] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
@@ -211,7 +212,7 @@ const List = forwardRef<ListType, ListProps>(({
       onPress={handlePress}
       onLongPress={handleLongPress}
       onShowMenu={onShowMenu}
-      selectedList={selectedList}
+      isSelected={selectedItems.has(item)}
       rowInfo={rowInfo.current}
       isShowAlbumName={isShowAlbumName}
       isShowInterval={isShowInterval}

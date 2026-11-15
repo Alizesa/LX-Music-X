@@ -29,21 +29,19 @@ const useQualityTag = (musicInfo: LX.Music.MusicInfoOnline) => {
   return info
 }
 
-export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu, selectedList, rowInfo, isShowAlbumName, isShowInterval }: {
+export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu, isSelected, rowInfo, isShowAlbumName, isShowInterval }: {
   item: LX.Music.MusicInfoOnline
   index: number
   showSource?: boolean
   onPress: (item: LX.Music.MusicInfoOnline, index: number) => void
   onLongPress: (item: LX.Music.MusicInfoOnline, index: number) => void
   onShowMenu: (item: LX.Music.MusicInfoOnline, index: number, position: { x: number, y: number, w: number, h: number }) => void
-  selectedList: LX.Music.MusicInfoOnline[]
+  isSelected: boolean
   rowInfo: RowInfo
   isShowAlbumName: boolean
   isShowInterval: boolean
 }) => {
   const theme = useTheme()
-
-  const isSelected = selectedList.includes(item)
 
   const moreButtonRef = useRef<TouchableOpacity>(null)
   const handleShowMenu = () => {
@@ -86,7 +84,12 @@ export default memo(({ item, index, showSource, onPress, onLongPress, onShowMenu
     prevProps.index === nextProps.index &&
     prevProps.isShowAlbumName === nextProps.isShowAlbumName &&
     prevProps.isShowInterval === nextProps.isShowInterval &&
-    nextProps.selectedList.includes(nextProps.item) == prevProps.selectedList.includes(nextProps.item)
+    prevProps.showSource === nextProps.showSource &&
+    prevProps.rowInfo === nextProps.rowInfo &&
+    prevProps.onPress === nextProps.onPress &&
+    prevProps.onLongPress === nextProps.onLongPress &&
+    prevProps.onShowMenu === nextProps.onShowMenu &&
+    prevProps.isSelected === nextProps.isSelected
   )
 })
 

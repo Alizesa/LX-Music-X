@@ -17,21 +17,21 @@ export const useAnimateNumber = (val: number, duration = DEFAULT_DURATION, useNa
   })
 
   useEffect(() => {
+    if (currentNumber.current === nextNumber) return
     setFinished(false)
-    Animated.timing(anim, {
+    let cancelled = false
+    const animation = Animated.timing(anim, {
       toValue: 1,
       duration,
       useNativeDriver,
-    }).start((finished) => {
-      if (!finished) return
-      // currentNumber.current = nextNumber
+    })
+    animation.start(({ finished }) => {
+      if (cancelled || !finished) return
       setFinished(true)
     })
-    requestAnimationFrame(() => {
-      currentNumber.current = nextNumber
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextNumber])
+    currentNumber.current = nextNumber
+    return () => { cancelled = true; animation.stop() }
+  }, [anim, nextNumber, duration, useNativeDriver])
 
   return [animNumber, finished] as const
 }
@@ -46,16 +46,19 @@ export const useAnimateOnecNumber = (val: number, toVal: number, duration = DEFA
   })
 
   useEffect(() => {
+    if (val === toVal) return
     setFinished(false)
-    Animated.timing(anim, {
+    let cancelled = false
+    const animation = Animated.timing(anim, {
       toValue: 1,
       duration,
       useNativeDriver,
-    }).start((finished) => {
-      if (!finished) return
-      // currentNumber.current = nextNumber
+    })
+    animation.start(({ finished }) => {
+      if (cancelled || !finished) return
       setFinished(true)
     })
+    return () => { cancelled = true; animation.stop() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

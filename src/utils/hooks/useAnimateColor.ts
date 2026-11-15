@@ -17,21 +17,21 @@ export const useAnimateColor = (color: string) => {
   })
 
   useEffect(() => {
+    if (currentColor.current === nextColor) return
     setFinished(false)
-    Animated.timing(anim, {
+    let cancelled = false
+    const animation = Animated.timing(anim, {
       toValue: 1,
       duration: ANIMATION_DURATION,
       useNativeDriver: false,
-    }).start((finished) => {
-      if (!finished) return
-      // currentColor.current = nextColor
+    })
+    animation.start(({ finished }) => {
+      if (cancelled || !finished) return
       setFinished(true)
     })
-    requestAnimationFrame(() => {
-      currentColor.current = nextColor
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextColor])
+    currentColor.current = nextColor
+    return () => { cancelled = true; animation.stop() }
+  }, [anim, nextColor])
 
   return [animColor, finished] as const
 }
