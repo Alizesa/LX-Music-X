@@ -24,6 +24,7 @@ const USER_LIST_CACHE_MAX_SONGS = 3000
 // Map 保持插入顺序：访问时删了再塞，淘汰从头部拿最久没用的
 const listAccessOrder = new Map<string, true>()
 const listCacheHolds = new Map<string, number>()
+export const isListCacheHeld = (id: string) => listCacheHolds.has(id)
 let listCachePruneTimer: ReturnType<typeof setTimeout> | null = null
 let pressurePrunePending = false
 

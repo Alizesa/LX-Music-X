@@ -73,7 +73,7 @@ const createUpdateApp = ({ server, installed = { version: '1.9.2', versionCode: 
     Error,
     global: {
       lx: { fontSize: 1 },
-      i18n: { t: key => key },
+      i18n: { t: key => key, availableLocales: ['zh_cn', 'zh_tw', 'en_us'], setLanguage() {} },
       state_event: { versionInfoUpdated() {}, versionInfoIgnoreVersionUpdated() {}, versionDownloadProgressUpdated() {} },
     },
   }
@@ -99,7 +99,16 @@ const createUpdateApp = ({ server, installed = { version: '1.9.2', versionCode: 
     settingState.setting = setting.updateSetting(patch).setting
     saveData('setting', settingState.setting)
   }
+  const runtime = load('src/core/init/musicRuntime.ts', {
+    'react-native': { AppState: { currentState: 'active' } },
+    '@/core/common': { initSetting: async() => { settingState.setting = (await setting.initSetting()).setting; return settingState.setting } },
+    '@/core/apiSource': { setApiSource() {} },
+    '@/store/setting/state': { default: settingState },
+    './i18n': { default: async() => {} },
+    './userApi': { default: async() => {} },
+  }, globals)
   const init = load('src/core/init/index.ts', {
+    './musicRuntime': runtime,
     '@/core/common': {
       initSetting: async() => { settingState.setting = (await setting.initSetting()).setting; return settingState.setting },
       showPactModal: () => pacts.push(true),

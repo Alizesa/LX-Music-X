@@ -7,6 +7,7 @@ interface DownloadNativeModule extends NativeModule {
   getState: (nativeId: string) => Promise<NativeDownloadState | null>
   acknowledgeCompletion?: (nativeId: string) => Promise<void>
   getCompletionIds?: () => Promise<Array<{ nativeId: string, taskId: string }>>
+  finishQueueDispatch: (workId: string, success: boolean) => Promise<void>
 }
 
 const DownloadModule = NativeModules.DownloadModule as DownloadNativeModule
@@ -47,6 +48,7 @@ export const removeDownload = async(nativeId: string | undefined, taskId: string
 export const getDownloadState = async(nativeId: string): Promise<NativeDownloadState | null> => DownloadModule.getState(nativeId)
 export const acknowledgeDownloadCompletion = async(nativeId: string): Promise<void> => DownloadModule.acknowledgeCompletion?.(nativeId)
 export const getDownloadCompletionIds = async(): Promise<Array<{ nativeId: string, taskId: string }>> => DownloadModule.getCompletionIds?.() ?? []
+export const finishDownloadQueueDispatch = async(workId: string, success: boolean): Promise<void> => DownloadModule.finishQueueDispatch(workId, success)
 
 export const onDownloadUpdate = (handler: (state: NativeDownloadState) => void) => {
   const subscription = emitter.addListener('lx-download-update', handler)

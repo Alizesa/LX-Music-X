@@ -12,6 +12,7 @@ import java.util.List;
 import cn.toside.music.mobile.cache.CachePackage;
 import cn.toside.music.mobile.crypto.CryptoPackage;
 import cn.toside.music.mobile.download.DownloadPackage;
+import cn.toside.music.mobile.download.DownloadQueueWorker;
 import cn.toside.music.mobile.securestorage.SecureStoragePackage;
 import cn.toside.music.mobile.lyric.LyricPackage;
 import cn.toside.music.mobile.userApi.UserApiPackage;
@@ -72,5 +73,6 @@ public class MainApplication extends NavigationApplication {
       DefaultNewArchitectureEntryPoint.load();
     }
     ReactNativeFlipper.initializeFlipper(this, getReactNativeHost().getReactInstanceManager());
+    DownloadQueueWorker.recoverPending(this);
   }
 }

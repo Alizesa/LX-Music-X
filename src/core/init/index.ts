@@ -1,13 +1,11 @@
-import { initSetting, showPactModal } from '@/core/common'
+import { showPactModal } from '@/core/common'
 import registerPlaybackService from '@/plugins/player/service'
 import initTheme from './theme'
-import initI18n from './i18n'
-import initUserApi from './userApi'
+import { initializeMusicRuntime, initializeRuntimeSettings } from './musicRuntime'
 import initPlayer from './player'
 import dataInit from './dataInit'
 import initCommonState from './common'
 import { initDeeplink } from './deeplink'
-import { setApiSource } from '@/core/apiSource'
 import commonActions from '@/store/common/action'
 import settingState from '@/store/setting/state'
 import { checkUpdate, initializeVersion } from '@/core/version'
@@ -40,21 +38,15 @@ export default async() => {
   bootLog('Initing...')
   commonActions.setFontSize(global.lx.fontSize)
   bootLog('Font size changed.')
-  const setting = await initSetting()
+  const setting = await initializeRuntimeSettings()
   initPlaybackLog(setting)
   bootLog('Setting inited.')
   // console.log(setting)
 
   await initTheme(setting)
   bootLog('Theme inited.')
-  await initI18n(setting)
-  bootLog('I18n inited.')
-
-  await initUserApi(setting)
-  bootLog('User Api inited.')
-
-  setApiSource(setting['common.apiSource'])
-  bootLog('Api inited.')
+  await initializeMusicRuntime(setting)
+  bootLog('I18n and music sources inited.')
 
   registerPlaybackService()
   bootLog('Playback Service Registered.')

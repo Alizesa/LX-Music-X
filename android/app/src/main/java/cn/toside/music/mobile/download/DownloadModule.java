@@ -31,6 +31,7 @@ import com.google.common.util.concurrent.MoreExecutors;
 
 import java.io.File;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.UUID;
 
 public class DownloadModule extends ReactContextBaseJavaModule {
@@ -64,6 +65,13 @@ public class DownloadModule extends ReactContextBaseJavaModule {
   @Override
   public String getName() {
     return "DownloadModule";
+  }
+
+  @Override
+  public Map<String, Object> getConstants() {
+    Map<String, Object> constants = new HashMap<>();
+    constants.put("downloadHeadlessBoot", DownloadQueueWorker.isDispatching() && reactContext.getCurrentActivity() == null);
+    return constants;
   }
 
   @Override
@@ -123,12 +131,22 @@ public class DownloadModule extends ReactContextBaseJavaModule {
       .addTag(MusicDownloadWorker.TAG)
       .addTag("lx-download-" + taskId)
       .build();
-    WorkManager.getInstance(reactContext).enqueueUniqueWork(
+    Operation operation = WorkManager.getInstance(reactContext).enqueueUniqueWork(
       "lx-download-" + taskId,
       ExistingWorkPolicy.REPLACE,
       request
     );
-    promise.resolve(request.getId().toString());
+    Futures.addCallback(operation.getResult(), new FutureCallback<Operation.State.SUCCESS>() {
+      @Override
+      public void onSuccess(Operation.State.SUCCESS result) {
+        promise.resolve(request.getId().toString());
+      }
+
+      @Override
+      public void onFailure(Throwable error) {
+        promise.reject("enqueue_download_failed", error);
+      }
+    }, MoreExecutors.directExecutor());
   }
 
   @ReactMethod
@@ -255,6 +273,12 @@ public class DownloadModule extends ReactContextBaseJavaModule {
     putString(map, "filePath", data.getString(MusicDownloadWorker.KEY_FILE_URI));
     putString(map, "fileName", data.getString(MusicDownloadWorker.KEY_FILE_NAME));
     return map;
+  }
+
+  @ReactMethod
+  public void finishQueueDispatch(String token, boolean success, Promise promise) {
+    DownloadQueueWorker.complete(token, success);
+    promise.resolve(null);
   }
 
   private WritableMap toMap(WorkInfo info) {

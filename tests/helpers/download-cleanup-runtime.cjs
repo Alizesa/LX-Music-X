@@ -2,7 +2,7 @@ const { load, flush, deferred } = require('./load.cjs')
 const { harness: storageHarness } = require('./download-storage.cjs')
 const { task, song } = require('./download-runtime.cjs')
 
-const createHarness = async({ active = [], history = [], receipts = new Map(), cover } = {}) => {
+const createHarness = async({ active = [], history = [], receipts = new Map(), cover, catalog, url = async() => 'https://fixture/audio' } = {}) => {
   const disk = storageHarness()
   const files = new Set(history.map(item => item.filePath).filter(Boolean))
   const local = new Set(files)
@@ -24,13 +24,13 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
     const clock = new Map(); let nextTimer = 0; let listener
     const api = load('src/core/download.ts', {
       '@/core/list': {
-        addListMusics: async(_id, items) => { items.forEach(item => local.add(item.id)) },
+        addListMusics: async(_id, items) => { await catalog?.beforeLocal?.(items); items.forEach(item => local.add(item.id)) },
         removeListMusics: async(_id, paths) => {
           if (settings.failLocal) throw new Error('LOCAL write failed')
           paths.forEach(path => local.delete(path))
         },
       },
-      '@/core/music': { getMusicUrl: async() => { urlCalls++; return 'https://fixture/audio' }, getPicPath: async() => cover ? 'https://fixture/cover.jpg' : '', getLyricInfo: async() => ({ lyric: '' }) },
+      '@/core/music': { getMusicUrl: args => { urlCalls++; return url(args) }, getPicPath: async() => cover ? 'https://fixture/cover.jpg' : '', getLyricInfo: async() => ({ lyric: '' }) },
       '@/config/constant': constants,
       '@/store/setting/state': { default: { setting: { 'download.fileName': '歌名', 'download.quality': '128k' } } },
       '@/utils': { filterFileName: value => value },
@@ -67,6 +67,7 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
         getDownloadState: async id => receipts.get(id) ?? null,
         getDownloadCompletionIds: async() => [...receipts].map(([nativeId, state]) => ({ nativeId, taskId: state.taskId })),
         acknowledgeDownloadCompletion: async id => {
+          await catalog?.beforeAck?.()
           if (settings.failAck) throw new Error('ack failed')
           acknowledged.push(id); receipts.delete(id)
         },

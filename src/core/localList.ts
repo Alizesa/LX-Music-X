@@ -1,5 +1,5 @@
 import { LIST_IDS } from '@/config/constant'
-import { allMusicList, getListMusics } from '@/utils/listManage'
+import { allMusicList, getListMusics, isListCacheHeld } from '@/utils/listManage'
 import { ensureLocalMatchIndex, getCurrentLocalMatchIndex, patchLocalMatchIndexRow } from '@/utils/localMatchIndex'
 import playerState from '@/store/player/state'
 
@@ -16,6 +16,7 @@ let releaseTimer: ReturnType<typeof setTimeout> | null = null
 // 合并连续下载完成这类操作，避免每首之间都丢一次缓存
 const RELEASE_DELAY = 3000
 let initialized = false
+let idleReleaseRequested = false
 
 export const isLocalListInUse = () => {
   // 旧数据/非队列链路仍可能直接以 LOCAL 作为当前列表
@@ -30,8 +31,20 @@ export const isLocalListInUse = () => {
 }
 
 const canRelease = () => holds.size === 0 && !isLocalListInUse()
+export const releaseIdleLocalListCache = () => {
+  idleReleaseRequested = true
+  if (!canRelease() || isListCacheHeld?.(LIST_IDS.LOCAL)) return
+  if (releaseTimer) clearTimeout(releaseTimer)
+  releaseTimer = null
+  allMusicList.delete(LIST_IDS.LOCAL)
+  idleReleaseRequested = false
+}
 
 export const maybeRelease = () => {
+  if (idleReleaseRequested) {
+    releaseIdleLocalListCache()
+    if (!idleReleaseRequested) return
+  }
   if (releaseTimer) {
     clearTimeout(releaseTimer)
     releaseTimer = null

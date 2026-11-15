@@ -8,7 +8,9 @@ import { confirmDialog, openUrl, tipDialog } from '@/utils/tools'
 import { requestMsg } from '@/utils/message'
 
 
-export default async(setting: LX.AppSetting) => {
+export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: { suppressDialogs?: () => boolean } = {}) => {
+  // 读失败可安全重试，不能留下半套重复监听。
+  const userApis = await getUserApiList()
   const userApiRequestMap = new Map<string, { resolve: (value: ResponseParams['result']) => void, reject: (error: Error) => void, timeout: number, generation: number }>()
   const scriptRequestMap = new Map<string, { request: Promise<any>, abort: () => void, generation: number }>()
 
@@ -195,7 +197,7 @@ export default async(setting: LX.AppSetting) => {
         global.lx.apis = apis
       }
     } else {
-      if (errorMessage) {
+      if (errorMessage && !suppressDialogs()) {
         void tipDialog({
           message: `${global.i18n.t('user_api__init_failed_alert', { name: info.name })}\n${errorMessage}`,
           // selection: true,
@@ -206,6 +208,7 @@ export default async(setting: LX.AppSetting) => {
     if (!global.lx.apiInitPromise[1]) global.lx.apiInitPromise[2](status)
   }
   const showUpdateAlert = ({ name, log, updateUrl }: UpdateInfoParams) => {
+    if (suppressDialogs()) return
     if (updateUrl) {
       void confirmDialog({
         message: `${global.i18n.t('user_api_update_alert', { name })}\n${log}`,
@@ -277,5 +280,5 @@ export default async(setting: LX.AppSetting) => {
     }
   })
 
-  setUserApiList(await getUserApiList())
+  setUserApiList(userApis)
 }

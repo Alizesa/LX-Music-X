@@ -50,6 +50,7 @@ import { sizeFormate } from '@/utils/common'
 
 const tasks: LX.Download.DownloadTask[] = []
 const tasksById = new Map<string, LX.Download.DownloadTask>()
+const taskIdentities = new WeakMap<LX.Download.DownloadTask, symbol>()
 const isCurrentTask = (task: LX.Download.DownloadTask) => tasksById.get(task.id) === task
 const replaceTasks = (next: LX.Download.DownloadTask[]) => {
   tasks.splice(0, tasks.length, ...next)
@@ -62,6 +63,16 @@ let reconciling = false
 let processing = false
 // 处理过程中又来了新的 waiting 任务，需要在本轮结束后再扫一遍
 let reprocess = false
+let dispatchSuspended = false
+let preparationGeneration = 0
+const preparationWaiters = new Set<() => void>()
+const notifyPreparationIdle = () => {
+  if (reconciling || processing) return
+  // 已有原生工作会在终态再次唤醒；不为健康的长队列一直占住一个 HeadlessTask。
+  const nativeActive = tasks.some(task => task.status === 'run' || (task.status === 'waiting' && !!task.nativeId))
+  if (!nativeActive && (finalizations.size || completions.length)) return
+  for (const resolve of preparationWaiters) resolve()
+}
 // 两个原生下载槽位和少量预备任务；后处理也占名额，慢标签写入不会无限积压。
 const MAX_SCHEDULED_DOWNLOADS = 4
 const scheduledDownloadCount = () => tasks.reduce((count, task) => count + (
@@ -463,14 +474,22 @@ const flushCompletions = () => {
     const current = batch.filter((item): item is Completion & { task: LX.Download.DownloadTask, localInfo: LX.Music.MusicInfoLocal } =>
       !!item.task && !!item.localInfo && isCurrentTask(item.task))
     if (!current.length) return
+    // 取消会清空 Completion 的业务引用；已经开始的存盘只保留轻量归档字段。
+    const archive = current.map(({ task }) => {
+      let identity = taskIdentities.get(task)
+      if (!identity) { identity = Symbol('download-archive'); taskIdentities.set(task, identity) }
+      return { history: toHistoryItem(task), nativeId: task.nativeId, identity }
+    })
     // 连续完成的下载只写一次 LOCAL、重建一次匹配索引。
     await addListMusics(LIST_IDS.LOCAL, current.map(item => item.localInfo), 'bottom')
-    await addDownloadHistory(current.map(item => toHistoryItem(item.task)))
+    await addDownloadHistory(archive.map(item => item.history))
     // 档案持久化后才确认原生凭据；确认失败保留凭据供下次启动重试。
-    for (const { task } of current) {
-      if (task.nativeId) await (acknowledgeDownloadCompletion?.(task.nativeId) ?? Promise.resolve()).catch(logDownloadError)
+    for (const item of archive) {
+      if (item.nativeId) await (acknowledgeDownloadCompletion?.(item.nativeId) ?? Promise.resolve()).catch(logDownloadError)
     }
-    for (const { task } of current) {
+    for (const item of archive) {
+      const task = tasksById.get(item.history.id)
+      if (!task || taskIdentities.get(task) !== item.identity) continue
       const index = tasks.indexOf(task)
       if (index >= 0) tasks.splice(index, 1)
       if (isCurrentTask(task)) tasksById.delete(task.id)
@@ -570,9 +589,11 @@ const executeFinalization = async(job: FinalizeJob) => {
   } finally {
     if (finalizations.get(task) === job) finalizations.delete(task)
     void processQueue().catch(logDownloadError)
+    notifyPreparationIdle()
   }
 }
 const runFinalizations = () => {
+  if (dispatchSuspended) return
   while (runningFinalizations < 2 && finalizeJobs.length) {
     const job = finalizeJobs.shift()!
     runningFinalizations++
@@ -714,7 +735,7 @@ const reconcileTask = async(task: LX.Download.DownloadTask) => {
 }
 
 const processQueue = async() => {
-  if (reconciling) return
+  if (reconciling || dispatchSuspended) return
   if (processing) {
     // 本轮还没跑完又有人把任务置为 waiting（逐个恢复、批量添加都会）：
     // 记一笔，让本轮结束后再从头扫一遍。直接 return 的话，被恢复的任务如果
@@ -730,6 +751,7 @@ const processQueue = async() => {
       // 先快照 id：循环里的 await 期间可能完成/归档别的任务，
       // 直接遍历 tasks 会被 splice 打乱迭代器、跳过下一项
       for (const id of tasks.map(task => task.id)) {
+        if (dispatchSuspended) break
         if (scheduledDownloadCount() >= MAX_SCHEDULED_DOWNLOADS) break
         const task = tasksById.get(id)
         if (!task || task.status != 'waiting' || task.nativeId) continue
@@ -776,6 +798,7 @@ const processQueue = async() => {
     } while (reprocess)
   } finally {
     processing = false
+    notifyPreparationIdle()
   }
 }
 
@@ -813,7 +836,7 @@ const loadDownloadStorage = async() => {
   if (deleting.size) await saveDownloadActiveTasks(tasks, deleting)
 }
 
-export const initDownloads = async() => {
+const initializeDownloads = async() => {
   if (initPromise) return initPromise
   initPromise = (async() => {
     await loadDownloadStorage()
@@ -851,7 +874,73 @@ export const initDownloads = async() => {
   })
   return initPromise
 }
-const init = initDownloads
+const init = initializeDownloads
+const resumeDispatch = (invalidatePreparations = true) => {
+  if (invalidatePreparations) preparationGeneration++
+  dispatchSuspended = false
+  for (const task of tasks) {
+    if (task.status === 'finalizing' && task.pendingCompletion && !finalizations.has(task)) resumeFinalization(task)
+  }
+  runFinalizations()
+  void processQueue().catch(logDownloadError)
+}
+const reconcileCompletedDownloads = async() => {
+  for (const receipt of await getDownloadCompletionIds?.() ?? []) {
+    if (hasDownloadHistory(receipt.taskId)) {
+      await (acknowledgeDownloadCompletion?.(receipt.nativeId) ?? Promise.resolve()).catch(logDownloadError)
+      continue
+    }
+    const task = tasksById.get(receipt.taskId)
+    if (!task || (task.nativeId && task.nativeId !== receipt.nativeId)) continue
+    if (!task.nativeId && task.status !== 'resolving' && task.status !== 'waiting') continue
+    task.nativeId = receipt.nativeId
+    const state = await getDownloadState(receipt.nativeId)
+    if (!isCurrentTask(task) || task.nativeId !== receipt.nativeId || state?.status !== 'completed') continue
+    handleNativeUpdate({ ...state, taskId: task.id })
+  }
+}
+export const initDownloads = async() => {
+  await initializeDownloads()
+  resumeDispatch()
+}
+
+// HeadlessTask 保持运行到取链、标签与归档结束，原生排队下载不需要占住 JS 等待。
+export const preparePendingDownloads = async(signal: AbortSignal, shouldSuspend: () => boolean = () => false) => {
+  await waitForPromise(Promise.resolve(), signal)
+  const generation = ++preparationGeneration
+  const cancel = () => {
+    if (generation !== preparationGeneration || !shouldSuspend()) return
+    dispatchSuspended = true
+    for (const task of tasks) {
+      if (task.status !== 'resolving') continue
+      task.status = 'waiting'
+      dirtyTasks.add(task.id)
+      cancelTaskUrl(task)
+    }
+    for (const task of finalizations.keys()) cancelFinalization(task)
+    schedulePersist()
+    notify()
+  }
+  signal.addEventListener('abort', cancel, { once: true })
+  if (signal.aborted) cancel()
+  let ready: (() => void) | undefined
+  try {
+    dispatchSuspended = false
+    await waitForPromise(initializeDownloads(), signal)
+    // JS 实例仍在但旧广播没有送达时，也直接消费原生持久完成凭据。
+    await waitForPromise(reconcileCompletedDownloads(), signal)
+    resumeDispatch(false)
+    const idle = new Promise<void>(resolve => {
+      ready = resolve
+      preparationWaiters.add(resolve)
+      notifyPreparationIdle()
+    })
+    await waitForPromise(idle, signal)
+  } finally {
+    signal.removeEventListener('abort', cancel)
+    if (ready) preparationWaiters.delete(ready)
+  }
+}
 
 export const getDownloadCount = async() => {
   await init()
@@ -962,6 +1051,7 @@ const addTasksToCatalog = async(musicInfos: LX.Music.MusicInfoOnline[], quality:
 
 export const addTasks = async(musicInfos: LX.Music.MusicInfoOnline[], quality: LX.Quality = settingState.setting['download.quality']) => {
   await init()
+  resumeDispatch()
   // 查重、清理旧文件和登记任务共用目录队列：等待期间另一批不能覆盖
   // 同一任务，删除中的原生 worker 也必须先停下，才可复用其 .part。
   return withCatalogWrite(async() => addTasksToCatalog(musicInfos, quality))
@@ -1032,6 +1122,7 @@ const retryTaskInternal = async({ task, request }: NonNullable<ReturnType<typeof
 
 export const retryTask = async(id: string) => {
   await init()
+  resumeDispatch()
   const task = tasksById.get(id)
   const request = task && prepareResume(task)
   if (request) await withFileOperation(async() => retryTaskInternal(request, getDownloadPath(), true, true))
@@ -1052,6 +1143,7 @@ export const pauseAllTasks = async() => {
 
 export const resumeAllTasks = async() => {
   await init()
+  resumeDispatch()
   const requests = tasks.filter(task => task.status === 'pause' || task.status === 'error')
     .map(prepareResume).filter((request): request is NonNullable<typeof request> => !!request)
   try {

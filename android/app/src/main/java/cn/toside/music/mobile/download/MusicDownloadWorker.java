@@ -103,6 +103,7 @@ public class MusicDownloadWorker extends Worker {
       completed = true;
       // 广播失败不能重新下载已经持久记录的文件；下次 JS 恢复会读凭据。
       try { sendUpdate(taskId, "completed", total, total, destination.uri, null, destination.fileName); } catch (RuntimeException ignored) {}
+      DownloadQueueWorker.schedule(getApplicationContext());
       return Result.success(output);
     } catch (InterruptedException error) {
       Thread.currentThread().interrupt();
@@ -111,6 +112,7 @@ public class MusicDownloadWorker extends Worker {
       if (isStopped()) return Result.failure(errorData(error));
       if (getRunAttemptCount() < 2) return Result.retry();
       sendUpdate(taskId, "error", 0, 0, null, error.getMessage(), requestedFileName);
+      DownloadQueueWorker.schedule(getApplicationContext());
       return Result.failure(errorData(error));
     } finally {
       try {
