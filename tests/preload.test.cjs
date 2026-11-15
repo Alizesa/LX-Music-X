@@ -19,7 +19,16 @@ const load = (file, mocks = {}, globals = {}) => {
     setTimeout,
     clearTimeout,
     console: { log() {} },
-    require(name) { if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/abortable.ts', { './message': mocks['@/utils/message'] ?? load('src/utils/message.ts') }); if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs'); assert.ok(Object.hasOwn(mocks, name), `Unexpected import ${name} in ${file}`); return mocks[name] },
+    require(name) {
+      const shared = require('./helpers/load.cjs').load
+      const messages = () => mocks['@/utils/message'] ?? load('src/utils/message.ts')
+      if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return shared('src/utils/abortable.ts', { './message': messages() })
+      if (name === '@/utils/abort' && !Object.hasOwn(mocks, name)) return shared('src/utils/abort.ts', { './message': messages(), '@/utils/abortable': shared('src/utils/abortable.ts', { './message': messages() }) })
+      if (name === '@/utils/musicSdk/requestScope' && !Object.hasOwn(mocks, name)) return shared('src/utils/musicSdk/requestScope.ts', { '@/utils/abort': context.require('@/utils/abort') })
+      if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs')
+      assert.ok(Object.hasOwn(mocks, name), `Unexpected import ${name} in ${file}`)
+      return mocks[name]
+    },
     ...globals,
   }
   vm.runInNewContext(compiled.get(file), context, { filename: file })

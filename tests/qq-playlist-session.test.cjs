@@ -30,6 +30,10 @@ const load = (file, mocks = {}, appGlobal = {}) => {
     console: { log() {}, warn() {}, error() {} },
     global: { i18n: { t: key => key }, ...appGlobal },
     require: name => {
+      if (name === '@/utils/message' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/message.ts')
+      if (name === '@/utils/abort' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/abort.ts')
+      if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/abortable.ts', { './message': require('./helpers/load.cjs').load('src/utils/message.ts') })
+      if (name === '@/utils/musicSdk/requestScope' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/musicSdk/requestScope.ts')
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${name}`)
       return mocks[name]
     },

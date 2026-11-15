@@ -13,6 +13,7 @@ const load = (file, mocks = {}) => {
     exports: {},
     AbortController,
     require: name => {
+      if (name === '@/utils/musicSdk/requestScope' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/musicSdk/requestScope.ts')
       if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/abortable.ts', { './message': mocks['@/utils/message'] ?? load('src/utils/message.ts') })
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs')
       if (name === '@/utils/abort') return abort

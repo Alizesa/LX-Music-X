@@ -22,6 +22,7 @@ const load = (file, mocks = {}, globals = {}) => {
     clearTimeout,
     require: name => {
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'Fragment' }
+      if (name === './temporaryPaths' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/temporaryPaths.ts', { 'react-native': { NativeModules: {}, ...mocks['react-native'] } })
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${file}: ${name}`)
       return mocks[name]
     },
