@@ -3,14 +3,14 @@ const { test } = require('node:test')
 const { harness: storageHarness, indexKey, itemPrefix, legacyKey, keyFor, constants } = require('./helpers/download-storage.cjs')
 const { harness, task, flush, deferred } = require('./helpers/download-runtime.cjs')
 
-test('download startup and scheduling write a linear number of independent task records', async t => {
+test('download startup persists every task while scheduling only a bounded window of independent records', async t => {
   const tasks = Array.from({ length: 100 }, (_, i) => task(`task-${i}`))
   const disk = storageHarness([[legacyKey, JSON.stringify(tasks)]])
   const h = harness({ data: disk.data })
   await h.api.initDownloads()
-  for (let i = 0; i < 30 && h.enqueued.length < tasks.length; i++) await flush()
+  for (let i = 0; i < 10 && h.enqueued.length < 4; i++) await flush()
   await flush()
-  assert.equal(h.enqueued.length, tasks.length)
+  assert.equal(h.enqueued.length, 4)
   const records = disk.writes.flat().filter(([key]) => key.startsWith(itemPrefix))
   assert.ok(records.length >= tasks.length && records.length <= tasks.length * 3, `wrote ${records.length} task records`)
   t.diagnostic(`metrics: download_tasks=${tasks.length}, serialized_task_records=${records.length}`)
@@ -18,7 +18,8 @@ test('download startup and scheduling write a linear number of independent task 
   assert.equal(disk.writes.flat().filter(([key]) => key === legacyKey).length, 0)
   const restarted = await disk.createData().getDownloadActiveTasks()
   assert.equal(restarted.length, tasks.length)
-  assert.ok(restarted.every(item => item.nativeId === `work-${item.id}`))
+  assert.equal(restarted.filter(item => item.nativeId === `work-${item.id}`).length, 4)
+  assert.equal(restarted.filter(item => !item.nativeId && item.status === 'waiting').length, tasks.length - 4)
 })
 
 test('failed active-task migration preserves the legacy array and retries atomically', async() => {
