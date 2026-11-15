@@ -11,10 +11,10 @@ export const useAnimateNumber = (val: number, duration = DEFAULT_DURATION, useNa
   const currentNumber = useRef(val)
   const nextNumber = useMemo(() => val, [val])
 
-  const animNumber = anim.interpolate({
+  const animNumber = useMemo(() => anim.interpolate({
     inputRange: [0, 1],
     outputRange: [currentNumber.current, nextNumber],
-  })
+  }), [anim, nextNumber])
 
   useEffect(() => {
     if (currentNumber.current === nextNumber) return

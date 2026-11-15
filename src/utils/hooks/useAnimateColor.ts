@@ -11,10 +11,10 @@ export const useAnimateColor = (color: string) => {
   const currentColor = useRef(color)
   const nextColor = useMemo(() => color, [color])
 
-  const animColor = anim.interpolate({
+  const animColor = useMemo(() => anim.interpolate({
     inputRange: [0, 1],
     outputRange: [currentColor.current, nextColor],
-  })
+  }), [anim, nextColor])
 
   useEffect(() => {
     if (currentColor.current === nextColor) return
