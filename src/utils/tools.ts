@@ -2,7 +2,7 @@ import { Platform, ToastAndroid, BackHandler, Linking, Alert, Appearance, Permis
 // import ExtraDimensions from 'react-native-extra-dimensions-android'
 import Clipboard from '@react-native-clipboard/clipboard'
 import { storageDataPrefix } from '@/config/constant'
-import { gzipFile, readFile, temporaryDirectoryPath, unGzipFile, unlink, writeFile } from '@/utils/fs'
+import { appendFile, gzipFile, readFile, temporaryDirectoryPath, unGzipFile, unlink, writeFile } from '@/utils/fs'
 import { withTemporaryPaths } from './temporaryPaths'
 import { getSystemLocales, isIgnoringBatteryOptimization, isNotificationsEnabled, requestNotificationPermission, requestIgnoreBatteryOptimization, shareText } from '@/utils/nativeModules/utils'
 import musicSdk from '@/utils/musicSdk'
@@ -188,6 +188,27 @@ export const handleSaveFile = async(path: string, data: any) => {
   await withTemporaryPaths([tempFilePath, path], async() => {
     try {
       await writeFile(tempFilePath, JSON.stringify(data))
+      await gzipFile(tempFilePath, path)
+    } finally {
+      await unlink(tempFilePath).catch(() => {})
+    }
+  })
+}
+/** 完整 JSON 按片段写入同一中转文件，压缩/导入格式沿用 handleSaveFile。 */
+export const handleSaveFileChunks = async(path: string, chunks: AsyncIterable<string>) => {
+  const tempFilePath = nextBackupTemporaryPath()
+  await withTemporaryPaths([tempFilePath, path], async() => {
+    try {
+      await writeFile(tempFilePath, '', 'utf8')
+      for await (const chunk of chunks) {
+        for (let offset = 0; offset < chunk.length;) {
+          let end = Math.min(chunk.length, offset + 64 * 1024)
+          // Android 每笔 append 独立编码 UTF-8，片段边界不能拆开一个代理对。
+          if (end < chunk.length && chunk.charCodeAt(end - 1) >= 0xD800 && chunk.charCodeAt(end - 1) <= 0xDBFF && chunk.charCodeAt(end) >= 0xDC00 && chunk.charCodeAt(end) <= 0xDFFF) end--
+          await appendFile(tempFilePath, chunk.slice(offset, end), 'utf8')
+          offset = end
+        }
+      }
       await gzipFile(tempFilePath, path)
     } finally {
       await unlink(tempFilePath).catch(() => {})

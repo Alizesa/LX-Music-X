@@ -111,6 +111,12 @@ export const releaseIdleListCaches = (pressure = false) => {
   releaseTempListCache()
   pruneListCache(pressure)
 }
+/** 已消费完的单份缓存；导出不必等待 LRU 定时器，也不影响其他列表或独立持有者。 */
+export const releaseIdleListCache = (id: string) => {
+  if (!allMusicList.has(id) || isListCacheProtected(id)) return
+  allMusicList.delete(id)
+  listAccessOrder.delete(id)
+}
 
 export const setUserLists = (lists: LX.List.UserListInfo[]) => {
   userLists.splice(0, userLists.length, ...lists)

@@ -68,9 +68,17 @@ test('queued exports only read list data when their preceding export has finishe
     '@/core/list': { getListMusics: async() => { reads++; if (reads === 1) await gate.promise; return [{ id: 'song' }] } },
     '@/utils': {},
     '@/utils/log': { log: { error() {} } },
-    '@/utils/tools': { toast() {}, handleSaveFile: async path => { written.push(path); if (written.length === 1) throw new Error('write failed') } },
+    '@/utils/tools': {
+      toast() {},
+      handleSaveFileChunks: async(path, chunks) => {
+        for await (const chunk of chunks) assert.equal(typeof chunk, 'string')
+        written.push(path)
+        if (written.length === 1) throw new Error('write failed')
+      },
+    },
     '@/store/list/state': { default: { userList: [{ id: 'local-list' }] } },
     '@/utils/legacyList': { isRemovedUserList: () => false },
+    '@/utils/listManage': { releaseIdleListCache() {} },
   }, { global: { i18n: { t: value => value } } })
   const first = api.handleExportList('/a')
   const second = api.handleExportList('/b')

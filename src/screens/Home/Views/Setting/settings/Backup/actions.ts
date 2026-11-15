@@ -1,9 +1,10 @@
 import { createList, getListMusics, overwriteList, overwriteListFull } from '@/core/list'
 import { filterMusicList, fixNewMusicInfoQuality, toNewMusicInfo } from '@/utils'
 import { log } from '@/utils/log'
-import { confirmDialog, handleReadFile, handleSaveFile, showImportTip, toast } from '@/utils/tools'
+import { confirmDialog, handleReadFile, handleSaveFileChunks, showImportTip, toast } from '@/utils/tools'
 import listState from '@/store/list/state'
 import { isRemovedUserList } from '@/utils/legacyList'
+import { releaseIdleListCache } from '@/utils/listManage'
 
 
 const getAllLists = async() => {
@@ -212,14 +213,45 @@ export const handleImportList = (path: string) => {
 }
 
 
-const exportAllList = async(path: string) => {
-  // handleSaveFile 内部会 stringify 一次，这里不再做无意义的深拷贝
-  const data = {
-    type: 'playList_v2',
-    data: await getAllLists(),
+const exportListChunks = async function * (info: LX.List.UserListInfo): AsyncGenerator<string> {
+  const metadata: Record<string, unknown> = { ...info, list: null }
+  try {
+    // 成员顺序固定；后续列表移动/增删不能改变已经写过的批次。
+    const songs = [...await getListMusics(info.id)]
+    let prefix = '{'
+    let separator = ''
+    for (const [key, value] of Object.entries(metadata)) {
+      if (key === 'list') {
+        yield prefix + separator + '"list":['
+        prefix = ']'
+        for (let offset = 0; offset < songs.length; offset += 100) {
+          const batch = JSON.stringify(songs.slice(offset, offset + 100))
+          yield (offset ? ',' : '') + batch.slice(1, -1)
+        }
+      } else {
+        const serialized = JSON.stringify(value)
+        if (serialized === undefined) continue
+        prefix += separator + JSON.stringify(key) + ':' + serialized
+      }
+      separator = ','
+    }
+    yield prefix + '}'
+  } finally {
+    releaseIdleListCache(info.id)
   }
-
-  await handleSaveFile(path + '/lx_list.lxmc', data)
+}
+const exportAllListChunks = async function * (): AsyncGenerator<string> {
+  // 仅快照列表元信息；逐份读取正文，完成后解除本次读取产生的缓存。
+  const lists = listState.userList.filter(item => !isRemovedUserList(item)).map(info => ({ ...info, list: null }))
+  yield '{"type":"playList_v2","data":['
+  for (let index = 0; index < lists.length; index++) {
+    if (index) yield ','
+    yield * exportListChunks(lists[index])
+  }
+  yield ']}'
+}
+const exportAllList = async(path: string) => {
+  await handleSaveFileChunks(path + '/lx_list.lxmc', exportAllListChunks())
 }
 let exportQueue = Promise.resolve()
 export const handleExportList = async(path: string) => {

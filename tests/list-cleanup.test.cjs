@@ -95,14 +95,17 @@ const backupHarness = (config, failSave = false) => {
     '@/utils/tools': {
       confirmDialog: async() => true,
       handleReadFile: async() => copy(config),
-      handleSaveFile: async(_path, value) => {
+      handleSaveFileChunks: async(_path, chunks) => {
+        let value = ''
+        for await (const chunk of chunks) value += chunk
         if (failSave) throw new Error('write failed')
-        exported = copy(value)
+        exported = JSON.parse(value)
       },
       toast: value => messages.push(value),
     },
     '@/store/list/state': { default: { userList: [old, custom], allList: [] } },
     '@/utils/legacyList': legacy,
+    '@/utils/listManage': { releaseIdleListCache() {} },
   })
   return { api, messages, writes, created, getExport: () => exported }
 }
