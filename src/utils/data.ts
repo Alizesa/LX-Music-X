@@ -27,17 +27,44 @@ export const removeSearchResultCache = async(key: string) => removeData(storageD
 export const getBrowseDetailCacheIndex = async() => await getData<Record<string, number>>(storageDataPrefix.browseDetailCacheIndex) ?? {}
 export const saveBrowseDetailCacheIndex = async(index: Record<string, number>) => saveDataDirect(storageDataPrefix.browseDetailCacheIndex, index)
 export const getBrowseDetailCache = async<T>(key: string) => getData<T>(storageDataPrefix.browseDetailCacheItem + key)
-export const saveBrowseDetailCache = async(key: string, value: unknown) => saveData(storageDataPrefix.browseDetailCacheItem + key, value)
+const detailCacheKeys = new Map<string, Set<string>>()
+let detailKeysLoaded = false
+let detailKeysLoading: Promise<void> | null = null
+const rememberDetailKey = (key: string) => {
+  const group = key.split('::')[0]
+  let keys = detailCacheKeys.get(group)
+  if (!keys) detailCacheKeys.set(group, keys = new Set())
+  keys.add(key)
+}
+const loadDetailKeys = async() => {
+  if (detailKeysLoaded) return
+  if (detailKeysLoading) return detailKeysLoading
+  detailKeysLoading = (async() => {
+    for (const key of await getAllKeys()) {
+      if (key.startsWith(storageDataPrefix.browseDetailCacheItem)) rememberDetailKey(key)
+    }
+    detailKeysLoaded = true
+  })().finally(() => { detailKeysLoading = null })
+  return detailKeysLoading
+}
+export const saveBrowseDetailCache = async(key: string, value: unknown) => {
+  await loadDetailKeys()
+  const storedKey = storageDataPrefix.browseDetailCacheItem + key
+  await saveData(storedKey, value)
+  rememberDetailKey(storedKey)
+}
 export const removeBrowseDetailCaches = async(keys: string[], { includePages = true } = {}) => {
   if (!keys.length) return
   const groups = new Set(keys.map(key => storageDataPrefix.browseDetailCacheItem + key))
   if (!includePages) {
     await removeDataMultiple([...groups])
+    for (const key of groups) detailCacheKeys.get(key.split('::')[0])?.delete(key)
     return
   }
-  const stored = await getAllKeys()
-  const pages = stored.filter(key => groups.has(key.split('::')[0]))
+  await loadDetailKeys()
+  const pages = [...groups].flatMap(key => [...(detailCacheKeys.get(key) ?? [])])
   await removeDataMultiple([...new Set([...groups, ...pages])])
+  for (const group of groups) detailCacheKeys.delete(group)
 }
 const listPrefix = storageDataPrefix.list
 const dislikeListPrefix = storageDataPrefix.dislikeList

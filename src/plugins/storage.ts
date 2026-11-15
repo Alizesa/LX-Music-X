@@ -9,6 +9,42 @@ const keySplit = ','
 const limit = 500000
 const partNamespace = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 let partSequence = 0
+const obsoletePartsPrefix = '@___OBSOLETE_PARTS___'
+const obsoleteParts = new Map<string, string[]>()
+let obsoleteLoaded = false
+const finishObsoleteLoading = () => { obsoleteLoaded = true }
+let obsoleteRecovery: Promise<void> | null = null
+const removeObsoleteParts = async(key: string, parts: string[]) => {
+  try {
+    // 删除记录与其文件在同一事务；失败保留归属供重启后重试。
+    await AsyncStorage.multiRemove([...parts, key])
+    obsoleteParts.delete(key)
+  } catch (error) {
+    log.error('storage error[cleanup parts]:', error instanceof Error ? error.message : String(error))
+  }
+}
+const recoverObsoleteParts = async() => {
+  if (obsoleteRecovery) return obsoleteRecovery
+  obsoleteRecovery = (async() => {
+    try {
+      if (!obsoleteLoaded) {
+        const keys = (await AsyncStorage.getAllKeys()).filter(key => key.startsWith(obsoletePartsPrefix))
+        for (let offset = 0; offset < keys.length; offset += 100) {
+          const records = await AsyncStorage.multiGet(keys.slice(offset, offset + 100))
+          for (const [key, value] of records) {
+            const parts = value && parseData<unknown>(value, key)
+            if (Array.isArray(parts) && parts.every((part): part is string => typeof part === 'string' && part !== key)) obsoleteParts.set(key, parts)
+          }
+        }
+        finishObsoleteLoading()
+      }
+      for (const [key, parts] of [...obsoleteParts]) await removeObsoleteParts(key, parts)
+    } catch (error) {
+      log.error('storage error[recover parts]:', error instanceof Error ? error.message : String(error))
+    }
+  })().finally(() => { obsoleteRecovery = null })
+  return obsoleteRecovery
+}
 
 // 同一逻辑键的读取、覆盖和删除串行，读旧索引期间不能清理它引用的分片。
 const operations = new Map<string, Promise<void>>()
@@ -113,17 +149,18 @@ const replaceData = async(datas: Array<[string, any]>) => {
   const unique = [...new Map(datas)]
   const keys = unique.map(([key]) => key)
   return withKeys(keys, async() => {
+    await recoverObsoleteParts()
     const values: Array<[string, string]> = []
     for (const [key, value] of unique) buildData(key, value, values)
     const previous = await readWithRetry(async() => AsyncStorage.multiGet(keys))
+    const oldParts = previous.flatMap(([key, value]) => getPartKeys(value, key))
+    const cleanupKey = oldParts.length ? `${obsoletePartsPrefix}${partNamespace}_${++partSequence}` : null
+    if (cleanupKey) values.push([cleanupKey, JSON.stringify(oldParts)])
     // Android multiSet 在同一个 SQLite 事务中提交新分片与索引；失败保留旧值。
     await AsyncStorage.multiSet(values)
-    const oldParts = previous.flatMap(([key, value]) => getPartKeys(value, key))
-    if (oldParts.length) {
-      // 新值已提交，清理失败不能再向调用方报告「保存失败」。
-      await AsyncStorage.multiRemove(oldParts).catch((error: Error) => {
-        log.error('storage error[cleanup parts]:', error.message)
-      })
+    if (cleanupKey) {
+      obsoleteParts.set(cleanupKey, oldParts)
+      await removeObsoleteParts(cleanupKey, oldParts)
     }
   })
 }
@@ -168,6 +205,7 @@ export const removeDataMultipleDirect = async(keys: string[]) => {
 }
 
 export const getData = async<T = unknown>(key: string): Promise<T | null> => withKeys([key], async() => {
+  await recoverObsoleteParts()
   let value: string | null
   try {
     value = await readWithRetry(async() => AsyncStorage.getItem(key))
@@ -262,6 +300,7 @@ export const removeDataMultiple = async(keys: string[]) => {
 export const clearAll = async() => withAllKeys(async() => {
   try {
     await AsyncStorage.clear()
+    obsoleteParts.clear()
   } catch (e: any) {
     // clear error
     log.error('storage error[clearAll]:', e.message)
