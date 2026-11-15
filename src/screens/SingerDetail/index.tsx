@@ -18,7 +18,7 @@ import { releaseSingerRecord, retainSingerRecord } from '@/store/singer/action'
 import Header from './Header'
 import SingerSongs from './SingerSongs'
 import SingerAlbums from './SingerAlbums'
-import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
+import { useScreenVisible, VisibilityBoundary } from '@/utils/hooks/useScreenVisible'
 
 const TABS = ['song', 'album'] as const
 type TabId = typeof TABS[number]
@@ -78,10 +78,14 @@ export default ({ componentId, info }: { componentId: string, info: SingerDetail
       </View>
       <PagerView ref={pagerViewRef} onPageSelected={onPageSelected} style={styles.pagerView}>
         <View collapsable={false} style={styles.pageStyle}>
-          <SingerSongs mid={info.mid} onInfoLoaded={setSingerInfo} />
+          <VisibilityBoundary visible={activeId === 'song'}>
+            <SingerSongs mid={info.mid} onInfoLoaded={setSingerInfo} />
+          </VisibilityBoundary>
         </View>
         <View collapsable={false} style={styles.pageStyle}>
-          { initedRef.current.album ? <SingerAlbums mid={info.mid} /> : null }
+          <VisibilityBoundary visible={activeId === 'album'}>
+            { initedRef.current.album ? <SingerAlbums mid={info.mid} /> : null }
+          </VisibilityBoundary>
         </View>
       </PagerView>
       <PlayerBar />

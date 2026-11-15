@@ -6,6 +6,7 @@ import { appendListPage } from '@/utils/listPage'
 import { toNewMusicInfo } from '@/utils'
 
 const pageKeys = new WeakMap<object, string[]>()
+const restores = new WeakMap<SingerRecord, Promise<void>>()
 const metadata = <T>(info: PageInfo<T>) => {
   const { list, ...meta } = info
   return meta
@@ -44,7 +45,7 @@ const restoreLegacyPages = (group: string, kind: string, info: PageInfo<unknown>
   saveDetailCache(key, { list: [...info.list] })
   pageKeys.set(info, [key])
 }
-const restoreSinger = async(mid: string, record: SingerRecord) => {
+const restoreSingerCache = async(mid: string, record: SingerRecord) => {
   if (record.infoLoaded || record.songsLoaded || record.albumsLoaded) return
   const saved = await getDetailCache<SingerRecord & { pages?: { songs: string[], albums: string[] } }>(`singer_${mid}`)
   if (singerState.singers[mid] !== record || record.infoLoaded || record.songsLoaded || record.albumsLoaded) return
@@ -61,6 +62,15 @@ const restoreSinger = async(mid: string, record: SingerRecord) => {
     restoreLegacyPages(`singer_${mid}`, 'songs', record.songs)
     restoreLegacyPages(`singer_${mid}`, 'albums', record.albums)
   }
+}
+
+// 歌曲和专辑共用一份分页快照；同一记录的并发消费者只恢复一次。
+const restoreSinger = async(mid: string, record: SingerRecord) => {
+  const pending = restores.get(record)
+  if (pending) return pending
+  const task = restoreSingerCache(mid, record).finally(() => { restores.delete(record) })
+  restores.set(record, task)
+  return task
 }
 
 interface SingerDetailResult {
