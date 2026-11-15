@@ -647,26 +647,130 @@ export const savePlayQueue = async(queue: LX.Player.PlayQueueItem[]) => {
 let playHistoryCache: LX.Player.PlayHistoryItem[] | null = null
 let playHistoryLoading: Promise<LX.Player.PlayHistoryItem[]> | null = null
 let playHistoryRevision = 0
+let retainLoadedPlayHistory = false
+interface PlayHistorySummary {
+  v: 1
+  count: number
+  qqSeed: { id: string, name: string } | null
+}
+const playHistorySummaryKey = playHistoryKey + '_summary'
+let playHistorySummary: PlayHistorySummary | null = null
+let playHistorySummaryLoading: Promise<PlayHistorySummary> | null = null
+let playHistorySummarySaving: Promise<void> | null = null
+let playHistorySummaryNeedsMigration = false
+let playHistoryDirty = false
+let playHistorySaveFailed = false
+const summarizePlayHistory = (history: LX.Player.PlayHistoryItem[]): PlayHistorySummary => {
+  let qqSeed: PlayHistorySummary['qqSeed'] = null
+  for (const item of history) {
+    if (!item?.musicInfo || typeof item.musicInfo !== 'object') continue
+    const info = 'metadata' in item.musicInfo ? item.musicInfo.metadata?.musicInfo : item.musicInfo
+    if (!info || info.source !== 'tx' || !info.meta?.id) continue
+    qqSeed = { id: String(info.meta.id), name: typeof info.name === 'string' ? info.name : '' }
+    break
+  }
+  return { v: 1, count: history.length, qqSeed }
+}
+const isPlayHistorySummary = (value: unknown): value is PlayHistorySummary => {
+  if (!value || typeof value !== 'object') return false
+  const summary = value as Partial<PlayHistorySummary>
+  return summary.v === 1 && Number.isSafeInteger(summary.count) && summary.count! >= 0 &&
+    (summary.qqSeed === null || (summary.count! > 0 && typeof summary.qqSeed?.id === 'string' && !!summary.qqSeed.id && typeof summary.qqSeed.name === 'string'))
+}
+const migratePlayHistorySummary = () => {
+  if (!playHistorySummaryNeedsMigration || playHistoryDirty || playHistorySummarySaving !== null || playHistorySummary === null) return
+  const revision = playHistoryRevision
+  const saving = saveData(playHistorySummaryKey, playHistorySummary).then(() => {
+    if (revision === playHistoryRevision) playHistorySummaryNeedsMigration = false
+  }).catch(error => {
+    console.warn('[PlayHistory] summary migration failed:', error)
+  }).finally(() => {
+    if (playHistorySummarySaving === saving) playHistorySummarySaving = null
+  })
+  playHistorySummarySaving = saving
+}
 const savePlayHistoryThrottled = throttle((history: LX.Player.PlayHistoryItem[]) => {
-  void saveData(playHistoryKey, history)
+  const revision = playHistoryRevision
+  const snapshot = [...history]
+  // 正文和轻量索引共用一个原生事务；失败不能留下新 count 对着旧正文。
+  void saveDataMultiple([[playHistoryKey, snapshot], [playHistorySummaryKey, summarizePlayHistory(snapshot)]]).then(() => {
+    if (revision === playHistoryRevision) {
+      playHistoryDirty = false
+      playHistorySaveFailed = false
+    }
+  }).catch(error => {
+    if (revision === playHistoryRevision) playHistorySaveFailed = true
+    console.warn('[PlayHistory] save failed:', error)
+  })
 }, 1000)
-export const getPlayHistory = async() => {
+const retryPlayHistorySave = () => {
+  if (!playHistorySaveFailed || !playHistoryCache) return
+  playHistorySaveFailed = false
+  savePlayHistoryThrottled(playHistoryCache)
+}
+const readPlayHistory = async(retain: boolean) => {
+  retryPlayHistorySave()
   if (playHistoryCache) return playHistoryCache
+  if (retain) retainLoadedPlayHistory = true
   if (playHistoryLoading) return playHistoryLoading
   const revision = playHistoryRevision
   const loading = getData<LX.Player.PlayHistoryItem[]>(playHistoryKey).then(history => {
     // 首页和历史页共用一次读盘；迟到的旧快照不能覆盖刚记录的新歌曲。
-    if (revision === playHistoryRevision) playHistoryCache = history ?? []
+    if (revision === playHistoryRevision) {
+      if (retainLoadedPlayHistory) playHistoryCache = history ?? []
+      if (!playHistorySummary) {
+        playHistorySummary = summarizePlayHistory(history ?? [])
+        playHistorySummaryNeedsMigration = true
+      }
+    }
     return playHistoryCache ?? history ?? []
   }).finally(() => {
-    if (playHistoryLoading === loading) playHistoryLoading = null
+    if (playHistoryLoading === loading) {
+      playHistoryLoading = null
+      retainLoadedPlayHistory = false
+    }
   })
   playHistoryLoading = loading
   return loading
 }
+export const getPlayHistory = async() => readPlayHistory(true)
+const getPlayHistorySummary = async(): Promise<PlayHistorySummary> => {
+  retryPlayHistorySave()
+  if (playHistorySummary) {
+    migratePlayHistorySummary()
+    return playHistorySummary
+  }
+  if (playHistorySummaryLoading) return playHistorySummaryLoading
+  const revision = playHistoryRevision
+  const loading = getData<unknown>(playHistorySummaryKey).then(async(saved) => {
+    if (revision !== playHistoryRevision && playHistorySummary) return playHistorySummary
+    if (isPlayHistorySummary(saved)) {
+      playHistorySummary = saved
+      playHistorySummaryNeedsMigration = false
+      return saved
+    }
+    const history = await readPlayHistory(false)
+    if (!playHistorySummary) playHistorySummary = summarizePlayHistory(history)
+    migratePlayHistorySummary()
+    return playHistorySummary
+  }).finally(() => {
+    if (playHistorySummaryLoading === loading) playHistorySummaryLoading = null
+  })
+  playHistorySummaryLoading = loading
+  return loading
+}
+export const getPlayHistoryCount = async() => (await getPlayHistorySummary()).count
+export const getPlayHistoryQQSeed = async() => {
+  const seed = (await getPlayHistorySummary()).qqSeed
+  return seed ? { ...seed } : null
+}
 export const savePlayHistory = async(history: LX.Player.PlayHistoryItem[]) => {
   playHistoryRevision++
   playHistoryCache = history
+  playHistorySummary = summarizePlayHistory(history)
+  playHistorySummaryNeedsMigration = false
+  playHistoryDirty = true
+  playHistorySaveFailed = false
   savePlayHistoryThrottled(history)
 }
 export const getQQMusicCookie = async() => {

@@ -48,7 +48,7 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
     '@/navigation': {},
     '@/store/common/state': {},
     '@/utils/data': {
-      getPlayHistory: async() => [],
+      getPlayHistoryQQSeed: async() => null,
       getQQMusicRefreshDay: async() => new Date().toDateString(),
       getQQMusicDailyPlaylistCache: async() => cache('daily'),
       getQQMusicDailyRecommendCache: async() => cache('guess'),

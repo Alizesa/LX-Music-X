@@ -26,7 +26,7 @@ import { QQ_DAILY_PLAYLIST_ID, playQQMusicDailyPlaylist, playQQMusicHeartRadarPl
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
 import {
-  getPlayHistory,
+  getPlayHistoryQQSeed,
   getQQMusicDailyPlaylistCache,
   getQQMusicDailyRecommendCache,
   getQQMusicHeartRadarCache,
@@ -237,23 +237,18 @@ export default () => {
   const loadSimilar = useCallback(async(activeSession: QQMusicSession | null) => {
     const version = lifecycle.current
     if (!activeSession?.cookie || !isQQMusicSessionCurrent(activeSession)) return
-    const history = await getPlayHistory()
+    const seed = await getPlayHistoryQQSeed()
     if (!mounted.current || !visibleRef.current || version !== lifecycle.current || !isQQMusicSessionCurrent(activeSession)) return
-    const seed = history.find(item => {
-      const info = 'metadata' in item.musicInfo ? item.musicInfo.metadata.musicInfo : item.musicInfo
-      return info.source == 'tx' && !!info.meta.id
-    })
     if (!seed) return
-    const info = 'metadata' in seed.musicInfo ? seed.musicInfo.metadata.musicInfo : seed.musicInfo
-    const seedId = (info.meta as LX.Music.MusicInfoOnline['meta'] & { id?: string }).id
+    const seedId = seed.id
     try {
       const cacheKey = `similar_${toMD5(activeSession.cookie)}_${seedId}`
       const cached = await getDetailCache<LX.QQMusic.SimilarRecommendation>(cacheKey)
       if (!mounted.current || !visibleRef.current || version !== lifecycle.current || !isQQMusicSessionCurrent(activeSession)) return
-      const result = cached ?? await getQQMusicSimilarSongs(activeSession.cookie, seedId!)
+      const result = cached ?? await getQQMusicSimilarSongs(activeSession.cookie, seedId)
       if (!mounted.current || !visibleRef.current || version !== lifecycle.current || !isQQMusicSessionCurrent(activeSession) || !result.songs.length) return
       if (!cached) saveDetailCache(cacheKey, result)
-      setSimilar({ title: result.title, seedName: info.name, songs: result.songs })
+      setSimilar({ title: result.title, seedName: seed.name, songs: result.songs })
     } catch {
       // 相似推荐失败不影响首页其它板块，静默跳过
     }

@@ -17,7 +17,7 @@ import { isQQMusicFallbackAvatar, isQQMusicFallbackNickname } from '@/core/qqMus
 import { getLocalMusicCount } from '@/utils/localMatchIndex'
 import { navigations } from '@/navigation'
 import commonState from '@/store/common/state'
-import { getPlayHistory, getQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
+import { getPlayHistoryCount, getQQMusicPlaylistsCache, saveQQMusicUser } from '@/utils/data'
 import { useI18n } from '@/lang'
 import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
@@ -251,9 +251,10 @@ export default () => {
   useEffect(() => {
     if (!visible) return
     let active = true
-    void getPlayHistory().then(list => { if (active) setHistoryCount(list.length) })
+    let revision = 0
+    void getPlayHistoryCount().then(count => { if (active && revision === 0) setHistoryCount(count) }).catch(console.warn)
     // 事件里已经带着最新的整份历史，别再回头读一次存储
-    const handleUpdate = (history: LX.Player.PlayHistoryItem[]) => { setHistoryCount(history.length) }
+    const handleUpdate = (history: LX.Player.PlayHistoryItem[]) => { revision++; setHistoryCount(history.length) }
     global.app_event.on('playHistoryUpdate', handleUpdate)
     return () => { active = false; global.app_event.off('playHistoryUpdate', handleUpdate) }
   }, [visible])
