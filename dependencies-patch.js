@@ -17,6 +17,7 @@ const patchs = [
   ...require('./patches/react-native-fs').map(([file, ...patch]) => [path.join(rootPath, 'node_modules/react-native-fs', file), ...patch]),
   ...require('./patches/media-metadata').map(([file, ...patch]) => [path.join(MEDIA_METADATA_DIR, file), ...patch]),
   ...require('./patches/file-system').map(([file, ...patch]) => [path.join(rootPath, 'node_modules/react-native-file-system', file), ...patch]),
+  ...require('./patches/native-io').map(([file, ...patch]) => [path.join(rootPath, 'node_modules', file), ...patch]),
   [
     path.join(TRACK_PLAYER_DIR, 'module/MusicModule.java'),
     '    public void isCached(String url, final Promise callback) {',

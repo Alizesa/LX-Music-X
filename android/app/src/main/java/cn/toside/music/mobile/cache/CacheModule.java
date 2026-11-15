@@ -6,6 +6,10 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static cn.toside.music.mobile.cache.Utils.clearCacheFolder;
 import static cn.toside.music.mobile.cache.Utils.getDirSize;
@@ -13,6 +17,10 @@ import static cn.toside.music.mobile.cache.Utils.getDirSize;
 // https://github.com/midas-gufei/react-native-clear-app-cache/tree/master/android/src/main/java/com/learnta/clear
 public class CacheModule extends ReactContextBaseJavaModule {
   private final CacheModule cacheModule;
+  private static final ExecutorService STATISTICS = Executors.newSingleThreadExecutor();
+  private final Object statisticsLock = new Object();
+  private List<Promise> statisticsWaiters = new ArrayList<>();
+  private boolean statisticsPending;
 
   CacheModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -38,15 +46,34 @@ public class CacheModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void getAppCacheSize(Promise promise) {
-    // 计算缓存大小
-    long fileSize = 0;
-    // File filesDir = getReactApplicationContext().getFilesDir();// /data/data/package_name/files
-    File cacheDir = getReactApplicationContext().getCacheDir();// /data/data/package_name/cache
-    // fileSize += getDirSize(filesDir);
-    fileSize += getDirSize(cacheDir);
-    fileSize += getDirSize(getReactApplicationContext().getExternalCacheDir());
+    synchronized (statisticsLock) {
+      statisticsWaiters.add(promise);
+      if (statisticsPending) return;
+      statisticsPending = true;
+    }
+    STATISTICS.execute(this::readCacheSize);
+  }
 
-    promise.resolve(String.valueOf(fileSize));
+  private void readCacheSize() {
+    String size = null;
+    Exception failure = null;
+    try {
+      long fileSize = getDirSize(getReactApplicationContext().getCacheDir())
+        + getDirSize(getReactApplicationContext().getExternalCacheDir());
+      size = String.valueOf(fileSize);
+    } catch (Exception error) {
+      failure = error;
+    }
+    List<Promise> waiters;
+    synchronized (statisticsLock) {
+      waiters = statisticsWaiters;
+      statisticsWaiters = new ArrayList<>();
+      statisticsPending = false;
+    }
+    for (Promise waiter : waiters) {
+      if (failure == null) waiter.resolve(size);
+      else waiter.reject("cache_size_failed", failure);
+    }
   }
 
   //清除缓存

@@ -32,14 +32,11 @@ import com.google.common.util.concurrent.MoreExecutors;
 import java.io.File;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class DownloadModule extends ReactContextBaseJavaModule {
   public static final String EVENT_NAME = "lx-download-update";
   private final ReactApplicationContext reactContext;
   private final BroadcastReceiver receiver;
-  private final ExecutorService cancellations = Executors.newSingleThreadExecutor();
   private boolean receiverRegistered = false;
 
   DownloadModule(ReactApplicationContext reactContext) {
@@ -88,7 +85,6 @@ public class DownloadModule extends ReactContextBaseJavaModule {
       reactContext.unregisterReceiver(receiver);
       receiverRegistered = false;
     }
-    cancellations.shutdown();
     super.invalidate();
   }
 
@@ -160,29 +156,35 @@ public class DownloadModule extends ReactContextBaseJavaModule {
       Futures.addCallback(operation.getResult(), new FutureCallback<Operation.State.SUCCESS>() {
         @Override
         public void onSuccess(Operation.State.SUCCESS result) {
-          try {
-            MusicDownloadWorker.awaitStopped(workId, taskId);
-            if (deletePartial) {
-              File partial = MusicDownloadWorker.getPartialFile(reactContext, taskId);
-              if (partial.exists() && !partial.delete()) {
-                promise.reject("delete_partial_failed", "Unable to delete partial download");
-                return;
+          Futures.addCallback(MusicDownloadWorker.whenStopped(workId, taskId), new FutureCallback<Void>() {
+            @Override
+            public void onSuccess(Void ignored) {
+              try {
+                if (deletePartial) {
+                  File partial = MusicDownloadWorker.getPartialFile(reactContext, taskId);
+                  if (partial.exists() && !partial.delete()) {
+                    promise.reject("delete_partial_failed", "Unable to delete partial download");
+                    return;
+                  }
+                }
+                promise.resolve(null);
+              } catch (Exception error) {
+                promise.reject("cancel_download_failed", error);
               }
             }
-            promise.resolve(null);
-          } catch (InterruptedException error) {
-            Thread.currentThread().interrupt();
-            promise.reject("cancel_download_failed", error);
-          } catch (Exception error) {
-            promise.reject("cancel_download_failed", error);
-          }
+
+            @Override
+            public void onFailure(Throwable error) {
+              promise.reject("cancel_download_failed", error);
+            }
+          }, MoreExecutors.directExecutor());
         }
 
         @Override
         public void onFailure(Throwable error) {
           promise.reject("cancel_download_failed", error);
         }
-      }, cancellations);
+      }, MoreExecutors.directExecutor());
     } catch (IllegalArgumentException error) {
       promise.reject("invalid_work_id", error);
     } catch (Exception error) {

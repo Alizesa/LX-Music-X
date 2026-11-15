@@ -14,9 +14,10 @@ import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.WritableMap;
 import java.io.IOException;
 import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /** 与播放器共用一个 SimpleCache；只保留一个后台任务，取消后缓存片段仍可供播放读取。 */
 @UnstableApi
@@ -24,7 +25,7 @@ public final class AudioPreloader {
     private static volatile Future<?> pendingRelease;
     private final SimpleCache cache;
     private final long limit;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
     private Task active;
     private boolean closed;
 
@@ -33,6 +34,8 @@ public final class AudioPreloader {
         final long startedAt = SystemClock.elapsedRealtime();
         volatile boolean cancelled;
         Thread worker;
+        Runnable queued;
+        Promise pendingPromise;
         Task(String id) { this.id = id; }
         synchronized void cancel() {
             if (cancelled) return;
@@ -62,16 +65,37 @@ public final class AudioPreloader {
             promise.resolve(null);
             return;
         }
-        if (active != null) active.cancel();
+        if (active != null) cancelTask(active);
         Task task = new Task(id);
         active = task;
         long bytes = maxBytes > 0 ? Math.min(limit, (long) maxBytes) : limit;
         PlaybackDebugLogger.event(id, "queued", "", 0, bytes, 0);
-        executor.execute(() -> run(task, url, userAgent, bytes, promise));
+        task.pendingPromise = promise;
+        task.queued = () -> run(task, url, userAgent, bytes, promise);
+        executor.execute(task.queued);
+    }
+
+    private void cancelTask(Task task) {
+        synchronized (task) {
+            task.cancel();
+            Runnable command = task.queued;
+            if (command != null && executor.remove(command)) {
+                task.queued = null;
+                Promise pending = task.pendingPromise;
+                task.pendingPromise = null;
+                if (active == task) active = null;
+                PlaybackDebugLogger.event(task.id, "cancelled", "queued", 0, 0, SystemClock.elapsedRealtime() - task.startedAt);
+                if (pending != null) pending.reject("preload_cancelled", "cancelled");
+            }
+        }
     }
 
     private void run(Task task, String url, String userAgent, long bytes, Promise promise) {
-        synchronized (task) { task.worker = Thread.currentThread(); }
+        synchronized (task) {
+            task.queued = null;
+            task.pendingPromise = null;
+            task.worker = Thread.currentThread();
+        }
         PlaybackDebugLogger.event(task.id, "worker_started", "", 0, bytes, SystemClock.elapsedRealtime() - task.startedAt);
         try {
             if (task.cancelled) throw new IOException("cancelled");
@@ -144,12 +168,12 @@ public final class AudioPreloader {
     }
 
     public synchronized void cancel(String id) {
-        if (active != null && active.id.equals(id)) active.cancel();
+        if (active != null && active.id.equals(id)) cancelTask(active);
     }
 
     public synchronized void clear(Promise promise) {
         if (closed) { promise.resolve(null); return; }
-        if (active != null) active.cancel();
+        if (active != null) cancelTask(active);
         executor.execute(() -> {
             try {
                 for (String key : cache.getKeys()) cache.removeResource(key);
@@ -162,7 +186,7 @@ public final class AudioPreloader {
         if (closed) return;
         closed = true;
         PlaybackDebugLogger.event("", "cache_released", "", 0, limit, 0);
-        if (active != null) active.cancel();
+        if (active != null) cancelTask(active);
         // 先关闭读写任务，再释放缓存目录的锁；快速重新初始化也要等待这一步。
         pendingRelease = executor.submit(() -> cache.release());
         executor.shutdown();

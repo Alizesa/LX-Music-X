@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.SystemClock;
 import android.provider.DocumentsContract;
 
 import androidx.annotation.NonNull;
@@ -27,11 +28,17 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.MoreExecutors;
+import com.google.common.util.concurrent.SettableFuture;
 
 public class MusicDownloadWorker extends Worker {
   public static final String ACTION_UPDATE = "io.github.alizesa.lxmusicx.DOWNLOAD_UPDATE";
@@ -50,6 +57,7 @@ public class MusicDownloadWorker extends Worker {
   private static final Object DESTINATION_CREATION_LOCK = new Object();
   private static final ConcurrentHashMap<String, MusicDownloadWorker> RUNNING = new ConcurrentHashMap<>();
   private final CountDownLatch finished = new CountDownLatch(1);
+  private final SettableFuture<Void> streamsClosed = SettableFuture.create();
   private final Object lifecycle = new Object();
   private Thread workerThread;
   private volatile HttpURLConnection currentConnection;
@@ -106,12 +114,16 @@ public class MusicDownloadWorker extends Worker {
       return Result.failure(errorData(error));
     } finally {
       try {
-        if (!completed && destination != null) destination.file.delete();
+        if (!completed && destination != null) {
+          destination.file.delete();
+          DownloadDirectoryIndex.invalidate(treeUri);
+        }
       } finally {
         if (acquired) DOWNLOAD_SLOTS.release();
         synchronized (lifecycle) { workerThread = null; }
         RUNNING.remove(getId().toString(), this);
         finished.countDown();
+        streamsClosed.set(null);
       }
     }
   }
@@ -137,6 +149,16 @@ public class MusicDownloadWorker extends Worker {
         worker.finished.await();
       }
     }
+  }
+
+  public static ListenableFuture<Void> whenStopped(String workId, String taskId) {
+    List<ListenableFuture<Void>> pending = new ArrayList<>();
+    for (MusicDownloadWorker worker : RUNNING.values()) {
+      if (workId != null && !workId.isEmpty()
+          ? worker.getId().toString().equals(workId)
+          : worker.value(KEY_TASK_ID).equals(taskId)) pending.add(worker.streamsClosed);
+    }
+    return Futures.transform(Futures.allAsList(pending), ignored -> null, MoreExecutors.directExecutor());
   }
 
   private void throwIfStopped() throws IOException {
@@ -224,12 +246,22 @@ public class MusicDownloadWorker extends Worker {
     DocumentFile destination;
     // 目录快照和创建在同一临界区；复制文件不占锁，其他 worker 可以继续创建。
     synchronized (DESTINATION_CREATION_LOCK) {
-      fileName = availableName(readNames(directory), requestedFileName);
+      long now = SystemClock.elapsedRealtime();
+      Set<String> names = DownloadDirectoryIndex.get(treeUri, now);
+      if (names == null) {
+        names = readNames(directory);
+        DownloadDirectoryIndex.put(treeUri, names, now);
+      }
+      fileName = availableName(names, requestedFileName);
       throwIfStopped();
       destination = directory.createFile(mimeType, fileName);
-      if (destination == null) throw new IOException("Unable to create destination file");
+      if (destination == null) {
+        DownloadDirectoryIndex.invalidate(treeUri);
+        throw new IOException("Unable to create destination file");
+      }
       String actualName = destination.getName();
       if (actualName != null) fileName = actualName;
+      DownloadDirectoryIndex.created(treeUri, fileName);
     }
     boolean copied = false;
     try {
@@ -252,7 +284,10 @@ public class MusicDownloadWorker extends Worker {
       copied = true;
       return new Destination(destination, fileName);
     } finally {
-      if (!copied) destination.delete();
+      if (!copied) {
+        destination.delete();
+        DownloadDirectoryIndex.invalidate(treeUri);
+      }
     }
   }
 
