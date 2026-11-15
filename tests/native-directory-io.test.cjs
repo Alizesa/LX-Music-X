@@ -94,9 +94,10 @@ test('worker destination creation records provider names and invalidates failed 
   const destination = body(source, 'private Destination copyToDestination(')
   assert.match(destination, /DownloadDirectoryIndex\.get\(treeUri, now\)/)
   assert.match(destination, /names = readNames\(directory\);\s*DownloadDirectoryIndex\.put/)
-  assert.match(destination, /if \(actualName != null\) fileName = actualName;\s*DownloadDirectoryIndex\.created\(treeUri, fileName\)/)
-  assert.match(destination, /if \(!copied\) \{\s*destination\.delete\(\);\s*DownloadDirectoryIndex\.invalidate\(treeUri\)/)
-  assert.match(source, /if \(!completed && destination != null\) \{\s*destination\.file\.delete\(\);\s*DownloadDirectoryIndex\.invalidate\(treeUri\)/)
+  assert.match(destination, /fileName = actualName;[^]*?DownloadDirectoryIndex\.created\(treeUri, fileName\)/)
+  assert.match(destination, /if \(!copied\) \{\s*DownloadDirectoryIndex\.invalidate\(treeUri\)/)
+  assert.match(source, /if \(!completed && destination != null\) \{\s*DownloadDirectoryIndex\.invalidate\(treeUri\)/)
+  assert.match(source, /if \(!completed\) cleanupFailedDestination\(\)/)
 })
 
 for (const closeFails of [false, true]) {

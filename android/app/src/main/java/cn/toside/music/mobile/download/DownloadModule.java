@@ -28,6 +28,7 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.MoreExecutors;
+import com.google.common.util.concurrent.ListenableFuture;
 
 import java.io.File;
 import java.util.Map;
@@ -178,14 +179,32 @@ public class DownloadModule extends ReactContextBaseJavaModule {
             @Override
             public void onSuccess(Void ignored) {
               try {
-                if (deletePartial) {
-                  File partial = MusicDownloadWorker.getPartialFile(reactContext, taskId);
-                  if (partial.exists() && !partial.delete()) {
-                    promise.reject("delete_partial_failed", "Unable to delete partial download");
-                    return;
+                ListenableFuture<?> cleanup = workId != null && !workId.isEmpty()
+                  ? DownloadCleanupStore.cleanupWork(reactContext, workId, MusicDownloadWorker::isRunning)
+                  : DownloadCleanupStore.cleanupTask(reactContext, taskId, MusicDownloadWorker::isRunning);
+                Futures.addCallback(cleanup, new FutureCallback<Object>() {
+                  @Override
+                  public void onSuccess(Object cleaned) {
+                    if (Boolean.FALSE.equals(cleaned)) {
+                      promise.reject("cancel_download_failed", "A previous destination is still being written");
+                      return;
+                    }
+                    try {
+                      if (deletePartial) {
+                        if (!DownloadPartialStore.clear(reactContext, taskId, workId)) {
+                          promise.reject("delete_partial_failed", "Unable to delete partial download");
+                          return;
+                        }
+                      }
+                      promise.resolve(null);
+                    } catch (Exception error) {
+                      promise.reject("cancel_download_failed", error);
+                    }
                   }
-                }
-                promise.resolve(null);
+
+                  @Override
+                  public void onFailure(Throwable error) { promise.reject("cancel_download_failed", error); }
+                }, MoreExecutors.directExecutor());
               } catch (Exception error) {
                 promise.reject("cancel_download_failed", error);
               }
@@ -238,6 +257,12 @@ public class DownloadModule extends ReactContextBaseJavaModule {
   @ReactMethod
   public void acknowledgeCompletion(String workId, Promise promise) {
     try {
+      Data receipt = DownloadCompletionStore.read(reactContext, workId);
+      if (receipt != null && !DownloadPartialStore.clear(reactContext, receipt.getString(MusicDownloadWorker.KEY_TASK_ID), workId)) {
+        promise.reject("ack_download_completion_failed", "Unable to remove completed partial download");
+        return;
+      }
+      DownloadCleanupStore.finishCompleted(reactContext, workId);
       DownloadCompletionStore.acknowledge(reactContext, workId);
       promise.resolve(null);
     } catch (Exception error) {

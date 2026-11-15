@@ -8,6 +8,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.SystemClock;
+import android.util.Log;
 import android.provider.DocumentsContract;
 
 import androidx.annotation.NonNull;
@@ -35,7 +36,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.ExecutionException;
 import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.SettableFuture;
@@ -82,6 +85,23 @@ public class MusicDownloadWorker extends Worker {
     Destination destination = null;
     try {
       throwIfStopped();
+      Data receipt = DownloadCompletionStore.read(getApplicationContext(), getId().toString());
+      if (receipt != null) {
+        completed = true;
+        retireCompletedDestination();
+        clearCompletedPartial(taskId);
+        try {
+          sendUpdate(taskId, "completed", receipt.getLong(KEY_DOWNLOADED, 0), receipt.getLong(KEY_TOTAL, 0), receipt.getString(KEY_FILE_URI), null, receipt.getString(KEY_FILE_NAME));
+        } catch (RuntimeException ignored) {}
+        DownloadQueueWorker.schedule(getApplicationContext());
+        return Result.success(receipt);
+      }
+      if (DownloadCleanupStore.hasPendingTask(getApplicationContext(), taskId)) {
+        DownloadCleanupStore.cleanupTask(getApplicationContext(), taskId,
+          id -> !id.equals(getId().toString()) && isRunning(id)).get();
+        DownloadDirectoryIndex.invalidate(treeUri);
+      }
+      throwIfStopped();
       DOWNLOAD_SLOTS.acquire();
       acquired = true;
       throwIfStopped();
@@ -94,13 +114,14 @@ public class MusicDownloadWorker extends Worker {
       throwIfStopped();
       destination = copyToDestination(partial, treeUri, requestedFileName, mimeType);
       throwIfStopped();
-      if (!partial.delete()) partial.deleteOnExit();
       Data output = progressData(total, total)
         .putString(KEY_FILE_URI, destination.uri)
         .putString(KEY_FILE_NAME, destination.fileName)
         .build();
       DownloadCompletionStore.save(getApplicationContext(), getId().toString(), taskId, destination.uri, destination.fileName, total, total);
       completed = true;
+      retireCompletedDestination();
+      clearCompletedPartial(taskId);
       // 广播失败不能重新下载已经持久记录的文件；下次 JS 恢复会读凭据。
       try { sendUpdate(taskId, "completed", total, total, destination.uri, null, destination.fileName); } catch (RuntimeException ignored) {}
       DownloadQueueWorker.schedule(getApplicationContext());
@@ -117,7 +138,6 @@ public class MusicDownloadWorker extends Worker {
     } finally {
       try {
         if (!completed && destination != null) {
-          destination.file.delete();
           DownloadDirectoryIndex.invalidate(treeUri);
         }
       } finally {
@@ -126,7 +146,41 @@ public class MusicDownloadWorker extends Worker {
         RUNNING.remove(getId().toString(), this);
         finished.countDown();
         streamsClosed.set(null);
+        if (!completed) cleanupFailedDestination();
       }
+    }
+  }
+
+  public static boolean isRunning(String workId) { return RUNNING.containsKey(workId); }
+
+  static boolean otherTaskRunning(String taskId, String workId) {
+    for (MusicDownloadWorker worker : RUNNING.values()) {
+      if (!worker.getId().toString().equals(workId) && worker.value(KEY_TASK_ID).equals(taskId)) return true;
+    }
+    return false;
+  }
+
+  private void clearCompletedPartial(String taskId) {
+    try {
+      if (!DownloadPartialStore.clear(getApplicationContext(), taskId, getId().toString())) Log.w("LXDownload", "Completion retains partial cleanup ownership");
+    } catch (IOException error) {
+      Log.w("LXDownload", "Partial cleanup will be retried before completion acknowledgment", error);
+    }
+  }
+
+  private void retireCompletedDestination() {
+    try { DownloadCleanupStore.finishCompleted(getApplicationContext(), getId().toString()); }
+    catch (IOException error) { Log.w("LXDownload", "Completion preserves a pending destination journal", error); }
+  }
+
+  private void cleanupFailedDestination() {
+    try {
+      Futures.addCallback(DownloadCleanupStore.cleanupWork(getApplicationContext(), getId().toString(), MusicDownloadWorker::isRunning), new FutureCallback<Boolean>() {
+        @Override public void onSuccess(Boolean ignored) {}
+        @Override public void onFailure(Throwable error) { Log.w("LXDownload", "Incomplete destination remains owned for retry", error); }
+      }, MoreExecutors.directExecutor());
+    } catch (IOException error) {
+      Log.w("LXDownload", "Unable to read incomplete destination ownership", error);
     }
   }
 
@@ -168,6 +222,12 @@ public class MusicDownloadWorker extends Worker {
   }
 
   private long download(String sourceUrl, File partial, String taskId, String fileName) throws IOException {
+    DownloadPartialStore.begin(getApplicationContext(), taskId, getId().toString());
+    try { return downloadPartial(sourceUrl, partial, taskId, fileName); }
+    finally { DownloadPartialStore.end(taskId, getId().toString()); }
+  }
+
+  private long downloadPartial(String sourceUrl, File partial, String taskId, String fileName) throws IOException {
     long existing = partial.exists() ? partial.length() : 0;
     HttpURLConnection connection = openConnection(sourceUrl, existing);
     try {
@@ -246,6 +306,7 @@ public class MusicDownloadWorker extends Worker {
     if (directory == null || !directory.canWrite()) throw new IOException("Download directory is not writable");
     String fileName;
     DocumentFile destination;
+    boolean renamed;
     // 目录快照和创建在同一临界区；复制文件不占锁，其他 worker 可以继续创建。
     synchronized (DESTINATION_CREATION_LOCK) {
       long now = SystemClock.elapsedRealtime();
@@ -254,16 +315,61 @@ public class MusicDownloadWorker extends Worker {
         names = readNames(directory);
         DownloadDirectoryIndex.put(treeUri, names, now);
       }
-      fileName = availableName(names, requestedFileName);
+      Set<String> reserved = DownloadCleanupStore.reservedNames(getApplicationContext(), treeUri);
+      fileName = availableName(names, reserved, requestedFileName);
       throwIfStopped();
-      destination = directory.createFile(mimeType, fileName);
+      DownloadCleanupStore.Record ownership = DownloadCleanupStore.begin(getApplicationContext(), getId().toString(), value(KEY_TASK_ID), treeUri, fileName);
+      destination = directory.createFile(mimeType, ownership.temporaryName());
       if (destination == null) {
         DownloadDirectoryIndex.invalidate(treeUri);
         throw new IOException("Unable to create destination file");
       }
-      String actualName = destination.getName();
-      if (actualName != null) fileName = actualName;
-      DownloadDirectoryIndex.created(treeUri, fileName);
+      DownloadCleanupStore.prepareRename(getApplicationContext(), ownership, destination.getUri().toString());
+      renamed = destination.renameTo(fileName);
+      if (renamed) {
+        DownloadCleanupStore.prepareWrite(getApplicationContext(), ownership, destination.getUri().toString(), fileName);
+        String actualName = destination.getName();
+        if (actualName != null && !actualName.equals(fileName)) {
+          fileName = actualName;
+          DownloadCleanupStore.prepareWrite(getApplicationContext(), ownership, destination.getUri().toString(), fileName);
+        }
+        DownloadDirectoryIndex.created(treeUri, fileName);
+      }
+    }
+    if (!renamed) {
+      // Some writable SAF providers cannot rename. Retire the tracked temporary
+      // document before trying their original direct-create behavior.
+      try {
+        if (!Boolean.TRUE.equals(DownloadCleanupStore.cleanupWork(getApplicationContext(), getId().toString(), id -> false).get())) throw new IOException("Temporary destination is still in use");
+      } catch (InterruptedException error) {
+        Thread.currentThread().interrupt();
+        throw new IOException("Download cancelled", error);
+      } catch (ExecutionException error) {
+        throw new IOException("Unable to retire temporary download", error);
+      }
+      throwIfStopped();
+      synchronized (DESTINATION_CREATION_LOCK) {
+        long now = SystemClock.elapsedRealtime();
+        Set<String> names = DownloadDirectoryIndex.get(treeUri, now);
+        if (names == null) {
+          names = readNames(directory);
+          DownloadDirectoryIndex.put(treeUri, names, now);
+        }
+        fileName = availableName(names, DownloadCleanupStore.reservedNames(getApplicationContext(), treeUri), requestedFileName);
+        throwIfStopped();
+        DownloadCleanupStore.Record direct = DownloadCleanupStore.beginDirect(getApplicationContext(), getId().toString(), value(KEY_TASK_ID), treeUri, fileName);
+        destination = directory.createFile(mimeType, fileName);
+        if (destination == null) {
+          throw new IOException("Unable to create destination file");
+        }
+        DownloadCleanupStore.prepareWrite(getApplicationContext(), direct, destination.getUri().toString(), fileName);
+        String actualName = destination.getName();
+        if (actualName != null && !actualName.equals(fileName)) {
+          fileName = actualName;
+          DownloadCleanupStore.prepareWrite(getApplicationContext(), direct, destination.getUri().toString(), fileName);
+        }
+        DownloadDirectoryIndex.created(treeUri, fileName);
+      }
     }
     boolean copied = false;
     try {
@@ -287,7 +393,6 @@ public class MusicDownloadWorker extends Worker {
       return new Destination(destination, fileName);
     } finally {
       if (!copied) {
-        destination.delete();
         DownloadDirectoryIndex.invalidate(treeUri);
       }
     }
@@ -308,15 +413,15 @@ public class MusicDownloadWorker extends Worker {
     return names;
   }
 
-  private String availableName(Set<String> names, String requestedName) throws IOException {
-    if (!names.contains(requestedName)) return requestedName;
+  private String availableName(Set<String> names, Set<String> reserved, String requestedName) throws IOException {
+    if (!names.contains(requestedName) && !reserved.contains(requestedName)) return requestedName;
     int dot = requestedName.lastIndexOf('.');
     String stem = dot > 0 ? requestedName.substring(0, dot) : requestedName;
     String extension = dot > 0 ? requestedName.substring(dot) : "";
     for (int index = 1; index < Integer.MAX_VALUE; index++) {
       throwIfStopped();
       String candidate = stem + " (" + index + ")" + extension;
-      if (!names.contains(candidate)) return candidate;
+      if (!names.contains(candidate) && !reserved.contains(candidate)) return candidate;
     }
     throw new IOException("Unable to select a unique destination name");
   }
