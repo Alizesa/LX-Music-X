@@ -71,19 +71,53 @@ const applyEmoji = text => {
   return text
 }
 
-let cursorTools = {
-  cache: {},
+const cursorCache = new Map()
+const CURSOR_CACHE_MAX = 32
+const CURSOR_CACHE_TTL = 15 * 60_000
+const trimCursors = () => {
+  for (const [key, value] of cursorCache) {
+    if (!value.holders && Date.now() - value.savedAt >= CURSOR_CACHE_TTL) cursorCache.delete(key)
+  }
+  for (const [key, value] of cursorCache) {
+    if (cursorCache.size <= CURSOR_CACHE_MAX) break
+    if (!value.holders) cursorCache.delete(key)
+  }
+}
+const getCursorRecord = (id, limit) => {
+  const key = `${id}_${limit}`
+  let value = cursorCache.get(key)
+  if (value && !value.holders && Date.now() - value.savedAt >= CURSOR_CACHE_TTL) { cursorCache.delete(key); value = null }
+  if (!value) value = { key, holders: 0, request: 0, savedAt: Date.now() }
+  cursorCache.delete(key); cursorCache.set(key, value)
+  return value
+}
+export const clearCommentCursorCache = () => {
+  for (const [key, value] of cursorCache) if (!value.holders) cursorCache.delete(key)
+}
+const retainCursor = (id, limit = 15) => {
+  const value = getCursorRecord(id, limit)
+  value.holders++
+  trimCursors()
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    value.holders--
+    if (!value.holders && cursorCache.get(value.key) === value) cursorCache.delete(value.key)
+  }
+}
+const cursorTools = {
   getCursor(id, page, limit) {
-    let cacheData = this.cache[id]
-    if (!cacheData) cacheData = this.cache[id] = {}
+    const cacheData = getCursorRecord(id, limit)
+    const request = ++cacheData.request
     let orderType
     let cursor
     let offset
-    if (page == 1) {
-      cacheData.page = 1
-      cursor = cacheData.cursor = cacheData.prevCursor = Date.now()
+    if (page == 1 || !cacheData.page) {
+      cursor = Date.now()
       orderType = 1
-      offset = 0
+      // 游标已淘汰时按首屏锚点计算目标页，只请求目标页一次。
+      offset = (page - 1) * limit
     } else if (cacheData.page) {
       cursor = cacheData.cursor
       if (page > cacheData.page) {
@@ -93,29 +127,36 @@ let cursorTools = {
         orderType = 0
         offset = (cacheData.page - page - 1) * limit
       } else {
-        cursor = cacheData.cursor = cacheData.prevCursor
+        cursor = cacheData.prevCursor
         offset = cacheData.offset
         orderType = cacheData.orderType
       }
     }
+    trimCursors()
     return {
       orderType,
       cursor,
       offset,
+      record: cacheData,
+      request,
     }
   },
-  setCursor(id, cursor, orderType, offset, page) {
-    let cacheData = this.cache[id]
-    if (!cacheData) cacheData = this.cache[id] = {}
-    cacheData.prevCursor = cacheData.cursor
+  setCursor(info, cursor, orderType, offset, page) {
+    const cacheData = info.record
+    if (cursorCache.get(cacheData.key) !== cacheData || cacheData.request !== info.request) return
+    cacheData.prevCursor = info.cursor
     cacheData.cursor = cursor
     cacheData.orderType = orderType
     cacheData.offset = offset
     cacheData.page = page
+    cacheData.savedAt = Date.now()
+    cursorCache.delete(cacheData.key); cursorCache.set(cacheData.key, cacheData)
+    trimCursors()
   },
 }
 
 export default {
+  retainCursor,
   async getComment({ songmid }, page = 1, limit = 20, signal) {
     const id = 'R_SO_4_' + songmid
 
@@ -140,7 +181,7 @@ export default {
     })
     const { body, statusCode } = await waitForRequest(_requestObj, signal)
     if (statusCode != 200 || body.code !== 200) throw new Error('获取评论失败')
-    cursorTools.setCursor(songmid, body.data.cursor, cursorInfo.orderType, cursorInfo.offset, page)
+    cursorTools.setCursor(cursorInfo, body.data.cursor, cursorInfo.orderType, cursorInfo.offset, page)
     return { source: 'wy', comments: this.filterComment(body.data.comments), total: body.data.totalCount, page, limit, maxPage: Math.ceil(body.data.totalCount / limit) || 1 }
   },
   async getHotComment({ songmid }, page = 1, limit = 100, signal) {

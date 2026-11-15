@@ -7,6 +7,8 @@ import { clearOtherSourceCache } from '@/core/music/utils'
 import { releaseIdleDownloadCaches } from '@/core/download'
 import { releaseIdleSearchCaches } from '@/core/search/cache'
 import { clearSongListCache } from '@/utils/musicSdk/kg/songList'
+import { clearMiguSongListCache } from '@/utils/musicSdk/mg/songList'
+import { clearCommentCursorCache } from '@/utils/musicSdk/wy/comment'
 
 /**
  * 可重建内存缓存的统一释放入口。
@@ -20,6 +22,8 @@ export const releaseIdleCaches = (pressure = false) => {
   releaseIdleSingerCaches() // 歌手/专辑详情
   clearOtherSourceCache() // 换源结果
   clearSongListCache()
+  clearMiguSongListCache()
+  clearCommentCursorCache()
   releaseIdleDownloadCaches()
   void releaseIdleSearchCaches(pressure)
 }

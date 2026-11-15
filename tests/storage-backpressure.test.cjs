@@ -200,6 +200,8 @@ test('memory pressure uses immediate search release while entering the backgroun
     '@/core/download': { releaseIdleDownloadCaches() {} },
     '@/core/search/cache': { releaseIdleSearchCaches: immediate => { calls.push(immediate) } },
     '@/utils/musicSdk/kg/songList': { clearSongListCache() {} },
+    '@/utils/musicSdk/mg/songList': { clearMiguSongListCache() {} },
+    '@/utils/musicSdk/wy/comment': { clearCommentCursorCache() {} },
   }, { global: { app_event: { on() {} } } })
   api.initCacheLifecycle()
   background('background')

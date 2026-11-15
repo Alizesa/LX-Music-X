@@ -4,6 +4,43 @@ import { filterMusicInfoListV5 } from './musicInfo'
 import { createSignature } from './musicSearch'
 import { createHttpFetch } from './utils/index'
 
+const detailCache = new Map()
+const urlCache = new Map()
+const stamps = new Map()
+const CACHE_TTL = 15 * 60_000
+let cacheGeneration = 0
+const weight = (key, value) => {
+  const values = typeof value === 'string' ? [value] : Object.values(value)
+  if (values.some(item => item != null && typeof item === 'object')) return Infinity
+  return String(key).length + values.reduce((sum, item) => sum + String(item ?? '').length, 0)
+}
+const cacheKey = (cache, key) => (cache === detailCache ? 'detail:' : 'url:') + key
+const forget = (cache, key) => { cache.delete(key); stamps.delete(cacheKey(cache, key)) }
+const readCache = (cache, key) => {
+  const value = cache.get(key)
+  if (value == null) return null
+  if (Date.now() - stamps.get(cacheKey(cache, key)) >= CACHE_TTL) { forget(cache, key); return null }
+  cache.delete(key); cache.set(key, value)
+  return value
+}
+const remember = (cache, key, value, generation) => {
+  if (generation !== cacheGeneration) return
+  const maxEntries = cache === detailCache ? 16 : 32
+  const maxCharacters = cache === detailCache ? 256 * 1024 : 64 * 1024
+  if (weight(key, value) > maxCharacters) return
+  for (const stored of cache.keys()) if (Date.now() - stamps.get(cacheKey(cache, stored)) >= CACHE_TTL) forget(cache, stored)
+  cache.delete(key); cache.set(key, value); stamps.set(cacheKey(cache, key), Date.now())
+  let characters = [...cache].reduce((sum, [stored, item]) => sum + weight(stored, item), 0)
+  while (cache.size > maxEntries || characters > maxCharacters) {
+    const oldest = cache.keys().next().value
+    characters -= weight(oldest, cache.get(oldest))
+    forget(cache, oldest)
+  }
+}
+export const clearMiguSongListCache = () => {
+  cacheGeneration++
+  detailCache.clear(); urlCache.clear(); stamps.clear()
+}
 
 export default {
   createHttpFetch(url, options) {
@@ -14,8 +51,8 @@ export default {
   },
   limit_song: 30,
   successCode: '000000',
-  cachedDetailInfo: {},
-  cachedUrl: {},
+  cachedDetailInfo: detailCache,
+  cachedUrl: urlCache,
   regExps: {
 
     // https://music.migu.cn/v3/music/playlist/161044573?page=1
@@ -57,29 +94,32 @@ export default {
     })
   },
 
-  getListDetailInfo(id, tryNum = 0) {
+  getListDetailInfo(id, tryNum = 0, generation = cacheGeneration) {
     if (tryNum > 2) return Promise.reject(new Error('try max num'))
 
-    if (this.cachedDetailInfo[id]) return Promise.resolve(this.cachedDetailInfo[id])
+    const key = String(id)
+    const cached = readCache(detailCache, key)
+    if (cached) return Promise.resolve(cached)
     const requestObj_listDetailInfo = this.httpFetch(`https://c.musicapp.migu.cn/MIGUM3.0/resource/playlist/v2.0?playlistId=${id}`, {
       headers: this.defaultHeaders,
     })
     return requestObj_listDetailInfo.promise.then(({ body }) => {
-      if (body.code !== this.successCode) return this.getListDetail(id, ++tryNum)
+      if (body.code !== this.successCode) return this.getListDetailInfo(id, ++tryNum, generation)
       // console.log(JSON.stringify(body))
       // console.log(body)
-      const cachedDetailInfo = this.cachedDetailInfo[id] = {
+      const cachedDetailInfo = {
         name: body.data.title,
         img: body.data.imgItem.img,
         desc: body.data.summary,
         author: body.data.ownerName,
         play_count: formatPlayCount(body.data.opNumItem.playNum),
       }
+      remember(detailCache, key, cachedDetailInfo, generation)
       return cachedDetailInfo
     })
   },
 
-  async getDetailUrl(link, page, retryNum = 0) {
+  async getDetailUrl(link, page, retryNum = 0, generation = cacheGeneration) {
     if (retryNum > 3) return Promise.reject(new Error('link try max num'))
 
     const requestObj_listDetailLink = this.httpFetch(link, {
@@ -90,15 +130,15 @@ export default {
     })
     const { url: location, statusCode } = await requestObj_listDetailLink.promise
     // console.log(body, location)
-    if (statusCode > 400) return this.getDetailUrl(link, page, ++retryNum)
+    if (statusCode > 400) return this.getDetailUrl(link, page, ++retryNum, generation)
     if (location.split('?')[0] != link.split('?')[0]) {
-      this.cachedUrl[link] = location
-      return this.getListDetail(location, page)
+      remember(urlCache, link, location, generation)
+      return this.getListDetail(location, page, 0, generation)
     }
     return Promise.reject(new Error('link get failed'))
   },
 
-  getListDetail(id, page, retryNum = 0) { // 获取歌曲列表内的音乐
+  getListDetail(id, page, retryNum = 0, generation = cacheGeneration) { // 获取歌曲列表内的音乐
     // https://h5.nf.migu.cn/app/v4/p/share/playlist/index.html?id=184187437&channel=0146921
     // http://c.migu.cn/00bTY6?ifrom=babddaadfde4ebeda289d671ab62f236
     // https://music.migu.cn/v5/#/playlist?playlistId=221573417
@@ -108,13 +148,13 @@ export default {
     } else if (this.regExps.listDetailLink.test(id)) {
       id = id.replace(this.regExps.listDetailLink, '$1')
     } else if ((/[?&:/]/.test(id))) {
-      const url = this.cachedUrl[id]
-      return url ? this.getListDetail(url, page) : this.getDetailUrl(id, page)
+      const url = readCache(urlCache, id)
+      return url ? this.getListDetail(url, page, retryNum, generation) : this.getDetailUrl(id, page, retryNum, generation)
     }
 
     return Promise.all([
       this.getListDetailList(id, page, retryNum),
-      this.getListDetailInfo(id, retryNum),
+      this.getListDetailInfo(id, retryNum, generation),
     ]).then(([listData, info]) => {
       listData.info = info
       return listData

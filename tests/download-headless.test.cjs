@@ -341,6 +341,8 @@ test('headless cleanup releases idle caches after the real LOCAL lease settles a
     '@/core/download': h.api,
     '@/core/search/cache': search,
     '@/utils/musicSdk/kg/songList': { clearSongListCache() {} },
+    '@/utils/musicSdk/mg/songList': { clearMiguSongListCache() {} },
+    '@/utils/musicSdk/wy/comment': { clearCommentCursorCache() {} },
   })
   const service = serviceHarness(h.api, runtimeHarness(), { ...caches, ...lifecycle })
   const work = service.runDownloadQueueDispatch({ workId: 'release-caches' })

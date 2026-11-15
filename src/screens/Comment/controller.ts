@@ -1,4 +1,4 @@
-import { filterList, getComments, type Comment } from './utils'
+import { filterList, getComments, retainCommentCache, type Comment } from './utils'
 import { isRequestCancelled } from '@/utils/message'
 import { type Status } from './components/List'
 
@@ -17,6 +17,7 @@ export const createCommentController = (musicInfo: LX.Music.MusicInfoOnline, typ
   let generation = 0
   let disposed = false
   let pending: AbortController | null = null
+  const releaseCursor = retainCommentCache?.(musicInfo, type, COMMENT_PAGE_SIZE)
   const publish = (status: Status) => {
     onChange({ comments: filterList(pages.flatMap(page => page.comments)), status, hasPrevious: (pages[0]?.page ?? 1) > 1 })
   }
@@ -54,11 +55,13 @@ export const createCommentController = (musicInfo: LX.Music.MusicInfoOnline, typ
       if (!pending && page > 1) await load(page - 1, 'previous')
     },
     dispose: () => {
+      if (disposed) return
       disposed = true
       generation++
       pending?.abort()
       pending = null
       pages = []
+      releaseCursor?.()
     },
   }
 }

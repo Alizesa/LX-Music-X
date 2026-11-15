@@ -39,6 +39,12 @@ export const getComments = async(musicInfo: LX.Music.MusicInfoOnline, type: 'hot
   }
 }
 
+export const retainCommentCache = (musicInfo: LX.Music.MusicInfoOnline, type: 'hot' | 'new', limit: number): (() => void) => {
+  const api = music[musicInfo.source]?.comment
+  if (type === 'new' && api && 'retainCursor' in api) return api.retainCursor(toOldMusicInfo(musicInfo).songmid, limit) as () => void
+  return () => {}
+}
+
 export const filterList = (list: Comment[]) => {
   const set = new Set()
   return list.filter(c => {
