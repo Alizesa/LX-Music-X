@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { ScrollView, TouchableOpacity, View } from 'react-native'
+import { FlatList, ScrollView, TouchableOpacity, View } from 'react-native'
 import Popup, { type PopupType } from '@/components/common/Popup'
 import Text from '@/components/common/Text'
 import Image from '@/components/common/Image'
@@ -14,6 +14,7 @@ import playerState from '@/store/player/state'
 import settingState from '@/store/setting/state'
 import { addTasks } from '@/core/download'
 import { changeQQMusicPlaylistMembership, loadWritableQQMusicPlaylists } from '@/core/qqMusicFavorite'
+import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
 
 type Mode = 'actions' | 'add' | 'remove'
 type Playlist = LX.QQMusic.PlaylistInfo
@@ -45,6 +46,9 @@ export default forwardRef<MoreMenuType>((_, ref) => {
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [busy, setBusy] = useState(false)
   const [hasCache, setHasCache] = useState(false)
+  const visible = useScreenVisible()
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
 
   const handleHide = useCallback(() => {
     session.current++
@@ -54,12 +58,19 @@ export default forwardRef<MoreMenuType>((_, ref) => {
     setHasCache(false)
   }, [])
 
+  useEffect(() => {
+    if (visible) return
+    handleHide()
+    popupRef.current?.setVisible(false)
+  }, [visible, handleHide])
+
   useEffect(() => () => {
     session.current++
   }, [])
 
   useImperativeHandle(ref, () => ({
     show() {
+      if (!visibleRef.current) return
       const current = currentMusicInfo()
       if (!current) return
       const version = ++session.current
@@ -174,9 +185,15 @@ export default forwardRef<MoreMenuType>((_, ref) => {
       return <Text style={styles.empty} color={theme['c-font-label']}>{t('qq_playlist_write_empty')}</Text>
     }
     return (
-      <ScrollView style={styles.list}>
-        {
-          playlists.map(item => (
+      <FlatList
+        style={styles.list}
+        data={playlists}
+        extraData={busy}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={3}
+        keyExtractor={item => String(item.id)}
+        renderItem={({ item }) => (
             <TouchableOpacity
               key={item.id}
               style={{ ...styles.playlistRow, borderBottomColor: theme['c-border-background'], opacity: busy ? 0.5 : 1 }}
@@ -191,9 +208,8 @@ export default forwardRef<MoreMenuType>((_, ref) => {
                 <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{t('mine_song_count', { num: item.trackCount ?? 0 })}</Text>
               </View>
             </TouchableOpacity>
-          ))
-        }
-      </ScrollView>
+        )}
+      />
     )
   }
 

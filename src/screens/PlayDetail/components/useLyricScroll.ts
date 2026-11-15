@@ -9,6 +9,24 @@ import { createLyricScroll } from './lyricScroll'
 
 const EMPTY_LINES: Line[] = []
 
+// Controller 回调在独立作用域创建，不能保留首次 hook 调用的整份歌词参数。
+const createScrollController = (
+  flatList: { current: FlatList<Line> | null },
+  playLine: { current: PlayLineType | null },
+  onPositioned: (lines: Line[] | null) => void,
+) => createLyricScroll({
+  getList: () => flatList.current,
+  isPlaying: () => playerState.isPlay,
+  onPositioned,
+  onManualChange: manual => { playLine.current?.setVisible(manual) },
+  canAnimate: supportsScrollAnimationCancellation,
+  stopScrollAnimation: async() => {
+    const scrollView = flatList.current?.getNativeScrollRef()
+    const viewTag = scrollView ? findNodeHandle(scrollView) : null
+    if (viewTag != null) await stopScrollAnimation(viewTag)
+  },
+})
+
 export const useLyricScroll = (lyricLines: Line[], line: number, showProgress: boolean) => {
   const visible = useScreenVisible()
   const flatListRef = useRef<FlatList<Line>>(null)
@@ -19,19 +37,17 @@ export const useLyricScroll = (lyricLines: Line[], line: number, showProgress: b
   const layoutId = useMemo(() => Symbol(`lyric-layout:${visible}:${lyricLines.length}`), [lyricLines, visible])
   const activeLayout = useRef<symbol | null>(null)
   const [positionedLines, setPositionedLines] = useState<Line[] | null>(null)
-  const controller = useMemo(() => createLyricScroll({
-    getList: () => flatListRef.current,
-    isPlaying: () => playerState.isPlay,
-    onPositioned: setPositionedLines,
-    onManualChange: manual => { playLineRef.current?.setVisible(manual) },
-    // 旧 APK 缺少取消接口时只用即时定位，避免启动无法取消的原生动画。
-    canAnimate: supportsScrollAnimationCancellation,
-    stopScrollAnimation: async() => {
-      const scrollView = flatListRef.current?.getNativeScrollRef()
-      const viewTag = scrollView ? findNodeHandle(scrollView) : null
-      if (viewTag != null) await stopScrollAnimation(viewTag)
-    },
-  }), [])
+  // 切换布局/显隐时替换事件回调所属作用域，释放首次渲染的歌词上下文。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const controller = useMemo(() => createScrollController(flatListRef, playLineRef, setPositionedLines), [lyricLines, visible])
+
+  useLayoutEffect(() => () => {
+    activeLayout.current = null
+    linesRef.current = EMPTY_LINES
+    layoutRef.current.lineFrames.clear()
+    scrollInfoRef.current = null
+    controller.dispose()
+  }, [controller])
 
   useLayoutEffect(() => {
     activeLayout.current = visible ? layoutId : null
@@ -48,14 +64,6 @@ export const useLyricScroll = (lyricLines: Line[], line: number, showProgress: b
     // 重新订阅时等待当前位置校准，避免先显示第 0 行再跳到当前句。
     controller.update({ lines, line, visible: visible && line >= 0 })
   }, [controller, line, lyricLines, visible, layoutId])
-
-  useLayoutEffect(() => () => {
-    activeLayout.current = null
-    linesRef.current = EMPTY_LINES
-    layoutRef.current.lineFrames.clear()
-    scrollInfoRef.current = null
-    controller.dispose()
-  }, [controller])
 
   useEffect(() => {
     if (!visible) return

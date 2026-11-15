@@ -1,5 +1,5 @@
 import { useRef, useImperativeHandle, forwardRef, useState, useEffect, useCallback, type ComponentProps } from 'react'
-import { ScrollView, TouchableOpacity, View } from 'react-native'
+import { FlatList, ScrollView, TouchableOpacity, View } from 'react-native'
 import { useI18n } from '@/lang'
 import { type Position } from '@/components/common/Menu'
 import Popup, { type PopupType } from '@/components/common/Popup'
@@ -14,8 +14,9 @@ import { hasDislike } from '@/core/dislikeList'
 import { hasMusicUrlByMusic } from '@/utils/data'
 import { setMusicCollected } from '@/core/player/player'
 import { changeQQMusicPlaylistMembership, loadWritableQQMusicPlaylists, useQQMusicLiked } from '@/core/qqMusicFavorite'
-import { createStyle } from '@/utils/tools'
+import { createStyle, toast } from '@/utils/tools'
 import { useScreenVisible } from '@/utils/hooks/useScreenVisible'
+import { waitForPromise } from '@/utils/abortable'
 
 export interface SelectInfo {
   musicInfo: LX.Music.MusicInfoOnline
@@ -66,6 +67,7 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
   const popupRef = useRef<PopupType>(null)
   const selectInfoRef = useRef<SelectInfo | null>(null)
   const session = useRef(0)
+  const pickerController = useRef<AbortController | null>(null)
   const screenVisible = useScreenVisible()
   // 选中项放 state：面板里点完收藏要立刻反映到那一行（图标高亮 + 勾 + 文案变「取消收藏」）。
   // 收藏状态由 useQQMusicLiked 订阅，它会跟着账号数据变
@@ -78,6 +80,8 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
 
   const handleHide = useCallback(() => {
     session.current++
+    pickerController.current?.abort()
+    pickerController.current = null
     selectInfoRef.current = null
     setCurrent(null)
     setRows([])
@@ -94,6 +98,8 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
   }, [screenVisible, close])
   useEffect(() => () => {
     session.current++
+    pickerController.current?.abort()
+    pickerController.current = null
     selectInfoRef.current = null
   }, [])
 
@@ -123,6 +129,8 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
   useImperativeHandle(ref, () => ({
     show(selectInfo) {
       if (!screenVisible) return
+      pickerController.current?.abort()
+      pickerController.current = null
       const version = ++session.current
       selectInfoRef.current = selectInfo
       setCurrent(selectInfo)
@@ -157,16 +165,22 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
 
   const openPlaylistPicker = async(nextMode: Mode) => {
     if (busy || !selectInfoRef.current) return
+    pickerController.current?.abort()
+    const controller = new AbortController()
+    pickerController.current = controller
     const version = session.current
     setBusy(true)
     try {
       // 候选（自己创建的歌单）和「缓存里缺 dirId 就自己重拉一次」都在 core 里，
       // 播放详情页那个面板用的是同一份。列表拿到手再切，免得先闪一下「还没有自建歌单」
-      const list = await loadWritableQQMusicPlaylists()
+      const list = await waitForPromise(loadWritableQQMusicPlaylists(), controller.signal)
       if (version !== session.current) return
       setPlaylists(list)
       setMode(nextMode)
+    } catch (error) {
+      if (!controller.signal.aborted && version === session.current) toast(error instanceof Error ? error.message : String(error), 'long')
     } finally {
+      if (pickerController.current === controller) pickerController.current = null
       if (version === session.current) setBusy(false)
     }
   }
@@ -259,9 +273,15 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
       return <Text style={styles.empty} color={theme['c-font-label']}>{t('qq_playlist_write_empty')}</Text>
     }
     return (
-      <ScrollView style={styles.list}>
-        {
-          playlists.map(item => (
+      <FlatList
+        style={styles.list}
+        data={playlists}
+        extraData={busy}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={3}
+        keyExtractor={item => String(item.id)}
+        renderItem={({ item }) => (
             <TouchableOpacity
               key={item.id}
               style={{ ...styles.playlistRow, borderBottomColor: theme['c-border-background'], opacity: busy ? 0.5 : 1 }}
@@ -276,9 +296,8 @@ export default forwardRef<ListMenuType, ListMenuProps>((props, ref) => {
                 <Text size={12} color={theme['c-font-label']} numberOfLines={1}>{t('mine_song_count', { num: item.trackCount ?? 0 })}</Text>
               </View>
             </TouchableOpacity>
-          ))
-        }
-      </ScrollView>
+        )}
+      />
     )
   }
 
