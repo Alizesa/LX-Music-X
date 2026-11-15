@@ -30,6 +30,7 @@ interface Options {
   onManualChange: (manual: boolean) => void
   canAnimate: boolean
   stopScrollAnimation: () => Promise<void>
+  getPendingStop?: () => Promise<boolean> | null
 }
 
 const VIEW_POSITION = 0.42
@@ -38,7 +39,7 @@ const MAX_STALLED_ATTEMPTS = 8
 const RESUME_DELAY = 3000
 
 /** 横竖屏共用：只保留最新定位请求，首次定位完成前不显示从首行跳转的过程。 */
-export const createLyricScroll = ({ getList, isPlaying, onPositioned, onManualChange, canAnimate, stopScrollAnimation }: Options) => {
+export const createLyricScroll = ({ getList, isPlaying, onPositioned, onManualChange, canAnimate, stopScrollAnimation, getPendingStop = () => null }: Options) => {
   let snapshot: Snapshot = { lines: [], line: -1, visible: false }
   let positionedLines: Line[] | null = null
   let pending: Request | null = null
@@ -148,8 +149,9 @@ export const createLyricScroll = ({ getList, isPlaying, onPositioned, onManualCh
     if (!isCurrent(request)) return
     clearPositionTimer()
     stopNativeAnimation()
-    if (stoppingAnimation) {
-      void stoppingAnimation.then(stopped => {
+    const stopping = stoppingAnimation ?? getPendingStop()
+    if (stopping) {
+      void stopping.then(stopped => {
         if (!isCurrent(request)) return
         if (stopped) schedule(request)
         else request.waiting = true

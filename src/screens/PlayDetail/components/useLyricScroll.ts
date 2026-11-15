@@ -14,16 +14,22 @@ const createScrollController = (
   flatList: { current: FlatList<Line> | null },
   playLine: { current: PlayLineType | null },
   onPositioned: (lines: Line[] | null) => void,
+  pendingStop: { current: Promise<boolean> | null },
 ) => createLyricScroll({
   getList: () => flatList.current,
   isPlaying: () => playerState.isPlay,
   onPositioned,
   onManualChange: manual => { playLine.current?.setVisible(manual) },
   canAnimate: supportsScrollAnimationCancellation,
+  getPendingStop: async() => pendingStop.current,
   stopScrollAnimation: async() => {
     const scrollView = flatList.current?.getNativeScrollRef()
     const viewTag = scrollView ? findNodeHandle(scrollView) : null
-    if (viewTag != null) await stopScrollAnimation(viewTag)
+    if (viewTag == null) return
+    const stopping = stopScrollAnimation(viewTag).then(() => true, () => false)
+    pendingStop.current = stopping
+    void stopping.then(() => { if (pendingStop.current === stopping) pendingStop.current = null })
+    if (!await stopping) throw new Error('Failed to stop lyric scrolling')
   },
 })
 
@@ -37,9 +43,10 @@ export const useLyricScroll = (lyricLines: Line[], line: number, showProgress: b
   const layoutId = useMemo(() => Symbol(`lyric-layout:${visible}:${lyricLines.length}`), [lyricLines, visible])
   const activeLayout = useRef<symbol | null>(null)
   const [positionedLines, setPositionedLines] = useState<Line[] | null>(null)
+  const pendingStop = useRef<Promise<boolean> | null>(null)
   // 切换布局/显隐时替换事件回调所属作用域，释放首次渲染的歌词上下文。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const controller = useMemo(() => createScrollController(flatListRef, playLineRef, setPositionedLines), [lyricLines, visible])
+  const controller = useMemo(() => createScrollController(flatListRef, playLineRef, setPositionedLines, pendingStop), [lyricLines, visible])
 
   useLayoutEffect(() => () => {
     activeLayout.current = null
