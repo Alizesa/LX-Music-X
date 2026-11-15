@@ -25,6 +25,27 @@ export const loadScript = (info: LX.UserApi.UserApiInfo & { script: string }, ru
   else UserApiModule.loadScriptForRuntime(nativeId, data)
 }
 
+/** 取消的 handler 无法结束时重建上下文，保留用户选择代次，换 native ID 隔离迟到事件。 */
+export const restartScriptContext = (runtimeId = 'main') => {
+  const previous = loadedScripts.get(runtimeId)
+  const info = previous?.info as (LX.UserApi.UserApiInfo & { script?: string }) | undefined
+  if (!previous || !info || typeof info.script !== 'string' || !supportsIsolatedUserApi()) return false
+  const nativeId = `${runtimeId}_${++nextGeneration}`
+  loadedScripts.set(runtimeId, { ...previous, nativeId })
+  if (previous.nativeId === 'main') UserApiModule.destroy()
+  else UserApiModule.destroyRuntime(previous.nativeId)
+  UserApiModule.loadScriptForRuntime(nativeId, {
+    id: info.id,
+    name: info.name,
+    description: info.description,
+    version: info.version ?? '',
+    author: info.author ?? '',
+    homepage: info.homepage ?? '',
+    script: info.script,
+  })
+  return true
+}
+
 export interface SendResponseParams {
   requestKey: string
   error: string | null
@@ -69,6 +90,7 @@ export interface UpdateInfoParams {
 }
 export interface RequestParams {
   requestKey: string
+  parentRequestKey?: string | null
   url: string
   options: {
     method: string
@@ -85,6 +107,7 @@ export interface Actions {
   request: RequestParams
   cancelRequest: CancelRequestParams
   response: ResponseParams
+  requestSettled: string
   showUpdateAlert: UpdateInfoParams
   log: string
 }

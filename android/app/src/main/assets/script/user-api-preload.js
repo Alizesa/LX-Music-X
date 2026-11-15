@@ -2,6 +2,9 @@
 
 globalThis.lx_setup = (key, id, name, description, version, author, homepage, rawScript) => {
   delete globalThis.lx_setup
+  const readRawScript = globalThis.__lx_native_call__raw_script
+  delete globalThis.__lx_native_call__raw_script
+  let scriptText = rawScript
   const _nativeCall = globalThis.__lx_native_call__
   delete globalThis.__lx_native_call__
   const checkLength = (str, length = 1048576) => {
@@ -59,9 +62,22 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
     _nativeCall(key, action, data)
   }
 
+  let activeRequestScope = null
+  let callbackScope
+  const getRequestScope = () => callbackScope === undefined ? activeRequestScope : callbackScope
+  const withScope = (scope, callback) => {
+    const previous = callbackScope
+    callbackScope = scope
+    try { return callback() } finally { callbackScope = previous }
+  }
+  const assertScopeActive = scope => {
+    if (scope?.cancelled) throw new Error('request canceled')
+  }
   const callbacks = new Map()
   let timeoutId = 0
   const _setTimeout = (callback, timeout = 0, ...params) => {
+    const scope = getRequestScope()
+    assertScopeActive(scope)
     if (typeof callback !== 'function') throw new Error('callback required a function')
     if (typeof timeout !== 'number' || timeout < 0) throw new Error('timeout required a number')
     if (timeoutId > 90000000000) throw new Error('max timeout')
@@ -72,12 +88,15 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
         callback(...args)
       },
       params,
+      scope,
     })
+    scope?.timers.add(id)
     nativeFuncs.set_timeout(id, parseInt(timeout))
     return id
   }
   const _clearTimeout = (id) => {
     const tagret = callbacks.get(id)
+    tagret?.scope?.timers.delete(id)
     if (tagret) callbacks.delete(id)
     // 同步取消 native 的 postDelayed，避免脚本 clearTimeout 后 Runnable 还留着
     nativeFuncs.clear_timeout(id)
@@ -86,7 +105,9 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
     const tagret = callbacks.get(id)
     if (!tagret) return
     callbacks.delete(id)
-    tagret.callback(...tagret.params)
+    tagret.scope?.timers.delete(id)
+    if (tagret.scope?.cancelled) return
+    withScope(tagret.scope, () => tagret.callback(...tagret.params))
   }
 
   // 将字节数组解码为字符串（UTF-8）
@@ -133,6 +154,7 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
     request: 'request',
     cancelRequest: 'cancelRequest',
     response: 'response',
+    requestSettled: 'requestSettled',
     // 'utils.crypto.aesEncrypt': 'utils.crypto.aesEncrypt',
     // 'utils.crypto.rsaEncrypt': 'utils.crypto.rsaEncrypt',
     // 'utils.crypto.randomBytes': 'utils.crypto.randomBytes',
@@ -188,15 +210,22 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
   let isShowedUpdateAlert = false
 
   const sendNativeRequest = (url, options, callback) => {
+    const scope = getRequestScope()
+    assertScopeActive(scope)
     const requestKey = Math.random().toString()
     const requestInfo = {
       aborted: false,
-      abort: () => {
+      abort: (notify = false) => {
         if (requestInfo.aborted) return
         requestInfo.aborted = true
         // App 会丢弃已取消 HTTP 的响应，不能等回包才释放脚本回调。
+        const target = requestQueue.get(requestKey)
         requestQueue.delete(requestKey)
+        scope?.requests.delete(requestKey)
         nativeCall(NATIVE_EVENTS_NAMES.cancelRequest, requestKey)
+        if (notify && target) {
+          try { withScope(scope, () => target.callback(new Error('request canceled'), null)) } catch {}
+        }
       },
     }
     requestQueue.set(requestKey, {
@@ -207,27 +236,51 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
       //   nativeCall(NATIVE_EVENTS_NAMES.cancelRequest, requestKey)
       // }, 30000),
       requestInfo,
+      scope,
     })
+    scope?.requests.add(requestKey)
 
-    nativeCall(NATIVE_EVENTS_NAMES.request, { requestKey, url, options })
+    nativeCall(NATIVE_EVENTS_NAMES.request, { requestKey, url, options, parentRequestKey: scope?.key ?? null })
     return requestInfo
   }
   const handleNativeResponse = ({ requestKey, error, response }) => {
     const targetRequest = requestQueue.get(requestKey)
     if (!targetRequest) return
     requestQueue.delete(requestKey)
+    targetRequest.scope?.requests.delete(requestKey)
     targetRequest.requestInfo.aborted = true
     // if (targetRequest.timeout) clearTimeout(targetRequest.timeout)
-    if (error == null) targetRequest.callback(null, response)
-    else targetRequest.callback(new Error(error), null)
+    withScope(targetRequest.scope, () => {
+      if (error == null) targetRequest.callback(null, response)
+      else targetRequest.callback(new Error(error), null)
+    })
+  }
+
+  const cancelScope = (scope, notify) => {
+    scope.cancelled = true
+    for (const id of [...scope.timers]) _clearTimeout(id)
+    for (const key of [...scope.requests]) requestQueue.get(key)?.requestInfo.abort(notify)
+  }
+  const finishScope = scope => {
+    cancelScope(scope, false)
+    if (activeRequestScope === scope) activeRequestScope = null
+    nativeCall(NATIVE_EVENTS_NAMES.requestSettled, scope.key)
   }
 
   const handleRequest = ({ requestKey, data }) => {
     // console.log(data)
-    if (cancelledRequests.delete(requestKey)) return
-    if (!events.request) return nativeCall(NATIVE_EVENTS_NAMES.response, { requestKey, status: false, errorMessage: 'Request event is not defined' })
+    if (cancelledRequests.delete(requestKey)) return nativeCall(NATIVE_EVENTS_NAMES.requestSettled, requestKey)
+    if (!events.request || activeRequestScope) {
+      nativeCall(NATIVE_EVENTS_NAMES.response, { requestKey, status: false, errorMessage: events.request ? 'Source request is busy' : 'Request event is not defined' })
+      nativeCall(NATIVE_EVENTS_NAMES.requestSettled, requestKey)
+      return
+    }
+    // App 侧串行分派；在返回 Promise 的生命周期内保留 scope，涵盖正常 async/await。
+    const scope = { key: requestKey, cancelled: false, timers: new Set(), requests: new Set() }
+    activeRequestScope = scope
     try {
-      events.request.call(globalThis.lx, { source: data.source, action: data.action, info: data.info }).then(response => {
+      Promise.resolve(events.request.call(globalThis.lx, { source: data.source, action: data.action, info: data.info })).then(response => {
+        if (scope.cancelled) return
         let result
         switch (data.action) {
           case 'musicUrl':
@@ -257,17 +310,16 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
             }
             break
         }
-        if (cancelledRequests.delete(requestKey)) return
         nativeCall(NATIVE_EVENTS_NAMES.response, { requestKey, status: true, result })
       }).catch(err => {
         // console.log('handleRequest err', err)
-        if (cancelledRequests.delete(requestKey)) return
+        if (scope.cancelled) return
         nativeCall(NATIVE_EVENTS_NAMES.response, { requestKey, status: false, errorMessage: err.message })
-      })
+      }).finally(() => { finishScope(scope) })
     } catch (err) {
       // console.log('handleRequest call err', err)
-      if (cancelledRequests.delete(requestKey)) return
-      nativeCall(NATIVE_EVENTS_NAMES.response, { requestKey, status: false, errorMessage: err.message })
+      if (!scope.cancelled) nativeCall(NATIVE_EVENTS_NAMES.response, { requestKey, status: false, errorMessage: err.message })
+      finishScope(scope)
     }
   }
 
@@ -287,7 +339,11 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
         handleNativeResponse(data)
         return
       case 'cancelRequest':
-        // 只登记；handleRequest 的入口/响应点会消费并抑制迟到结果
+        if (activeRequestScope?.key === data) {
+          cancelScope(activeRequestScope, true)
+          return
+        }
+        // 尚未开始的请求仅登记；其他消费者的作用域不受影响。
         cancelledRequests.add(data)
         if (cancelledRequests.size > 100) {
           const first = cancelledRequests.values().next().value
@@ -543,7 +599,10 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
       version,
       author,
       homepage,
-      rawScript,
+      get rawScript() {
+        scriptText ??= typeof readRawScript === 'function' ? readRawScript() : ''
+        return scriptText
+      },
     },
     version: '2.0.0',
     env: 'mobile',
@@ -555,7 +614,10 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
   const freezeObject = (obj) => {
     if (typeof obj != 'object') return
     Object.freeze(obj)
-    for (const subObj of Object.values(obj)) freezeObject(subObj)
+    // 冻结公开 API 时不执行 getter，正文只在脚本明确读取时进入 QuickJS。
+    for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(obj))) {
+      if ('value' in descriptor) freezeObject(descriptor.value)
+    }
   }
   freezeObject(globalThis.lx)
 

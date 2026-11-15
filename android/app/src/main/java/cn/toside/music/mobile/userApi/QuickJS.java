@@ -57,7 +57,8 @@ public class QuickJS {
     }
   }
 
-  private void createEnvObj(QuickJSContext jsContext) {
+  private void createEnvObj(QuickJSContext jsContext, String rawScript) {
+    jsContext.getGlobalObject().setProperty("__lx_native_call__raw_script", args -> rawScript);
     jsContext.getGlobalObject().setProperty("__lx_native_call__", args -> {
       if (this.key.equals(args[0])) {
         callNative((String) args[1], (String) args[2]);
@@ -157,9 +158,9 @@ public class QuickJS {
     this.jsContext.setConsole(new Console(this.eventHandler));
     String preloadScript = getPreloadScript();
     if (preloadScript == null) return false;
-    createEnvObj(this.jsContext);
+    createEnvObj(this.jsContext, rawScript);
     evaluateScript(preloadScript);
-    callFunction("lx_setup", this.key, id, name, desc, version, author, homepage, rawScript);
+    callFunction("lx_setup", this.key, id, name, desc, version, author, homepage);
     return true;
   }
 

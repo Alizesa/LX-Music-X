@@ -23,7 +23,12 @@ const userApiHarness = async({ scripts = {}, autoReply = true, appGlobal, settin
     sendActionForRuntime: (runtimeId, action, raw) => {
       const data = JSON.parse(raw)
       sends.push({ runtimeId, action, data })
-      if (autoReply && action === 'request') setImmediate(() => emit(runtimeId, 'response', { requestKey: data.requestKey, status: true, result: { data: { url: `https://audio.test/${loads.find(item => item.runtimeId === runtimeId)?.info.id}` } } }))
+      if (autoReply && action === 'request') {
+        setImmediate(() => {
+          emit(runtimeId, 'response', { requestKey: data.requestKey, status: true, result: { data: { url: `https://audio.test/${loads.find(item => item.runtimeId === runtimeId)?.info.id}` } } })
+          emit(runtimeId, 'requestSettled', data.requestKey)
+        })
+      }
     },
     destroy: () => destroyed.push('main'),
     destroyRuntime: id => destroyed.push(id),
