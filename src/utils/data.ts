@@ -545,8 +545,50 @@ export const getDownloadPath = async(): Promise<LX.Download.DownloadDirectory | 
 
 export const saveDownloadPath = async(path: LX.Download.DownloadDirectory) => saveData(downloadPathKey, path)
 
-export const getPlayQueue = async() => await getData<LX.Player.PlayQueueItem[]>(playQueueKey) ?? []
-export const savePlayQueue = async(queue: LX.Player.PlayQueueItem[]) => saveData(playQueueKey, queue)
+interface PlayQueueWrite {
+  queue: LX.Player.PlayQueueItem[]
+  promise: Promise<void>
+  resolve: () => void
+  reject: (error: unknown) => void
+}
+let pendingPlayQueueWrite: PlayQueueWrite | null = null
+let activePlayQueueWrite: PlayQueueWrite | null = null
+const finishPlayQueueWrite = (write: PlayQueueWrite) => {
+  if (activePlayQueueWrite === write) activePlayQueueWrite = null
+}
+const flushPlayQueueWrites = async() => {
+  if (activePlayQueueWrite) return
+  while (pendingPlayQueueWrite) {
+    const write = activePlayQueueWrite = pendingPlayQueueWrite
+    pendingPlayQueueWrite = null
+    try {
+      await saveData(playQueueKey, write.queue)
+      write.resolve()
+    } catch (error) {
+      write.reject(error)
+    } finally {
+      finishPlayQueueWrite(write)
+    }
+  }
+}
+export const getPlayQueue = async() => {
+  await (pendingPlayQueueWrite ?? activePlayQueueWrite)?.promise
+  return await getData<LX.Player.PlayQueueItem[]>(playQueueKey) ?? []
+}
+export const savePlayQueue = async(queue: LX.Player.PlayQueueItem[]) => {
+  // 当前写入不可替换；尚未开始的完整快照只保留最新一份。
+  const snapshot = queue.map(item => ({ ...item }))
+  if (pendingPlayQueueWrite) {
+    pendingPlayQueueWrite.queue = snapshot
+    return pendingPlayQueueWrite.promise
+  }
+  let resolvePromise!: () => void
+  let rejectPromise!: (error: unknown) => void
+  const promise = new Promise<void>((resolve, reject) => { resolvePromise = resolve; rejectPromise = reject })
+  pendingPlayQueueWrite = { queue: snapshot, promise, resolve: resolvePromise, reject: rejectPromise }
+  void flushPlayQueueWrites()
+  return promise
+}
 
 // 播放历史在内存里留一份：每次切歌都要更新它，而整份（最多 300 首、几百 KB）的
 // JSON 解析 + 序列化不该每首歌都做一遍。读取以内存为准，落盘节流到 1 秒一次

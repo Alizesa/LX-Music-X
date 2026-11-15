@@ -14,14 +14,14 @@ import { clearSongListCache } from '@/utils/musicSdk/kg/songList'
  * 只释放「不在用、不在显示、不在加载」的部分：LOCAL 由 core/localList 的 holds 管理，
  * 当前播放队列/正在播放的歌曲对象不在这些缓存里；页面 hold 的记录也由各自的 release 跳过。
  */
-export const releaseIdleCaches = () => {
+export const releaseIdleCaches = (pressure = false) => {
   releaseIdleListCaches(true)
   releaseIdleSonglistCaches() // 歌单详情/广场列表
   releaseIdleSingerCaches() // 歌手/专辑详情
   clearOtherSourceCache() // 换源结果
   clearSongListCache()
   releaseIdleDownloadCaches()
-  void releaseIdleSearchCaches()
+  void releaseIdleSearchCaches(pressure)
 }
 
 let initialized = false
@@ -37,7 +37,7 @@ export const initCacheLifecycle = () => {
     // RUNNING_CRITICAL(15) 和所有后台级别（>=20）才释放
     if (level !== 15 && level < 20) return
     try {
-      releaseIdleCaches()
+      releaseIdleCaches(true)
     } catch (error) {
       // 释放失败不能把异常抛回原生事件通道
       console.warn('[Cache] memory pressure release failed:', error instanceof Error ? error.message : error)

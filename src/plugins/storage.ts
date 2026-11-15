@@ -112,9 +112,9 @@ const replaceData = async(datas: Array<[string, any]>) => {
   if (!datas.length) return
   const unique = [...new Map(datas)]
   const keys = unique.map(([key]) => key)
-  const values: Array<[string, string]> = []
-  for (const [key, value] of unique) buildData(key, value, values)
   return withKeys(keys, async() => {
+    const values: Array<[string, string]> = []
+    for (const [key, value] of unique) buildData(key, value, values)
     const previous = await readWithRetry(async() => AsyncStorage.multiGet(keys))
     // Android multiSet 在同一个 SQLite 事务中提交新分片与索引；失败保留旧值。
     await AsyncStorage.multiSet(values)
@@ -142,9 +142,8 @@ export const saveData = async(key: string, value: any) => {
  * 仅用于确定不会超过 500k 的小对象（例如歌单歌曲索引），单 key setItem 是原子的。
  */
 export const saveDataDirect = async(key: string, value: any) => {
-  const json = JSON.stringify(value)
   try {
-    await withKeys([key], async() => AsyncStorage.setItem(key, json))
+    await withKeys([key], async() => AsyncStorage.setItem(key, JSON.stringify(value)))
   } catch (e: any) {
     log.error('storage error[saveDataDirect]:', key, e.message)
     throw e
@@ -154,12 +153,14 @@ export const saveDataDirect = async(key: string, value: any) => {
 /** 确定小于分片上限的独立记录，批量原子替换各 key，不先删除旧值。 */
 export const saveDataMultipleDirect = async(datas: Array<[string, unknown]>) => {
   if (!datas.length) return
-  const values: Array<[string, string]> = datas.map(([key, value]) => {
-    const json = JSON.stringify(value)
-    if (json.length > limit) throw new Error('Direct storage value is too large: ' + key)
-    return [key, json]
+  await withKeys(datas.map(([key]) => key), async() => {
+    const values: Array<[string, string]> = datas.map(([key, value]) => {
+      const json = JSON.stringify(value)
+      if (json.length > limit) throw new Error('Direct storage value is too large: ' + key)
+      return [key, json]
+    })
+    await AsyncStorage.multiSet(values)
   })
-  await withKeys(values.map(([key]) => key), async() => AsyncStorage.multiSet(values))
 }
 
 export const removeDataMultipleDirect = async(keys: string[]) => {

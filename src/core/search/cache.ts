@@ -28,7 +28,8 @@ const scheduleRelease = () => {
   if (holders || timer) return
   const count = records().reduce((sum, record) => sum + record.info.list.length, 0)
   if (!count) return
-  timer = setTimeout(() => { void releaseIdleSearchCaches() }, count > MEMORY_LIMIT ? 0 : IDLE_DELAY)
+  const pressure = count > MEMORY_LIMIT
+  timer = setTimeout(() => { void releaseIdleSearchCaches(pressure) }, pressure ? 0 : IDLE_DELAY)
 }
 onSearchSettled(scheduleRelease)
 
@@ -61,10 +62,28 @@ export const retainSearchResults = () => {
   }
 }
 
-export const releaseIdleSearchCaches = async() => {
+const clearInfo = (info: ListInfo) => {
+  // 重新赋值，不修改播放队列或尚未完成的调用持有的原数组。
+  info.list = []
+  info.key = null
+  info.page = 0
+  info.total = 0
+  if (info.maxPage != null) info.maxPage = 0
+}
+
+export const releaseIdleSearchCaches = async(pressure = false) => {
   if (holders) return
   if (timer) clearTimeout(timer)
   timer = null
+  if (pressure) {
+    // 压力回收不能为即将释放的大列表再分配快照或等待写盘。
+    for (const { kind, source, info } of records()) {
+      if (!info.list.length || isSearchPending(kind)) continue
+      clearInfo(info)
+      invalidateSearchResult(kind, source)
+    }
+    return
+  }
   releasing = releasing.catch(() => {}).then(async() => {
     for (const { kind, source, info } of records()) {
       if (holders) return
@@ -85,12 +104,7 @@ export const releaseIdleSearchCaches = async() => {
       }
       if (holders || info.list !== currentList || info.key !== snapshot.info.key) continue
       if (saved) invalidated.delete(key)
-      // 重新赋值，不修改播放队列或尚未完成的调用持有的原数组。
-      info.list = []
-      info.key = null
-      info.page = 0
-      info.total = 0
-      if (info.maxPage != null) info.maxPage = 0
+      clearInfo(info)
     }
   })
   return releasing
