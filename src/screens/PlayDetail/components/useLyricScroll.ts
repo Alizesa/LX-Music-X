@@ -21,7 +21,8 @@ const createScrollController = (
   onPositioned,
   onManualChange: manual => { playLine.current?.setVisible(manual) },
   canAnimate: supportsScrollAnimationCancellation,
-  getPendingStop: async() => pendingStop.current,
+  // eslint-disable-next-line @typescript-eslint/promise-function-async
+  getPendingStop: () => pendingStop.current,
   stopScrollAnimation: async() => {
     const scrollView = flatList.current?.getNativeScrollRef()
     const viewTag = scrollView ? findNodeHandle(scrollView) : null
