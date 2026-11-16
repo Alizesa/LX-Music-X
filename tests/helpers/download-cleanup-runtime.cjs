@@ -7,6 +7,8 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
   const files = new Set(history.map(item => item.filePath).filter(Boolean))
   const local = new Set(files)
   const removed = []; const enqueued = []; const acknowledged = []
+  const removedNative = []
+  const partialOwners = new Map()
   const protectedPaths = new Set()
   const stoppedCovers = []
   const settings = { failLocal: false, failUnlink: null, failAck: false, failTags: false }
@@ -55,6 +57,7 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
         stopDownload: id => { stoppedCovers.push(id) },
         existsFile: async path => files.has(path),
         unlink: async path => {
+          await catalog?.beforeUnlink?.(path)
           if (path.startsWith('/temp/') && cover.unlink) await cover.unlink(path)
           if (settings.failUnlink === path) throw new Error('unlink failed')
           if (!files.delete(path)) throw new Error('file missing')
@@ -72,7 +75,15 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
           acknowledged.push(id); receipts.delete(id)
         },
         enqueueDownload: async options => { enqueued.push(options); return `work-${enqueued.length}` },
-        removeDownload: async() => {},
+        removeDownload: async(nativeId, taskId, deletePartial) => {
+          removedNative.push({ nativeId, taskId, deletePartial })
+          await catalog?.beforeNativeRemove?.(nativeId, taskId, deletePartial)
+          const owner = partialOwners.get(taskId)
+          if (deletePartial && (!nativeId || !owner || owner === nativeId)) {
+            files.delete(`/private/downloads/${taskId}.part`)
+            partialOwners.delete(taskId)
+          }
+        },
         pauseDownload: async() => {},
       },
       '@/utils/tools': { toMD5: value => value },
@@ -94,7 +105,7 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
       },
     }
   }
-  return { ...start(), restart: start, disk, files, local, removed, enqueued, receipts, acknowledged, settings, protectedPaths, stoppedCovers, historyKey, urlCalls: () => urlCalls, journalKeys: () => [...disk.values.keys()].filter(key => key.startsWith('@download_cleanup__')) }
+  return { ...start(), restart: start, disk, files, local, removed, enqueued, receipts, acknowledged, removedNative, partialOwners, settings, protectedPaths, stoppedCovers, historyKey, urlCalls: () => urlCalls, journalKeys: () => [...disk.values.keys()].filter(key => key.startsWith('@download_cleanup__')) }
 }
 
 const item = id => ({ id: String(id), name: String(id), singer: 'Singer', quality: '128k', filePath: `content://fixture/${id}`, createdAt: Number(id) + 1 })

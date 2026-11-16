@@ -76,7 +76,7 @@ const notifyPreparationIdle = () => {
 // 两个原生下载槽位和少量预备任务；后处理也占名额，慢标签写入不会无限积压。
 const MAX_SCHEDULED_DOWNLOADS = 4
 const scheduledDownloadCount = () => tasks.reduce((count, task) => count + (
-  task.status === 'resolving' || task.status === 'run' || task.status === 'finalizing' ||
+  task.status === 'resolving' || task.status === 'run' || task.status === 'finalizing' || finalizations.has(task) ||
   (task.status === 'waiting' && !!task.nativeId) ? 1 : 0
 ), 0)
 let persistTimer: ReturnType<typeof setTimeout> | null = null
@@ -318,6 +318,8 @@ const forEachFileOperation = async<T>(items: readonly T[], action: (item: T) => 
 }
 
 const cleanupRecords = new Map<string, DownloadCleanupRecord>()
+const cleanupRuns = new Map<string, Promise<void>>()
+const rejectedFileRuns = new Map<string, Promise<void>>()
 let cleanupSequence = 0
 const saveCleanup = async(record: DownloadCleanupRecord) => {
   const identity = `${Date.now().toString(36)}_${++cleanupSequence}_${Math.random().toString(36).slice(2)}`
@@ -326,10 +328,60 @@ const saveCleanup = async(record: DownloadCleanupRecord) => {
   cleanupRecords.set(key, record)
   return key
 }
-const executeCleanup = async(key: string, record: DownloadCleanupRecord) => {
+const isPartialCleanupPath = (target: DownloadCleanupRecord['targets'][number]) =>
+  target.filePath === `${privateStorageDirectoryPath}/downloads/${target.id}.part`
+
+const rejectedTargetMatches = (target: DownloadCleanupRecord['targets'][number], identity?: symbol) => {
+  const current = tasksById.get(target.id)
+  if (!current || (identity && taskIdentities.get(current) !== identity)) return false
+  if (target.nativeId && current.nativeId === target.nativeId && (!current.filePath || current.filePath === target.filePath)) return true
+  if (current.filePath !== target.filePath) return false
+  return current.nativeId === target.nativeId ||
+    (current.status === 'error' && !current.nativeId && !current.pendingCompletion)
+}
+// Synchronous mutations keep the asynchronous cleanup context limited to IDs and paths.
+const classifyRejectedTask = (record: DownloadCleanupRecord, error?: string, identity?: symbol) => {
+  let changed = false
+  for (const target of record.targets) {
+    if (!target.filePath || isPartialCleanupPath(target) || !rejectedTargetMatches(target, identity)) continue
+    const current = tasksById.get(target.id)!
+    current.status = 'error'
+    current.nativeId = undefined
+    current.filePath = target.filePath
+    delete current.pendingCompletion
+    current.error = error ?? current.error ?? global.i18n.t('download_status_failed')
+    current.progress = { progress: 0, downloaded: 0, total: 0, speed: '' }
+    dirtyTasks.add(current.id)
+    global.app_event.downloadTaskUpdate(toListItem(current))
+    changed = true
+  }
+  return changed
+}
+const clearRejectedTaskPaths = (record: DownloadCleanupRecord, identity?: symbol) => {
+  let changed = false
+  for (const target of record.targets) {
+    if (!target.filePath || isPartialCleanupPath(target) || !rejectedTargetMatches(target, identity)) continue
+    const current = tasksById.get(target.id)!
+    current.filePath = undefined
+    dirtyTasks.add(current.id)
+    global.app_event.downloadTaskUpdate(toListItem(current))
+    changed = true
+  }
+  return changed
+}
+const canDeleteRejectedTarget = (target: DownloadCleanupRecord['targets'][number], identity?: symbol) => {
+  const current = tasksById.get(target.id)
+  return current?.filePath !== target.filePath || rejectedTargetMatches(target, identity)
+}
+const runCleanup = async(key: string, record: DownloadCleanupRecord, rejectedIdentity?: symbol) => {
   // 墓碑先落盘；任何阶段失败都保留路径，下一次操作或启动可继续。
-  await forEachFileOperation(record.targets.filter(target => target.stop), async target => {
-    await removeNativeDownload(target.nativeId, target.id, true)
+  const fileTargets = record.kind === 'files' ? record.targets.filter(target => !isPartialCleanupPath(target)) : record.targets
+  await forEachFileOperation(fileTargets.filter(target => target.stop === true || record.kind === 'files'), async target => {
+    // Specific native IDs enforce the persisted .part owner, including a newer
+    // work reusing the same task ID. Never unlink a .part directly here.
+    if (record.kind !== 'files' || Boolean(target.nativeId) || !tasksById.has(target.id) || rejectedTargetMatches(target, rejectedIdentity)) {
+      await removeNativeDownload(target.nativeId, target.id, true)
+    }
     if (!record.deleteFile || !target.nativeId) return
     const completed = await getDownloadState(target.nativeId)
     if (completed?.status === 'completed' && completed.filePath && completed.filePath !== target.filePath) {
@@ -337,12 +389,23 @@ const executeCleanup = async(key: string, record: DownloadCleanupRecord) => {
       await saveDownloadCleanupRecord?.(key, record)
     }
   })
-  const paths = [...new Set(record.targets.flatMap(target => target.filePath ? [target.filePath] : []))]
+  const completedIds = record.kind === 'files' ? fileTargets.filter(target => hasDownloadHistory(target.id)).map(target => target.id) : []
+  const completedPaths = completedIds.length
+    ? new Set((await getDownloadHistoryByIds(completedIds)).flatMap(item => item.filePath ? [item.filePath] : []))
+    : new Set<string>()
+  const paths = [...new Set(fileTargets.flatMap(target => target.filePath &&
+    (record.kind !== 'files' || (canDeleteRejectedTarget(target, rejectedIdentity) && !completedPaths.has(target.filePath))) ? [target.filePath] : []))]
   if (record.deleteFile) {
     await forEachFileOperation(paths, async path => {
       if (!existsFile || await existsFile(path)) await unlink(path)
     })
     if (paths.length) await removeListMusics(LIST_IDS.LOCAL, paths)
+  }
+  if (record.kind === 'files') {
+    // The rejection must survive before acknowledging the native receipt or
+    // deleting its journal. A failed save leaves both available for recovery.
+    clearRejectedTaskPaths(record, rejectedIdentity)
+    await persistNow()
   }
   if (record.kind === 'remove') {
     await removeDownloadHistory(new Set(record.targets.map(target => target.id)), false)
@@ -353,20 +416,54 @@ const executeCleanup = async(key: string, record: DownloadCleanupRecord) => {
   await removeDownloadCleanupRecord?.(key)
   cleanupRecords.delete(key)
 }
+const executeCleanup = async(key: string, record: DownloadCleanupRecord, rejectedIdentity?: symbol) => {
+  const pending = cleanupRuns.get(key)
+  if (pending) return pending
+  const work = runCleanup(key, record, rejectedIdentity).finally(() => {
+    if (cleanupRuns.get(key) === work) cleanupRuns.delete(key)
+  })
+  cleanupRuns.set(key, work)
+  return work
+}
 const retryCleanups = async(ids?: ReadonlySet<string>) => {
   for (const [key, record] of cleanupRecords) {
     if (!ids || record.targets.some(target => ids.has(target.id))) await executeCleanup(key, record)
   }
 }
 
-const clearRejectedFile = async(taskId: string, path: string, nativeId?: string) => {
+const markRejectedPreparationFailure = (taskId: string, identity: symbol, error: unknown) => {
+  const current = tasksById.get(taskId)
+  if (!current || taskIdentities.get(current) !== identity) return
+  current.status = 'error'
+  current.error = error instanceof Error ? error.message : String(error)
+  dirtyTasks.add(taskId)
+  schedulePersist()
+  global.app_event.downloadTaskUpdate(toListItem(current))
+}
+const clearRejectedFile = async(taskId: string, path: string, nativeId: string | undefined, identity: symbol, error: string) => {
+  const runKey = JSON.stringify([taskId, path, nativeId])
+  const pending = rejectedFileRuns.get(runKey)
+  if (pending) return pending
   const record: DownloadCleanupRecord = {
     kind: 'files',
     deleteFile: true,
-    targets: [{ id: taskId, filePath: path, nativeId }, { id: taskId, filePath: `${privateStorageDirectoryPath}/downloads/${taskId}.part` }],
+    targets: [{ id: taskId, filePath: path, nativeId, stop: true }],
   }
-  const key = await saveCleanup(record)
-  await executeCleanup(key, record)
+  // Only primitive rejection data is queued; cancellation can release the
+  // caller's task while the durable journal and native I/O still finish.
+  const work = withCatalogWrite(async() => {
+    const key = await saveCleanup(record)
+    classifyRejectedTask(record, error, identity)
+    await persistNow()
+    return key
+  }).then(async key => executeCleanup(key, record, identity)).catch((failure: unknown) => {
+    markRejectedPreparationFailure(taskId, identity, failure)
+    throw failure
+  }).finally(() => {
+    if (rejectedFileRuns.get(runKey) === work) rejectedFileRuns.delete(runKey)
+  })
+  rejectedFileRuns.set(runKey, work)
+  return work
 }
 
 const updateTask = async(task: LX.Download.DownloadTask, update: Partial<LX.Download.DownloadTask>, immediate = false) => {
@@ -509,19 +606,14 @@ const completeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
   const expectedSize = parseQualitySize(task.musicInfo.meta._qualitys?.[task.quality]?.size)
   const actualSize = state.downloaded > 0 ? state.downloaded : task.progress.downloaded
   if (isSizeAbnormal(actualSize, expectedSize)) {
-    delete task.pendingCompletion
+    let identity = taskIdentities.get(task)
+    if (!identity) { identity = Symbol('rejected-download'); taskIdentities.set(task, identity) }
     // 中转文件已经不可信，清掉，用户点重试时是干干净净重下一次
-    await clearRejectedFile(task.id, state.filePath, task.nativeId)
-    await updateTask(task, {
-      status: 'error',
-      nativeId: undefined,
-      filePath: undefined,
-      error: global.i18n.t('download_bad_size', {
+    await waitForPromise(clearRejectedFile(task.id, state.filePath, task.nativeId, identity,
+      global.i18n.t('download_bad_size', {
         size: sizeFormate(actualSize),
         expect: expectedSize > 0 ? sizeFormate(expectedSize) : '-',
-      }),
-      progress: { progress: 0, downloaded: 0, total: 0, speed: '' },
-    }, true)
+      })), signal)
     return
   }
   if (!await updateTask(task, {
@@ -833,6 +925,9 @@ const loadDownloadStorage = async() => {
   const deleting = new Set([...cleanupRecords.values()].filter(record => record.kind === 'remove').flatMap(record => record.targets.map(target => target.id)))
   // 历史已写成功、活跃快照还没写就被杀时，按历史去重，避免再次下载/写标签。
   replaceTasks(active.filter(task => !hasDownloadHistory(task.id) && !deleting.has(task.id)))
+  // An accepted files journal is a durable rejection, even if cancellation
+  // happened before the previous JS instance saved its error classification.
+  for (const record of cleanupRecords.values()) if (record.kind === 'files') classifyRejectedTask(record)
   if (deleting.size) await saveDownloadActiveTasks(tasks, deleting)
 }
 
