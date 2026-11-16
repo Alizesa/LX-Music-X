@@ -4,6 +4,9 @@ import tx from './tx'
 import wy from './wy'
 import mg from './mg'
 import { versionChars } from './versionChars'
+import { throwIfAborted } from '@/utils/abort'
+import { waitForPromise } from '@/utils/abortable'
+import { withRequestSignal } from '@/utils/musicSdk/requestScope'
 
 
 const sources = {
@@ -38,21 +41,30 @@ const sources = {
 export default sources
 
 
-export const searchMusic = async({ name, singer, source: s, limit = 25 }) => {
+export const searchMusic = async({ name, singer, source: s, limit = 25, signal }) => {
+  throwIfAborted(signal)
   const trimStr = str => typeof str == 'string' ? str.trim() : str
   const musicName = trimStr(name)
   const tasks = []
   for (const source of sources.sources) {
     if (!sources[source.id].musicSearch || source.id == s) continue
-    tasks.push(sources[source.id].musicSearch.search(`${musicName} ${singer || ''}`.trim(), 1, limit).catch(_ => null))
+    const sdk = withRequestSignal(sources[source.id].musicSearch, signal)
+    const query = `${musicName} ${singer || ''}`.trim()
+    const request = source.id === 'tx' ? sdk.search(query, 1, limit, signal) : sdk.search(query, 1, limit)
+    tasks.push(request.catch(() => {
+      throwIfAborted(signal)
+      return null
+    }))
   }
-  return (await Promise.all(tasks)).filter(s => s)
+  return (await waitForPromise(Promise.all(tasks), signal)).filter(s => s)
 }
 
-export const findMusic = async(musicInfo) => {
+export const findMusic = async(musicInfo, signal) => {
+  throwIfAborted(signal)
   const { name, singer, albumName, interval, source: s } = musicInfo
 
-  const lists = await searchMusic({ name, singer, source: s, limit: 25 })
+  const lists = await searchMusic({ name, singer, source: s, limit: 25, signal })
+  throwIfAborted(signal)
 
   const singersRxp = /、|&|;|；|\/|,|，|\|/
   const sortSingle = singer => singersRxp.test(singer)

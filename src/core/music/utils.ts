@@ -19,7 +19,14 @@ import { waitForPromise } from '@/utils/abortable'
 import { throwIfAborted, withAbort } from '@/utils/abort'
 import { withRequestSignal } from '@/utils/musicSdk/requestScope'
 
-const getOtherSourcePromises = new Map<string, Promise<LX.Music.MusicInfoOnline[]>>()
+interface MatchingTask {
+  promise: Promise<LX.Music.MusicInfoOnline[]>
+  controller: AbortController
+  consumers: number
+  finished: boolean
+  cancel: () => void
+}
+const getOtherSourcePromises = new Map<string, MatchingTask>()
 export const existTimeExp = /\[\d{1,2}:.*\d{1,4}\]/
 const otherSourceCache = new Map<string, LX.Music.MusicInfoOnline[]>()
 let otherSourceGeneration = 0
@@ -35,7 +42,60 @@ export const clearOtherSourceCache = () => {
   otherSourceCache.clear()
 }
 
-export const getOtherSource = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false): Promise<LX.Music.MusicInfoOnline[]> => {
+// 仅让底层任务保留匹配字段，不能留住调用方整份歌曲/下载上下文。
+const createMatchingTask = (key: string, searchMusicInfo: Parameters<typeof findMusic>[0]): MatchingTask => {
+  const generation = otherSourceGeneration
+  const pending: MatchingTask = { controller: new AbortController(), consumers: 0, finished: false, cancel: () => {}, promise: Promise.resolve([]) }
+  let timeout: null | number = null
+  let resolveTask!: (source: LX.Music.MusicInfoOnline[]) => void
+  let rejectTask!: (error: unknown) => void
+  const finish = () => {
+    if (pending.finished) return
+    pending.finished = true
+    pending.cancel = () => {}
+    resolveTask = () => {}
+    rejectTask = () => {}
+    if (timeout !== null) BackgroundTimer.clearTimeout(timeout)
+    timeout = null
+    if (getOtherSourcePromises.get(key) === pending) getOtherSourcePromises.delete(key)
+  }
+  pending.promise = new Promise<LX.Music.MusicInfoOnline[]>((resolve, reject) => {
+    resolveTask = resolve
+    rejectTask = reject
+  }).finally(finish)
+  pending.cancel = () => {
+    const reject = rejectTask
+    finish()
+    reject(new Error(requestMsg.cancelRequest))
+    pending.controller.abort()
+  }
+  timeout = BackgroundTimer.setTimeout(() => {
+    const reject = rejectTask
+    finish()
+    reject(new Error('find music timeout'))
+    pending.controller.abort()
+  }, 12_000)
+  // 注册完整任务后才调用 SDK；取消/HTTP abort 回调中的重入不能拿到占位 Promise。
+  getOtherSourcePromises.set(key, pending)
+  try {
+    void findMusic(searchMusicInfo, pending.controller.signal).then((otherSource) => {
+      if (pending.finished || pending.controller.signal.aborted) return
+      const source = otherSource.map(toNewMusicInfo) as LX.Music.MusicInfoOnline[]
+      if (generation === otherSourceGeneration) {
+        otherSourceCache.delete(key)
+        otherSourceCache.set(key, source)
+        if (otherSourceCache.size > 10) otherSourceCache.delete(otherSourceCache.keys().next().value!)
+      }
+      resolveTask(source)
+    }).catch(error => { rejectTask(error) })
+  } catch (error) {
+    rejectTask(error)
+  }
+  return pending
+}
+
+export const getOtherSource = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, signal?: AbortSignal): Promise<LX.Music.MusicInfoOnline[]> => {
+  throwIfAborted(signal)
   const music = 'progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo
   const searchMusicInfo = {
     name: music.name,
@@ -52,33 +112,14 @@ export const getOtherSource = async(musicInfo: LX.Music.MusicInfo | LX.Download.
     otherSourceCache.set(key, cached)
     return cached
   }
-  const pending = getOtherSourcePromises.get(key)
-  if (pending) return pending
-
-  const generation = otherSourceGeneration
-  const promise = new Promise<LX.Music.MusicInfoOnline[]>((resolve, reject) => {
-    let timeout: null | number = BackgroundTimer.setTimeout(() => {
-      timeout = null
-      reject(new Error('find music timeout'))
-    }, 12_000)
-    findMusic(searchMusicInfo).then((otherSource) => {
-      // 已超时的结果不再转换/缓存，清理后的迟到请求也不能重新填满内存。
-      if (timeout === null) return
-      const source = otherSource.map(toNewMusicInfo) as LX.Music.MusicInfoOnline[]
-      if (generation === otherSourceGeneration) {
-        otherSourceCache.delete(key)
-        otherSourceCache.set(key, source)
-        if (otherSourceCache.size > 10) otherSourceCache.delete(otherSourceCache.keys().next().value!)
-      }
-      resolve(source)
-    }).catch(reject).finally(() => {
-      if (timeout !== null) BackgroundTimer.clearTimeout(timeout)
-    })
-  }).finally(() => {
-    if (getOtherSourcePromises.get(key) === promise) getOtherSourcePromises.delete(key)
-  })
-  getOtherSourcePromises.set(key, promise)
-  return promise
+  let task = getOtherSourcePromises.get(key)
+  if (!task || task.finished || task.controller.signal.aborted) task = createMatchingTask(key, searchMusicInfo)
+  task.consumers++
+  try {
+    return await waitForPromise(task.promise, signal)
+  } finally {
+    if (--task.consumers === 0 && !task.finished) task.cancel()
+  }
 }
 
 export const buildLyricInfo = async(lyricInfo: MakeOptional<LX.Player.LyricInfo, 'rawlrcInfo'>, signal?: AbortSignal): Promise<LX.Player.LyricInfo> => {
@@ -411,8 +452,10 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
       if (isRequestCancelled(err) || !allowToggleSource || err.message == requestMsg.tooManyRequests || !getEnabledMusicSourceIds().length) throw err
       onToggleSource()
       playbackLog('url.match_start', () => ({ ...trace, musicId: musicInfo.id }))
+      const matching = new AbortController()
+      registerCancel(() => { matching.abort() })
       // eslint-disable-next-line @typescript-eslint/promise-function-async
-      return getOtherSource(musicInfo).then(otherSource => {
+      return getOtherSource(musicInfo, false, matching.signal).then(otherSource => {
         assertActive()
         playbackLog('url.match_result', () => ({ ...trace, count: otherSource.length }))
         if (otherSource.length) {
@@ -524,7 +567,7 @@ export const handleGetOnlinePicUrl = async({ musicInfo, isRefresh, onToggleSourc
     if (!allowToggleSource) throw err
     onToggleSource()
     // eslint-disable-next-line @typescript-eslint/promise-function-async
-    return waitForPromise(getOtherSource(musicInfo), signal).then(otherSource => {
+    return getOtherSource(musicInfo, false, signal).then(otherSource => {
       if (otherSource.length) {
         return getOnlineOtherSourcePicUrl({
           musicInfos: [...otherSource],
@@ -625,7 +668,7 @@ export const handleGetOnlineLyricInfo = async({ musicInfo, onToggleSource, isRef
 
     onToggleSource()
     // eslint-disable-next-line @typescript-eslint/promise-function-async
-    return waitForPromise(getOtherSource(musicInfo), signal).then(otherSource => {
+    return getOtherSource(musicInfo, false, signal).then(otherSource => {
       if (otherSource.length) {
         return getOnlineOtherSourceLyricInfo({
           musicInfos: [...otherSource],

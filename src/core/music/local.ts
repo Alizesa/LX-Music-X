@@ -26,10 +26,10 @@ import { playbackLog } from '@/utils/playbackLog'
 import { waitForPromise } from '@/utils/abortable'
 import { throwIfAborted } from '@/utils/abort'
 
-const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handler: (infos: LX.Music.MusicInfoOnline[]) => Promise<T>, assertActive: () => void = () => {}) => {
+const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handler: (infos: LX.Music.MusicInfoOnline[]) => Promise<T>, assertActive: () => void = () => {}, signal?: AbortSignal) => {
   const search = async(info: LX.Music.MusicInfoLocal, isRefresh = false) => {
     assertActive()
-    const infos = await getOtherSource(info, isRefresh)
+    const infos = await getOtherSource(info, isRefresh, signal)
     assertActive()
     return infos
   }
@@ -56,7 +56,7 @@ const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handl
     if (result.length) try { return await handler(result) } catch (error) { handleFailure(error) }
   }
   assertActive()
-  let fileName = (await stat(musicInfo.meta.filePath).catch(() => ({ name: null }))).name ?? musicInfo.meta.filePath.split(/\/|\\/).at(-1)
+  let fileName = (await waitForPromise(stat(musicInfo.meta.filePath).catch(() => ({ name: null })), signal)).name ?? musicInfo.meta.filePath.split(/\/|\\/).at(-1)
   assertActive()
   if (fileName) {
     fileName = fileName.substring(0, fileName.lastIndexOf('.'))
@@ -110,7 +110,8 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
 } & MusicUrlRequestOptions): Promise<string> => {
   let cancelled = false
   let currentCancel: (() => void) | undefined
-  onCancel?.(() => { cancelled = true; currentCancel?.() })
+  let matching: AbortController | undefined
+  onCancel?.(() => { cancelled = true; matching?.abort(); currentCancel?.() })
   const assertActive = () => { if (cancelled) throw new Error(requestMsg.cancelRequest) }
   const registerCancel = (cancel: () => void) => {
     currentCancel = cancel
@@ -140,6 +141,8 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
   if (!allowToggleSource) throw new Error('failed')
 
   onToggleSource()
+  matching = new AbortController()
+  registerCancel(() => { matching?.abort() })
   return getOtherSourceByLocal(musicInfo, async(otherSource) => {
     assertActive()
     return getOnlineOtherSourceMusicUrl({ musicInfos: [...otherSource], onToggleSource, isRefresh, ...requestOptions }).then(({ url, quality: targetQuality, musicInfo: targetMusicInfo, isFromCache }) => {
@@ -149,7 +152,7 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
       // TODO: save url ?
       return url
     })
-  }, assertActive)
+  }, assertActive, matching.signal)
 }
 
 export const getPicUrl = async({ musicInfo, listId, isRefresh, skipFilePic, onToggleSource = () => {}, signal }: {
@@ -191,7 +194,7 @@ export const getPicUrl = async({ musicInfo, listId, isRefresh, skipFilePic, onTo
 
       return url
     })
-  }, () => { throwIfAborted(signal) })
+  }, () => { throwIfAborted(signal) }, signal)
 }
 
 export const parseLyric = (lrc: string): LX.Music.LyricInfo => {
@@ -282,5 +285,5 @@ export const getLyricInfo = async({ musicInfo, isRefresh, skipFileLyric, onToggl
 
       return buildLyricInfo(lyricInfo, signal)
     })
-  }, () => { throwIfAborted(signal) })
+  }, () => { throwIfAborted(signal) }, signal)
 }
