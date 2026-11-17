@@ -79,7 +79,7 @@ export default forwardRef<ListImportExportType, {}>((props, ref) => {
         handleImportList(path)
         break
       case 'export':
-        handleExportList(path)
+        void handleExportList(path)
         break
     }
   }
