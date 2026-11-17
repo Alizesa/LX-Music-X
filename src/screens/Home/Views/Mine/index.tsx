@@ -145,7 +145,7 @@ export default () => {
   // 当前试到第几个头像地址。换了账号要从头再试
   const [avatarStage, setAvatarStage] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
-  const refreshingRef = useRef(false)
+  const refreshingRef = useRef<symbol | null>(null)
   const downloadCount = useDownloadCount()
   const visible = useScreenVisible()
   const visibleRef = useRef(visible)
@@ -182,7 +182,8 @@ export default () => {
     if (cachedList.length) setPlaylists(cachedList)
     try {
       const fresh = await getQQMusicPlaylists(session.cookie, { requireAll: true })
-      if (!await updateQQMusicPlaylistsCache(session, () => fresh) || !current()) return
+      if (!current()) return
+      if (!await updateQQMusicPlaylistsCache(session, () => current() ? fresh : null) || !current()) return
       setPlaylists(filterVisiblePlaylists(fresh))
     } catch (error) {
       console.warn('[QQMusic] 拉取歌单失败:', error instanceof Error ? error.message : error)
@@ -195,7 +196,7 @@ export default () => {
       setCookie('')
       setUser(null)
       setPlaylists([])
-      refreshingRef.current = false
+      refreshingRef.current = null
       setRefreshing(false)
       return
     }
@@ -223,6 +224,8 @@ export default () => {
     global.app_event.on('qqMusicAccountUpdated', handleAccountUpdate)
     global.app_event.on('qqMusicPlaylistsUpdated', handlePlaylistsUpdate)
     return () => {
+      lifecycle.current = version + 1
+      refreshingRef.current = null
       global.app_event.off('qqMusicAccountUpdated', handleAccountUpdate)
       global.app_event.off('qqMusicPlaylistsUpdated', handlePlaylistsUpdate)
     }
@@ -285,27 +288,35 @@ export default () => {
 
   const refresh = useCallback(async() => {
     // setRefreshing 要到下次渲染才生效，光靠 disabled 挡不住这个窗口内的第二次触发
-    if (refreshingRef.current) return
+    if (!visibleRef.current || refreshingRef.current) return
     if (!loggedIn) {
       loginRef.current?.show()
       return
     }
-    refreshingRef.current = true
+    const request = Symbol('playlist refresh')
+    const version = lifecycle.current
+    let session: QQMusicSession | undefined
+    const current = () => visibleRef.current && version === lifecycle.current && refreshingRef.current === request &&
+      (!session || isQQMusicSessionCurrent(session))
+    refreshingRef.current = request
     setRefreshing(true)
     try {
-      const session = await getQQMusicSession()
-      if (!session.cookie || !isQQMusicSessionCurrent(session)) return
+      session = await getQQMusicSession()
+      if (!session.cookie || !current()) return
       const list = await getQQMusicPlaylists(session.cookie, { requireAll: true })
-      if (!await updateQQMusicPlaylistsCache(session, () => list) || !isQQMusicSessionCurrent(session)) return
+      if (!current()) return
+      if (!await updateQQMusicPlaylistsCache(session, () => current() ? list : null) || !current()) return
       setPlaylists(list)
       // 顺手把「我喜欢」也刷一遍：它平时只读本地缓存（拉全量要翻好几页），
       // 下拉刷新是唯一的重拉时机
       void refreshQQMusicLikedSongs()
     } catch (error: unknown) {
-      toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
+      if (current()) toast(error instanceof Error ? error.message : t('qq_load_failed'), 'long')
     } finally {
-      refreshingRef.current = false
-      setRefreshing(false)
+      if (refreshingRef.current === request) {
+        refreshingRef.current = null
+        if (visibleRef.current && version === lifecycle.current) setRefreshing(false)
+      }
     }
   }, [loggedIn, t])
 
