@@ -1,14 +1,18 @@
 {
   "schemaVersion": 1,
   "channel": "next",
-  "version": "1.9.4-next.10",
-  "versionCode": 100010,
-  "tag": "v1.9.4-next.10",
-  "sourceSha": "9e540f9a4c6423d917f727c55b22bee926b67266",
-  "publishedAt": "2026-11-17T04:12:59.272Z",
-  "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.4-next.10",
-  "desc": "- fix: ignore obsolete Mine playlist refresh results (9e540f9a)\n- fix: persist large songlist pages before publishing cursors (d3fbd38a)\n- fix: start primary source timeouts after queue dispatch (2631a036)\n- fix: preserve native tag writes across download dispatch recovery (cf62875a)",
+  "version": "1.9.4-next.12",
+  "versionCode": 100012,
+  "tag": "v1.9.4-next.12",
+  "sourceSha": "615050c38e418caeb54f55c52d9a3e9cf2cc5a83",
+  "publishedAt": "2026-11-17T12:27:52.754Z",
+  "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.4-next.12",
+  "desc": "- fix: correct empty MP4 metadata fixtures (615050c3)\n- fix: bound AsyncStorage queries during cache cleanup (9e221f44)\n- fix: cap QQ downloads at catalog quality before stepping down (96a96b2a)\n- fix: require verifiable download bitrate and lossless resolution (52985a23)\n- fix: reject inconsistent MP4 sample metadata (9b7cd69a)\n- fix: validate download media and retain its actual container (4fecc659)\n- fix: derive QQ quality tiers only from positive file sizes (e51abd51)\n- fix: probe MP4 audio through bounded directory reads (f307f2b4)",
   "history": [
+    {
+      "version": "1.9.4-next.10",
+      "desc": "- fix: ignore obsolete Mine playlist refresh results (9e540f9a)\n- fix: persist large songlist pages before publishing cursors (d3fbd38a)\n- fix: start primary source timeouts after queue dispatch (2631a036)\n- fix: preserve native tag writes across download dispatch recovery (cf62875a)"
+    },
     {
       "version": "1.9.4-next.9",
       "desc": "- fix: mark playlist export callback as asynchronous (9c4abcfb)\n- fix: reject stale singer pagination across independent refresh generations (01d05e01)\n- fix: detach rejected-file waits without losing cleanup state (cdc9e1ea)\n- fix: cancel shared source matching when its final consumer exits (46ad75e0)\n- perf: stream compatible playlist backups in bounded batches (438795ba)\n- fix: bound provider metadata caches and release comment cursors (9c1f919e)\n- fix: preserve animation endpoints through state updates (92246014)\n- perf: read history counts and recommendation seeds from a compact index (24bac470)\n- fix: retain native destination and partial ownership through failed cleanup (3351c992)\n- fix: preserve synchronous lookup of native scroll cancellation (c667135f)\n- fix: cancel primary script scopes and load source text on demand (a4e230c5)\n- fix: resume bounded download queues through durable headless dispatch (0c9000f1)\n- test: load production cancellation and cache adapters in regression hosts (462faa08)\n- fix: carry native lyric scroll cancellation across layouts (902dee89)\n- fix: keep selection row callbacks stable and current (d7234205)\n- fix: recover obsolete storage fragments and index detail cache keys (04101f54)\n- fix: remove cancelled native jobs and bound directory IO (a7c12853)\n- fix: guard legacy cache fallback and isolate concurrent backups (c8fb10d3)\n- fix: cancel metadata transport and release aborted promise waiters (cbc665d7)\n- fix: release hidden page data and restore songlist pagination locally (013a07fd)\n- fix: guard folder import and protect active temporary files (49c926b9)\n- fix: virtualize song menus and release hidden lyric contexts (effa68e4)\n- fix: persist download cleanup ownership and completion receipts (3732459c)\n- fix: cancel obsolete searches and shared songlist pagination (214186ba)\n- fix: resize background images and cancel stale cover prefetches (922a3a8c)\n- fix: release QuickJS call references and settle metadata artwork reads (00e6dbb4)\n- fix: bound download dispatch and cancel removed postprocessing (eb37a1bf)\n- fix: bound row selection props and skip unchanged text animations (5c8e90fc)\n- fix: defer queued storage snapshots and release searches under pressure (a65d413f)\n- fix: share singer cache restoration and pause inactive tabs (b54bd457)"
@@ -41,38 +45,38 @@
   "assets": [
     {
       "abi": "arm64-v8a",
-      "fileName": "lx-music-mobile-v1.9.4-next.10-arm64-v8a.apk",
-      "size": 25190468,
-      "sha256": "3bcd03744b514560bd156b8124696391ec0a8a0afa39226880142dfdf60f240f",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.10/lx-music-mobile-v1.9.4-next.10-arm64-v8a.apk"
+      "fileName": "lx-music-mobile-v1.9.4-next.12-arm64-v8a.apk",
+      "size": 25194826,
+      "sha256": "4cf0f6272fb5c023fdc65b1d2abf69c73e3942c8630690d057b03eba65c98f29",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.12/lx-music-mobile-v1.9.4-next.12-arm64-v8a.apk"
     },
     {
       "abi": "armeabi-v7a",
-      "fileName": "lx-music-mobile-v1.9.4-next.10-armeabi-v7a.apk",
-      "size": 20294854,
-      "sha256": "949a74048d39756cdfe0411327737ed31112112f1db5b225ff35166a82ad75bb",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.10/lx-music-mobile-v1.9.4-next.10-armeabi-v7a.apk"
+      "fileName": "lx-music-mobile-v1.9.4-next.12-armeabi-v7a.apk",
+      "size": 20299212,
+      "sha256": "c4aec2671ddb6832c9dbf49e064967b439159ff027f6ca4a3c56efe5ae20b17b",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.12/lx-music-mobile-v1.9.4-next.12-armeabi-v7a.apk"
     },
     {
       "abi": "x86_64",
-      "fileName": "lx-music-mobile-v1.9.4-next.10-x86_64.apk",
-      "size": 25957421,
-      "sha256": "e6ef4085736f416d7e9cd407975cc1bb653823609a49d0487cd02674572ca0fb",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.10/lx-music-mobile-v1.9.4-next.10-x86_64.apk"
+      "fileName": "lx-music-mobile-v1.9.4-next.12-x86_64.apk",
+      "size": 25961765,
+      "sha256": "ee8f2a23c215deb3b7721a606772997f5b0644567d2f6882664de5bf02acb125",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.12/lx-music-mobile-v1.9.4-next.12-x86_64.apk"
     },
     {
       "abi": "x86",
-      "fileName": "lx-music-mobile-v1.9.4-next.10-x86.apk",
-      "size": 25500017,
-      "sha256": "30a0eb6783be5c86464d3b9ef30531d1d033a896fa6a00dc6e456f48e4644a76",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.10/lx-music-mobile-v1.9.4-next.10-x86.apk"
+      "fileName": "lx-music-mobile-v1.9.4-next.12-x86.apk",
+      "size": 25504358,
+      "sha256": "f170d24302c2f053134393b275cacc2d61d07507bf1b09f029beb55d8d73cf01",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.12/lx-music-mobile-v1.9.4-next.12-x86.apk"
     },
     {
       "abi": "universal",
-      "fileName": "lx-music-mobile-v1.9.4-next.10-universal.apk",
-      "size": 67848793,
-      "sha256": "6df7451bc3ee5673aefda996dae167392e7404686032d02dc7d365d211b7b27b",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.10/lx-music-mobile-v1.9.4-next.10-universal.apk"
+      "fileName": "lx-music-mobile-v1.9.4-next.12-universal.apk",
+      "size": 67853134,
+      "sha256": "7f494ef993f94087a79f4a522ceb670855d9c0276dcbc16d12439642d7b251ba",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.12/lx-music-mobile-v1.9.4-next.12-universal.apk"
     }
   ],
   "signingCertificateSha256": "37bf055966cdf9bb76a14f8298d9fe5898c264cd266997508f3bcac2e36c0814"
