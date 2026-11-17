@@ -96,7 +96,7 @@ export const validateQQMusicUrl = async(
   onCancel?: (cancel: () => void) => void,
   isRefresh = false,
   trace?: PlaybackLogContext & { apiId?: string },
-): Promise<void> => {
+): Promise<RemoteAudioInfo | undefined> => {
   if (!/^https?:\/\//i.test(url)) return
   // 代理地址没有 QQ 域名；跨平台换源后的缓存也可能没有 tx 来源标记。
   if (musicInfo.source !== 'tx' && !/^https?:\/\/(?:[\w-]+\.)*qq\.com(?::\d+)?\//i.test(url)) return
@@ -125,6 +125,7 @@ export const validateQQMusicUrl = async(
       elapsedMs: Date.now() - startedAt,
     }))
     if (reason) throw new QQMusicAudioError(reason)
+    return media
   } finally {
     controller.abort()
   }
@@ -141,7 +142,7 @@ interface AccountUrlOptions {
 }
 
 const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal: AbortSignal, isRefresh: boolean,
-  trace: PlaybackLogContext & { musicId: string, platform: string }, isUrlRejected?: (url: string) => boolean): Promise<string | null> => {
+  trace: PlaybackLogContext & { musicId: string, platform: string }, isUrlRejected?: (url: string) => boolean): Promise<{ url: string, media: RemoteAudioInfo } | null> => {
   throwIfAborted(signal)
   const list: any[] = Array.isArray(data?.midurlinfo) ? data.midurlinfo : []
   const sips: string[] = Array.isArray(data?.sip) ? data.sip.filter((item: unknown) => typeof item === 'string') : []
@@ -177,20 +178,20 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
   }))
   if (!selected.length) return null
   // 每个响应最多探测 6 个候选、同时 3 个，整批含时长检查最多 5 秒。
-  return new Promise<string | null>((resolve, reject) => {
+  return new Promise<{ url: string, media: RemoteAudioInfo } | null>((resolve, reject) => {
     const controller = new AbortController()
     let done = false
     let next = 0
     const startedAt = Date.now()
-    const finish = (url: string | null, error?: unknown, reason = url ? 'complete' : 'candidates_rejected') => {
+    const finish = (value: { url: string, media: RemoteAudioInfo } | null, error?: unknown, reason = value ? 'complete' : 'candidates_rejected') => {
       if (done) return
       done = true
-      playbackLog('url.account_candidates_done', () => ({ ...trace, quality, reason, available: !!url, attempted: next, elapsedMs: Date.now() - startedAt }))
+      playbackLog('url.account_candidates_done', () => ({ ...trace, quality, reason, available: !!value, attempted: next, elapsedMs: Date.now() - startedAt }))
       BackgroundTimer.clearTimeout(timer)
       signal.removeEventListener('abort', onAbort)
       controller.abort()
       if (error) reject(error)
-      else resolve(url)
+      else resolve(value)
     }
     const onAbort = () => { finish(null, new Error(requestMsg.cancelRequest), 'cancelled') }
     const timer = BackgroundTimer.setTimeout(() => { finish(null, undefined, 'timeout') }, 5000)
@@ -217,7 +218,7 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
           accepted: !reason,
           elapsedMs: Date.now() - probeStartedAt,
         }))
-        if (!reason) finish(url)
+        if (!reason) finish({ url, media })
       }
     }
     void Promise.all(Array.from({ length: Math.min(3, selected.length) }, worker))
@@ -254,6 +255,7 @@ const requestVkey = async(cookie: string, songMid: string, filenames: string[], 
 }
 
 export interface QQAccountUrl {
+  media?: RemoteAudioInfo
   url: string
   quality: LX.Quality
 }
@@ -317,9 +319,9 @@ export const getQQMusicUrlByAccount = async(
           playbackLog('url.account_channel_start', () => ({ ...trace, quality }))
           const data = await requestVkey(cookie, songMid, filenames, spec.prefix, platform, signal)
           playbackLog('url.account_channel_response', () => ({ ...trace, quality, elapsedMs: Date.now() - startedAt }))
-          const url = await pickUrl(data, quality, expectedMs, signal, options.isRefresh ?? false, trace, options.isUrlRejected)
+          const result = await pickUrl(data, quality, expectedMs, signal, options.isRefresh ?? false, trace, options.isUrlRejected)
           throwIfAborted(signal)
-          if (url) return { url, quality }
+          if (result) return { ...result, quality }
         } catch (error) {
           playbackLog('url.account_channel_failed', () => ({ ...trace, quality, error, elapsedMs: Date.now() - startedAt }))
           throwIfAborted(signal)

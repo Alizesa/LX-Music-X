@@ -73,7 +73,7 @@ public final class Mp4AudioMetadataTest {
     return box("trak", box("mdia", box("mdhd", mdhd),
         box("hdlr", ints(0, 0, type(codec.equals("avc1") ? "vide" : "soun"))),
         box("minf", box("stbl", box("stsd", ints(0, 1), entry),
-            box("stts", ints(0, 1, sampleSeconds, 48000))))));
+            box("stts", ints(0, 1, sampleSeconds, 48000)), box("stsz", ints(0, 16000, sampleSeconds))))));
   }
 
   private static Source file(boolean tail, boolean version1, boolean video, String codec) throws IOException {
@@ -104,7 +104,7 @@ public final class Mp4AudioMetadataTest {
       for (boolean version1 : new boolean[] {false, true}) {
         Source source = file(tail, version1, false, "mp4a");
         Mp4AudioMetadata.Info info = read(source);
-        check(info != null && info.mime.equals("audio/mp4a-latm") && info.durationMs == 280000 && !info.hasVideo,
+        check(info != null && info.mime.equals("audio/mp4a-latm") && info.durationMs == 280000 && info.bitRate == 128000 && !info.hasVideo,
             "AAC duration, front/tail moov, mdhd v0/v1");
         check(source.transferred <= 3 * BLOCK, "media payload scanned");
       }

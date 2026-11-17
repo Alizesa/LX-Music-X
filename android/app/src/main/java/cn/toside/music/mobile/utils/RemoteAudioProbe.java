@@ -268,6 +268,7 @@ final class RemoteAudioProbe {
         if (mime != null && mime.startsWith("video/")) hasVideo = true;
         if (foundDuration || mime == null || !mime.startsWith("audio/")) continue;
         result.putString("mime", mime);
+        if (format.containsKey(MediaFormat.KEY_BIT_RATE)) result.putInt("bitRate", format.getInteger(MediaFormat.KEY_BIT_RATE));
         if (format.containsKey(MediaFormat.KEY_DURATION)) {
           double durationMs = format.getLong(MediaFormat.KEY_DURATION) / 1000.0;
           result.putDouble("durationMs", durationMs);
@@ -310,6 +311,7 @@ final class RemoteAudioProbe {
             result.putString("mime", info.mime);
             result.putDouble("durationMs", info.durationMs);
             result.putBoolean("hasVideo", info.hasVideo);
+            if (info.bitRate > 0) result.putDouble("bitRate", info.bitRate);
             return true;
           }
         } catch (Mp4AudioMetadata.InvalidMetadata error) { throw task.fail(error.getMessage()); }

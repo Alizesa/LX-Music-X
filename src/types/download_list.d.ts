@@ -14,7 +14,7 @@ declare namespace LX {
     | 'error'
     | 'completed'
 
-    type FileExt = 'mp3' | 'flac' | 'wav' | 'ape'
+    type FileExt = 'mp3' | 'flac' | 'wav' | 'ape' | 'm4a' | 'aac' | 'ogg' | 'opus'
 
     interface ProgressInfo {
       progress: number
@@ -65,6 +65,12 @@ declare namespace LX {
       addMusicLocationType: LX.AddMusicLocationType
     }
 
+    interface MediaInfo {
+      extension: FileExt
+      mimeType: string
+      contentLength?: number
+    }
+
     interface DownloadTask {
       id: string
       musicInfo: LX.Music.MusicInfoOnline
@@ -74,6 +80,7 @@ declare namespace LX {
       fileName: string
       filePath?: string
       directoryUri: string
+      media?: MediaInfo
       nativeId?: string
       /** 文件已下载，归档失败时复用它重试，避免重新取链下载。 */
       pendingCompletion?: { downloaded: number, total: number }

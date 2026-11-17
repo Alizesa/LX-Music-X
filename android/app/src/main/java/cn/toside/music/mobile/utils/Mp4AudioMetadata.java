@@ -12,11 +12,13 @@ final class Mp4AudioMetadata {
     final String mime;
     final double durationMs;
     final boolean hasVideo;
+    final double bitRate;
 
-    Info(String mime, double durationMs, boolean hasVideo) {
+    Info(String mime, double durationMs, boolean hasVideo, double bitRate) {
       this.mime = mime;
       this.durationMs = durationMs;
       this.hasVideo = hasVideo;
+      this.bitRate = bitRate;
     }
   }
 
@@ -38,6 +40,7 @@ final class Mp4AudioMetadata {
     long scale;
     long duration;
     long sampleDuration;
+    long sampleBytes;
   }
 
   private final Source source;
@@ -72,7 +75,7 @@ final class Mp4AudioMetadata {
         track.scale <= 0 || track.duration <= 0 || track.sampleDuration <= 0) return null;
     // Use the samples' duration as well as mdhd: a full-length movie header alone is insufficient.
     double durationMs = Math.min(track.duration, track.sampleDuration) * 1000.0 / track.scale;
-    return new Info(track.mime, durationMs, parser.hasVideo);
+    return new Info(track.mime, durationMs, parser.hasVideo, track.sampleBytes * 8000.0 / durationMs);
   }
 
   private void movie(Box parent) throws IOException {
@@ -115,6 +118,8 @@ final class Mp4AudioMetadata {
         descriptions(box, track);
       } else if (level == 3 && box.type == type("stts")) {
         timing(box, track);
+      } else if (level == 3 && box.type == type("stsz")) {
+        sampleSizes(box, track);
       }
       position = box.end;
     }
@@ -209,6 +214,26 @@ final class Mp4AudioMetadata {
       }
     }
     track.sampleDuration = total;
+  }
+
+  private void sampleSizes(Box box, Track track) throws IOException {
+    byte[] header = bytes(box.data, 12, box.end);
+    long size = unsigned(header, 4);
+    long count = unsigned(header, 8);
+    if (size != 0) {
+      if (count > Long.MAX_VALUE / size || box.end - box.data != 12) throw invalid();
+      track.sampleBytes = size * count;
+      return;
+    }
+    if (count > 131072) throw new InvalidMetadata("metadata_limit");
+    if (box.end - box.data - 12 != count * 4) throw invalid();
+    long total = 0;
+    for (int first = 0; first < count; first += 256) {
+      int entries = (int) Math.min(256, count - first);
+      byte[] data = bytes(box.data + 12 + first * 4L, entries * 4, box.end);
+      for (int index = 0; index < entries; index++) total += unsigned(data, index * 4);
+    }
+    track.sampleBytes = total;
   }
 
   private Box box(long position, long end) throws IOException {

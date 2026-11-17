@@ -20,6 +20,7 @@ export interface RemoteAudioInfo {
   method?: string
   sampleRate?: number
   bitDepth?: number
+  bitRate?: number
 }
 
 interface CachedProbe {

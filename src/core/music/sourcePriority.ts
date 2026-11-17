@@ -4,6 +4,7 @@ import { resolveApiSourceOrder } from '@/utils/apiSourceOrder'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { requestUserApiMusicUrl } from '@/core/userApiRuntime'
 import { validateQQMusicUrl } from '@/core/qqMusicUrl'
+import { type RemoteAudioInfo } from '@/utils/nativeModules/remoteAudio'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
 
 const COOLDOWN = 30_000
@@ -27,7 +28,7 @@ export const markMusicUrlFailed = (url: string, error?: unknown) => {
   for (const [key, candidate] of sourceUrls) if (candidate == url) remember(failedSources, key, until)
 }
 
-export type ValidateMusicUrl = (url: string) => Promise<void>
+export type ValidateMusicUrl = (url: string, media?: RemoteAudioInfo) => Promise<void>
 export interface MusicUrlRequestOptions {
   quality?: LX.Quality
   urlSourceOrder?: LX.Music.UrlSourceOrder
@@ -82,9 +83,9 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
       try {
         // 首次取链与缓存命中使用同一套完整性检查；预加载只能读取通过检查的音频。
         playbackLog('url.validate_start', () => ({ ...trace, apiId, musicSource: musicInfo.source }))
-        await validateQQMusicUrl(musicInfo, result.url, registerCancel, isRefresh, { ...trace, apiId })
+        const media = await validateQQMusicUrl(musicInfo, result.url, registerCancel, isRefresh, { ...trace, apiId })
         assertActive()
-        await validateUrl?.(result.url)
+        await validateUrl?.(result.url, media)
         playbackLog('url.validate_done', { ...trace, apiId })
       } catch (error) {
         assertActive()

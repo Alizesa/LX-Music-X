@@ -317,9 +317,9 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
-      await validateQQMusicUrl(musicInfo, cachedUrl, registerCancel, false, trace)
+      const media = await validateQQMusicUrl(musicInfo, cachedUrl, registerCancel, false, trace)
       assertActive()
-      await validateUrl?.(cachedUrl)
+      await validateUrl?.(cachedUrl, media)
       assertActive()
       return { url: cachedUrl, musicInfo, quality: itemQuality, isFromCache: true }
     } catch (error) {
@@ -418,7 +418,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
       playbackLog('url.account_result', () => ({ ...trace, available: !!byAccount, quality: byAccount?.quality, elapsedMs: Date.now() - startedAt }))
       if (!byAccount || (quality != null && byAccount.quality !== quality)) return null
       if (isMusicUrlFailed(byAccount.url) || rejectedUrls?.has(byAccount.url)) return null
-      await validateUrl?.(byAccount.url)
+      await validateUrl?.(byAccount.url, byAccount.media)
       assertActive()
       return { musicInfo, url: byAccount.url, quality: byAccount.quality, isFromCache: false }
     } catch (error) {

@@ -372,3 +372,34 @@ test('a genuine one-minute song and local files still play without unnecessary r
   assert.equal(await h.resolve({ musicInfo: { ...song, source: 'local' } }), 'content://local/song')
   assert.equal(h.probes.length, 1)
 })
+
+const downloadAudio = load('src/core/downloadAudio.ts', { '@/utils/nativeModules/remoteAudio': {} })
+
+test('download policy rejects mislabeled FLAC inside source selection and reuses the AAC probe', async() => {
+  const bad = 'https://fixture/lossless'
+  const good = 'https://fixture/aac'
+  const media = { ...audio(240000, 'audio/mp4a-latm'), headerKind: 'mp4', contentLength: 3732392, bitRate: 96000 }
+  const h = harness({
+    inspect: url => url === bad ? { ...audio(240000, 'audio/flac'), contentLength: 34887849, bitDepth: 16 } : media,
+    request: id => ({ url: id === 'user_api_a' ? bad : good, type: '128k' }),
+  })
+  let accepted
+  assert.equal(await h.resolve({ urlSourceOrder: 'sourceOnly', validateUrl: async(_url, info) => { accepted = downloadAudio.validateDownloadMedia('128k', info) } }), good)
+  assert.equal(accepted.extension, 'm4a')
+  assert.equal(accepted.contentLength, 3732392)
+  assert.deepEqual(h.probes.map(item => item.url), [bad, good])
+  assert.equal(h.priority.isMusicUrlFailed(bad), false)
+  assert.deepEqual(h.requests, ['user_api_a', 'user_api_b'])
+})
+
+test('account download passes its already validated media to the download policy', async() => {
+  const media = { ...audio(), headerKind: 'mp3', contentLength: 3840000 }
+  const h = harness({ account: async() => ({ url: full, quality: '128k', media }) })
+  h.setting['player.urlSource'] = 'account'
+  let accepted
+  assert.equal(await h.resolve({ urlSourceOrder: 'accountFirst', validateUrl: async(_url, info) => { accepted = downloadAudio.validateDownloadMedia('128k', info) } }), full)
+  assert.equal(accepted.extension, 'mp3')
+  assert.equal(accepted.contentLength, 3840000)
+  assert.equal(h.probes.length, 0)
+  assert.equal(h.requests.length, 0)
+})

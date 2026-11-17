@@ -47,6 +47,7 @@ import {
 } from '@/utils/nativeModules/download'
 import { toMD5 } from '@/utils/tools'
 import { sizeFormate } from '@/utils/common'
+import { inspectDownloadMedia, DOWNLOAD_AUDIO_HEADERS } from './downloadAudio'
 
 const tasks: LX.Download.DownloadTask[] = []
 const tasksById = new Map<string, LX.Download.DownloadTask>()
@@ -93,6 +94,7 @@ interface UrlWaiter {
   reject?: (error: unknown) => void
   abort?: () => void
   cancelled: boolean
+  media?: LX.Download.MediaInfo
 }
 const finishUrl = (waiter: UrlWaiter, url: string | null, error?: unknown, failed = false) => {
   const resolve = waiter.resolve
@@ -107,6 +109,7 @@ const observeUrl = (promise: Promise<string>, waiter: UrlWaiter) => {
   void promise.then(url => { finishUrl(waiter, url) }, (error: unknown) => { finishUrl(waiter, null, error, true) })
 }
 const createUrlRequest = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality) => {
+  const controller = new AbortController()
   const waiter: UrlWaiter = { cancelled: false }
   const promise = new Promise<string | null>((resolve, reject) => { waiter.resolve = resolve; waiter.reject = reject })
   try {
@@ -115,6 +118,10 @@ const createUrlRequest = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quali
       quality,
       isRefresh: true,
       urlSourceOrder: settingState.setting['download.urlSource'] === 'account' ? 'accountFirst' : 'sourceOnly',
+      validateUrl: async(url, media) => {
+        const info = await inspectDownloadMedia(musicInfo, quality, url, media, controller.signal)
+        if (!waiter.cancelled && waiter.resolve) waiter.media = info
+      },
       onCancel: abort => {
         if (waiter.cancelled) { try { abort() } catch {} } else if (waiter.resolve) waiter.abort = abort
       },
@@ -122,7 +129,9 @@ const createUrlRequest = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quali
   } catch (error) { finishUrl(waiter, null, error, true) }
   return {
     promise,
+    get media() { return waiter.media },
     cancel() {
+      controller.abort()
       waiter.cancelled = true
       const abort = waiter.abort
       // 取消先结束业务等待，底层 abort 抛错或迟迟不结束也不能挡住后续下载。
@@ -158,7 +167,10 @@ const cancelTaskUrl = (task: LX.Download.DownloadTask) => {
 const resolveTaskUrl = async(task: LX.Download.DownloadTask) => {
   const request = createUrlRequest(task.musicInfo, task.quality)
   resolvingUrls.set(task, request)
-  try { return await request.promise } finally {
+  try {
+    const url = await request.promise
+    return url === null ? null : { url, media: request.media }
+  } finally {
     if (resolvingUrls.get(task) === request) resolvingUrls.delete(task)
   }
 }
@@ -247,11 +259,11 @@ const mimeForExtension = (extension: LX.Download.FileExt) => {
   }
 }
 
-const buildFileName = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality) => {
+const buildFileName = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality, extension = extensionForQuality(quality)) => {
   const name = settingState.setting['download.fileName']
     .replace('歌名', musicInfo.name)
     .replace('歌手', musicInfo.singer || '未知歌手')
-  return `${filterFileName(name).trim() || musicInfo.id}.${extensionForQuality(quality)}`
+  return `${filterFileName(name).trim() || musicInfo.id}.${extension}`
 }
 
 /**
@@ -623,9 +635,10 @@ const completeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
   // 入本地列表之前先核对大小，坏的直接判失败，不留一条播不了的记录。
   // state.downloaded 正常就是落盘字节数（原生完成事件与 WorkManager 的 output data
   // 带的都是真实长度），没带上时退回下载过程中记录的字节数
-  const expectedSize = parseQualitySize(task.musicInfo.meta._qualitys?.[task.quality]?.size)
+  const expectedSize = task.media?.contentLength ?? (task.media && task.media.extension !== extensionForQuality(task.quality)
+    ? 0 : parseQualitySize(task.musicInfo.meta._qualitys?.[task.quality]?.size))
   const actualSize = state.downloaded > 0 ? state.downloaded : task.progress.downloaded
-  if (isSizeAbnormal(actualSize, expectedSize)) {
+  if (task.media?.contentLength ? actualSize !== expectedSize : isSizeAbnormal(actualSize, expectedSize)) {
     let identity = taskIdentities.get(task)
     if (!identity) { identity = Symbol('rejected-download'); taskIdentities.set(task, identity) }
     // 中转文件已经不可信，清掉，用户点重试时是干干净净重下一次
@@ -655,7 +668,7 @@ const completeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
       filePath: state.filePath,
       songId: state.filePath,
       picUrl: task.musicInfo.meta.picUrl,
-      ext: extensionForQuality(task.quality),
+      ext: task.media?.extension ?? extensionForQuality(task.quality),
       toggleMusicInfo: task.musicInfo,
     },
   }
@@ -870,19 +883,29 @@ const processQueue = async() => {
         try {
           await updateTask(task, { status: 'resolving', error: undefined }, true)
           if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') continue
-          const url = await resolveTaskUrl(task)
-          if (url === null) continue
+          const resolved = await resolveTaskUrl(task)
+          if (resolved === null) continue
           const currentTask = (isCurrentTask(task) ? task : undefined)
           if (currentTask?.status != 'resolving') continue
+          const media = resolved.media
+          if (media && (!task.media || task.media.extension !== media.extension || task.media.contentLength !== media.contentLength)) {
+            // A new representation cannot resume an old codec's bytes.
+            const partial = `${privateStorageDirectoryPath}/downloads/${task.id}.part`
+            try { await unlink(partial) } catch (error) { if (await existsFile(partial)) throw error }
+          }
+          if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') continue
+          if (media && !await updateTask(task, { media, fileName: buildFileName(task.musicInfo, task.quality, media.extension) }, true)) continue
+          if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') continue
           const early = new Map<string, NativeDownloadState>()
           earlyNativeUpdates.set(task, early)
           try {
             const request = createEnqueueRequest({
               taskId: task.id,
-              url,
+              url: resolved.url,
+              headers: DOWNLOAD_AUDIO_HEADERS,
               treeUri: task.directoryUri,
               fileName: task.fileName,
-              mimeType: mimeForExtension(extensionForQuality(task.quality)),
+              mimeType: task.media?.mimeType ?? mimeForExtension(extensionForQuality(task.quality)),
             })
             enqueuingTasks.set(task, request)
             const nativeId = await request.promise
