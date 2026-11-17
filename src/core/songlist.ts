@@ -4,7 +4,7 @@ import { deduplicationList, toNewMusicInfo } from '@/utils'
 import musicSdk from '@/utils/musicSdk'
 import { withRequestSignal } from '@/utils/musicSdk/requestScope'
 import { throwIfAborted, withAbort } from '@/utils/abort'
-import { getDetailCache, saveDetailCache } from './detailCache'
+import { getDetailCache, saveDetailCacheAndWait } from './detailCache'
 
 
 type LimitDetailCache = Map<number, ListDetailInfo>
@@ -26,11 +26,13 @@ const restoringCaches = new WeakMap<LimitDetailCache, Promise<void>>()
 const releasedCaches = new WeakSet<LimitDetailCache>()
 type SavedCursor = Pick<DetailCursor, 'sourcePage' | 'nextPage' | 'loaded' | 'pending' | 'done' | 'info'> & { pages: number[] }
 
-const saveCursor = (key: string, value: LimitDetailCache, cursor: DetailCursor, firstPage: number) => {
+const saveCursor = async(key: string, value: LimitDetailCache, cursor: DetailCursor, firstPage: number) => {
+  const isCurrent = () => cache.get(key) === value
   for (const [page, result] of value) {
-    if (page >= firstPage) saveDetailCache(`${key}::page:${page}`, result)
+    if (!isCurrent()) return
+    if (page >= firstPage && !await saveDetailCacheAndWait(`${key}::page:${page}`, result, isCurrent)) return
   }
-  saveDetailCache(key, {
+  await saveDetailCacheAndWait(key, {
     sourcePage: cursor.sourcePage,
     nextPage: cursor.nextPage,
     loaded: cursor.loaded,
@@ -38,7 +40,7 @@ const saveCursor = (key: string, value: LimitDetailCache, cursor: DetailCursor, 
     done: cursor.done,
     info: cursor.info,
     pages: [...value.keys()],
-  } satisfies SavedCursor)
+  } satisfies SavedCursor, isCurrent)
 }
 const restoreCursor = async(key: string, value: LimitDetailCache) => {
   if (restoredCaches.has(value)) return
@@ -204,7 +206,7 @@ const loadDetailSourcePage = async(source: LX.OnlineSource, id: string, listKey:
       data.maxPage = Math.ceil(cursor.loaded / LIST_LOAD_LIMIT)
     }
   }
-  saveCursor(listKey, value, cursor, firstPage)
+  await saveCursor(listKey, value, cursor, firstPage)
 }
 
 /** 同一源游标顺序推进到目标 UI 页，缺失的前页由该循环一并补齐。 */

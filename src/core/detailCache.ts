@@ -7,7 +7,7 @@ const MAX_ENTRIES = 32
 const TTL = 30 * 60_000
 const MAX_PENDING_BYTES = 2 * 1024 * 1024
 const MAX_PENDING_ENTRIES = 32
-const pending = new Map<string, { value: unknown, bytes: number, revision: number }>()
+const pending = new Map<string, { value: unknown, bytes: number, revision: number, onSaved?: (saved: boolean) => void }>()
 const invalidated = new Map<string, number>()
 const cleanupPending = new Set<string>()
 // 写入/丢弃新快照后，在途读取也不能回传此前拿到的旧值。
@@ -56,6 +56,7 @@ const drain = async() => {
     pendingBytes -= snapshot.bytes
     activeBytes = snapshot.bytes
     const group = groupKey(key)
+    let saved = false
     try {
       const index = await getBrowseDetailCacheIndex()
       await saveBrowseDetailCache(key, snapshot.value)
@@ -69,6 +70,7 @@ const drain = async() => {
       const removed = Object.keys(index).filter(id => !Object.prototype.hasOwnProperty.call(next, id))
       await removeBrowseDetailCaches(removed)
       await saveBrowseDetailCacheIndex(next)
+      saved = true
       if ((invalidated.get(key) ?? 0) <= snapshot.revision) {
         invalidated.delete(key)
         cleanupPending.delete(key)
@@ -78,6 +80,7 @@ const drain = async() => {
       console.warn('[DetailCache] save:', error instanceof Error ? error.message : error)
     } finally {
       activeBytes = 0
+      snapshot.onSaved?.(saved && !invalidated.has(key) && !pending.has(key))
     }
   }
 }
@@ -90,16 +93,17 @@ const scheduleWrite = () => {
 }
 
 /** 明细落盘后页面即可释放整表；只保留最近 32 个快照，不常驻其内容。 */
-export const saveDetailCache = (key: string, value: unknown) => {
+const enqueueDetailCache = (key: string, value: unknown, onSaved?: (saved: boolean) => void) => {
   for (const reader of readers.get(key) ?? []) reader.current = false
   const currentRevision = ++revision
   const old = pending.get(key)
-  if (old) { pending.delete(key); pendingBytes -= old.bytes }
+  if (old) { pending.delete(key); pendingBytes -= old.bytes; old.onSaved?.(false) }
   const bytes = sizeOf(value)
   if (bytes + activeBytes > MAX_PENDING_BYTES) {
     invalidated.set(key, currentRevision)
     cleanupPending.add(key)
     scheduleWrite()
+    onSaved?.(false)
     return
   }
   while (pending.size && (pending.size >= MAX_PENDING_ENTRIES || pendingBytes + activeBytes + bytes > MAX_PENDING_BYTES)) {
@@ -108,10 +112,20 @@ export const saveDetailCache = (key: string, value: unknown) => {
     pendingBytes -= snapshot.bytes
     invalidated.set(oldKey, snapshot.revision)
     cleanupPending.add(oldKey)
+    snapshot.onSaved?.(false)
   }
-  pending.set(key, { value, bytes, revision: currentRevision })
+  pending.set(key, { value, bytes, revision: currentRevision, onSaved })
   pendingBytes += bytes
   scheduleWrite()
+}
+
+export const saveDetailCache = (key: string, value: unknown) => { enqueueDetailCache(key, value) }
+
+/** Stream dependent pages through the bounded writer before publishing their cursor. */
+export const saveDetailCacheAndWait = async(key: string, value: unknown, isCurrent: () => boolean): Promise<boolean> => {
+  for (let current = writes; current; current = writes) await current
+  if (!isCurrent()) return false
+  return new Promise(resolve => { enqueueDetailCache(key, value, resolve) })
 }
 
 export const getDetailCache = async<T>(key: string): Promise<T | null> => {
