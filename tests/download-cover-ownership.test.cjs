@@ -24,6 +24,6 @@ for (const stage of ['download', 'metadata', 'unlink']) {
     pending.resolve({ statusCode: 200 })
     await flush()
     assert.equal(h.protectedPaths.size, 0)
-    assert.equal(h.files.has('/temp/lx-download-cover.jpg'), false)
+    assert.equal([...h.files].some(path => path.startsWith('/temp/lx-download-cover')), false)
   })
 }

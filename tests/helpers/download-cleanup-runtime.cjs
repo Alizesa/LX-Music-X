@@ -53,7 +53,7 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
         privateStorageDirectoryPath: '/private',
         temporaryDirectoryPath: '/temp',
         extname: value => value.split('.').at(-1),
-        downloadFile: (_url, path) => { files.add(path); return { jobId: 1, promise: cover.download() } },
+        downloadFile: (_url, path) => { files.add(path); return { jobId: 1, promise: cover.download(_url, path) } },
         stopDownload: id => { stoppedCovers.push(id) },
         existsFile: async path => files.has(path),
         unlink: async path => {
@@ -64,7 +64,7 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
           removed.push(path)
         },
       },
-      '@/utils/localMediaMetadata': { writeDownloadMetadata: async() => { if (cover?.metadata) await cover.metadata(); if (settings.failTags) throw new Error('tags failed') } },
+      '@/utils/localMediaMetadata': { writeDownloadMetadata: async(...args) => { if (cover?.metadata) await cover.metadata(...args); if (settings.failTags) throw new Error('tags failed') } },
       '@/utils/nativeModules/download': {
         onDownloadUpdate: callback => { listener = callback },
         getDownloadState: async id => receipts.get(id) ?? null,

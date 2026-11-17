@@ -495,8 +495,22 @@ const cleanupCoverAfter = (promise: Promise<unknown>, path: string, release: () 
   void promise.then(cleanup, cleanup)
 }
 
+// Native tag writes outlive cancelled JS waiters; keep file ownership and reuse the task's result.
+const taskMetadataWrites = new WeakMap<LX.Download.DownloadTask, { path: string, promise: Promise<void> }>()
+const activeMetadataWrites = new Map<string, Promise<void>>()
+let coverSequence = 0
+const retainMetadataWrite = (path: string, promise: Promise<void>) => {
+  const settled = promise.then(() => {}, () => {})
+  activeMetadataWrites.set(path, settled)
+  void settled.then(() => { if (activeMetadataWrites.get(path) === settled) activeMetadataWrites.delete(path) })
+}
 const writeEmbeddedMetadata = async(task: LX.Download.DownloadTask, signal: AbortSignal) => {
   if (!task.filePath) return
+  const previous = taskMetadataWrites.get(task)
+  if (previous?.path === task.filePath) {
+    try { await waitForPromise(previous.promise, signal) } catch (error) { logDownloadError(error) }
+    return
+  }
   const info = task.musicInfo
   let picPath: string | null = null
   let releaseCover: (() => void) | null = null
@@ -506,7 +520,7 @@ const writeEmbeddedMetadata = async(task: LX.Download.DownloadTask, signal: Abor
     const pic = await waitForPromise(getPicPath({ musicInfo: info, isRefresh: false, signal }), signal)
     if (pic) {
       const picExt = extname(pic.split('?')[0]) || 'jpg'
-      picPath = `${temporaryDirectoryPath}/lx-download-${task.id}.${picExt}`
+      picPath = `${temporaryDirectoryPath}/lx-download-${task.id}-${++coverSequence}-${Math.random().toString(36).slice(2)}.${picExt}`
       releaseCover = retainTemporaryPath(picPath)
       const result = downloadFile(pic, picPath)
       coverIO = result.promise
@@ -530,12 +544,18 @@ const writeEmbeddedMetadata = async(task: LX.Download.DownloadTask, signal: Abor
     }
   } catch {}
   try {
+    const path = task.filePath
+    for (let pending = activeMetadataWrites.get(path); pending; pending = activeMetadataWrites.get(path)) {
+      await waitForPromise(pending, signal)
+    }
     if (signal.aborted || !isCurrentTask(task)) return
-    const writing = writeDownloadMetadata(task.filePath, {
+    const writing = writeDownloadMetadata(path, {
       name: info.name,
       singer: info.singer,
       albumName: info.meta.albumName,
     }, picPath, lyricText)
+    taskMetadataWrites.set(task, { path, promise: writing })
+    retainMetadataWrite(path, writing)
     coverIO = writing
     await waitForPromise(writing, signal)
   } catch (error) {
