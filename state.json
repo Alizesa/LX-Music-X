@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 10,
+  "sequence": 11,
   "lastStableVersion": "1.9.3",
   "nextTargetVersion": "1.9.4",
   "branches": {
-    "Next": "9e540f9a4c6423d917f727c55b22bee926b67266",
+    "Next": "9e221f442bbff2d833c75e8064542121886a1767",
     "master": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628"
   },
   "events": {},
@@ -169,6 +169,17 @@
         "desc": "- fix: ignore obsolete Mine playlist refresh results (9e540f9a)\n- fix: persist large songlist pages before publishing cursors (d3fbd38a)\n- fix: start primary source timeouts after queue dispatch (2631a036)\n- fix: preserve native tag writes across download dispatch recovery (cf62875a)"
       },
       "publishedAt": "2026-11-17T04:12:59.272Z"
+    },
+    "Next/9e221f442bbff2d833c75e8064542121886a1767": {
+      "branch": "Next",
+      "sourceSha": "9e221f442bbff2d833c75e8064542121886a1767",
+      "before": "9e540f9a4c6423d917f727c55b22bee926b67266",
+      "channel": "next",
+      "sequence": 11,
+      "version": "1.9.4-next.11",
+      "versionCode": 100011,
+      "tag": "v1.9.4-next.11",
+      "status": "allocated"
     }
   },
   "channels": {
