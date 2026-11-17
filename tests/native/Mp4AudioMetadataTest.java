@@ -66,14 +66,22 @@ public final class Mp4AudioMetadataTest {
   }
 
   private static byte[] track(String codec, boolean version1, int seconds, int sampleSeconds) throws IOException {
+    return track(codec, version1, seconds, sampleSeconds, false);
+  }
+
+  private static byte[] track(String codec, boolean version1, int seconds, int sampleSeconds, boolean variable) throws IOException {
     byte[] mdhd = version1 ? ints(0x01000000, 0, 0, 0, 0, 48000, 0, seconds * 48000, 0)
         : ints(0, 0, 0, 48000, seconds * 48000, 0);
     byte[] esds = box("esds", ints(0), new byte[] {3, 18, 0, 1, 0, 4, 13, 0x40, 0x15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+    int[] sizes = new int[variable ? 3 + sampleSeconds : 3];
+    sizes[1] = variable ? 0 : 16000;
+    sizes[2] = sampleSeconds;
+    for (int index = 3; index < sizes.length; index++) sizes[index] = 16000;
     byte[] entry = box(codec, new byte[28], codec.equals("mp4a") ? esds : new byte[0]);
     return box("trak", box("mdia", box("mdhd", mdhd),
         box("hdlr", ints(0, 0, type(codec.equals("avc1") ? "vide" : "soun"))),
         box("minf", box("stbl", box("stsd", ints(0, 1), entry),
-            box("stts", ints(0, 1, sampleSeconds, 48000)), box("stsz", ints(0, 16000, sampleSeconds))))));
+            box("stts", ints(0, 1, sampleSeconds, 48000)), box("stsz", ints(sizes))))));
   }
 
   private static Source file(boolean tail, boolean version1, boolean video, String codec) throws IOException {
@@ -114,7 +122,7 @@ public final class Mp4AudioMetadataTest {
     check(read(file(true, false, false, "fLaC")).mime.equals("audio/flac"), "MP4 FLAC mislabeled");
     check(read(file(true, false, false, "enca")) == null, "encrypted audio accepted");
     Source shortAudio = new Source().add(box("ftyp", ints(0, 0))).add(box("moov", track("mp4a", false, 280, 30)))
-        .add(box("mdat", new byte[32]));
+        .add(ints(480008, type("mdat"))).gap(480000);
     check(read(shortAudio).durationMs == 30000, "full-length mdhd hid a short sample table");
     Source noDuration = new Source().add(box("moov", track("mp4a", false, -1, 0))).add(box("mdat", new byte[8]));
     check(read(noDuration) == null, "missing duration accepted");
@@ -135,11 +143,18 @@ public final class Mp4AudioMetadataTest {
     Source artwork = new Source().add(box("ftyp", ints(0, 0)));
     byte[] audio = track("mp4a", false, 280, 280);
     artwork.add(ints((int) MEDIA_SIZE + audio.length + 8, type("moov")))
-        .add(ints((int) MEDIA_SIZE, type("udta"))).gap(MEDIA_SIZE - 8).add(audio).add(box("mdat", new byte[8]));
+        .add(ints((int) MEDIA_SIZE, type("udta"))).gap(MEDIA_SIZE - 8).add(audio).add(ints(4480008, type("mdat"))).gap(4480000);
     check(read(artwork).durationMs == 280000 && artwork.transferred <= 3 * BLOCK, "cover art scanned");
     Source zero = new Source().add(box("moov", track("mp4a", false, 280, 280)))
         .add(ints(0, type("mdat"))).gap(MEDIA_SIZE);
     check(read(zero).durationMs == 280000, "zero-sized final mdat");
+    Source variable = new Source().add(box("moov", track("mp4a", false, 280, 280, true)))
+        .add(ints((int) MEDIA_SIZE, type("mdat"))).gap(MEDIA_SIZE - 8);
+    check(read(variable).bitRate == 128000 && variable.transferred <= 3 * BLOCK, "variable sample sizes");
+    invalid(new Source().add(box("moov", track("mp4a", false, 280, 280))).add(box("mdat", new byte[8])), "invalid_metadata");
+    byte[] mismatch = track("mp4a", false, 280, 280);
+    mismatch[mismatch.length - 1] = 0x17;
+    invalid(new Source().add(box("moov", mismatch)).add(ints((int) MEDIA_SIZE, type("mdat"))).gap(MEDIA_SIZE - 8), "invalid_metadata");
     Source cancelled = file(true, false, false, "mp4a");
     cancelled.cancelled = true;
     try { read(cancelled); throw new AssertionError("cancellation swallowed"); }

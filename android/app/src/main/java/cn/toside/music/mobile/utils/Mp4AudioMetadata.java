@@ -41,6 +41,8 @@ final class Mp4AudioMetadata {
     long duration;
     long sampleDuration;
     long sampleBytes;
+    long sampleCount;
+    long sizeCount;
   }
 
   private final Source source;
@@ -56,7 +58,7 @@ final class Mp4AudioMetadata {
     if (length < 8) return null;
     Mp4AudioMetadata parser = new Mp4AudioMetadata(source);
     boolean movie = false;
-    boolean media = false;
+    long mediaBytes = 0;
     for (long position = 0; position < length;) {
       Box box = parser.box(position, length);
       if (box.type == type("moov")) {
@@ -64,15 +66,16 @@ final class Mp4AudioMetadata {
         movie = true;
         parser.movie(box);
       } else if (box.type == type("mdat")) {
-        media |= box.end > box.data;
+        mediaBytes += box.end - box.data;
       } else if (box.type == type("moof")) {
         parser.fragmented = true;
       }
       position = box.end;
     }
     Track track = parser.audio;
-    if (!movie || !media || parser.fragmented || track == null || track.mime == null ||
-        track.scale <= 0 || track.duration <= 0 || track.sampleDuration <= 0) return null;
+    if (!movie || mediaBytes <= 0 || parser.fragmented || track == null || track.mime == null ||
+        track.scale <= 0 || track.duration <= 0 || track.sampleDuration <= 0 || track.sampleBytes <= 0) return null;
+    if (track.sampleBytes > mediaBytes || track.sampleCount != track.sizeCount) throw invalid();
     // Use the samples' duration as well as mdhd: a full-length movie header alone is insufficient.
     double durationMs = Math.min(track.duration, track.sampleDuration) * 1000.0 / track.scale;
     return new Info(track.mime, durationMs, parser.hasVideo, track.sampleBytes * 8000.0 / durationMs);
@@ -211,6 +214,7 @@ final class Mp4AudioMetadata {
         long delta = unsigned(data, index * 8 + 4);
         if (samples == 0 || delta == 0 || samples > (Long.MAX_VALUE - total) / delta) throw invalid();
         total += samples * delta;
+        track.sampleCount += samples;
       }
     }
     track.sampleDuration = total;
@@ -220,6 +224,7 @@ final class Mp4AudioMetadata {
     byte[] header = bytes(box.data, 12, box.end);
     long size = unsigned(header, 4);
     long count = unsigned(header, 8);
+    track.sizeCount = count;
     if (size != 0) {
       if (count > Long.MAX_VALUE / size || box.end - box.data != 12) throw invalid();
       track.sampleBytes = size * count;
