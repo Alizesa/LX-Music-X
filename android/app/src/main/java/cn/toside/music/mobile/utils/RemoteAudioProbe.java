@@ -261,17 +261,20 @@ final class RemoteAudioProbe {
       }
       task.check();
       boolean foundDuration = false;
+      boolean hasVideo = false;
       for (int index = 0; index < extractor.getTrackCount(); index++) {
         MediaFormat format = extractor.getTrackFormat(index);
         String mime = format.getString(MediaFormat.KEY_MIME);
-        if (mime == null || !mime.startsWith("audio/")) continue;
+        if (mime != null && mime.startsWith("video/")) hasVideo = true;
+        if (foundDuration || mime == null || !mime.startsWith("audio/")) continue;
         result.putString("mime", mime);
         if (format.containsKey(MediaFormat.KEY_DURATION)) {
           double durationMs = format.getLong(MediaFormat.KEY_DURATION) / 1000.0;
           result.putDouble("durationMs", durationMs);
-          if (durationMs > 0) { foundDuration = true; break; }
+          if (durationMs > 0) foundDuration = true;
         }
       }
+      result.putBoolean("hasVideo", hasVideo);
       if (!foundDuration) result.putString("reason", task.failureReason != null ? task.failureReason : "metadata_unavailable");
     } catch (Exception error) {
       result.putString("reason", task.reason(error, "metadata_error"));
@@ -299,6 +302,18 @@ final class RemoteAudioProbe {
         return true;
       }
       if ("mp3".equals(task.headerKind) && readMp3Duration(source, task, result)) return true;
+      if ("mp4".equals(task.headerKind)) {
+        task.method = "mp4_boxes";
+        try {
+          Mp4AudioMetadata.Info info = Mp4AudioMetadata.read(source::readAt, source.getSize());
+          if (info != null) {
+            result.putString("mime", info.mime);
+            result.putDouble("durationMs", info.durationMs);
+            result.putBoolean("hasVideo", info.hasVideo);
+            return true;
+          }
+        } catch (Mp4AudioMetadata.InvalidMetadata error) { throw task.fail(error.getMessage()); }
+      }
       task.method = "media_extractor";
       extractor.setDataSource(source);
       return false;

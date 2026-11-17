@@ -6,6 +6,7 @@ export interface RemoteAudioInfo {
   readable: boolean
   durationMs?: number
   mime?: string
+  hasVideo?: boolean
   /** 固定原因码；旧 APK 可能不返回这些诊断字段。 */
   reason?: string
   requests?: number

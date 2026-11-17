@@ -28,11 +28,6 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
 
-      - name: Unit tests
-        run: npm test
-
-      # Branch pushes are checked by the unified release workflow; this workflow
-      # checks pull requests before they reach either release branch.
       - name: Setup Java
         if: github.event_name == 'pull_request'
         uses: actions/setup-java@v4
@@ -41,6 +36,11 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Unit tests
+        run: npm test
+
+      # Branch pushes are checked by the unified release workflow; this workflow
+      # checks pull requests before they reach either release branch.
       - name: Test Build
         if: github.event_name == 'pull_request'
         run: npm run build-test
