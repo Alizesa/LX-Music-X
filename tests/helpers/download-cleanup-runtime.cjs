@@ -2,7 +2,7 @@ const { load, flush, deferred } = require('./load.cjs')
 const { harness: storageHarness } = require('./download-storage.cjs')
 const { task, song } = require('./download-runtime.cjs')
 
-const createHarness = async({ active = [], history = [], receipts = new Map(), cover, catalog, url = async() => 'https://fixture/audio' } = {}) => {
+const createHarness = async({ active = [], history = [], receipts = new Map(), cover, catalog, downloadSettings = {}, url = async() => 'https://fixture/audio' } = {}) => {
   const disk = storageHarness()
   const files = new Set(history.map(item => item.filePath).filter(Boolean))
   const local = new Set(files)
@@ -11,6 +11,7 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
   const partialOwners = new Map()
   const protectedPaths = new Set()
   const stoppedCovers = []
+  const appSettings = { 'download.fileName': '\u6b4c\u540d', 'download.quality': '128k', ...downloadSettings }
   const settings = { failLocal: false, failUnlink: null, failAck: false, failTags: false }
   await disk.data.saveDownloadActiveTasks(active)
   await disk.data.saveDownloadTasksMigrated()
@@ -34,7 +35,7 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
       },
       '@/core/music': { getMusicUrl: args => { urlCalls++; return url(args) }, getPicPath: async() => cover ? 'https://fixture/cover.jpg' : '', getLyricInfo: async() => ({ lyric: '' }) },
       '@/config/constant': constants,
-      '@/store/setting/state': { default: { setting: { 'download.fileName': '歌名', 'download.quality': '128k' } } },
+      '@/store/setting/state': { default: { setting: appSettings } },
       '@/utils': { filterFileName: value => value },
       '@/utils/lrcTools': { buildLyrics: () => '' },
       '@/utils/data': data,
@@ -105,7 +106,7 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
       },
     }
   }
-  return { ...start(), restart: start, disk, files, local, removed, enqueued, receipts, acknowledged, removedNative, partialOwners, settings, protectedPaths, stoppedCovers, historyKey, urlCalls: () => urlCalls, journalKeys: () => [...disk.values.keys()].filter(key => key.startsWith('@download_cleanup__')) }
+  return { ...start(), restart: start, disk, files, local, removed, enqueued, receipts, acknowledged, removedNative, partialOwners, settings, appSettings, protectedPaths, stoppedCovers, historyKey, urlCalls: () => urlCalls, journalKeys: () => [...disk.values.keys()].filter(key => key.startsWith('@download_cleanup__')) }
 }
 
 const item = id => ({ id: String(id), name: String(id), singer: 'Singer', quality: '128k', filePath: `content://fixture/${id}`, createdAt: Number(id) + 1 })

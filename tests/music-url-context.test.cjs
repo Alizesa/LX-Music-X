@@ -198,6 +198,20 @@ test('an account downgrade does not satisfy an explicit higher-quality download'
   assert.equal(h.accountRequests[1][3].allowQualityFallback, false)
 })
 
+test('a non-VIP account failure preserves an explicit download tier for script fallback', async() => {
+  for (const quality of ['320k', 'flac']) {
+    const h = harness({ request: async(id, music, requested) => ({ url: 'https://audio.test/full-quality', type: requested }) })
+    Object.assign(h.setting, { 'player.urlSource': 'account', 'player.noVipStandardQuality': true })
+    assert.equal(await h.resolveDownload({ quality, urlSourceOrder: 'accountFirst' }), 'https://audio.test/full-quality')
+    assert.equal(h.accountRequests.length, 1)
+    assert.equal(h.accountRequests[0][1], quality)
+    assert.equal(h.accountRequests[0][3].allowQualityFallback, false)
+    assert.equal(h.requests.length, 1)
+    assert.equal(h.requests[0][2], quality)
+    assert.equal(h.requests[0][4], false)
+  }
+})
+
 test('an unavailable exact download rejects instead of accepting its playback downgrade', async() => {
   const h = harness({
     request: async(id, music, quality, onCancel, allowFallback) => {

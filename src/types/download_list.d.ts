@@ -75,6 +75,8 @@ declare namespace LX {
       id: string
       musicInfo: LX.Music.MusicInfoOnline
       quality: LX.Quality
+      /** Initial catalog-capped request, retained when the actual download steps down. */
+      requestedQuality?: LX.Quality
       status: DownloadTaskStatus
       progress: ProgressInfo
       fileName: string

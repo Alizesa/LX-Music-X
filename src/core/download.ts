@@ -48,6 +48,8 @@ import {
 import { toMD5 } from '@/utils/tools'
 import { sizeFormate } from '@/utils/common'
 import { inspectDownloadMedia, DOWNLOAD_AUDIO_HEADERS } from './downloadAudio'
+import { getDownloadQualityOrder } from './downloadQuality'
+import { isRequestCancelled } from '@/utils/message'
 
 const tasks: LX.Download.DownloadTask[] = []
 const tasksById = new Map<string, LX.Download.DownloadTask>()
@@ -165,14 +167,25 @@ const cancelTaskUrl = (task: LX.Download.DownloadTask) => {
   enqueue?.cancel()
 }
 const resolveTaskUrl = async(task: LX.Download.DownloadTask) => {
-  const request = createUrlRequest(task.musicInfo, task.quality)
-  resolvingUrls.set(task, request)
-  try {
-    const url = await request.promise
-    return url === null ? null : { url, media: request.media }
-  } finally {
-    if (resolvingUrls.get(task) === request) resolvingUrls.delete(task)
+  const order = getDownloadQualityOrder(task.musicInfo, task.requestedQuality ?? task.quality)
+  let lastError: unknown
+  for (const quality of order) {
+    if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') return null
+    const request = createUrlRequest(task.musicInfo, quality)
+    resolvingUrls.set(task, request)
+    try {
+      const url = await request.promise
+      return url === null ? null : { url, media: request.media, quality }
+    } catch (error) {
+      if (isRequestCancelled(error)) throw error
+      lastError = error
+      // All selected sources at this tier were tried by the URL pipeline before stepping down.
+    } finally {
+      if (resolvingUrls.get(task) === request) resolvingUrls.delete(task)
+    }
   }
+  if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') return null
+  throw lastError
 }
 const getTotalCount = () => getDownloadHistoryCount() + tasks.reduce((count, task) => count + (hasDownloadHistory(task.id) ? 0 : 1), 0)
 
@@ -888,13 +901,19 @@ const processQueue = async() => {
           const currentTask = (isCurrentTask(task) ? task : undefined)
           if (currentTask?.status != 'resolving') continue
           const media = resolved.media
-          if (media && (!task.media || task.media.extension !== media.extension || task.media.contentLength !== media.contentLength)) {
+          const representationChanged = task.quality !== resolved.quality || task.media?.extension !== media?.extension ||
+            task.media?.contentLength !== media?.contentLength
+          if (representationChanged || (media && !task.media)) {
             // A new representation cannot resume an old codec's bytes.
             const partial = `${privateStorageDirectoryPath}/downloads/${task.id}.part`
             try { await unlink(partial) } catch (error) { if (await existsFile(partial)) throw error }
           }
           if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') continue
-          if (media && !await updateTask(task, { media, fileName: buildFileName(task.musicInfo, task.quality, media.extension) }, true)) continue
+          if ((media != null || task.media != null || representationChanged) && !await updateTask(task, {
+            media,
+            quality: resolved.quality,
+            fileName: buildFileName(task.musicInfo, resolved.quality, media?.extension),
+          }, true)) continue
           if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') continue
           const early = new Map<string, NativeDownloadState>()
           earlyNativeUpdates.set(task, early)
@@ -1142,14 +1161,12 @@ export const getDownloadList = async(limit = 100, offset = 0): Promise<LX.Downlo
 const addTasksToCatalog = async(musicInfos: LX.Music.MusicInfoOnline[], quality: LX.Quality) => {
   const directory = await getDownloadPath()
   if (!directory) throw new Error(global.i18n.t('download_path_required'))
-  // 选了「QQ 账号」取链、而账号没会员（设置里那一项）时，账号那边只能给标准音质。
-  // 任务音质得跟着降到 128k：不然取回来的是 128k 文件，后面的文件大小校验却拿
-  // 320k 的预期大小去比，判成「可能下错了音质」把任务废掉。
-  const accountOnlyStandard = settingState.setting['player.noVipStandardQuality'] &&
-    settingState.setting['download.urlSource'] === 'account'
-  // 文件名、大小校验和各音源请求使用同一音质；不能按主音源能力提前降档。
-  const targetQuality = accountOnlyStandard ? '128k' : quality
-  if (cleanupRecords.size) await retryCleanups(new Set(musicInfos.map(musicInfo => toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`))))
+  // Bound each song by its QQ catalog, independently of account permissions.
+  const planned = musicInfos.map(musicInfo => ({
+    musicInfo,
+    targetQuality: getDownloadQualityOrder(musicInfo, quality)[0],
+  }))
+  if (cleanupRecords.size) await retryCleanups(new Set(planned.map(({ musicInfo, targetQuality }) => toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`))))
   // 同 ID 的待清文件先处理完；其他失败清理不阻塞新歌曲。
   const existing = new Set<string>(getDownloadHistoryIds())
   for (const task of tasks) {
@@ -1157,7 +1174,7 @@ const addTasksToCatalog = async(musicInfos: LX.Music.MusicInfoOnline[], quality:
     existing.add(task.id)
   }
   const added: LX.Download.DownloadTask[] = []
-  for (const musicInfo of musicInfos) {
+  for (const { musicInfo, targetQuality } of planned) {
     const id = toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`)
     if (existing.has(id)) continue
     existing.add(id)
@@ -1165,6 +1182,7 @@ const addTasksToCatalog = async(musicInfos: LX.Music.MusicInfoOnline[], quality:
       id,
       musicInfo,
       quality: targetQuality,
+      requestedQuality: targetQuality,
       status: 'waiting',
       progress: { progress: 0, downloaded: 0, total: 0, speed: '' },
       fileName: buildFileName(musicInfo, targetQuality),

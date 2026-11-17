@@ -42,6 +42,9 @@ const load = (file, mocks = {}, globals = {}) => {
     clearTimeout,
     console: { log() {}, warn() {}, error() {} },
     require: name => {
+      if (name === './downloadQuality' && !Object.hasOwn(mocks, name)) return load('src/core/downloadQuality.ts')
+      if (name === './downloadAudio' && !Object.hasOwn(mocks, name)) return load('src/core/downloadAudio.ts', { '@/utils/nativeModules/remoteAudio': {} })
+      if (name === '@/utils/message' && !Object.hasOwn(mocks, name)) return load('src/utils/message.ts')
       if (name === '@/utils/listPage') return load('src/utils/listPage.ts')
       if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return load('src/utils/abortable.ts', { './message': load('src/utils/message.ts') })
       if (name === '@/utils/temporaryPaths' && !Object.hasOwn(mocks, name)) return load('src/utils/temporaryPaths.ts', { 'react-native': { NativeModules: {} } })
@@ -224,13 +227,15 @@ test('download filenames and source requests keep FLAC even when the primary sou
   assert.equal(h.urlRequests.length, 1)
 })
 
-test('the explicit standard-quality account preference still applies to download tasks', async() => {
+test('the playback standard-quality account preference preserves catalog-confirmed FLAC downloads', async() => {
   const h = downloadHarness({ setting: { 'download.urlSource': 'account', 'player.noVipStandardQuality': true } })
-  await h.api.addTasks([activeTask('standard-song').musicInfo], 'flac')
+  const song = activeTask('standard-song').musicInfo
+  song.meta._qualitys = { flac: { size: '20M' }, '128k': { size: '3M' } }
+  await h.api.addTasks([song], 'flac')
   await flush()
-  assert.equal(h.savedActive()[0].quality, '128k')
-  assert.match(h.savedActive()[0].fileName, /\.mp3$/)
-  assert.equal(h.urlRequests[0].quality, '128k')
+  assert.equal(h.savedActive()[0].quality, 'flac')
+  assert.match(h.savedActive()[0].fileName, /\.flac$/)
+  assert.equal(h.urlRequests[0].quality, 'flac')
   assert.equal(h.urlRequests[0].urlSourceOrder, 'accountFirst')
 })
 
