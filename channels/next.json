@@ -1,1 +1,75 @@
-null
+{
+  "schemaVersion": 1,
+  "channel": "next",
+  "version": "1.9.4-next.9",
+  "versionCode": 100009,
+  "tag": "v1.9.4-next.9",
+  "sourceSha": "9c4abcfbaaf2ed605ff6c44e46dc5f090e2df79a",
+  "publishedAt": "2026-11-17T01:08:09.532Z",
+  "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.4-next.9",
+  "desc": "- fix: mark playlist export callback as asynchronous (9c4abcfb)\n- fix: reject stale singer pagination across independent refresh generations (01d05e01)\n- fix: detach rejected-file waits without losing cleanup state (cdc9e1ea)\n- fix: cancel shared source matching when its final consumer exits (46ad75e0)\n- perf: stream compatible playlist backups in bounded batches (438795ba)\n- fix: bound provider metadata caches and release comment cursors (9c1f919e)\n- fix: preserve animation endpoints through state updates (92246014)\n- perf: read history counts and recommendation seeds from a compact index (24bac470)\n- fix: retain native destination and partial ownership through failed cleanup (3351c992)\n- fix: preserve synchronous lookup of native scroll cancellation (c667135f)\n- fix: cancel primary script scopes and load source text on demand (a4e230c5)\n- fix: resume bounded download queues through durable headless dispatch (0c9000f1)\n- test: load production cancellation and cache adapters in regression hosts (462faa08)\n- fix: carry native lyric scroll cancellation across layouts (902dee89)\n- fix: keep selection row callbacks stable and current (d7234205)\n- fix: recover obsolete storage fragments and index detail cache keys (04101f54)\n- fix: remove cancelled native jobs and bound directory IO (a7c12853)\n- fix: guard legacy cache fallback and isolate concurrent backups (c8fb10d3)\n- fix: cancel metadata transport and release aborted promise waiters (cbc665d7)\n- fix: release hidden page data and restore songlist pagination locally (013a07fd)\n- fix: guard folder import and protect active temporary files (49c926b9)\n- fix: virtualize song menus and release hidden lyric contexts (effa68e4)\n- fix: persist download cleanup ownership and completion receipts (3732459c)\n- fix: cancel obsolete searches and shared songlist pagination (214186ba)\n- fix: resize background images and cancel stale cover prefetches (922a3a8c)\n- fix: release QuickJS call references and settle metadata artwork reads (00e6dbb4)\n- fix: bound download dispatch and cancel removed postprocessing (eb37a1bf)\n- fix: bound row selection props and skip unchanged text animations (5c8e90fc)\n- fix: defer queued storage snapshots and release searches under pressure (a65d413f)\n- fix: share singer cache restoration and pause inactive tabs (b54bd457)",
+  "history": [
+    {
+      "version": "1.9.3-next.6",
+      "desc": "- fix: guard cache recovery, release promotion and lyric seeking (da7ec1bc)\n- fix: bound runtime caches and cancel stale work (f0b96601)\n- chore: remove test-only APIs and cover the production entry points (4d901108)\n- chore: remove obsolete manual release helpers and metadata (733f6c93)\n- refactor: use the playlist cursor as the single paging path (89d30920)\n- chore: remove unused legacy update and quality helpers (3e087123)\n- chore: remove obsolete playback and visibility hooks (1fdc4104)\n- chore: remove the unused JavaScript scroll animation module (46d508fe)\n- fix: preserve legacy Kugou playlist totals across pages (0196b2e3)\n- fix: merge favorite changes against the latest cached state (0695df25)\n- fix: preserve newer download controls during asynchronous resume (57824456)\n- fix: bind asynchronous download updates to task instances (f55206ce)\n- fix: complete online playback queues without overriding user edits (fe17e32a)"
+    },
+    {
+      "version": "1.9.3-next.5",
+      "desc": "- perf: reduce runtime memory and harden resource lifecycles (8a9115ad)\n- fix: build complete queues for deeplinks at page boundaries (91ab7c7d)\n- fix: preserve user selections around dislike actions (d2b0558e)\n- fix: preserve active playback when queue clearing is cancelled (b41c82c9)\n- fix: keep queue metadata on a single head item (e147ba4a)\n- fix: reject partial matches when migrating legacy recommendation queues (47bcda91)\n- fix: cancel updater failure cleanup without retaining release objects (4e2e522d)\n- fix: preserve user playback intents across automatic track changes (4218c2fc)\n- chore: lint CJS files and normalize the regression tests (1db2ec09)\n- fix: use the supported placeholder in update error details (9dd812fe)\n- docs: clarify the default stable update channel (3f921a6a)\n- fix: guard asynchronous playback across online list entry points (9b7303e0)\n- fix: reuse durable update preferences during startup (4e681e0b)\n- fix: release cancelled updater waiters before native downloads finish (83a1a00a)\n- fix: preserve complete recommendation batch identity across restores (02e8e925)\n- fix: preserve newer playback selections while clearing the queue (6f1cd408)"
+    },
+    {
+      "version": "1.9.3-next.4",
+      "desc": "- fix: guard source changes and asynchronous UI feedback (3ac9ed1a)\n- ui: drag to reorder sources and select update channels from a dropdown (3bbc7374)\n- fix: release download resources and guard recommendation playback (3e86c26e)"
+    },
+    {
+      "version": "1.9.3-next.3",
+      "desc": "- fix: avoid restoring stale recommendation queues (7504befd)"
+    },
+    {
+      "version": "1.9.3-next.2",
+      "desc": "- fix: improve update channel fallback and default to stable (2b2bfee2)"
+    },
+    {
+      "version": "1.9.3-next.1",
+      "desc": "- fix: support current apksigner output and recover release initialization (48f4d3b3)\n- fix: harden release pipeline and automatic updates (0e45b000)\n- perf: 原生横滑保护启用时移除重复的 JS 翻页命令 (45bbb96c)\n- fix: 修正横滑手势父容器的接口调用 (8a946afa)\n- fix: 保护推荐列表原生横滑手势并适配小窗宽度 (866f071d)\n- fix: 修复音源自动切换与初始化等待回收 (16a2655d)\n- docs: refine README with professional product descriptions (4ed10122)\n- docs: highlight LX Music X features and listening experience (d2bdc81e)\n- fix: 修复预加载清理、降档缓存及脚本回收 (a4e80e6c)\n- fix: probe audio headers and isolate source cooldown failures (406cb205)\n- fix: reuse audio probe ranges and clarify playback diagnostics (a3d6adc4)\n- feat(player): add playback and preload diagnostic logging (12e773d1)\n- fix(player): synchronize playback and custom source switching (bb89d3bc)\n- fix: recover stalled next-track preloading after failures (c14a3387)\n- perf: reduce retained UI state and redundant playback work (740ca338)\n- fix: align audio probing with playback and support source formats (3694829c)\n- fix: validate QQ source audio before playback and preloading (44e8d7ba)\n- fix: stabilize requests, playback state, downloads and session caching (6d8335d5)\n- fix: preserve background preloading and temporary playback handoff (24de1335)\n- docs: rewrite README with neutral user-facing documentation (5b88d6c0)\n- feat: add download share and cache actions to player menu (5aed3d9e)\n- fix: reject incomplete QQ account audio and cached previews (b139af10)\n- fix: stabilize sizing across tablet window transitions (8f594b5d)\n- Fix tablet split-screen layout and modal sizing (877f6502)\n- Fix memory lifecycle and release idle UI resources (f81138a6)\n- fix: 优化平板弹窗并保留播放页位置 (c5cb5687)\n- fix: 调整平板当前播放列表尺寸 (8ba07c77)\n- fix: 平板播放详情三页滑动同时展示两页 (4df6b80a)\n- feat: 优化平板导航和播放布局 (9211beaf)\n- fix: 修复下载内存回收、音质与搜索缓存 (d1219950)\n- fix: 平板推荐歌单恢复横向滑动 (f2eef3cb)\n- style: 平板导航的首页/我的改为上下相邻 (b639adad)\n- fix: 平板导航只保留首页/我的，其余页面用竖屏结构 (643c94cf)\n- fix: 修复平板导航返回与网格缩放 (b3347f81)\n- feat: 平板横屏改左侧导航和多列布局 (82dd472a)\n- style: 精简音源排序和预加载说明 (99cc8aa9)\n- fix: 修正预加载音质与取消边界 (d4694f2d)\n- feat: 增加下一首预加载和自定义音源优先级 (86560231)\n- refactor: 移除竖屏首页横向滚动开关 (c479613a)\n- fix: 优化歌词定位并取消过期滚动 (df96e1c6)\n- chore: 开发约定仅保留在本地 (63f9938d)\n- fix: 修复页面返回时背景闪烁 (4419bd73)\n- perf: 降低内存占用并优化下载与搜索 (615494f9)\n- chore: 清理未引用的导出和废弃工具函数 (778ea1e5)\n- fix: 恢复 QQ 歌词翻译并升级旧缓存 (33c58424)\n- fix: 修复 QQ 会话和歌单缓存并发写入 (5b427261)\n- fix: 审查修复（收藏换号写保护/备份提示/迁移容错） (53ae4b7e)\n- chore: 清理废弃功能并修复歌单缓存分页 (ce02a31b)\n- fix: bound and cancel QQ playback probes and refresh stale checks (1ca906f4)\n- fix: align QQ account playback fallback with MusicOne (364cc9a3)"
+    }
+  ],
+  "assets": [
+    {
+      "abi": "arm64-v8a",
+      "fileName": "lx-music-mobile-v1.9.4-next.9-arm64-v8a.apk",
+      "size": 25188697,
+      "sha256": "6f1d50a09066a958481aebf659d683118a7319d006060b79bf5f13e84bbd6975",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.9/lx-music-mobile-v1.9.4-next.9-arm64-v8a.apk"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "fileName": "lx-music-mobile-v1.9.4-next.9-armeabi-v7a.apk",
+      "size": 20293084,
+      "sha256": "169322aceb0d161ea915f786c4aec09a02062d64785b5d125ec9c00182cc1694",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.9/lx-music-mobile-v1.9.4-next.9-armeabi-v7a.apk"
+    },
+    {
+      "abi": "x86_64",
+      "fileName": "lx-music-mobile-v1.9.4-next.9-x86_64.apk",
+      "size": 25955654,
+      "sha256": "c8501879aa56aa52d1b066369f96fe9a8319949788632cf33520b927155b15d8",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.9/lx-music-mobile-v1.9.4-next.9-x86_64.apk"
+    },
+    {
+      "abi": "x86",
+      "fileName": "lx-music-mobile-v1.9.4-next.9-x86.apk",
+      "size": 25498251,
+      "sha256": "65be41ef0684f2455e6be0a699743dfb14dfd2479019a3fe3dfce374c093b240",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.9/lx-music-mobile-v1.9.4-next.9-x86.apk"
+    },
+    {
+      "abi": "universal",
+      "fileName": "lx-music-mobile-v1.9.4-next.9-universal.apk",
+      "size": 67847006,
+      "sha256": "5cc0654981409cc8d547a900847badf0d2a57a5c2ee7e65538670cce0555401a",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.9/lx-music-mobile-v1.9.4-next.9-universal.apk"
+    }
+  ],
+  "signingCertificateSha256": "37bf055966cdf9bb76a14f8298d9fe5898c264cd266997508f3bcac2e36c0814"
+}
