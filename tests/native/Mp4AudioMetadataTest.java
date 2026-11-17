@@ -70,8 +70,14 @@ public final class Mp4AudioMetadataTest {
   }
 
   private static byte[] track(String codec, boolean version1, int seconds, int sampleSeconds, boolean variable) throws IOException {
-    byte[] mdhd = version1 ? ints(0x01000000, 0, 0, 0, 0, 48000, 0, seconds * 48000, 0)
-        : ints(0, 0, 0, 48000, seconds * 48000, 0);
+    byte[] timing = sampleSeconds == 0 ? ints(0, 0) : ints(0, 1, sampleSeconds, 48000);
+    return track(codec, version1, seconds, sampleSeconds, variable, timing);
+  }
+
+  private static byte[] track(String codec, boolean version1, int seconds, int sampleSeconds, boolean variable, byte[] timing) throws IOException {
+    long duration = seconds < 0 ? -1L : seconds * 48000L;
+    byte[] mdhd = version1 ? ints(0x01000000, 0, 0, 0, 0, 48000, (int) (duration >>> 32), (int) duration, 0)
+        : ints(0, 0, 0, 48000, (int) duration, 0);
     byte[] esds = box("esds", ints(0), new byte[] {3, 18, 0, 1, 0, 4, 13, 0x40, 0x15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
     int[] sizes = new int[variable ? 3 + sampleSeconds : 3];
     sizes[1] = variable ? 0 : 16000;
@@ -81,7 +87,7 @@ public final class Mp4AudioMetadataTest {
     return box("trak", box("mdia", box("mdhd", mdhd),
         box("hdlr", ints(0, 0, type(codec.equals("avc1") ? "vide" : "soun"))),
         box("minf", box("stbl", box("stsd", ints(0, 1), entry),
-            box("stts", ints(0, 1, sampleSeconds, 48000)), box("stsz", ints(sizes))))));
+            box("stts", timing), box("stsz", ints(sizes))))));
   }
 
   private static Source file(boolean tail, boolean version1, boolean video, String codec) throws IOException {
@@ -124,8 +130,25 @@ public final class Mp4AudioMetadataTest {
     Source shortAudio = new Source().add(box("ftyp", ints(0, 0))).add(box("moov", track("mp4a", false, 280, 30)))
         .add(ints(480008, type("mdat"))).gap(480000);
     check(read(shortAudio).durationMs == 30000, "full-length mdhd hid a short sample table");
-    Source noDuration = new Source().add(box("moov", track("mp4a", false, -1, 0))).add(box("mdat", new byte[8]));
-    check(read(noDuration) == null, "missing duration accepted");
+    for (boolean version1 : new boolean[] {false, true}) {
+      for (boolean variable : new boolean[] {false, true}) {
+        for (int seconds : new int[] {-1, 280}) {
+          Source empty = new Source().add(box("moov", track("mp4a", version1, seconds, 0, variable)))
+              .add(box("mdat", new byte[8]));
+          check(read(empty) == null, "empty sample tables accepted, mdhd v" + (version1 ? 1 : 0) + ", variable sizes " + variable);
+        }
+      }
+      for (int seconds : new int[] {0, -1}) {
+        Source noDuration = new Source().add(box("moov", track("mp4a", version1, seconds, 280)))
+            .add(ints((int) MEDIA_SIZE, type("mdat"))).gap(MEDIA_SIZE - 8);
+        check(read(noDuration) == null, "zero/unknown mdhd duration accepted, version " + (version1 ? 1 : 0));
+      }
+    }
+    for (byte[] timing : new byte[][] {ints(0, 1, 0, 48000), ints(0, 1, 280, 0)}) {
+      Source invalidTiming = new Source().add(box("moov", track("mp4a", false, 280, 280, false, timing)))
+          .add(ints((int) MEDIA_SIZE, type("mdat"))).gap(MEDIA_SIZE - 8);
+      invalid(invalidTiming, "invalid_metadata");
+    }
     Source fragment = new Source().add(box("moov", track("mp4a", false, 280, 280), box("mvex")))
         .add(box("mdat", new byte[8]));
     check(read(fragment) == null, "fragmented MP4 used incomplete sample table");
