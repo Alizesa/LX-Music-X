@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 9,
+  "sequence": 10,
   "lastStableVersion": "1.9.3",
   "nextTargetVersion": "1.9.4",
   "branches": {
-    "Next": "9c4abcfbaaf2ed605ff6c44e46dc5f090e2df79a",
+    "Next": "9e540f9a4c6423d917f727c55b22bee926b67266",
     "master": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628"
   },
   "events": {},
@@ -153,6 +153,17 @@
         "desc": "- fix: mark playlist export callback as asynchronous (9c4abcfb)\n- fix: reject stale singer pagination across independent refresh generations (01d05e01)\n- fix: detach rejected-file waits without losing cleanup state (cdc9e1ea)\n- fix: cancel shared source matching when its final consumer exits (46ad75e0)\n- perf: stream compatible playlist backups in bounded batches (438795ba)\n- fix: bound provider metadata caches and release comment cursors (9c1f919e)\n- fix: preserve animation endpoints through state updates (92246014)\n- perf: read history counts and recommendation seeds from a compact index (24bac470)\n- fix: retain native destination and partial ownership through failed cleanup (3351c992)\n- fix: preserve synchronous lookup of native scroll cancellation (c667135f)\n- fix: cancel primary script scopes and load source text on demand (a4e230c5)\n- fix: resume bounded download queues through durable headless dispatch (0c9000f1)\n- test: load production cancellation and cache adapters in regression hosts (462faa08)\n- fix: carry native lyric scroll cancellation across layouts (902dee89)\n- fix: keep selection row callbacks stable and current (d7234205)\n- fix: recover obsolete storage fragments and index detail cache keys (04101f54)\n- fix: remove cancelled native jobs and bound directory IO (a7c12853)\n- fix: guard legacy cache fallback and isolate concurrent backups (c8fb10d3)\n- fix: cancel metadata transport and release aborted promise waiters (cbc665d7)\n- fix: release hidden page data and restore songlist pagination locally (013a07fd)\n- fix: guard folder import and protect active temporary files (49c926b9)\n- fix: virtualize song menus and release hidden lyric contexts (effa68e4)\n- fix: persist download cleanup ownership and completion receipts (3732459c)\n- fix: cancel obsolete searches and shared songlist pagination (214186ba)\n- fix: resize background images and cancel stale cover prefetches (922a3a8c)\n- fix: release QuickJS call references and settle metadata artwork reads (00e6dbb4)\n- fix: bound download dispatch and cancel removed postprocessing (eb37a1bf)\n- fix: bound row selection props and skip unchanged text animations (5c8e90fc)\n- fix: defer queued storage snapshots and release searches under pressure (a65d413f)\n- fix: share singer cache restoration and pause inactive tabs (b54bd457)"
       },
       "publishedAt": "2026-11-17T01:08:09.532Z"
+    },
+    "Next/9e540f9a4c6423d917f727c55b22bee926b67266": {
+      "branch": "Next",
+      "sourceSha": "9e540f9a4c6423d917f727c55b22bee926b67266",
+      "before": "9c4abcfbaaf2ed605ff6c44e46dc5f090e2df79a",
+      "channel": "next",
+      "sequence": 10,
+      "version": "1.9.4-next.10",
+      "versionCode": 100010,
+      "tag": "v1.9.4-next.10",
+      "status": "allocated"
     }
   },
   "channels": {
