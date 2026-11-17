@@ -41,7 +41,7 @@ test('AAC, Ogg Opus and MP4 codecs keep their actual filename containers', () =>
   assert.equal(validateDownloadMedia('128k', aac).mimeType, 'audio/mp4')
   assert.equal(validateDownloadMedia('128k', { ...aac, mime: 'audio/aac', headerKind: 'unknown' }).extension, 'aac')
   assert.equal(validateDownloadMedia('128k', { ...aac, mime: 'audio/opus', headerKind: 'ogg' }).extension, 'ogg')
-  assert.equal(validateDownloadMedia('flac', { readable: true, mime: 'audio/flac', headerKind: 'mp4' }).extension, 'm4a')
+  assert.equal(validateDownloadMedia('flac', { readable: true, mime: 'audio/flac', headerKind: 'mp4', bitDepth: 16, sampleRate: 44100 }).extension, 'm4a')
   for (const contentLength of [-1, NaN, Infinity, 0]) assert.equal(validateDownloadMedia('128k', { ...aac, contentLength }).contentLength, undefined)
 })
 
@@ -129,3 +129,8 @@ for (const deleteFile of [false, true]) {
     assert.equal(h.files.has(`/private/downloads/${id}.part`), false)
   })
 }
+
+test('unconfirmed bitrate or FLAC resolution cannot silently claim a download tier', () => {
+  assert.throws(() => validateDownloadMedia('128k', { readable: true, mime: 'audio/mp4a-latm' }), /bitrate_unavailable/)
+  assert.throws(() => validateDownloadMedia('flac', { readable: true, mime: 'audio/flac' }), /quality_mismatch/)
+})

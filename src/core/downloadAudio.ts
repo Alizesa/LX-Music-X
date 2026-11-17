@@ -41,17 +41,18 @@ export const validateDownloadMedia = (quality: LX.Quality, media: RemoteAudioInf
   const mime = media.mime?.toLowerCase() ?? ''
   const codecExtension = MIME_EXTENSIONS[mime]
   if (!codecExtension) throw new DownloadAudioError('format_mismatch')
-  // MP3's audio view excludes its leading ID3 artwork; MP4 reports sample bytes from stsz.
-  const mp3Bytes = (media.contentLength ?? 0) - (media.audioOffset ?? 0)
-  const bitRate = media.bitRate ?? (codecExtension === 'mp3' && mp3Bytes > 0 && (media.durationMs ?? 0) > 0
-    ? mp3Bytes * 8000 / media.durationMs! : 0)
+  const lossless = ['flac', 'wav', 'ape'].includes(codecExtension)
+  // MP4 reports audio sample bytes, excluding artwork. Without that, total bytes give a conservative upper bound.
+  const payloadBytes = (media.contentLength ?? 0) - Math.max(0, media.audioOffset ?? 0)
+  const bitRate = Number.isFinite(media.bitRate) && media.bitRate! > 0 ? media.bitRate!
+    : payloadBytes > 0 && (media.durationMs ?? 0) > 0 ? payloadBytes * 8000 / media.durationMs! : 0
+  if (!lossless && (quality === '128k' || quality === '320k') && !(bitRate > 0)) throw new DownloadAudioError('bitrate_unavailable')
   if ((quality === '128k' && bitRate > 160000) || (quality === '320k' && (bitRate > 384000 || (bitRate > 0 && bitRate <= 160000)))) {
     throw new DownloadAudioError('quality_mismatch')
   }
-  const lossless = ['flac', 'wav', 'ape'].includes(codecExtension)
   const highResolution = (media.bitDepth ?? 0) > 16 || (media.sampleRate ?? 0) > 48000
   if ((quality === '128k' || quality === '320k') ? lossless
-    : quality === 'flac' ? codecExtension !== 'flac' || highResolution
+    : quality === 'flac' ? codecExtension !== 'flac' || highResolution || !(media.bitDepth! > 0 && media.sampleRate! > 0)
       : quality === 'flac24bit' ? codecExtension !== 'flac' || !highResolution
         : codecExtension !== quality) throw new DownloadAudioError('quality_mismatch')
   // A codec MIME is not a filename container: AAC/Opus/FLAC can live inside MP4.
