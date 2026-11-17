@@ -1,5 +1,6 @@
+import { buildMusicQuality } from './quality'
 import { httpFetch } from '../../request'
-import { formatPlayTime, sizeFormate } from '../../index'
+import { formatPlayTime } from '../../index'
 
 const getSinger = (singers) => {
   let arr = []
@@ -37,38 +38,7 @@ export default (songmid) => {
     const item = body.req.data.track_info
     if (!item.file?.media_mid) return null
 
-    let types = []
-    let _types = {}
-    const file = item.file
-    if (file.size_128mp3 != 0) {
-      let size = sizeFormate(file.size_128mp3)
-      types.push({ type: '128k', size })
-      _types['128k'] = {
-        size,
-      }
-    }
-    if (file.size_320mp3 !== 0) {
-      let size = sizeFormate(file.size_320mp3)
-      types.push({ type: '320k', size })
-      _types['320k'] = {
-        size,
-      }
-    }
-    if (file.size_flac !== 0) {
-      let size = sizeFormate(file.size_flac)
-      types.push({ type: 'flac', size })
-      _types.flac = {
-        size,
-      }
-    }
-    if (file.size_hires !== 0) {
-      let size = sizeFormate(file.size_hires)
-      types.push({ type: 'flac24bit', size })
-      _types.flac24bit = {
-        size,
-      }
-    }
-    // types.reverse()
+    const { types, _types } = buildMusicQuality(item.file)
     let albumId = ''
     let albumName = ''
     if (item.album) {

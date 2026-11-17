@@ -485,6 +485,7 @@ const qqSearchHarness = respond => {
   const clock = timers()
   const requests = []
   const api = load('src/utils/musicSdk/tx/musicSearch.js', {
+    './quality': load('src/utils/musicSdk/tx/quality.js', { '../../index': {} }),
     '../../index': {},
     '../utils': {},
     '@/utils/abort': abort,
