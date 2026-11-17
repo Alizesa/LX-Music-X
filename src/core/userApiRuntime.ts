@@ -45,7 +45,11 @@ export const requestUserApiMusicUrl = async(apiId: string, musicInfo: LX.Music.M
     rejectCancelled(new Error(message))
   }
   onCancel?.(() => { cancel(requestMsg.cancelRequest) })
-  const timeout = BackgroundTimer.setTimeout(() => { cancel('Source request timeout') }, 12_000)
+  let timeout = BackgroundTimer.setTimeout(() => { cancel('Source request timeout') }, 12_000)
+  const startExecutionDeadline = () => {
+    BackgroundTimer.clearTimeout(timeout)
+    if (!disposed) timeout = BackgroundTimer.setTimeout(() => { cancel('Source request timeout') }, 12_000)
+  }
 
   const work = async() => {
     assertActive()
@@ -63,6 +67,10 @@ export const requestUserApiMusicUrl = async(apiId: string, musicInfo: LX.Music.M
       playbackLog('source.request', () => ({ ...trace, apiId, quality: type, requestedQuality: preferredQuality }))
       const request = api.getMusicUrl(toOldMusicInfo(musicInfo), type)
       cancelRequest = request.canceleFn
+      if (request.onDispatch) {
+        BackgroundTimer.clearTimeout(timeout)
+        request.onDispatch(startExecutionDeadline)
+      }
       const result = await request.promise
       assertActive()
       return { url: result.url, type }

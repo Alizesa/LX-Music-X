@@ -5,14 +5,14 @@ const { createStateEventHub } = load('src/event/stateEvent.ts', { './Event': { d
 const message = load('src/utils/message.ts')
 const song = { id: 'kw_song', source: 'kw', name: 'Song', singer: 'Singer', interval: '03:00', meta: { _qualitys: { '128k': {}, flac: {} } } }
 
-const userApiHarness = async({ scripts = {}, autoReply = true, appGlobal, setting: suppliedSetting } = {}) => {
+const userApiHarness = async({ scripts = {}, autoReply = true, appGlobal, setting: suppliedSetting, clock: suppliedClock } = {}) => {
   const setting = suppliedSetting ?? { 'common.apiSource': '', 'common.apiSourceOrder': '[]' }
   const state = { list: ['user_api_A', 'user_api_B'].map(id => ({ id, name: id, allowShowUpdateAlert: false })), status: {} }
   const globalState = appGlobal ?? { state_event: createStateEventHub(), lx: {}, i18n: { t: key => key } }
   Object.assign(globalState.lx, { qualityList: {}, apis: {}, apiInitPromise: [Promise.resolve(false), true, () => {}] })
   const loads = []; const sends = []; const destroyed = []; const listeners = new Set(); const timers = new Map()
   let timerId = 0
-  const clock = { setTimeout: fn => { timers.set(++timerId, fn); return timerId }, clearTimeout: id => timers.delete(id) }
+  const clock = suppliedClock ?? { setTimeout: fn => { timers.set(++timerId, fn); return timerId }, clearTimeout: id => timers.delete(id) }
   const emit = (runtimeId, action, data) => {
     for (const listener of listeners) listener({ runtimeId, action, data: JSON.stringify(data) })
   }

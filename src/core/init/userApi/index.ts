@@ -12,11 +12,15 @@ import { waitForPromise } from '@/utils/abortable'
 export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: { suppressDialogs?: () => boolean } = {}) => {
   // 读失败可安全重试，不能留下半套重复监听。
   const userApis = await getUserApiList()
-  const userApiRequestMap = new Map<string, { resolve: (value: ResponseParams['result']) => void, reject: (error: Error) => void, timeout: number, generation: number, data: LX.UserApi.UserApiRequestParams | null }>()
+  const userApiRequestMap = new Map<string, { resolve: (value: ResponseParams['result']) => void, reject: (error: Error) => void, timeout: number | null, onDispatch?: () => void, generation: number, data: LX.UserApi.UserApiRequestParams | null }>()
   const scriptRequestMap = new Map<string, { request: Promise<any>, abort: () => void, generation: number, parentRequestKey: string | null, controller: AbortController }>()
   let activeRequestKey: string | null = null
   let restarting = false
+  let restartGeneration: number | null = null
   let cancelDeadline: number | null = null
+  let restartDeadline: number | null = null
+  const clearDeadline = (timeout: number | null) => { if (timeout !== null) BackgroundTimer.clearTimeout(timeout) }
+  const clearRestartDeadline = () => { clearDeadline(restartDeadline); restartDeadline = null }
   const clearCancelDeadline = () => {
     if (cancelDeadline !== null) BackgroundTimer.clearTimeout(cancelDeadline)
     cancelDeadline = null
@@ -24,7 +28,7 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
   const failPending = (error: Error) => {
     for (const [key, request] of userApiRequestMap) {
       userApiRequestMap.delete(key)
-      BackgroundTimer.clearTimeout(request.timeout)
+      clearDeadline(request.timeout)
       request.reject(error)
     }
   }
@@ -34,17 +38,22 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
       if (!request.data) continue
       if (request.generation !== getScriptGeneration()) {
         userApiRequestMap.delete(key)
-        BackgroundTimer.clearTimeout(request.timeout)
+        clearDeadline(request.timeout)
         request.reject(new Error(requestMsg.cancelRequest))
         continue
       }
       activeRequestKey = key
       const data = request.data
       request.data = null
-      try { sendAction('request', data) } catch (error) {
+      try {
+        request.timeout = BackgroundTimer.setTimeout(() => { cancelUserApiRequest(key, new Error('request timeout')) }, 20_000)
+        request.onDispatch?.()
+        request.onDispatch = undefined
+        sendAction('request', data)
+      } catch (error) {
         activeRequestKey = null
         userApiRequestMap.delete(key)
-        BackgroundTimer.clearTimeout(request.timeout)
+        clearDeadline(request.timeout)
         request.reject(error instanceof Error ? error : new Error(String(error)))
         continue
       }
@@ -64,7 +73,7 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
     const target = userApiRequestMap.get(requestKey)
     if (!target) return
     userApiRequestMap.delete(requestKey)
-    BackgroundTimer.clearTimeout(target.timeout)
+    clearDeadline(target.timeout)
     if (activeRequestKey === requestKey) {
       for (const [key, request] of scriptRequestMap) if (request.parentRequestKey === requestKey) cancelRequest(key, 'parent canceled')
       try { if (target.generation === getScriptGeneration()) sendAction('cancelRequest', requestKey) } catch {}
@@ -75,10 +84,22 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
         if (activeRequestKey !== requestKey || generation !== getScriptGeneration()) return
         activeRequestKey = null
         restarting = true
+        restartGeneration = generation
         // 主环境一次只处理一个业务请求；尚未分派的消费者没有 HTTP，可安全摘掉旧上下文的初始化工作。
         for (const key of scriptRequestMap.keys()) cancelRequest(key, 'context restart')
         try {
-          if (restartScriptContext()) return
+          if (restartScriptContext()) {
+            restartDeadline = BackgroundTimer.setTimeout(() => {
+              restartDeadline = null
+              if (!restarting || generation !== getScriptGeneration()) return
+              restarting = false
+              global.lx.apis = {}
+              const error = new Error('Source recovery timeout')
+              setUserApiStatus(false, error.message)
+              failPending(error)
+            }, 12_000)
+            return
+          }
           throw new Error('Canceled source requires an updated app')
         } catch (error) {
           restarting = false
@@ -115,18 +136,16 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
     })
     scriptRequestMap.set(requestKey, req)
   }
-  const sendUserApiRequest = async(data: LX.UserApi.UserApiRequestParams) => {
+  const sendUserApiRequest = async(data: LX.UserApi.UserApiRequestParams, onDispatch?: () => void) => {
     const generation = getScriptGeneration()
-    const requestKey = data.requestKey
     const requestPromise = new Promise<ResponseParams['result']>((resolve, reject) => {
       userApiRequestMap.set(data.requestKey, {
         resolve,
         reject,
         generation,
         data,
-        timeout: BackgroundTimer.setTimeout(() => {
-          cancelUserApiRequest(requestKey, new Error('request timeout'))
-        }, 20_000),
+        timeout: null,
+        onDispatch,
       })
       dispatchNext()
     })
@@ -136,7 +155,7 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
     const target = userApiRequestMap.get(requestKey)
     if (!target) return
     userApiRequestMap.delete(requestKey)
-    BackgroundTimer.clearTimeout(target.timeout)
+    clearDeadline(target.timeout)
     if (target.generation !== getScriptGeneration()) target.reject(new Error(requestMsg.cancelRequest))
     else if (status) target.resolve(result)
     else target.reject(new Error(errorMessage ?? 'failed'))
@@ -157,7 +176,13 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
               case 'musicUrl':
                 apis[source].getMusicUrl = (songInfo: LX.Music.MusicInfo, type: LX.Quality) => {
                   const requestKey = `request__${Math.random().toString().substring(2)}`
+                  let dispatched = false
+                  let onDispatch: (() => void) | undefined
                   return {
+                    onDispatch(callback: () => void) {
+                      if (dispatched) callback()
+                      else onDispatch = callback
+                    },
                     canceleFn() {
                       cancelUserApiRequest(requestKey)
                     },
@@ -172,6 +197,10 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
                         },
                       },
                       // eslint-disable-next-line @typescript-eslint/promise-function-async
+                    }, () => {
+                      dispatched = true
+                      onDispatch?.()
+                      onDispatch = undefined
                     }).then(res => {
                       // console.log(res)
                       return { type, url: res.data.url }
@@ -258,6 +287,7 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
     }
     if (!global.lx.apiInitPromise[1]) global.lx.apiInitPromise[2](status)
     if (restarting) {
+      clearRestartDeadline()
       restarting = false
       if (status) dispatchNext()
       else {
@@ -292,10 +322,14 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
 
   global.state_event.on('apiSourceUpdated', () => {
     const generation = getScriptGeneration()
+    if (generation !== restartGeneration) {
+      clearRestartDeadline()
+      restarting = false
+    }
     for (const [key, request] of userApiRequestMap) {
       if (request.generation === generation) continue
       userApiRequestMap.delete(key)
-      BackgroundTimer.clearTimeout(request.timeout)
+      clearDeadline(request.timeout)
       request.reject(new Error(requestMsg.cancelRequest))
     }
     if (activeRequestKey && !userApiRequestMap.has(activeRequestKey)) {

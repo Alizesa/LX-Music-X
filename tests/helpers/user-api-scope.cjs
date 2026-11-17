@@ -5,8 +5,8 @@ const { userApiHarness, song, flush } = require('./user-api.cjs')
 
 const preload = fs.readFileSync(path.join(__dirname, '../../android/app/src/main/assets/script/user-api-preload.js'), 'utf8')
 
-const scopeHarness = async script => {
-  const h = await userApiHarness({ autoReply: false, scripts: { user_api_A: { promise: Promise.resolve(script) }, user_api_B: { promise: Promise.resolve(script) } } })
+const scopeHarness = async(script, options = {}) => {
+  const h = await userApiHarness({ ...options, autoReply: false, scripts: { user_api_A: { promise: Promise.resolve(script) }, user_api_B: { promise: Promise.resolve(script) } } })
   const environments = new Map(); const timers = new Map(); const events = []
   const pendingSettled = []
   let holdSettled = false
