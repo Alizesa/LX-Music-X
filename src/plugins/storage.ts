@@ -7,6 +7,8 @@ const partKeyPrefixRxp = /^@___PART___/
 const partKeyArrPrefixRxp = /^@___PART_A___/
 const keySplit = ','
 const limit = 500000
+// Next storage uses one SQL parameter per IN key; older Android SQLite allows 999.
+const SQL_KEY_BATCH_SIZE = 500
 const partNamespace = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 let partSequence = 0
 const obsoletePartsPrefix = '@___OBSOLETE_PARTS___'
@@ -16,8 +18,8 @@ const finishObsoleteLoading = () => { obsoleteLoaded = true }
 let obsoleteRecovery: Promise<void> | null = null
 const removeObsoleteParts = async(key: string, parts: string[]) => {
   try {
-    // 删除记录与其文件在同一事务；失败保留归属供重启后重试。
-    await AsyncStorage.multiRemove([...parts, key])
+    // Keep the recovery record until the last batch commits; partial cleanup is retryable.
+    await removeStorageValues([...parts, key])
     obsoleteParts.delete(key)
   } catch (error) {
     log.error('storage error[cleanup parts]:', error instanceof Error ? error.message : String(error))
@@ -30,7 +32,7 @@ const recoverObsoleteParts = async() => {
       if (!obsoleteLoaded) {
         const keys = (await AsyncStorage.getAllKeys()).filter(key => key.startsWith(obsoletePartsPrefix))
         for (let offset = 0; offset < keys.length; offset += 100) {
-          const records = await AsyncStorage.multiGet(keys.slice(offset, offset + 100))
+          const records = await readStorageValues(keys.slice(offset, offset + 100))
           for (const [key, value] of records) {
             const parts = value && parseData<unknown>(value, key)
             if (Array.isArray(parts) && parts.every((part): part is string => typeof part === 'string' && part !== key)) obsoleteParts.set(key, parts)
@@ -116,12 +118,33 @@ const readWithRetry = async<T>(read: () => Promise<T>): Promise<T> => {
   throw lastError
 }
 
+const readStorageValues = async(keys: readonly string[]): Promise<Array<[string, string | null]>> => {
+  const rows: Array<[string, string | null]> = []
+  for (let offset = 0; offset < keys.length; offset += SQL_KEY_BATCH_SIZE) {
+    const batch = keys.slice(offset, offset + SQL_KEY_BATCH_SIZE)
+    const values = await readWithRetry(async() => {
+      const reading = AsyncStorage.multiGet(batch)
+      // Concurrent multiGet calls otherwise merge back into an oversized native query.
+      AsyncStorage.flushGetRequests?.()
+      return reading
+    })
+    rows.push(...values)
+  }
+  return rows
+}
+
+const removeStorageValues = async(keys: readonly string[]) => {
+  for (let offset = 0; offset < keys.length; offset += SQL_KEY_BATCH_SIZE) {
+    await AsyncStorage.multiRemove(keys.slice(offset, offset + SQL_KEY_BATCH_SIZE))
+  }
+}
+
 // 1.4.0 之前的数据分片存储方式，存在key的内容与分隔符冲突的问题
 // 1.4.0 开始改用数组存储，不再使用分隔符的方式
 const handleGetDataOld = async<T>(partKeys: string, key: string): Promise<T | null> => {
   const keys = partKeys.replace(partKeyPrefixRxp, '').split(keySplit)
 
-  return readWithRetry(async() => AsyncStorage.multiGet(keys)).then(datas => {
+  return readStorageValues(keys).then(datas => {
     return parseData<T>(datas.map(data => data[1]).join(''), key)
   })
 }
@@ -131,7 +154,7 @@ const handleGetData = async<T>(partKeys: string, key: string): Promise<T | null>
 
   const keys = parseData<unknown>(partKeys.replace(partKeyArrPrefixRxp, ''), key)
   if (!Array.isArray(keys) || !keys.every((key): key is string => typeof key === 'string')) return null
-  return readWithRetry(async() => AsyncStorage.multiGet(keys)).then(datas => {
+  return readStorageValues(keys).then(datas => {
     return parseData<T>(datas.map(data => data[1]).join(''), key)
   })
 }
@@ -152,7 +175,7 @@ const replaceData = async(datas: Array<[string, any]>) => {
     await recoverObsoleteParts()
     const values: Array<[string, string]> = []
     for (const [key, value] of unique) buildData(key, value, values)
-    const previous = await readWithRetry(async() => AsyncStorage.multiGet(keys))
+    const previous = await readStorageValues(keys)
     const oldParts = previous.flatMap(([key, value]) => getPartKeys(value, key))
     const cleanupKey = oldParts.length ? `${obsoletePartsPrefix}${partNamespace}_${++partSequence}` : null
     if (cleanupKey) values.push([cleanupKey, JSON.stringify(oldParts)])
@@ -201,7 +224,7 @@ export const saveDataMultipleDirect = async(datas: Array<[string, unknown]>) => 
 }
 
 export const removeDataMultipleDirect = async(keys: string[]) => {
-  if (keys.length) await withKeys(keys, async() => AsyncStorage.multiRemove(keys))
+  if (keys.length) await withKeys(keys, async() => removeStorageValues(keys))
 }
 
 export const getData = async<T = unknown>(key: string): Promise<T | null> => withKeys([key], async() => {
@@ -249,7 +272,7 @@ export const getDataMultiple = async<T extends readonly string[]>(keys: T) => wi
   type RawData = { [K in keyof T]: [T[K], string | null] }
   let datas: RawData
   try {
-    datas = await readWithRetry(async() => AsyncStorage.multiGet(keys)) as RawData
+    datas = await readStorageValues(keys) as RawData
   } catch (e: any) {
     // read error
     log.error('storage error[getDataMultiple]:', e.message)
@@ -287,8 +310,21 @@ export const removeDataMultiple = async(keys: string[]) => {
   if (!keys.length) return
   try {
     await withKeys(keys, async() => {
-      const datas = await readWithRetry(async() => AsyncStorage.multiGet(keys))
-      await AsyncStorage.multiRemove(datas.flatMap(([key, value]) => [key, ...getPartKeys(value, key)]))
+      const datas = await readStorageValues(keys)
+      let batch: string[] = []
+      for (const [key, value] of datas) {
+        const group = [...new Set([...getPartKeys(value, key), key])]
+        if (batch.length + group.length > SQL_KEY_BATCH_SIZE) {
+          await removeStorageValues(batch)
+          batch = []
+        }
+        if (group.length > SQL_KEY_BATCH_SIZE) {
+          // Remove the index last so a failed oversized deletion retains all paths for retry.
+          await removeStorageValues(group)
+        } else batch.push(...group)
+      }
+      // Keep each logical value and its fragments in one transaction whenever they fit.
+      await removeStorageValues(batch)
     })
   } catch (e: any) {
     // remove error
