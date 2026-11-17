@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 7,
+  "sequence": 8,
   "lastStableVersion": "1.9.3",
   "nextTargetVersion": "1.9.4",
   "branches": {
-    "Next": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628",
+    "Next": "01d05e0151934e34d3fd1113e0d3976863cd2766",
     "master": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628"
   },
   "events": {},
@@ -126,6 +126,17 @@
         "desc": "- fix: guard cache recovery, release promotion and lyric seeking (da7ec1bc)\n- fix: bound runtime caches and cancel stale work (f0b96601)\n- chore: remove test-only APIs and cover the production entry points (4d901108)\n- chore: remove obsolete manual release helpers and metadata (733f6c93)\n- refactor: use the playlist cursor as the single paging path (89d30920)\n- chore: remove unused legacy update and quality helpers (3e087123)\n- chore: remove obsolete playback and visibility hooks (1fdc4104)\n- chore: remove the unused JavaScript scroll animation module (46d508fe)\n- fix: preserve legacy Kugou playlist totals across pages (0196b2e3)\n- fix: merge favorite changes against the latest cached state (0695df25)\n- fix: preserve newer download controls during asynchronous resume (57824456)\n- fix: bind asynchronous download updates to task instances (f55206ce)\n- fix: complete online playback queues without overriding user edits (fe17e32a)\n- perf: reduce runtime memory and harden resource lifecycles (8a9115ad)\n- fix: build complete queues for deeplinks at page boundaries (91ab7c7d)\n- fix: preserve user selections around dislike actions (d2b0558e)\n- fix: preserve active playback when queue clearing is cancelled (b41c82c9)\n- fix: keep queue metadata on a single head item (e147ba4a)\n- fix: reject partial matches when migrating legacy recommendation queues (47bcda91)\n- fix: cancel updater failure cleanup without retaining release objects (4e2e522d)\n- fix: preserve user playback intents across automatic track changes (4218c2fc)\n- chore: lint CJS files and normalize the regression tests (1db2ec09)\n- fix: use the supported placeholder in update error details (9dd812fe)\n- docs: clarify the default stable update channel (3f921a6a)\n- fix: guard asynchronous playback across online list entry points (9b7303e0)\n- fix: reuse durable update preferences during startup (4e681e0b)\n- fix: release cancelled updater waiters before native downloads finish (83a1a00a)\n- fix: preserve complete recommendation batch identity across restores (02e8e925)\n- fix: preserve newer playback selections while clearing the queue (6f1cd408)\n- fix: guard source changes and asynchronous UI feedback (3ac9ed1a)\n- ui: drag to reorder sources and select update channels from a dropdown (3bbc7374)\n- fix: release download resources and guard recommendation playback (3e86c26e)\n- fix: avoid restoring stale recommendation queues (7504befd)\n- fix: improve update channel fallback and default to stable (2b2bfee2)\n- fix: support current apksigner output and recover release initialization (48f4d3b3)\n- fix: harden release pipeline and automatic updates (0e45b000)\n- perf: 原生横滑保护启用时移除重复的 JS 翻页命令 (45bbb96c)\n- fix: 修正横滑手势父容器的接口调用 (8a946afa)\n- fix: 保护推荐列表原生横滑手势并适配小窗宽度 (866f071d)\n- fix: 修复音源自动切换与初始化等待回收 (16a2655d)\n- docs: refine README with professional product descriptions (4ed10122)\n- docs: highlight LX Music X features and listening experience (d2bdc81e)\n- fix: 修复预加载清理、降档缓存及脚本回收 (a4e80e6c)\n- fix: probe audio headers and isolate source cooldown failures (406cb205)\n- fix: reuse audio probe ranges and clarify playback diagnostics (a3d6adc4)\n- feat(player): add playback and preload diagnostic logging (12e773d1)\n- fix(player): synchronize playback and custom source switching (bb89d3bc)\n- fix: recover stalled next-track preloading after failures (c14a3387)\n- perf: reduce retained UI state and redundant playback work (740ca338)\n- fix: align audio probing with playback and support source formats (3694829c)"
       },
       "publishedAt": "2026-11-14T13:32:54.969Z"
+    },
+    "Next/01d05e0151934e34d3fd1113e0d3976863cd2766": {
+      "branch": "Next",
+      "sourceSha": "01d05e0151934e34d3fd1113e0d3976863cd2766",
+      "before": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628",
+      "channel": "next",
+      "sequence": 8,
+      "version": "1.9.4-next.8",
+      "versionCode": 100008,
+      "tag": "v1.9.4-next.8",
+      "status": "allocated"
     }
   },
   "channels": {
