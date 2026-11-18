@@ -128,6 +128,8 @@ export default ({ active: pageActive = true }: { active?: boolean } = {}) => {
   const similarItemWidth: `${number}%` = isWide ? '50%' : '100%'
   const loginRef = useRef<QQMusicLoginModalType>(null)
   const [session, setSession] = useState<QQMusicSession | null>(null)
+  // 返回时保留卡片，账号确认后才恢复缓存读取、自动刷新和交互。
+  const [sessionReady, setSessionReady] = useState(false)
   const retainedSession = useRef<QQMusicSession | null>(null)
   const mounted = useRef(true)
   const visible = useScreenVisible() && pageActive
@@ -153,7 +155,7 @@ export default ({ active: pageActive = true }: { active?: boolean } = {}) => {
   const refreshingPlaylistsRef = useRef(false)
 
   const loggedIn = !!session?.cookie
-  const isCurrent = useCallback(() => mounted.current && visibleRef.current && lifecycleVersion === lifecycle.current && !!session?.cookie && isQQMusicSessionCurrent(session), [session, lifecycleVersion])
+  const isCurrent = useCallback(() => mounted.current && visibleRef.current && sessionReady && lifecycleVersion === lifecycle.current && !!session?.cookie && isQQMusicSessionCurrent(session), [session, sessionReady, lifecycleVersion])
   const applyResult = useCallback(async<T,>(kind: HomeCacheKind, request: Promise<T>, update: (value: T) => void): Promise<T> => {
     const value = await request
     if (!isCurrent()) throw new QQMusicSessionExpiredError()
@@ -176,6 +178,7 @@ export default ({ active: pageActive = true }: { active?: boolean } = {}) => {
     const clearAccount = () => {
       retainedSession.current = null
       setSession(null)
+      setSessionReady(false)
       setDaily([])
       setGuess([])
       setRadar([])
@@ -189,6 +192,7 @@ export default ({ active: pageActive = true }: { active?: boolean } = {}) => {
     }
     if (!visible) {
       mounted.current = false
+      setSessionReady(false)
       // 被新页面遮住时保留当前内容；切到另一个 tab 才释放歌曲快照。
       if (!pageActive) clearAccount()
       refreshingRef.current = refreshingGuessRef.current = refreshingPlaylistsRef.current = false
@@ -208,6 +212,7 @@ export default ({ active: pageActive = true }: { active?: boolean } = {}) => {
         if (retainedSession.current && !isQQMusicSessionCurrent(retainedSession.current)) clearAccount()
         retainedSession.current = current
         setSession(current)
+        setSessionReady(true)
       }).catch(console.warn)
     }
     const handleAccountUpdate = () => {
@@ -538,7 +543,7 @@ export default ({ active: pageActive = true }: { active?: boolean } = {}) => {
   if (!pageActive) return null
 
   return (
-    <View style={styles.container} onLayout={onLayout} pointerEvents={visible ? 'auto' : 'none'}>
+    <View style={styles.container} onLayout={onLayout} pointerEvents={visible && sessionReady ? 'auto' : 'none'}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={{ paddingHorizontal: hPadding, paddingBottom: 16 }}

@@ -140,6 +140,7 @@ export default ({ active: pageActive = true }: { active?: boolean } = {}) => {
   const [cookie, setCookie] = useState('')
   const [user, setUser] = useState<LX.QQMusic.UserInfo | null>(null)
   const [playlists, setPlaylists] = useState<LX.QQMusic.PlaylistInfo[]>([])
+  const playlistSession = useRef<QQMusicSession | null>(null)
   const [historyCount, setHistoryCount] = useState(0)
   const [localCount, setLocalCount] = useState(0)
   // 当前试到第几个头像地址。换了账号要从头再试
@@ -194,6 +195,7 @@ export default ({ active: pageActive = true }: { active?: boolean } = {}) => {
     const version = ++lifecycle.current
     if (!visible) {
       if (!pageActive) {
+        playlistSession.current = null
         setCookie('')
         setUser(null)
         setPlaylists([])
@@ -207,6 +209,9 @@ export default ({ active: pageActive = true }: { active?: boolean } = {}) => {
       if (nextUser !== undefined) setUser(nextUser)
       void getQQMusicSession().then(session => {
         if (!visibleRef.current || version !== lifecycle.current || !isQQMusicSessionCurrent(session)) return
+        // 新账号无缓存或加载失败时，不能继续展示上一账号留下的列表。
+        if (playlistSession.current && !isQQMusicSessionCurrent(playlistSession.current)) setPlaylists([])
+        playlistSession.current = session
         setCookie(session.cookie)
         // 冷启动挂载时没有 nextUser，账号资料只能从会话里拿。
         // 漏了这句就是「cookie 有、user 空」，界面按未登录画。

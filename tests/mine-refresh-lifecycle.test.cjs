@@ -7,7 +7,7 @@ const { hookHost, jsx, elements } = require('./helpers/react.cjs')
 const playlists = id => [{ id: 'liked', name: 'Liked', liked: true, trackCount: 1 }, { id, name: id }]
 const harness = async(initial = playlists('initial')) => {
   const host = hookHost(); const frame = host.frame(); const events = new EventEmitter(); const requests = []
-  const session = { cookie: 'same-account', generation: 1, user: { uin: '42', nickname: 'User', avatar: 'https://avatar.test/u.png' } }
+  let session = { cookie: 'same-account', generation: 1, user: { uin: '42', nickname: 'User', avatar: 'https://avatar.test/u.png' } }
   let cache = initial; let likedRefreshes = 0; let cacheWrites = 0; let sessionCurrent = true
   let nextSessionGate; let cacheGate
   let active = true
@@ -74,6 +74,12 @@ const harness = async(initial = playlists('initial')) => {
     pauseNextSession: () => { nextSessionGate = deferred(); return nextSessionGate },
     pauseCache: () => { cacheGate = deferred(); return cacheGate },
     expireSession: () => { sessionCurrent = false },
+    changeAccount: cookie => {
+      session = { ...session, cookie, generation: session.generation + 1 }
+      cache = []
+      sessionCurrent = true
+      events.emit('qqMusicAccountUpdated', session.user)
+    },
   }
 }
 
@@ -96,6 +102,21 @@ test('covering the mine tab retains its playlist view before the return animatio
     assert.deepEqual(h.ids(), ['initial'])
     assert.equal(h.requests.length, 0)
   }
+})
+
+test('returning to another account clears retained playlists even if the new account has no cache and its request fails', async t => {
+  const h = await harness()
+  t.after(h.unmount)
+  h.visible(false)
+  h.changeAccount('another-account')
+  h.visible(true)
+  await h.settle()
+  assert.deepEqual(h.ids(), [], 'the previous account playlists must be removed before recovery completes')
+  assert.equal(h.requests.length, 1)
+  h.requests[0].reject(new Error('playlist recovery failed'))
+  await h.settle()
+  assert.deepEqual(h.ids(), [])
+  assert.deepEqual(h.cachedIds(), [])
 })
 
 test('switching away from the mine tab still releases playlist rows and restores its local cache on return', async t => {

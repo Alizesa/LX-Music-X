@@ -10,6 +10,7 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
   const host = hookHost(); const frame = host.frame(); const events = new EventEmitter()
   let session = { cookie: 'A', generation: 1, user: null }
   let active = true
+  let dailyDay = new Date().toDateString()
   let tree
   const caches = new Map([[1, { daily: songs('cached-A') }]])
   const replies = new Map()
@@ -50,7 +51,7 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
     '@/store/common/state': {},
     '@/utils/data': {
       getPlayHistoryQQSeed: async() => null,
-      getQQMusicRefreshDay: async() => new Date().toDateString(),
+      getQQMusicRefreshDay: async kind => kind === 'playlist' ? dailyDay : new Date().toDateString(),
       getQQMusicDailyPlaylistCache: async() => cache('daily'),
       getQQMusicDailyRecommendCache: async() => cache('guess'),
       getQQMusicHeartRadarCache: async() => cache('radar'),
@@ -79,6 +80,7 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
     session: () => session,
     render,
     active: value => { active = value; return render() },
+    expireDaily: () => { dailyDay = 'expired' },
     settle,
     horizontalRows: () => elements(tree, 'ScrollView').filter(node => node.props.horizontal),
     protectedRows: () => elements(tree, 'HorizontalScrollHost'),
@@ -138,6 +140,30 @@ test('covered recommendations keep their cards while subscriptions pause and ses
   await h.settle()
   assert.equal(h.cover(), 'cached-A-cover')
   assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 1)
+})
+
+test('returning waits for the session read before automatic refresh and leaves manual refresh usable', async t => {
+  const h = harness(); const session = deferred()
+  t.after(h.unmount)
+  await h.mount()
+  h.frame.visible = false
+  h.render()
+  h.expireDaily()
+  let requests = 0
+  h.home.refreshQQMusicHomeDaily = async() => { requests++; return songs('updated') }
+  h.account.getQQMusicSession = () => session.promise
+  h.frame.visible = true
+  h.render()
+  await h.settle()
+  assert.equal(requests, 0, 'retained account data must not start work before the current session is confirmed')
+  assert.equal(h.cover(), 'cached-A-cover')
+  session.resolve({ ...h.session() })
+  await h.settle()
+  assert.equal(requests, 1)
+  assert.equal(h.cover(), 'updated-cover')
+  h.refresh()
+  await h.settle()
+  assert.equal(requests, 2, 'the automatic refresh must release its lock for the next gesture')
 })
 
 test('switching away from the home tab releases song snapshots and restores cached cards on return', async t => {
