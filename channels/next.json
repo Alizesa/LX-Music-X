@@ -1,14 +1,18 @@
 {
   "schemaVersion": 1,
   "channel": "next",
-  "version": "1.9.4-next.12",
-  "versionCode": 100012,
-  "tag": "v1.9.4-next.12",
-  "sourceSha": "615050c38e418caeb54f55c52d9a3e9cf2cc5a83",
-  "publishedAt": "2026-11-17T12:27:52.754Z",
-  "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.4-next.12",
-  "desc": "- fix: correct empty MP4 metadata fixtures (615050c3)\n- fix: bound AsyncStorage queries during cache cleanup (9e221f44)\n- fix: cap QQ downloads at catalog quality before stepping down (96a96b2a)\n- fix: require verifiable download bitrate and lossless resolution (52985a23)\n- fix: reject inconsistent MP4 sample metadata (9b7cd69a)\n- fix: validate download media and retain its actual container (4fecc659)\n- fix: derive QQ quality tiers only from positive file sizes (e51abd51)\n- fix: probe MP4 audio through bounded directory reads (f307f2b4)",
+  "version": "1.9.4-next.13",
+  "versionCode": 100013,
+  "tag": "v1.9.4-next.13",
+  "sourceSha": "a22590e30739deab70c50cbf0e40f99a1ce46123",
+  "publishedAt": "2026-11-18T02:03:18.531Z",
+  "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.4-next.13",
+  "desc": "- fix: confirm home session before restoring background work (a22590e3)\n- fix: preserve home content during navigation transitions (9c9e6bf1)\n- feat: always play the current list when selecting a song (24fd6bab)\n- fix: restore lyric layout when returning to playback details (fcf98fe9)",
   "history": [
+    {
+      "version": "1.9.4-next.12",
+      "desc": "- fix: correct empty MP4 metadata fixtures (615050c3)\n- fix: bound AsyncStorage queries during cache cleanup (9e221f44)\n- fix: cap QQ downloads at catalog quality before stepping down (96a96b2a)\n- fix: require verifiable download bitrate and lossless resolution (52985a23)\n- fix: reject inconsistent MP4 sample metadata (9b7cd69a)\n- fix: validate download media and retain its actual container (4fecc659)\n- fix: derive QQ quality tiers only from positive file sizes (e51abd51)\n- fix: probe MP4 audio through bounded directory reads (f307f2b4)"
+    },
     {
       "version": "1.9.4-next.10",
       "desc": "- fix: ignore obsolete Mine playlist refresh results (9e540f9a)\n- fix: persist large songlist pages before publishing cursors (d3fbd38a)\n- fix: start primary source timeouts after queue dispatch (2631a036)\n- fix: preserve native tag writes across download dispatch recovery (cf62875a)"
@@ -45,38 +49,38 @@
   "assets": [
     {
       "abi": "arm64-v8a",
-      "fileName": "lx-music-mobile-v1.9.4-next.12-arm64-v8a.apk",
-      "size": 25194826,
-      "sha256": "4cf0f6272fb5c023fdc65b1d2abf69c73e3942c8630690d057b03eba65c98f29",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.12/lx-music-mobile-v1.9.4-next.12-arm64-v8a.apk"
+      "fileName": "lx-music-mobile-v1.9.4-next.13-arm64-v8a.apk",
+      "size": 25195323,
+      "sha256": "5b395d2f9f0bb9cbb2906eb3c15983ded3f76f76c9a69c4394ee224f79552f80",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.13/lx-music-mobile-v1.9.4-next.13-arm64-v8a.apk"
     },
     {
       "abi": "armeabi-v7a",
-      "fileName": "lx-music-mobile-v1.9.4-next.12-armeabi-v7a.apk",
-      "size": 20299212,
-      "sha256": "c4aec2671ddb6832c9dbf49e064967b439159ff027f6ca4a3c56efe5ae20b17b",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.12/lx-music-mobile-v1.9.4-next.12-armeabi-v7a.apk"
+      "fileName": "lx-music-mobile-v1.9.4-next.13-armeabi-v7a.apk",
+      "size": 20299723,
+      "sha256": "7e90394b5d99d0261931fafbeac823e16b5d832335caa56880ee51b7b09c5b13",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.13/lx-music-mobile-v1.9.4-next.13-armeabi-v7a.apk"
     },
     {
       "abi": "x86_64",
-      "fileName": "lx-music-mobile-v1.9.4-next.12-x86_64.apk",
-      "size": 25961765,
-      "sha256": "ee8f2a23c215deb3b7721a606772997f5b0644567d2f6882664de5bf02acb125",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.12/lx-music-mobile-v1.9.4-next.12-x86_64.apk"
+      "fileName": "lx-music-mobile-v1.9.4-next.13-x86_64.apk",
+      "size": 25962275,
+      "sha256": "951129e8b25d8b02c463b8b4bf2591fdeb16975875cfff5ee36d9a52071ba103",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.13/lx-music-mobile-v1.9.4-next.13-x86_64.apk"
     },
     {
       "abi": "x86",
-      "fileName": "lx-music-mobile-v1.9.4-next.12-x86.apk",
-      "size": 25504358,
-      "sha256": "f170d24302c2f053134393b275cacc2d61d07507bf1b09f029beb55d8d73cf01",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.12/lx-music-mobile-v1.9.4-next.12-x86.apk"
+      "fileName": "lx-music-mobile-v1.9.4-next.13-x86.apk",
+      "size": 25504872,
+      "sha256": "755e3bd3c9dceed3be0c3e414208b0a2c8ccfa65343f1c53c6f6aa42d48f9530",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.13/lx-music-mobile-v1.9.4-next.13-x86.apk"
     },
     {
       "abi": "universal",
-      "fileName": "lx-music-mobile-v1.9.4-next.12-universal.apk",
-      "size": 67853134,
-      "sha256": "7f494ef993f94087a79f4a522ceb670855d9c0276dcbc16d12439642d7b251ba",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.12/lx-music-mobile-v1.9.4-next.12-universal.apk"
+      "fileName": "lx-music-mobile-v1.9.4-next.13-universal.apk",
+      "size": 67853642,
+      "sha256": "75b3426476d6e482fcb57e30e1bb4877171fc4f562c601581158ff38e8e45752",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4-next.13/lx-music-mobile-v1.9.4-next.13-universal.apk"
     }
   ],
   "signingCertificateSha256": "37bf055966cdf9bb76a14f8298d9fe5898c264cd266997508f3bcac2e36c0814"
