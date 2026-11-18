@@ -30,7 +30,6 @@ export default (setting: any): Partial<LX.AppSetting> => {
     setting['desktopLyric.textPosition.y'] = setting.desktopLyric?.textPosition?.y
     setting['desktopLyric.style.fontSize'] = setting.desktopLyric?.style?.fontSize
     setting['desktopLyric.style.opacity'] = setting.desktopLyric?.style?.opacity
-    setting['list.isClickPlayList'] = setting.list?.isClickPlayList
     setting['list.addMusicLocationType'] = setting.list?.addMusicLocationType
     setting['common.themeId'] = setting.themeId
     setting['common.isAutoTheme'] = setting.isAutoTheme

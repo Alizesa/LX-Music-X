@@ -351,7 +351,6 @@
   "setting_list_add_music_location_type": "添加歌曲到列表时的位置",
   "setting_list_add_music_location_type_bottom": "底部",
   "setting_list_add_music_location_type_top": "顶部",
-  "setting_list_click_action": "点击列表里的歌曲时自动切换到当前列表播放（仅对「歌单」和「排行榜」有效）",
   "setting_list_show interval": "显示歌曲时长",
   "setting_list_show_album_name": "显示歌曲专辑名",
   "setting_lyric_desktop": "桌面歌词",
