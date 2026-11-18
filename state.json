@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 12,
+  "sequence": 13,
   "lastStableVersion": "1.9.3",
   "nextTargetVersion": "1.9.4",
   "branches": {
-    "Next": "615050c38e418caeb54f55c52d9a3e9cf2cc5a83",
+    "Next": "a22590e30739deab70c50cbf0e40f99a1ce46123",
     "master": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628"
   },
   "events": {},
@@ -196,6 +196,17 @@
         "desc": "- fix: correct empty MP4 metadata fixtures (615050c3)\n- fix: bound AsyncStorage queries during cache cleanup (9e221f44)\n- fix: cap QQ downloads at catalog quality before stepping down (96a96b2a)\n- fix: require verifiable download bitrate and lossless resolution (52985a23)\n- fix: reject inconsistent MP4 sample metadata (9b7cd69a)\n- fix: validate download media and retain its actual container (4fecc659)\n- fix: derive QQ quality tiers only from positive file sizes (e51abd51)\n- fix: probe MP4 audio through bounded directory reads (f307f2b4)"
       },
       "publishedAt": "2026-11-17T12:27:52.754Z"
+    },
+    "Next/a22590e30739deab70c50cbf0e40f99a1ce46123": {
+      "branch": "Next",
+      "sourceSha": "a22590e30739deab70c50cbf0e40f99a1ce46123",
+      "before": "615050c38e418caeb54f55c52d9a3e9cf2cc5a83",
+      "channel": "next",
+      "sequence": 13,
+      "version": "1.9.4-next.13",
+      "versionCode": 100013,
+      "tag": "v1.9.4-next.13",
+      "status": "allocated"
     }
   },
   "channels": {
