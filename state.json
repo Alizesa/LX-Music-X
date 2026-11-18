@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 13,
+  "sequence": 14,
   "lastStableVersion": "1.9.3",
   "nextTargetVersion": "1.9.4",
   "branches": {
-    "Next": "a22590e30739deab70c50cbf0e40f99a1ce46123",
+    "Next": "a13dd9c6e40f8397420594e611b5979e18c7abb8",
     "master": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628"
   },
   "events": {},
@@ -212,6 +212,17 @@
         "desc": "- fix: confirm home session before restoring background work (a22590e3)\n- fix: preserve home content during navigation transitions (9c9e6bf1)\n- feat: always play the current list when selecting a song (24fd6bab)\n- fix: restore lyric layout when returning to playback details (fcf98fe9)"
       },
       "publishedAt": "2026-11-18T02:03:18.531Z"
+    },
+    "Next/a13dd9c6e40f8397420594e611b5979e18c7abb8": {
+      "branch": "Next",
+      "sourceSha": "a13dd9c6e40f8397420594e611b5979e18c7abb8",
+      "before": "a22590e30739deab70c50cbf0e40f99a1ce46123",
+      "channel": "next",
+      "sequence": 14,
+      "version": "1.9.4-next.14",
+      "versionCode": 100014,
+      "tag": "v1.9.4-next.14",
+      "status": "allocated"
     }
   },
   "channels": {
