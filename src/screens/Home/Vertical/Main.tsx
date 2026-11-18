@@ -78,10 +78,10 @@ const Main = () => {
       style={styles.pagerView}
     >
       <View collapsable={false} key="nav_home" style={styles.pageStyle}>
-        <VisibilityBoundary visible={navId === 'nav_home'}><Recommend /></VisibilityBoundary>
+        <VisibilityBoundary visible={navId === 'nav_home'}><Recommend active={navId === 'nav_home'} /></VisibilityBoundary>
       </View>
       <View collapsable={false} key="nav_mine" style={styles.pageStyle}>
-        <VisibilityBoundary visible={navId === 'nav_mine'}><Mine /></VisibilityBoundary>
+        <VisibilityBoundary visible={navId === 'nav_mine'}><Mine active={navId === 'nav_mine'} /></VisibilityBoundary>
       </View>
     </PagerView>
   ), [navId, onPageScrollStateChanged, onPageSelected])

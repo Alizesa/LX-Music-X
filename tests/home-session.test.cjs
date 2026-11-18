@@ -9,6 +9,7 @@ const songs = name => [{ id: name, source: 'tx', name, singer: 'Artist', meta: {
 const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = true) => {
   const host = hookHost(); const frame = host.frame(); const events = new EventEmitter()
   let session = { cookie: 'A', generation: 1, user: null }
+  let active = true
   let tree
   const caches = new Map([[1, { daily: songs('cached-A') }]])
   const replies = new Map()
@@ -59,7 +60,7 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
     '@/utils/hooks/useScreenVisible': { useScreenVisible: host.visible },
     '@/core/detailCache': { getDetailCache: async() => null, saveDetailCache() {} },
   }, { Error, global: { app_event: events } }).default
-  const render = () => { tree = host.render(frame, component); return tree }
+  const render = () => { tree = host.render(frame, () => component({ active })); return tree }
   const settle = async() => { await flush(); render(); await flush(); render() }
   const refreshControl = () => elements(tree, 'ScrollView')[0].props.refreshControl.props
   return {
@@ -77,6 +78,7 @@ const harness = (layout = { isWide: false, contentWidth: 400 }, nativeHost = tru
     dailyPosition,
     session: () => session,
     render,
+    active: value => { active = value; return render() },
     settle,
     horizontalRows: () => elements(tree, 'ScrollView').filter(node => node.props.horizontal),
     protectedRows: () => elements(tree, 'HorizontalScrollHost'),
@@ -117,20 +119,56 @@ const playbackHome = async(t, cached = true) => {
   return { ...h, playback, started, temporary, fetched }
 }
 
-test('hiding recommendations releases song snapshots and its account listener and restores cached cards on return', async t => {
+test('covered recommendations keep their cards while subscriptions pause and session recovery is pending', async t => {
+  const h = harness(); const session = deferred()
+  t.after(h.unmount)
+  await h.mount()
+  assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 1)
+  h.frame.visible = false
+  assert.notEqual(h.render(), null, 'the home content must remain mounted underneath the next screen')
+  assert.equal(h.cover(), 'cached-A-cover')
+  assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 0)
+  h.account.getQQMusicSession = () => session.promise
+  h.frame.visible = true
+  h.render()
+  assert.equal(h.cover(), 'cached-A-cover', 'returning must not clear the cards before reading the account')
+  await h.settle()
+  assert.equal(h.cover(), 'cached-A-cover')
+  session.resolve(h.session())
+  await h.settle()
+  assert.equal(h.cover(), 'cached-A-cover')
+  assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 1)
+})
+
+test('switching away from the home tab releases song snapshots and restores cached cards on return', async t => {
   const h = harness()
   t.after(h.unmount)
   await h.mount()
   assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 1)
   h.frame.visible = false
-  assert.equal(h.render(), null)
+  assert.equal(h.active(false), null)
   assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 0)
   assert.ok(h.frame.slots.every(slot => !Array.isArray(slot?.value) || slot.value.length === 0))
   h.frame.visible = true
-  h.render()
+  h.active(true)
   await h.settle()
   assert.equal(h.cover(), 'cached-A-cover')
   assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 1)
+})
+
+test('returning after an account change replaces the retained cards with the current account cache', async t => {
+  const h = harness()
+  t.after(h.unmount)
+  await h.mount()
+  h.frame.visible = false
+  h.render()
+  h.caches.set(2, { daily: songs('cached-B') })
+  h.changeAccount('B')
+  assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 0)
+  h.frame.visible = true
+  h.render()
+  await h.settle()
+  assert.equal(h.cover(), 'cached-B-cover')
 })
 
 test('a request from before hiding cannot overwrite a refresh after returning to the same account', async t => {

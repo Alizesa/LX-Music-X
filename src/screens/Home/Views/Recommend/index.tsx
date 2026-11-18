@@ -104,7 +104,7 @@ const RecommendCard = ({ title, subtitle, cover, onPress, disabled, action, widt
 // 免得把用户正在听、正在看的那一批顺手换掉。
 // 每日推荐 / 红心雷达的点击是「进歌单页（头图 + 那批歌）」，猜你喜欢是「播放」；
 // 卡上的圆钮才是播放 / 刷新。
-export default () => {
+export default ({ active: pageActive = true }: { active?: boolean } = {}) => {
   const t = useI18n()
   const theme = useTheme()
   const { isWide, contentWidth } = useTabletLayout()
@@ -128,8 +128,9 @@ export default () => {
   const similarItemWidth: `${number}%` = isWide ? '50%' : '100%'
   const loginRef = useRef<QQMusicLoginModalType>(null)
   const [session, setSession] = useState<QQMusicSession | null>(null)
+  const retainedSession = useRef<QQMusicSession | null>(null)
   const mounted = useRef(true)
-  const visible = useScreenVisible()
+  const visible = useScreenVisible() && pageActive
   const lifecycle = useRef(0)
   const visibleRef = useRef(visible)
   if (visibleRef.current !== visible) lifecycle.current++
@@ -172,14 +173,24 @@ export default () => {
   }, [loggedIn, playlists.length])
 
   useEffect(() => {
-    if (!visible) {
-      mounted.current = false
+    const clearAccount = () => {
+      retainedSession.current = null
       setSession(null)
       setDaily([])
       setGuess([])
       setRadar([])
       setPlaylists([])
       setSimilar({ title: '', seedName: '', songs: [] })
+      refreshingRef.current = refreshingGuessRef.current = refreshingPlaylistsRef.current = false
+      setRefreshing(false)
+      setRefreshingGuess(false)
+      setRefreshingPlaylists(false)
+      setPlaying(false)
+    }
+    if (!visible) {
+      mounted.current = false
+      // 被新页面遮住时保留当前内容；切到另一个 tab 才释放歌曲快照。
+      if (!pageActive) clearAccount()
       refreshingRef.current = refreshingGuessRef.current = refreshingPlaylistsRef.current = false
       setRefreshing(false)
       setRefreshingGuess(false)
@@ -190,31 +201,27 @@ export default () => {
     }
     mounted.current = true
     let revision = 0
-    const handleAccountUpdate = () => {
+    const syncSession = () => {
       const request = ++revision
-      setSession(null)
-      setDaily([])
-      setGuess([])
-      setRadar([])
-      setPlaylists([])
-      setSimilar({ title: '', seedName: '', songs: [] })
-      refreshingRef.current = refreshingGuessRef.current = refreshingPlaylistsRef.current = false
-      setRefreshing(false)
-      setRefreshingGuess(false)
-      setRefreshingPlaylists(false)
-      setPlaying(false)
       void getQQMusicSession().then(current => {
-        if (mounted.current && request === revision && isQQMusicSessionCurrent(current)) setSession(current)
+        if (!mounted.current || request !== revision || !isQQMusicSessionCurrent(current)) return
+        if (retainedSession.current && !isQQMusicSessionCurrent(retainedSession.current)) clearAccount()
+        retainedSession.current = current
+        setSession(current)
       }).catch(console.warn)
     }
-    handleAccountUpdate()
+    const handleAccountUpdate = () => {
+      clearAccount()
+      syncSession()
+    }
+    syncSession()
     global.app_event.on('qqMusicAccountUpdated', handleAccountUpdate)
     return () => {
       mounted.current = false
       revision++
       global.app_event.off('qqMusicAccountUpdated', handleAccountUpdate)
     }
-  }, [visible])
+  }, [pageActive, visible])
 
   useEffect(() => {
     if (!isCurrent()) return
@@ -527,10 +534,11 @@ export default () => {
 
   const similarTitle = similar.title || t('home_similar_title', { name: similar.seedName })
 
-  if (!visible) return null
+  // 返回动画在 didAppear 前就会露出首页，保留原生滚动视图和封面。
+  if (!pageActive) return null
 
   return (
-    <View style={styles.container} onLayout={onLayout}>
+    <View style={styles.container} onLayout={onLayout} pointerEvents={visible ? 'auto' : 'none'}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={{ paddingHorizontal: hPadding, paddingBottom: 16 }}

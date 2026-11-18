@@ -121,7 +121,7 @@ const PlaylistGridRow = memo(({ items, cardWidth, onPress, onMore }: {
 
 // 「我的」页。结构参考 QQ 音乐的版式（账号卡片 / 入口宫格 / 歌单列表），
 // 但不做像素级复刻，也没有会员中心。
-export default () => {
+export default ({ active: pageActive = true }: { active?: boolean } = {}) => {
   const theme = useTheme()
   const t = useI18n()
   const { isWide, contentWidth } = useTabletLayout()
@@ -147,7 +147,7 @@ export default () => {
   const [refreshing, setRefreshing] = useState(false)
   const refreshingRef = useRef<symbol | null>(null)
   const downloadCount = useDownloadCount()
-  const visible = useScreenVisible()
+  const visible = useScreenVisible() && pageActive
   const visibleRef = useRef(visible)
   visibleRef.current = visible
   const lifecycle = useRef(0)
@@ -193,9 +193,11 @@ export default () => {
   useEffect(() => {
     const version = ++lifecycle.current
     if (!visible) {
-      setCookie('')
-      setUser(null)
-      setPlaylists([])
+      if (!pageActive) {
+        setCookie('')
+        setUser(null)
+        setPlaylists([])
+      }
       refreshingRef.current = null
       setRefreshing(false)
       return
@@ -229,7 +231,7 @@ export default () => {
       global.app_event.off('qqMusicAccountUpdated', handleAccountUpdate)
       global.app_event.off('qqMusicPlaylistsUpdated', handlePlaylistsUpdate)
     }
-  }, [loadPlaylists, visible])
+  }, [loadPlaylists, pageActive, visible])
 
   // 「我喜欢」歌曲数量变化时同步 Mine 入口/歌单页副标题的曲目数
   useEffect(() => {
@@ -417,10 +419,11 @@ export default () => {
     ]
   }, [loggedIn, playlistColumns, playlists, t])
 
-  if (!visible) return null
+  // 导航遮挡时保留列表与滚动位置；离开当前 tab 时才卸载内容。
+  if (!pageActive) return null
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} pointerEvents={visible ? 'auto' : 'none'}>
       <SectionList
         style={styles.scroll}
         sections={sections}

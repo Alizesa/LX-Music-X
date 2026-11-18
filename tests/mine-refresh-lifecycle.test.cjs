@@ -10,6 +10,7 @@ const harness = async(initial = playlists('initial')) => {
   const session = { cookie: 'same-account', generation: 1, user: { uin: '42', nickname: 'User', avatar: 'https://avatar.test/u.png' } }
   let cache = initial; let likedRefreshes = 0; let cacheWrites = 0; let sessionCurrent = true
   let nextSessionGate; let cacheGate
+  let active = true
   const toasts = []
   events.qqMusicPlaylistsUpdated = () => events.emit('qqMusicPlaylistsUpdated')
   const t = key => key
@@ -50,13 +51,14 @@ const harness = async(initial = playlists('initial')) => {
     '@/lang': { useI18n: () => t },
     '@/utils/hooks/useScreenVisible': { useScreenVisible: host.visible },
   }, { global: { app_event: events, list_event: new EventEmitter() } }).default
-  const render = () => host.render(frame, Component)
+  const render = () => host.render(frame, () => Component({ active }))
   const list = () => elements(render(), 'SectionList')[0]
   const settle = async() => { await flush(); render(); await flush(); return render() }
   render(); await settle()
   return {
     requests,
     frame,
+    events,
     toasts,
     settle,
     refresh: async() => { list().props.refreshControl.props.onRefresh(); await flush() },
@@ -65,6 +67,8 @@ const harness = async(initial = playlists('initial')) => {
     cachedIds: () => cache.map(item => item.id),
     writes: () => cacheWrites,
     likedRefreshes: () => likedRefreshes,
+    render,
+    active: value => { active = value; return render() },
     visible: value => { frame.visible = value; render() },
     unmount: () => host.unmount(frame),
     pauseNextSession: () => { nextSessionGate = deferred(); return nextSessionGate },
@@ -72,6 +76,41 @@ const harness = async(initial = playlists('initial')) => {
     expireSession: () => { sessionCurrent = false },
   }
 }
+
+test('covering the mine tab retains its playlist view before the return animation and session read finish', async t => {
+  const h = await harness()
+  t.after(h.unmount)
+  for (let index = 0; index < 3; index++) {
+    h.visible(false)
+    assert.notEqual(h.render(), null, 'the playlist view must stay mounted underneath the next screen')
+    assert.deepEqual(h.ids(), ['initial'])
+    assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 0)
+    assert.equal(h.events.listenerCount('qqMusicPlaylistsUpdated'), 0)
+    const session = h.pauseNextSession()
+    h.visible(true)
+    assert.deepEqual(h.ids(), ['initial'])
+    await h.settle()
+    assert.deepEqual(h.ids(), ['initial'])
+    session.resolve()
+    await h.settle()
+    assert.deepEqual(h.ids(), ['initial'])
+    assert.equal(h.requests.length, 0)
+  }
+})
+
+test('switching away from the mine tab still releases playlist rows and restores its local cache on return', async t => {
+  const h = await harness()
+  t.after(h.unmount)
+  h.frame.visible = false
+  assert.equal(h.active(false), null)
+  assert.deepEqual(h.ids(), [])
+  assert.equal(h.events.listenerCount('qqMusicAccountUpdated'), 0)
+  h.frame.visible = true
+  h.active(true)
+  await h.settle()
+  assert.deepEqual(h.ids(), ['initial'])
+  assert.equal(h.requests.length, 0)
+})
 
 test('an older refresh cannot replace the page or shared cache after hide and reopen', async() => {
   const h = await harness()
@@ -100,12 +139,12 @@ test('the finally block of an old refresh cannot unlock a newer pending request'
 })
 
 for (const result of ['success', 'error']) {
-  test('a hidden refresh finishing with ' + result + ' cannot retain rows, write cache, refresh likes or toast', async() => {
+  test('a hidden refresh finishing with ' + result + ' cannot replace retained rows, write cache, refresh likes or toast', async() => {
     const h = await harness(); const request = h.refresh(); await flush(); h.visible(false)
     if (result === 'success') h.requests[0].resolve(playlists('hidden'))
     else h.requests[0].reject(new Error('obsolete failure'))
     await request; await h.settle()
-    assert.deepEqual(h.ids(), [])
+    assert.deepEqual(h.ids(), ['initial'])
     assert.deepEqual(h.cachedIds(), ['liked', 'initial'])
     assert.equal(h.writes(), 0)
     assert.equal(h.likedRefreshes(), 0)
