@@ -396,7 +396,7 @@ declare global {
 
       /**
        * 下载音质。与播放音质分开：播放是当下的取舍，下载是留档，
-       * 不该由同一个设置决定。歌曲没有该音质时会按 TRY_QUALITYS_LIST 降级。
+       * 仅当超过 QQ 曲库最高音质时降到该上限；取链失败不继续降档。
        */
       'download.quality': LX.Quality
 

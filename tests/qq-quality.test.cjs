@@ -50,3 +50,26 @@ for (const [name, parse] of Object.entries(parsers)) {
 test('empty QQ file metadata exposes no proven quality', () => {
   for (const file of [undefined, null, {}]) assert.equal(quality.buildMusicQuality(file).types.length, 0)
 })
+
+test('public QQ quality lookup uses no account credentials and does not filter paid catalog files', async() => {
+  const item = track({ size_128mp3: 4481160, size_320mp3: 11202458, size_flac: 36033294, size_hires: 0 })
+  item.pay = { pay_play: 1, pay_down: 1 }
+  let options; let signal
+  const api = load('src/utils/musicSdk/tx/musicInfo.js', {
+    './quality': quality,
+    '../../index': utils,
+    '../../request': {
+      httpFetch: (_url, request, requestSignal) => {
+        options = request; signal = requestSignal
+        return { promise: Promise.resolve({ body: { code: 0, req: { code: 0, data: { track_info: item } } } }) }
+      },
+    },
+  })
+  const controller = new AbortController()
+  const info = await api.default('song', { signal: controller.signal, timeout: 5000 })
+  assert.equal(options.body.comm.uin, '0')
+  assert.equal(Object.keys(options.headers).some(key => /cookie|authorization/i.test(key)), false)
+  assert.equal(options.timeout, 5000)
+  assert.equal(signal, controller.signal)
+  assert.deepEqual(Object.keys(info._types), ['128k', '320k', 'flac'])
+})

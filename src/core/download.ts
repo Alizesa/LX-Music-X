@@ -48,8 +48,10 @@ import {
 import { toMD5 } from '@/utils/tools'
 import { sizeFormate } from '@/utils/common'
 import { inspectDownloadMedia, DOWNLOAD_AUDIO_HEADERS } from './downloadAudio'
-import { getDownloadQualityOrder } from './downloadQuality'
+import { getDownloadQuality } from './downloadQuality'
+import { prepareDownloadMusicInfos } from './downloadCatalog'
 import { isRequestCancelled } from '@/utils/message'
+import { playbackLog } from '@/utils/playbackLog'
 
 const tasks: LX.Download.DownloadTask[] = []
 const tasksById = new Map<string, LX.Download.DownloadTask>()
@@ -143,6 +145,7 @@ const createUrlRequest = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quali
   }
 }
 const resolvingUrls = new Map<LX.Download.DownloadTask, ReturnType<typeof createUrlRequest>>()
+const resolvingCatalogs = new WeakMap<LX.Download.DownloadTask, AbortController>()
 const observeEnqueue = (promise: Promise<string>, waiter: UrlWaiter, taskId: string) => {
   void promise.then(nativeId => {
     if (waiter.cancelled) void removeNativeDownload(nativeId, taskId, false).catch(logDownloadError)
@@ -158,6 +161,8 @@ const createEnqueueRequest = (options: Parameters<typeof enqueueDownload>[0]) =>
 const enqueuingTasks = new Map<LX.Download.DownloadTask, ReturnType<typeof createEnqueueRequest>>()
 const resumeRequests = new WeakMap<LX.Download.DownloadTask, symbol>()
 const cancelTaskUrl = (task: LX.Download.DownloadTask) => {
+  resolvingCatalogs.get(task)?.abort()
+  resolvingCatalogs.delete(task)
   const request = resolvingUrls.get(task)
   resolvingUrls.delete(task)
   request?.cancel()
@@ -167,25 +172,34 @@ const cancelTaskUrl = (task: LX.Download.DownloadTask) => {
   enqueue?.cancel()
 }
 const resolveTaskUrl = async(task: LX.Download.DownloadTask) => {
-  const order = getDownloadQualityOrder(task.musicInfo, task.requestedQuality ?? task.quality)
-  let lastError: unknown
-  for (const quality of order) {
+  // 恢复旧任务也要补齐公开音质信息；新任务复用缓存，不重复请求详情。
+  const controller = new AbortController()
+  resolvingCatalogs.set(task, controller)
+  try {
+    const [musicInfo] = await waitForPromise(prepareDownloadMusicInfos([task.musicInfo]), controller.signal)
     if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') return null
-    const request = createUrlRequest(task.musicInfo, quality)
-    resolvingUrls.set(task, request)
-    try {
-      const url = await request.promise
-      return url === null ? null : { url, media: request.media, quality }
-    } catch (error) {
-      if (isRequestCancelled(error)) throw error
-      lastError = error
-      // All selected sources at this tier were tried by the URL pipeline before stepping down.
-    } finally {
-      if (resolvingUrls.get(task) === request) resolvingUrls.delete(task)
-    }
+    if (musicInfo !== task.musicInfo && !await updateTask(task, { musicInfo }, true)) return null
+  } catch (error) {
+    if (isRequestCancelled(error)) return null
+    throw error
+  } finally {
+    if (resolvingCatalogs.get(task) === controller) resolvingCatalogs.delete(task)
   }
   if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') return null
-  throw lastError
+  const quality = getDownloadQuality(task.musicInfo, task.requestedQuality ?? task.quality)
+  // 各音源都必须提供这一档，取链失败直接报错，不再请求更低音质。
+  const request = createUrlRequest(task.musicInfo, quality)
+  resolvingUrls.set(task, request)
+  try {
+    const url = await request.promise
+    if (url !== null) playbackLog('download.quality_resolved', () => ({ taskId: task.id, musicId: task.musicInfo.id, requestedQuality: task.requestedQuality ?? task.quality, quality }))
+    return url === null ? null : { url, media: request.media, quality }
+  } catch (error) {
+    if (!isRequestCancelled(error)) playbackLog('download.quality_failed', () => ({ taskId: task.id, musicId: task.musicInfo.id, quality, error }))
+    throw error
+  } finally {
+    if (resolvingUrls.get(task) === request) resolvingUrls.delete(task)
+  }
 }
 const getTotalCount = () => getDownloadHistoryCount() + tasks.reduce((count, task) => count + (hasDownloadHistory(task.id) ? 0 : 1), 0)
 
@@ -1162,10 +1176,11 @@ const addTasksToCatalog = async(musicInfos: LX.Music.MusicInfoOnline[], quality:
   const directory = await getDownloadPath()
   if (!directory) throw new Error(global.i18n.t('download_path_required'))
   // Bound each song by its QQ catalog, independently of account permissions.
-  const planned = musicInfos.map(musicInfo => ({
-    musicInfo,
-    targetQuality: getDownloadQualityOrder(musicInfo, quality)[0],
-  }))
+  const planned = musicInfos.map(musicInfo => {
+    const targetQuality = getDownloadQuality(musicInfo, quality)
+    playbackLog('download.quality_plan', () => ({ musicId: musicInfo.id, requestedQuality: quality, targetQuality }))
+    return { musicInfo, targetQuality }
+  })
   if (cleanupRecords.size) await retryCleanups(new Set(planned.map(({ musicInfo, targetQuality }) => toMD5(`${musicInfo.source}_${musicInfo.id}_${targetQuality}_${directory.uri}`))))
   // 同 ID 的待清文件先处理完；其他失败清理不阻塞新歌曲。
   const existing = new Set<string>(getDownloadHistoryIds())
@@ -1208,9 +1223,11 @@ const addTasksToCatalog = async(musicInfos: LX.Music.MusicInfoOnline[], quality:
 export const addTasks = async(musicInfos: LX.Music.MusicInfoOnline[], quality: LX.Quality = settingState.setting['download.quality']) => {
   await init()
   resumeDispatch()
+  // 先探测公开曲库音质，再按歌曲上限登记/查重；网络等待不占用目录操作队列。
+  const prepared = await prepareDownloadMusicInfos(musicInfos)
   // 查重、清理旧文件和登记任务共用目录队列：等待期间另一批不能覆盖
   // 同一任务，删除中的原生 worker 也必须先停下，才可复用其 .part。
-  return withCatalogWrite(async() => addTasksToCatalog(musicInfos, quality))
+  return withCatalogWrite(async() => addTasksToCatalog(prepared, quality))
 }
 
 const preparePause = (task: LX.Download.DownloadTask) => {

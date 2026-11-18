@@ -75,7 +75,7 @@ declare namespace LX {
       id: string
       musicInfo: LX.Music.MusicInfoOnline
       quality: LX.Quality
-      /** Initial catalog-capped request, retained when the actual download steps down. */
+      /** 按 QQ 曲库最高音质确定的下载档位，重试时继续保持。 */
       requestedQuality?: LX.Quality
       status: DownloadTaskStatus
       progress: ProgressInfo

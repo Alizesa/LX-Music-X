@@ -2,7 +2,7 @@ const { load, flush, deferred } = require('./load.cjs')
 const { harness: storageHarness } = require('./download-storage.cjs')
 const { task, song } = require('./download-runtime.cjs')
 
-const createHarness = async({ active = [], history = [], receipts = new Map(), cover, catalog, downloadSettings = {}, url = async() => 'https://fixture/audio' } = {}) => {
+const createHarness = async({ active = [], history = [], receipts = new Map(), cover, catalog, downloadSettings = {}, probeMusicInfo = async() => null, url = async() => 'https://fixture/audio' } = {}) => {
   const disk = storageHarness()
   const files = new Set(history.map(item => item.filePath).filter(Boolean))
   const local = new Set(files)
@@ -50,6 +50,7 @@ const createHarness = async({ active = [], history = [], receipts = new Map(), c
         },
       }),
       './downloadHistory': historyApi,
+      './downloadCatalog': load('src/core/downloadCatalog.ts', { '@/utils/musicSdk/tx/musicInfo': { default: probeMusicInfo } }),
       '@/utils/fs': {
         privateStorageDirectoryPath: '/private',
         temporaryDirectoryPath: '/temp',

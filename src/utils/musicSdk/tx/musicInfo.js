@@ -10,9 +10,10 @@ const getSinger = (singers) => {
   return arr.join('、')
 }
 
-export default (songmid) => {
+export default (songmid, { signal, timeout = 15000 } = {}) => {
   const requestObj = httpFetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
     method: 'post',
+    timeout,
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)',
     },
@@ -31,7 +32,7 @@ export default (songmid) => {
         },
       },
     },
-  })
+  }, signal)
   return requestObj.promise.then(({ body }) => {
     // console.log(body)
     if (body.code != 0 || body.req.code != 0) return Promise.reject(new Error('获取歌曲信息失败'))

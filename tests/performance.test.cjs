@@ -43,6 +43,8 @@ const load = (file, mocks = {}, globals = {}) => {
     console: { log() {}, warn() {}, error() {} },
     require: name => {
       if (name === './downloadQuality' && !Object.hasOwn(mocks, name)) return load('src/core/downloadQuality.ts')
+      if (name === './downloadCatalog' && !Object.hasOwn(mocks, name)) return load('src/core/downloadCatalog.ts', { '@/utils/musicSdk/tx/musicInfo': { default: async() => null } })
+      if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs')
       if (name === './downloadAudio' && !Object.hasOwn(mocks, name)) return load('src/core/downloadAudio.ts', { '@/utils/nativeModules/remoteAudio': {} })
       if (name === '@/utils/message' && !Object.hasOwn(mocks, name)) return load('src/utils/message.ts')
       if (name === '@/utils/listPage') return load('src/utils/listPage.ts')
