@@ -40,6 +40,7 @@ export const useLyricScroll = (lyricLines: Line[], line: number, showProgress: b
   const playLineRef = useRef<PlayLineType>(null)
   const scrollInfoRef = useRef<NativeScrollEvent | null>(null)
   const layoutRef = useRef({ lineFrames: new Map<number, LyricLineFrame>() })
+  const viewportRef = useRef({ height: 0, width: 0, headerHeight: 0 })
   const linesRef = useRef(lyricLines)
   const layoutId = useMemo(() => Symbol(`lyric-layout:${visible}:${lyricLines.length}`), [lyricLines, visible])
   const activeLayout = useRef<symbol | null>(null)
@@ -49,12 +50,19 @@ export const useLyricScroll = (lyricLines: Line[], line: number, showProgress: b
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const controller = useMemo(() => createScrollController(flatListRef, playLineRef, setPositionedLines, pendingStop), [lyricLines, visible])
 
-  useLayoutEffect(() => () => {
-    activeLayout.current = null
-    linesRef.current = EMPTY_LINES
-    layoutRef.current.lineFrames.clear()
-    scrollInfoRef.current = null
-    controller.dispose()
+  useLayoutEffect(() => {
+    // 切页/换歌词会重建 controller，但仍挂载的列表尺寸不变时不会再次触发 onLayout。
+    const { height, width, headerHeight } = viewportRef.current
+    const { lineFrames } = layoutRef.current
+    controller.setViewport(height, width)
+    controller.setHeaderHeight(headerHeight)
+    return () => {
+      activeLayout.current = null
+      linesRef.current = EMPTY_LINES
+      lineFrames.clear()
+      scrollInfoRef.current = null
+      controller.dispose()
+    }
   }, [controller])
 
   useLayoutEffect(() => {
@@ -104,10 +112,13 @@ export const useLyricScroll = (lyricLines: Line[], line: number, showProgress: b
   }, [layoutId])
 
   const handleSpaceLayout = useCallback(({ nativeEvent }: LayoutChangeEvent) => {
+    viewportRef.current.headerHeight = nativeEvent.layout.height
     controller.setHeaderHeight(nativeEvent.layout.height)
   }, [controller])
 
   const handleLayout = useCallback(({ nativeEvent }: LayoutChangeEvent) => {
+    viewportRef.current.height = nativeEvent.layout.height
+    viewportRef.current.width = nativeEvent.layout.width
     controller.setViewport(nativeEvent.layout.height, nativeEvent.layout.width)
     if (scrollInfoRef.current) {
       scrollInfoRef.current = {

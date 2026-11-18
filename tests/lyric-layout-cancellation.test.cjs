@@ -34,7 +34,6 @@ test('replacing a lyric layout waits for the preceding native scroll animation t
   assert.equal(scrolls.at(-1).animated, true)
   const before = scrolls.length
   tree = render([{ text: 'new layout' }], 0)
-  tree.handleLayout({ nativeEvent: { layout: { width: 300, height: 500 } } })
   advance(); advance()
   assert.equal(scrolls.length, before, 'new controller must share the outstanding native cancellation')
   stopped.resolve()

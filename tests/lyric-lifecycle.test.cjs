@@ -171,6 +171,65 @@ test('lyric scrolling waits for position synchronization instead of first reveal
   h.host.unmount(frame)
 })
 
+test('repeatedly returning to the lyric page reuses its unchanged viewport and reveals the current line', async() => {
+  const h = await harness({ scroll: true }); const frame = h.frame()
+  h.api.setLyric(lyrics(50)); h.api.play(0)
+  h.setPosition(5000)
+  h.render(frame)
+  await flush()
+  const initial = h.render(frame)
+  initial.scroll.handleLayout({ nativeEvent: { layout: { height: 600, width: 360 } } })
+  initial.scroll.handleSpaceLayout({ nativeEvent: { layout: { height: 360, width: 360 } } })
+  h.advance(64)
+  assert.equal(h.render(frame).scroll.ready, true)
+  h.api.pause()
+
+  for (const position of [12000, 23000, 34000, 45000]) {
+    frame.visible = false
+    h.render(frame)
+    assert.equal(h.tasks.size, 0)
+    assert.equal(h.parser().lines.length, 0)
+    h.setPosition(position)
+    frame.visible = true
+    h.render(frame)
+    await flush()
+    h.render(frame)
+    // PagerView keeps the list mounted; unchanged dimensions emit no new onLayout.
+    h.advance(64)
+    const view = h.render(frame)
+    assert.equal(view.current.line, position / 1000)
+    assert.equal(view.scroll.ready, true, `lyrics must be visible after returning at ${position} ms`)
+    assert.equal(h.scrolls.at(-1).index, position / 1000)
+    assert.equal(h.scrolls.at(-1).animated, false)
+    assert.equal(h.tasks.size, 0)
+  }
+  h.host.unmount(frame)
+})
+
+test('replacing lyrics in a mounted page reveals the new song without another viewport layout', async() => {
+  const h = await harness({ scroll: true }); const frame = h.frame()
+  h.api.setLyric(lyrics(50)); h.api.play(0)
+  h.setPosition(5000)
+  h.render(frame)
+  await flush()
+  const initial = h.render(frame)
+  initial.scroll.handleLayout({ nativeEvent: { layout: { height: 600, width: 360 } } })
+  h.advance(64)
+  assert.equal(h.render(frame).scroll.ready, true)
+
+  h.setPosition(23000)
+  h.api.setLyric(lyrics(30, 'New'))
+  await flush()
+  h.render(frame)
+  h.advance(64)
+  const view = h.render(frame)
+  assert.equal(view.current.text, 'New 23')
+  assert.equal(view.scroll.ready, true)
+  assert.equal(h.scrolls.at(-1).index, 23)
+  assert.equal(h.tasks.size, 0)
+  h.host.unmount(frame)
+})
+
 test('native desktop lyric playback continues independently of absent JS page consumers', async() => {
   const h = await harness(); const calls = []
   const state = { isPlay: true, playMusicInfo: {} }
