@@ -1,49 +1,54 @@
 {
   "schemaVersion": 1,
   "channel": "stable",
-  "version": "1.9.3",
-  "versionCode": 100007,
-  "tag": "v1.9.3",
-  "sourceSha": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628",
-  "publishedAt": "2026-11-14T13:32:54.969Z",
-  "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.3",
-  "desc": "- fix: guard cache recovery, release promotion and lyric seeking (da7ec1bc)\n- fix: bound runtime caches and cancel stale work (f0b96601)\n- chore: remove test-only APIs and cover the production entry points (4d901108)\n- chore: remove obsolete manual release helpers and metadata (733f6c93)\n- refactor: use the playlist cursor as the single paging path (89d30920)\n- chore: remove unused legacy update and quality helpers (3e087123)\n- chore: remove obsolete playback and visibility hooks (1fdc4104)\n- chore: remove the unused JavaScript scroll animation module (46d508fe)\n- fix: preserve legacy Kugou playlist totals across pages (0196b2e3)\n- fix: merge favorite changes against the latest cached state (0695df25)\n- fix: preserve newer download controls during asynchronous resume (57824456)\n- fix: bind asynchronous download updates to task instances (f55206ce)\n- fix: complete online playback queues without overriding user edits (fe17e32a)\n- perf: reduce runtime memory and harden resource lifecycles (8a9115ad)\n- fix: build complete queues for deeplinks at page boundaries (91ab7c7d)\n- fix: preserve user selections around dislike actions (d2b0558e)\n- fix: preserve active playback when queue clearing is cancelled (b41c82c9)\n- fix: keep queue metadata on a single head item (e147ba4a)\n- fix: reject partial matches when migrating legacy recommendation queues (47bcda91)\n- fix: cancel updater failure cleanup without retaining release objects (4e2e522d)\n- fix: preserve user playback intents across automatic track changes (4218c2fc)\n- chore: lint CJS files and normalize the regression tests (1db2ec09)\n- fix: use the supported placeholder in update error details (9dd812fe)\n- docs: clarify the default stable update channel (3f921a6a)\n- fix: guard asynchronous playback across online list entry points (9b7303e0)\n- fix: reuse durable update preferences during startup (4e681e0b)\n- fix: release cancelled updater waiters before native downloads finish (83a1a00a)\n- fix: preserve complete recommendation batch identity across restores (02e8e925)\n- fix: preserve newer playback selections while clearing the queue (6f1cd408)\n- fix: guard source changes and asynchronous UI feedback (3ac9ed1a)\n- ui: drag to reorder sources and select update channels from a dropdown (3bbc7374)\n- fix: release download resources and guard recommendation playback (3e86c26e)\n- fix: avoid restoring stale recommendation queues (7504befd)\n- fix: improve update channel fallback and default to stable (2b2bfee2)\n- fix: support current apksigner output and recover release initialization (48f4d3b3)\n- fix: harden release pipeline and automatic updates (0e45b000)\n- perf: 原生横滑保护启用时移除重复的 JS 翻页命令 (45bbb96c)\n- fix: 修正横滑手势父容器的接口调用 (8a946afa)\n- fix: 保护推荐列表原生横滑手势并适配小窗宽度 (866f071d)\n- fix: 修复音源自动切换与初始化等待回收 (16a2655d)\n- docs: refine README with professional product descriptions (4ed10122)\n- docs: highlight LX Music X features and listening experience (d2bdc81e)\n- fix: 修复预加载清理、降档缓存及脚本回收 (a4e80e6c)\n- fix: probe audio headers and isolate source cooldown failures (406cb205)\n- fix: reuse audio probe ranges and clarify playback diagnostics (a3d6adc4)\n- feat(player): add playback and preload diagnostic logging (12e773d1)\n- fix(player): synchronize playback and custom source switching (bb89d3bc)\n- fix: recover stalled next-track preloading after failures (c14a3387)\n- perf: reduce retained UI state and redundant playback work (740ca338)\n- fix: align audio probing with playback and support source formats (3694829c)",
-  "history": [],
+  "version": "1.9.4",
+  "versionCode": 100015,
+  "tag": "v1.9.4",
+  "sourceSha": "a13dd9c6e40f8397420594e611b5979e18c7abb8",
+  "publishedAt": "2026-11-20T01:10:55.607Z",
+  "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.4",
+  "desc": "- fix: cap QQ downloads at catalog quality without source-failure downgrades (a13dd9c6)\n- fix: confirm home session before restoring background work (a22590e3)\n- fix: preserve home content during navigation transitions (9c9e6bf1)\n- feat: always play the current list when selecting a song (24fd6bab)\n- fix: restore lyric layout when returning to playback details (fcf98fe9)\n- fix: correct empty MP4 metadata fixtures (615050c3)\n- fix: bound AsyncStorage queries during cache cleanup (9e221f44)\n- fix: cap QQ downloads at catalog quality before stepping down (96a96b2a)\n- fix: require verifiable download bitrate and lossless resolution (52985a23)\n- fix: reject inconsistent MP4 sample metadata (9b7cd69a)\n- fix: validate download media and retain its actual container (4fecc659)\n- fix: derive QQ quality tiers only from positive file sizes (e51abd51)\n- fix: probe MP4 audio through bounded directory reads (f307f2b4)\n- fix: ignore obsolete Mine playlist refresh results (9e540f9a)\n- fix: persist large songlist pages before publishing cursors (d3fbd38a)\n- fix: start primary source timeouts after queue dispatch (2631a036)\n- fix: preserve native tag writes across download dispatch recovery (cf62875a)\n- fix: mark playlist export callback as asynchronous (9c4abcfb)\n- fix: reject stale singer pagination across independent refresh generations (01d05e01)\n- fix: detach rejected-file waits without losing cleanup state (cdc9e1ea)\n- fix: cancel shared source matching when its final consumer exits (46ad75e0)\n- perf: stream compatible playlist backups in bounded batches (438795ba)\n- fix: bound provider metadata caches and release comment cursors (9c1f919e)\n- fix: preserve animation endpoints through state updates (92246014)\n- perf: read history counts and recommendation seeds from a compact index (24bac470)\n- fix: retain native destination and partial ownership through failed cleanup (3351c992)\n- fix: preserve synchronous lookup of native scroll cancellation (c667135f)\n- fix: cancel primary script scopes and load source text on demand (a4e230c5)\n- fix: resume bounded download queues through durable headless dispatch (0c9000f1)\n- test: load production cancellation and cache adapters in regression hosts (462faa08)\n- fix: carry native lyric scroll cancellation across layouts (902dee89)\n- fix: keep selection row callbacks stable and current (d7234205)\n- fix: recover obsolete storage fragments and index detail cache keys (04101f54)\n- fix: remove cancelled native jobs and bound directory IO (a7c12853)\n- fix: guard legacy cache fallback and isolate concurrent backups (c8fb10d3)\n- fix: cancel metadata transport and release aborted promise waiters (cbc665d7)\n- fix: release hidden page data and restore songlist pagination locally (013a07fd)\n- fix: guard folder import and protect active temporary files (49c926b9)\n- fix: virtualize song menus and release hidden lyric contexts (effa68e4)\n- fix: persist download cleanup ownership and completion receipts (3732459c)\n- fix: cancel obsolete searches and shared songlist pagination (214186ba)\n- fix: resize background images and cancel stale cover prefetches (922a3a8c)\n- fix: release QuickJS call references and settle metadata artwork reads (00e6dbb4)\n- fix: bound download dispatch and cancel removed postprocessing (eb37a1bf)\n- fix: bound row selection props and skip unchanged text animations (5c8e90fc)\n- fix: defer queued storage snapshots and release searches under pressure (a65d413f)\n- fix: share singer cache restoration and pause inactive tabs (b54bd457)",
+  "history": [
+    {
+      "version": "1.9.3",
+      "desc": "- fix: guard cache recovery, release promotion and lyric seeking (da7ec1bc)\n- fix: bound runtime caches and cancel stale work (f0b96601)\n- chore: remove test-only APIs and cover the production entry points (4d901108)\n- chore: remove obsolete manual release helpers and metadata (733f6c93)\n- refactor: use the playlist cursor as the single paging path (89d30920)\n- chore: remove unused legacy update and quality helpers (3e087123)\n- chore: remove obsolete playback and visibility hooks (1fdc4104)\n- chore: remove the unused JavaScript scroll animation module (46d508fe)\n- fix: preserve legacy Kugou playlist totals across pages (0196b2e3)\n- fix: merge favorite changes against the latest cached state (0695df25)\n- fix: preserve newer download controls during asynchronous resume (57824456)\n- fix: bind asynchronous download updates to task instances (f55206ce)\n- fix: complete online playback queues without overriding user edits (fe17e32a)\n- perf: reduce runtime memory and harden resource lifecycles (8a9115ad)\n- fix: build complete queues for deeplinks at page boundaries (91ab7c7d)\n- fix: preserve user selections around dislike actions (d2b0558e)\n- fix: preserve active playback when queue clearing is cancelled (b41c82c9)\n- fix: keep queue metadata on a single head item (e147ba4a)\n- fix: reject partial matches when migrating legacy recommendation queues (47bcda91)\n- fix: cancel updater failure cleanup without retaining release objects (4e2e522d)\n- fix: preserve user playback intents across automatic track changes (4218c2fc)\n- chore: lint CJS files and normalize the regression tests (1db2ec09)\n- fix: use the supported placeholder in update error details (9dd812fe)\n- docs: clarify the default stable update channel (3f921a6a)\n- fix: guard asynchronous playback across online list entry points (9b7303e0)\n- fix: reuse durable update preferences during startup (4e681e0b)\n- fix: release cancelled updater waiters before native downloads finish (83a1a00a)\n- fix: preserve complete recommendation batch identity across restores (02e8e925)\n- fix: preserve newer playback selections while clearing the queue (6f1cd408)\n- fix: guard source changes and asynchronous UI feedback (3ac9ed1a)\n- ui: drag to reorder sources and select update channels from a dropdown (3bbc7374)\n- fix: release download resources and guard recommendation playback (3e86c26e)\n- fix: avoid restoring stale recommendation queues (7504befd)\n- fix: improve update channel fallback and default to stable (2b2bfee2)\n- fix: support current apksigner output and recover release initialization (48f4d3b3)\n- fix: harden release pipeline and automatic updates (0e45b000)\n- perf: 原生横滑保护启用时移除重复的 JS 翻页命令 (45bbb96c)\n- fix: 修正横滑手势父容器的接口调用 (8a946afa)\n- fix: 保护推荐列表原生横滑手势并适配小窗宽度 (866f071d)\n- fix: 修复音源自动切换与初始化等待回收 (16a2655d)\n- docs: refine README with professional product descriptions (4ed10122)\n- docs: highlight LX Music X features and listening experience (d2bdc81e)\n- fix: 修复预加载清理、降档缓存及脚本回收 (a4e80e6c)\n- fix: probe audio headers and isolate source cooldown failures (406cb205)\n- fix: reuse audio probe ranges and clarify playback diagnostics (a3d6adc4)\n- feat(player): add playback and preload diagnostic logging (12e773d1)\n- fix(player): synchronize playback and custom source switching (bb89d3bc)\n- fix: recover stalled next-track preloading after failures (c14a3387)\n- perf: reduce retained UI state and redundant playback work (740ca338)\n- fix: align audio probing with playback and support source formats (3694829c)"
+    }
+  ],
   "assets": [
     {
       "abi": "arm64-v8a",
-      "fileName": "lx-music-mobile-v1.9.3-arm64-v8a.apk",
-      "size": 25050917,
-      "sha256": "4ef51af34263e9faa0c8cdb46061778d48ba9e26eef0c0d145da6d56eb2d3c44",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3/lx-music-mobile-v1.9.3-arm64-v8a.apk"
+      "fileName": "lx-music-mobile-v1.9.4-arm64-v8a.apk",
+      "size": 25197157,
+      "sha256": "4c23b3927caca000a1349c01d1a714c3ae196b49aee54c7b5de122c8458c260d",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4/lx-music-mobile-v1.9.4-arm64-v8a.apk"
     },
     {
       "abi": "armeabi-v7a",
-      "fileName": "lx-music-mobile-v1.9.3-armeabi-v7a.apk",
-      "size": 20155312,
-      "sha256": "976032c0ffa75daf7b8ff6c4c933aa0b6db0d68e2f9c83ec53b6826a7a3f352f",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3/lx-music-mobile-v1.9.3-armeabi-v7a.apk"
+      "fileName": "lx-music-mobile-v1.9.4-armeabi-v7a.apk",
+      "size": 20301560,
+      "sha256": "6b124c6323071e9d4667168108ec9ca8115aece1ad9160a44ffe0282ae3d09fb",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4/lx-music-mobile-v1.9.4-armeabi-v7a.apk"
     },
     {
       "abi": "x86_64",
-      "fileName": "lx-music-mobile-v1.9.3-x86_64.apk",
-      "size": 25817872,
-      "sha256": "0aafd131fed741b61ae7dbdca8587895e1f2e03e01858e0d14e760b6194b59e4",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3/lx-music-mobile-v1.9.3-x86_64.apk"
+      "fileName": "lx-music-mobile-v1.9.4-x86_64.apk",
+      "size": 25964118,
+      "sha256": "a72f4b9ff14145e2d28c59df199e93d04d96444f2bb0c128d7945ba4d20e5c67",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4/lx-music-mobile-v1.9.4-x86_64.apk"
     },
     {
       "abi": "x86",
-      "fileName": "lx-music-mobile-v1.9.3-x86.apk",
-      "size": 25360471,
-      "sha256": "afe6864bf1d8d8834d84aaf7e7ccada057f8c62166db3e026f85955ec871f931",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3/lx-music-mobile-v1.9.3-x86.apk"
+      "fileName": "lx-music-mobile-v1.9.4-x86.apk",
+      "size": 25506701,
+      "sha256": "3926d0c2c2384bbc186668fa979cb8e205dc247c6b69b8da060858d927092ab2",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4/lx-music-mobile-v1.9.4-x86.apk"
     },
     {
       "abi": "universal",
-      "fileName": "lx-music-mobile-v1.9.3-universal.apk",
-      "size": 67709201,
-      "sha256": "3485535df2a9e3e03d7cf83004a464b8358a74f88c1a571c6c973fa08b10482b",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.3/lx-music-mobile-v1.9.3-universal.apk"
+      "fileName": "lx-music-mobile-v1.9.4-universal.apk",
+      "size": 67855464,
+      "sha256": "783a52eef8bd2f391fcfb9f083a25f24aa2754d43c0a539ccb11903f5fd1cc8a",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.4/lx-music-mobile-v1.9.4-universal.apk"
     }
   ],
   "signingCertificateSha256": "37bf055966cdf9bb76a14f8298d9fe5898c264cd266997508f3bcac2e36c0814"
