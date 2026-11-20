@@ -397,5 +397,10 @@
     "owner": "44650345515/1/35fdf13f-197e-4c6a-a1ed-fd42c51ebfcb",
     "expiresAt": 1795137182547,
     "protocol": 2
+  },
+  "promotionLock": {
+    "owner": "44650345515/1/35fdf13f-197e-4c6a-a1ed-fd42c51ebfcb",
+    "expiresAt": 1795137200584,
+    "protocol": 2
   }
 }
