@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 14,
-  "lastStableVersion": "1.9.3",
-  "nextTargetVersion": "1.9.4",
+  "sequence": 15,
+  "lastStableVersion": "1.9.4",
+  "nextTargetVersion": "1.9.5",
   "branches": {
     "Next": "a13dd9c6e40f8397420594e611b5979e18c7abb8",
-    "master": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628"
+    "master": "a13dd9c6e40f8397420594e611b5979e18c7abb8"
   },
   "events": {},
   "builds": {
@@ -228,6 +228,17 @@
         "desc": "- fix: cap QQ downloads at catalog quality without source-failure downgrades (a13dd9c6)"
       },
       "publishedAt": "2026-11-18T05:08:17.337Z"
+    },
+    "master/a13dd9c6e40f8397420594e611b5979e18c7abb8": {
+      "branch": "master",
+      "sourceSha": "a13dd9c6e40f8397420594e611b5979e18c7abb8",
+      "before": "da7ec1bc9e3e1b31d528fe5f9d59a2aa631ba628",
+      "channel": "stable",
+      "sequence": 15,
+      "version": "1.9.4",
+      "versionCode": 100015,
+      "tag": "v1.9.4",
+      "status": "allocated"
     }
   },
   "channels": {
