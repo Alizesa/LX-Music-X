@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 15,
+  "sequence": 16,
   "lastStableVersion": "1.9.4",
   "nextTargetVersion": "1.9.5",
   "branches": {
-    "Next": "a13dd9c6e40f8397420594e611b5979e18c7abb8",
+    "Next": "23c9eb73291c0379a98f283725a57a0dab0b7722",
     "master": "a13dd9c6e40f8397420594e611b5979e18c7abb8"
   },
   "events": {},
@@ -249,6 +249,17 @@
         "desc": "- fix: cap QQ downloads at catalog quality without source-failure downgrades (a13dd9c6)\n- fix: confirm home session before restoring background work (a22590e3)\n- fix: preserve home content during navigation transitions (9c9e6bf1)\n- feat: always play the current list when selecting a song (24fd6bab)\n- fix: restore lyric layout when returning to playback details (fcf98fe9)\n- fix: correct empty MP4 metadata fixtures (615050c3)\n- fix: bound AsyncStorage queries during cache cleanup (9e221f44)\n- fix: cap QQ downloads at catalog quality before stepping down (96a96b2a)\n- fix: require verifiable download bitrate and lossless resolution (52985a23)\n- fix: reject inconsistent MP4 sample metadata (9b7cd69a)\n- fix: validate download media and retain its actual container (4fecc659)\n- fix: derive QQ quality tiers only from positive file sizes (e51abd51)\n- fix: probe MP4 audio through bounded directory reads (f307f2b4)\n- fix: ignore obsolete Mine playlist refresh results (9e540f9a)\n- fix: persist large songlist pages before publishing cursors (d3fbd38a)\n- fix: start primary source timeouts after queue dispatch (2631a036)\n- fix: preserve native tag writes across download dispatch recovery (cf62875a)\n- fix: mark playlist export callback as asynchronous (9c4abcfb)\n- fix: reject stale singer pagination across independent refresh generations (01d05e01)\n- fix: detach rejected-file waits without losing cleanup state (cdc9e1ea)\n- fix: cancel shared source matching when its final consumer exits (46ad75e0)\n- perf: stream compatible playlist backups in bounded batches (438795ba)\n- fix: bound provider metadata caches and release comment cursors (9c1f919e)\n- fix: preserve animation endpoints through state updates (92246014)\n- perf: read history counts and recommendation seeds from a compact index (24bac470)\n- fix: retain native destination and partial ownership through failed cleanup (3351c992)\n- fix: preserve synchronous lookup of native scroll cancellation (c667135f)\n- fix: cancel primary script scopes and load source text on demand (a4e230c5)\n- fix: resume bounded download queues through durable headless dispatch (0c9000f1)\n- test: load production cancellation and cache adapters in regression hosts (462faa08)\n- fix: carry native lyric scroll cancellation across layouts (902dee89)\n- fix: keep selection row callbacks stable and current (d7234205)\n- fix: recover obsolete storage fragments and index detail cache keys (04101f54)\n- fix: remove cancelled native jobs and bound directory IO (a7c12853)\n- fix: guard legacy cache fallback and isolate concurrent backups (c8fb10d3)\n- fix: cancel metadata transport and release aborted promise waiters (cbc665d7)\n- fix: release hidden page data and restore songlist pagination locally (013a07fd)\n- fix: guard folder import and protect active temporary files (49c926b9)\n- fix: virtualize song menus and release hidden lyric contexts (effa68e4)\n- fix: persist download cleanup ownership and completion receipts (3732459c)\n- fix: cancel obsolete searches and shared songlist pagination (214186ba)\n- fix: resize background images and cancel stale cover prefetches (922a3a8c)\n- fix: release QuickJS call references and settle metadata artwork reads (00e6dbb4)\n- fix: bound download dispatch and cancel removed postprocessing (eb37a1bf)\n- fix: bound row selection props and skip unchanged text animations (5c8e90fc)\n- fix: defer queued storage snapshots and release searches under pressure (a65d413f)\n- fix: share singer cache restoration and pause inactive tabs (b54bd457)"
       },
       "publishedAt": "2026-11-20T01:10:55.607Z"
+    },
+    "Next/23c9eb73291c0379a98f283725a57a0dab0b7722": {
+      "branch": "Next",
+      "sourceSha": "23c9eb73291c0379a98f283725a57a0dab0b7722",
+      "before": "a13dd9c6e40f8397420594e611b5979e18c7abb8",
+      "channel": "next",
+      "sequence": 16,
+      "version": "1.9.5-next.16",
+      "versionCode": 100016,
+      "tag": "v1.9.5-next.16",
+      "status": "allocated"
     }
   },
   "channels": {
