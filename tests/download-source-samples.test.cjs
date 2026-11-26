@@ -17,7 +17,7 @@ for (const hasHighQuality of [true, false]) {
     const calls = []
     const ids = ['hei', 'molan', 'huibq', 'hello'].map(name => `user_api_${name}`)
     const mediaBySource = { hei: standard, molan: hasHighQuality ? high : unreadableFormat, hello: wrongVersion }
-    const qq = load('src/core/qqMusicUrl.ts', {
+    const qq = load('src/core/musicUrlValidation.ts', {
       './qqMusic': {},
       '@/utils/nativeModules/remoteAudio': { probeRemoteAudio: async url => mediaBySource[new URL(url).pathname.slice(1)] },
       'react-native-background-timer': { default: { setTimeout, clearTimeout } },
@@ -26,7 +26,7 @@ for (const hasHighQuality of [true, false]) {
       '@/store/setting/state': { default: { setting: { 'common.apiSource': ids[0], 'common.apiSourceOrder': JSON.stringify(ids) } } },
       '@/store/userApi': { state: { list: ids.map(id => ({ id })) } },
       '@/utils/apiSourceOrder': load('src/utils/apiSourceOrder.ts'),
-      '@/core/qqMusicUrl': qq,
+      '@/core/musicUrlValidation': qq,
       '@/core/userApiRuntime': {
         requestUserApiMusicUrl: async(id, _music, quality, _cancel, fallback) => {
           const source = id.replace('user_api_', '')
@@ -65,10 +65,10 @@ for (const hasHighQuality of [true, false]) {
 }
 
 test('the 306-second AAC returned for the 279-second song fails completeness validation even at standard quality', async() => {
-  const qq = load('src/core/qqMusicUrl.ts', {
+  const qq = load('src/core/musicUrlValidation.ts', {
     './qqMusic': {},
     '@/utils/nativeModules/remoteAudio': { probeRemoteAudio: async() => wrongVersion },
     'react-native-background-timer': { default: { setTimeout, clearTimeout } },
   })
-  await assert.rejects(qq.validateQQMusicUrl({ ...song('wrong-version'), interval: '04:39' }, 'https://fixture/wrong-version'), error => error.code === 'duration_mismatch')
+  await assert.rejects(qq.validateMusicUrl({ ...song('wrong-version'), interval: '04:39' }, 'https://fixture/wrong-version'), error => error.code === 'duration_mismatch')
 })

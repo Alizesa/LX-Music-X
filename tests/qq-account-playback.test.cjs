@@ -17,6 +17,7 @@ const load = (file, mocks = {}) => {
       if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/abortable.ts', { './message': mocks['@/utils/message'] ?? load('src/utils/message.ts') })
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs')
       if (name === '@/utils/abort') return abort
+      if (name === './musicUrlValidation' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/core/musicUrlValidation.ts', { '@/utils/nativeModules/remoteAudio': mocks['@/utils/nativeModules/remoteAudio'] ?? {} })
       if (name === 'react-native-background-timer' && !Object.hasOwn(mocks, name)) return { default: { setTimeout, clearTimeout } }
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${name}`)
       return mocks[name]
@@ -67,17 +68,21 @@ const harness = ({ ticket = () => response('M500media.mp3'), probe = fullAudio, 
     './qqMusicLogin': {},
     './qqMusicProfile': {},
   })
-  const playback = load('src/core/qqMusicUrl.ts', {
-    'react-native-background-timer': { default: timers },
-    './qqMusic': { ...account, getQQMusicSession: async() => ({ cookie }) },
-    '@/utils/message': message,
-    '@/utils/nativeModules/remoteAudio': {
-      probeRemoteAudio: async(url, inspect, options) => {
-        probes.push({ url, inspect })
-        return probe(url, inspect, options)
-      },
+  const media = {
+    probeRemoteAudio: async(url, inspect, options) => {
+      probes.push({ url, inspect })
+      return probe(url, inspect, options)
     },
-  })
+  }
+  const playback = {
+    ...load('src/core/qqMusicUrl.ts', {
+      'react-native-background-timer': { default: timers },
+      './qqMusic': { ...account, getQQMusicSession: async() => ({ cookie }) },
+      '@/utils/message': message,
+      '@/utils/nativeModules/remoteAudio': media,
+    }),
+    ...require('./helpers/load.cjs').load('src/core/musicUrlValidation.ts', { '@/utils/nativeModules/remoteAudio': media }),
+  }
   return { requests, probes, account, playback, getCancelledTickets: () => cancelledTickets, resolve: (track = song, preferred = '128k', max = '128k', options) => playback.getQQMusicUrlByAccount(track, preferred, max, options) }
 }
 
@@ -535,6 +540,7 @@ const onlineHarness = (h, apiReady = Promise.resolve(true), data = {}, failedUrl
     '@/utils/message': message,
     '@/utils/musicSdk/api-source': {},
     '@/core/qqMusicUrl': { ...h.playback, getQQMusicUrlByAccount: h.resolve },
+    '@/core/musicUrlValidation': h.playback,
   })
   return {
     pipeline,
@@ -623,8 +629,13 @@ const cachedOnlineHarness = (h, cachedUrl = cachedQQUrl) => {
     '@/store/setting/state': { default: { setting: { 'player.playQuality': '128k' } } },
     '@/utils/message': message,
     '@/core/qqMusicUrl': h.playback,
+    '@/core/musicUrlValidation': h.playback,
     './utils': online.pipeline,
-    './sourcePriority': { isMusicUrlFailed: url => failed.has(url), markMusicUrlFailed: url => { failed.add(url) } },
+    './sourcePriority': {
+      isMusicUrlFailed: url => failed.has(url),
+      markMusicUrlFailed: url => { failed.add(url) },
+      assertMusicUrlAvailable: url => { if (failed.has(url)) throw new Error('Invalid music URL') },
+    },
   })
   return {
     failed,
@@ -660,12 +671,20 @@ test('account selection and full cache hits reuse the same native media metadata
   assert.equal(cache.writes.length, 1)
 })
 
-test('non-QQ songs with non-QQ cache URLs do not trigger QQ media checks', async() => {
+test('non-QQ songs with proxy cache URLs also require completeness checks', async() => {
   const h = harness()
   const cache = cachedOnlineHarness(h, 'https://source.example/song.mp3')
   assert.equal(await cache.resolve({ musicInfo: { ...song, source: 'wy' } }), 'https://source.example/song.mp3')
-  assert.equal(h.probes.length, 0)
+  assert.equal(h.probes.length, 1)
   assert.equal(h.requests.length, 0)
+})
+
+test('account candidates keep the original duration when resolving a remembered replacement', async() => {
+  const h = harness()
+  const original = { ...song, interval: '01:37' }
+  assert.equal(await h.resolve(song, '128k', '128k', { expectedMusicInfo: original }), null)
+  assert.equal(h.probes.length, 2)
+  assert.equal((await h.resolve({ ...song, interval: '00:12' }, '128k', '128k', { expectedMusicInfo: song })).url, standard)
 })
 
 test('cancelling a cached QQ duration check stops native IO without fallback', async() => {

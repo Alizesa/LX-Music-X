@@ -21,6 +21,10 @@ export interface RemoteAudioInfo {
   sampleRate?: number
   bitDepth?: number
   bitRate?: number
+  /** 文件自带的文本标签，仅辅助诊断，不代替实际时长/音质检查。 */
+  title?: string
+  artist?: string
+  album?: string
 }
 
 interface CachedProbe {

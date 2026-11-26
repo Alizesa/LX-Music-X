@@ -34,6 +34,22 @@ test('invalid list selections leave the current URL request playable', async() =
   assert.equal(h.globals.lx.gettingUrlId, '')
 })
 
+test('foreground playback passes the original song to remembered replacement validation', async() => {
+  const h = await harness()
+  const original = h.lists.library[0]
+  original.interval = '01:37'
+  original.meta.toggleMusicInfo = { ...song('alternate'), source: 'kg', interval: '04:40' }
+  await start(h)
+  assert.equal(h.sourceRequests[0].musicInfo.id, 'alternate')
+  assert.equal(h.sourceRequests[0].expectedMusicInfo.id, original.id)
+  assert.equal(h.sourceRequests[0].expectedMusicInfo.interval, '01:37')
+  h.sourceRequests[0].gate.reject(new Error('Music audio is incomplete'))
+  await flush()
+  assert.equal(h.sourceRequests[1].musicInfo.id, original.id)
+  await finishUrl(h)
+  assert.deepEqual(plays(h).map(call => call.id), [original.id])
+})
+
 for (const index of [1, 0]) {
   test(`a stale native query cannot start an earlier ${index ? 'different-song' : 'same-song'} playback`, async() => {
     const query = deferred()
@@ -188,7 +204,7 @@ test('consecutive buffer timeouts reach the third selected source without skippi
         return { url: `https://audio.test/${id}`, type: quality }
       },
     },
-    '@/core/qqMusicUrl': { validateQQMusicUrl: async() => {} },
+    '@/core/musicUrlValidation': { validateMusicUrl: async() => {} },
   }, { global: h.globals })
   h.music.getMusicUrl = async args => (await priority.getMusicUrlByPriority({ ...args, quality: '128k' })).url
   const play = h.native.play

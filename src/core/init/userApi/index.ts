@@ -174,7 +174,7 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
           for (const action of actions) {
             switch (action) {
               case 'musicUrl':
-                apis[source].getMusicUrl = (songInfo: LX.Music.MusicInfo, type: LX.Quality) => {
+                apis[source].getMusicUrl = (songInfo: LX.Music.MusicInfo, type: LX.Quality, filterAudioCandidates = false) => {
                   const requestKey = `request__${Math.random().toString().substring(2)}`
                   let dispatched = false
                   let onDispatch: (() => void) | undefined
@@ -188,6 +188,7 @@ export default async(setting: LX.AppSetting, { suppressDialogs = () => false }: 
                     },
                     promise: sendUserApiRequest({
                       requestKey,
+                      filterAudioCandidates,
                       data: {
                         source,
                         action: 'musicUrl',

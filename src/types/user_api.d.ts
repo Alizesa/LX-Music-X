@@ -12,7 +12,7 @@ declare namespace LX {
 
     type UserApiSources = Record<LX.Source, UserApiSourceInfo>
     interface UserApiRuntimeSource {
-      getMusicUrl?: (musicInfo: unknown, quality: LX.Quality) => {
+      getMusicUrl?: (musicInfo: unknown, quality: LX.Quality, filterAudioCandidates?: boolean) => {
         onDispatch?: (callback: () => void) => void
         canceleFn: () => void
         promise: Promise<{ url: string, type: LX.Quality }>
@@ -48,10 +48,8 @@ declare namespace LX {
     interface UserApiRequestParams {
       requestKey: string
       data: any
-    }
-    interface UserApiRequestParams {
-      requestKey: string
-      data: any
+      /** 精确音质取链时，在聚合脚本选择候选前排除已知低档/加密直链。 */
+      filterAudioCandidates?: boolean
     }
     type UserApiRequestCancelParams = string
     type UserApiSetApiParams = string

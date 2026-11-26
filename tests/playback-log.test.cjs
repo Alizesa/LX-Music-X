@@ -88,13 +88,16 @@ const audioDiagnosticsHarness = ({
     '@/utils/playbackLog': h.log,
   }, { Date: h.Date })
   h.log.setPlaybackLogEnabled(true)
-  return { ...h, qq, channels, cancelled, probes }
+  const validation = load('src/core/musicUrlValidation.ts', {
+    '@/utils/nativeModules/remoteAudio': remote, '@/utils/abort': abort, '@/utils/playbackLog': h.log,
+  }, { Date: h.Date })
+  return { ...h, qq, validation, channels, cancelled, probes }
 }
 
 test('audio diagnostics distinguish a probe deadline from an observed short preview', async() => {
   const timeout = audioDiagnosticsHarness({ inspect: () => new Promise(() => {}) })
-  const failed = assert.rejects(timeout.qq.validateQQMusicUrl(diagnosticSong, diagnosticUrl, undefined, false,
-    { playId: 'play-one', urlId: 'url-one', apiId: 'user_api_a' }), { code: 'timeout', message: 'QQ Music audio probe timed out' })
+  const failed = assert.rejects(timeout.validation.validateMusicUrl(diagnosticSong, diagnosticUrl, undefined, false,
+    { playId: 'play-one', urlId: 'url-one', apiId: 'user_api_a' }), { code: 'timeout', message: 'Music audio probe timed out' })
   await timeout.advance(5000)
   await failed
   const timedOut = (await timeout.entries()).find(entry => entry.event === 'url.audio_check').data
@@ -117,7 +120,7 @@ test('audio diagnostics distinguish a probe deadline from an observed short prev
       httpStatus: 206,
     }),
   })
-  await assert.rejects(preview.qq.validateQQMusicUrl(diagnosticSong, diagnosticUrl), { code: 'duration_mismatch', message: 'QQ Music audio is incomplete' })
+  await assert.rejects(preview.validation.validateMusicUrl(diagnosticSong, diagnosticUrl), { code: 'duration_mismatch', message: 'Music audio is incomplete' })
   const checked = (await preview.entries()).find(entry => entry.event === 'url.audio_check').data
   assert.equal(checked.reason, 'duration_mismatch')
   assert.equal(checked.expectedMs, 180000)
@@ -490,13 +493,13 @@ for (const writable of [true, false]) {
     const cache = load('src/utils/musicUrlCache.ts', { './apiSourceOrder': order })
     const globalState = { lx: { qualityList: { kw: ['128k'] } }, i18n: { t: key => key } }
     const data = { getMusicUrl: async() => '', saveMusicUrl: async() => {} }
-    const qq = { validateQQMusicUrl: async() => {} }
+    const validation = { validateMusicUrl: async() => {} }
     const priority = load('src/core/music/sourcePriority.ts', {
       '@/store/setting/state': { default: { setting } },
       '@/store/userApi': { state: { list: [{ id: 'user_api_A' }] } },
       '@/utils/apiSourceOrder': order,
       '@/utils/message': message,
-      '@/core/qqMusicUrl': qq,
+      '@/core/musicUrlValidation': validation,
       '@/utils/playbackLog': h.log,
       '@/core/userApiRuntime': { requestUserApiMusicUrl: async() => ({ url: 'https://audio.test/track?token=secret', type: '128k' }) },
     }, { global: globalState })
@@ -508,7 +511,8 @@ for (const writable of [true, false]) {
       '@/utils/message': message,
       'react-native-background-timer': { default: h.clock },
       '@/utils/musicSdk/api-source': {},
-      '@/core/qqMusicUrl': qq,
+      '@/core/qqMusicUrl': {},
+      '@/core/musicUrlValidation': validation,
       '@/config/constant': {},
       './sourcePriority': priority,
       '@/utils/musicUrlCache': cache,
@@ -520,7 +524,7 @@ for (const writable of [true, false]) {
       '@/store/setting/state': { default: { setting } },
       './sourcePriority': priority,
       '@/utils/message': message,
-      '@/core/qqMusicUrl': qq,
+      '@/core/musicUrlValidation': validation,
       '@/utils/musicUrlCache': cache,
       './utils': pipeline,
       '@/utils/playbackLog': h.log,

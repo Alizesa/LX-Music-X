@@ -65,7 +65,7 @@ export const requestUserApiMusicUrl = async(apiId: string, musicInfo: LX.Music.M
       if (!api?.getMusicUrl) throw new Error('Unsupported music source')
       const type = selectQuality(preferredQuality, global.lx.qualityList[musicInfo.source] ?? [], musicInfo, allowQualityFallback)
       playbackLog('source.request', () => ({ ...trace, apiId, quality: type, requestedQuality: preferredQuality }))
-      const request = api.getMusicUrl(toOldMusicInfo(musicInfo), type)
+      const request = api.getMusicUrl(toOldMusicInfo(musicInfo), type, !allowQualityFallback)
       cancelRequest = request.canceleFn
       if (request.onDispatch) {
         BackgroundTimer.clearTimeout(timeout)
@@ -131,7 +131,7 @@ export const requestUserApiMusicUrl = async(apiId: string, musicInfo: LX.Music.M
     playbackLog('source.request', () => ({ ...trace, apiId, quality: type, requestedQuality: preferredQuality }))
     const result = new Promise<string>((resolve, reject) => { resolveUrl = resolve; rejectUrl = reject })
     cancelRequest = () => { sendAction('cancelRequest', requestKey, id) }
-    sendAction('request', { requestKey, data: { source: musicInfo.source, action: 'musicUrl', info: { type, musicInfo: toOldMusicInfo(musicInfo) } } }, id)
+    sendAction('request', { requestKey, filterAudioCandidates: !allowQualityFallback, data: { source: musicInfo.source, action: 'musicUrl', info: { type, musicInfo: toOldMusicInfo(musicInfo) } } }, id)
     const url = await result
     assertActive()
     return { url, type }

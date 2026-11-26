@@ -210,6 +210,7 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
   const preloaded = isRefresh ? null : takePreloadedMusicUrl(musicInfo, setCancel, trace.playId)
   return (preloaded ?? (toggleMusicInfo ? getMusicUrl({
     musicInfo: toggleMusicInfo,
+    expectedMusicInfo: 'progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo,
     isRefresh,
     allowToggleSource: false,
     onCancel: setCancel,

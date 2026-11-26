@@ -24,6 +24,11 @@ const load = (file, mocks = {}, globals = {}) => {
       if (name === './downloadQuality' && !Object.hasOwn(mocks, name)) return load('src/core/downloadQuality.ts')
       if (name === './downloadCatalog' && !Object.hasOwn(mocks, name)) return load('src/core/downloadCatalog.ts', { '@/utils/musicSdk/tx/musicInfo': { default: async() => null } })
       if (name === './downloadAudio' && !Object.hasOwn(mocks, name)) return load('src/core/downloadAudio.ts', { '@/utils/nativeModules/remoteAudio': {} })
+      if ((name === './musicUrlValidation' || name === '@/core/musicUrlValidation') && !Object.hasOwn(mocks, name)) {
+        const dependencies = { '@/utils/nativeModules/remoteAudio': mocks['@/utils/nativeModules/remoteAudio'] ?? {} }
+        for (const key of ['@/utils/abort', '@/utils/playbackLog']) if (Object.hasOwn(mocks, key)) dependencies[key] = mocks[key]
+        return load('src/core/musicUrlValidation.ts', dependencies, globals)
+      }
       if (name === './detailCache' && !Object.hasOwn(mocks, name)) return { getDetailCache: async() => null, saveDetailCache() {}, saveDetailCacheAndWait: async() => true }
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./playback-log.cjs')
       if (name === '@/utils/message' && !Object.hasOwn(mocks, name)) return load('src/utils/message.ts')

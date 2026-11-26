@@ -31,6 +31,7 @@ const load = (file, mocks = {}) => {
       if (name === '@/utils/abort' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/abort.ts')
       if (name === '@/utils/musicSdk/requestScope' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/musicSdk/requestScope.ts')
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs')
+      if (name === '@/core/musicUrlValidation' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/core/musicUrlValidation.ts', { '@/utils/nativeModules/remoteAudio': {} })
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${name}`)
       return mocks[name]
     },

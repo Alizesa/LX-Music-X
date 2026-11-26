@@ -306,12 +306,15 @@ final class RemoteAudioProbe {
       if ("mp4".equals(task.headerKind)) {
         task.method = "mp4_boxes";
         try {
-          Mp4AudioMetadata.Info info = Mp4AudioMetadata.read(source::readAt, source.getSize());
+          Mp4AudioMetadata.Info info = Mp4AudioMetadata.read(source::readAt, source.getSize(), source::readCachedAt);
           if (info != null) {
             result.putString("mime", info.mime);
             result.putDouble("durationMs", info.durationMs);
             result.putBoolean("hasVideo", info.hasVideo);
             if (info.bitRate > 0) result.putDouble("bitRate", info.bitRate);
+            if (info.title != null) result.putString("title", info.title);
+            if (info.artist != null) result.putString("artist", info.artist);
+            if (info.album != null) result.putString("album", info.album);
             return true;
           }
         } catch (Mp4AudioMetadata.InvalidMetadata error) { throw task.fail(error.getMessage()); }
@@ -443,6 +446,26 @@ final class RemoteAudioProbe {
         if (position < 0 || position > Long.MAX_VALUE - audioStart) throw task.fail("invalid_range");
         task.largestRead = Math.max(task.largestRead, size);
         return readOriginalAt(audioStart + position, buffer, offset, size);
+      }
+
+      // 文本标签仅从音频检查已读过的区块提取，不为诊断增加网络请求或耗尽探测预算。
+      synchronized int readCachedAt(long position, byte[] buffer, int offset, int size) throws IOException {
+        task.check();
+        if (closed || position < 0 || position > Long.MAX_VALUE - audioStart) throw new IOException("metadata_not_cached");
+        int total = 0;
+        while (total < size) {
+          long cursor = audioStart + position + total;
+          if (length >= 0 && cursor >= length) break;
+          long start = cursor - cursor % BLOCK_SIZE;
+          byte[] block = blocks.get(start);
+          if (block == null) throw new IOException("metadata_not_cached");
+          int within = (int) (cursor - start);
+          int count = Math.min(size - total, block.length - within);
+          if (count <= 0) break;
+          System.arraycopy(block, within, buffer, offset + total, count);
+          total += count;
+        }
+        return total > 0 ? total : -1;
       }
 
       private int readOriginalAt(long position, byte[] buffer, int offset, int size) throws IOException {

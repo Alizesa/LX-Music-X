@@ -37,6 +37,7 @@ export const getMusicUrl = async({
   validateUrl,
   rejectedUrls,
   trace,
+  expectedMusicInfo,
 }: {
   musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   isRefresh?: boolean
@@ -50,12 +51,13 @@ export const getMusicUrl = async({
   validateUrl?: ValidateMusicUrl
   rejectedUrls?: ReadonlySet<string>
   trace?: PlaybackLogContext
+  expectedMusicInfo?: LX.Music.MusicInfo
 }): Promise<string> => {
   playbackLog('url.request', () => ({ ...trace, musicId: musicInfo.id, quality, isRefresh, urlSourceOrder }))
   if ('progress' in musicInfo) {
-    return getDownloadMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource, quality, urlSourceOrder, onCancel, validateUrl, rejectedUrls, trace })
+    return getDownloadMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource, quality, urlSourceOrder, onCancel, validateUrl, rejectedUrls, trace, expectedMusicInfo })
   } else if (musicInfo.source == 'local') {
-    return getLocalMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource, quality, urlSourceOrder, onCancel, validateUrl, rejectedUrls, trace })
+    return getLocalMusicUrl({ musicInfo, isRefresh, onToggleSource, allowToggleSource, quality, urlSourceOrder, onCancel, validateUrl, rejectedUrls, trace, expectedMusicInfo })
   } else {
     if (!isRefresh) {
       const localMusicInfo = await findLocalMusicInfo(musicInfo)
@@ -64,7 +66,7 @@ export const getMusicUrl = async({
         if (localPath) { playbackLog('url.local_hit', { ...trace, musicId: musicInfo.id }); return localPath }
       }
     }
-    return getOnlineMusicUrl({ musicInfo, isRefresh, quality, onToggleSource, allowToggleSource, urlSourceOrder, onCancel, validateUrl, rejectedUrls, trace })
+    return getOnlineMusicUrl({ musicInfo, isRefresh, quality, onToggleSource, allowToggleSource, urlSourceOrder, onCancel, validateUrl, rejectedUrls, trace, expectedMusicInfo })
   }
 }
 

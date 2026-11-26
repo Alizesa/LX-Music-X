@@ -41,13 +41,14 @@ const harness = ({ request = async(id, music, quality) => ({ url: `https://audio
     './common': { throttle: fn => fn },
     './nativeModules/secureStorage': {},
   })
-  const qq = { validateQQMusicUrl: async() => {}, getQQMusicUrlByAccount: async(...args) => { accountRequests.push(args); return account(...args) } }
+  const qq = { validateMusicUrl: async() => {}, getQQMusicUrlByAccount: async(...args) => { accountRequests.push(args); return account(...args) } }
   const priority = load('src/core/music/sourcePriority.ts', {
     '@/store/setting/state': { default: { setting } },
     '@/store/userApi': { state: { list: ['user_api_A', 'user_api_B'].map(id => ({ id })) } },
     '@/utils/apiSourceOrder': order,
     '@/utils/message': message,
     '@/core/qqMusicUrl': qq,
+    '@/core/musicUrlValidation': qq,
     '@/core/userApiRuntime': { requestUserApiMusicUrl: async(...args) => { requests.push(args); return request(...args) } },
   }, { global: appGlobal })
   const pipeline = load('src/core/music/utils.ts', {
@@ -60,6 +61,7 @@ const harness = ({ request = async(id, music, quality) => ({ url: `https://audio
     'react-native-background-timer': { default: { setTimeout, clearTimeout } },
     '@/utils/musicSdk/api-source': {},
     '@/core/qqMusicUrl': qq,
+    '@/core/musicUrlValidation': qq,
     '@/config/constant': constants,
     './sourcePriority': priority,
   }, { global: appGlobal })
@@ -70,6 +72,7 @@ const harness = ({ request = async(id, music, quality) => ({ url: `https://audio
     '@/store/setting/state': { default: { setting } },
     '@/utils/message': message,
     '@/core/qqMusicUrl': qq,
+    '@/core/musicUrlValidation': qq,
     './utils': pipeline,
     './sourcePriority': priority,
   }, { global: appGlobal })

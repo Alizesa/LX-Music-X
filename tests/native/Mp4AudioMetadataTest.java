@@ -3,6 +3,7 @@ package cn.toside.music.mobile.utils;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -182,6 +183,25 @@ public final class Mp4AudioMetadataTest {
     cancelled.cancelled = true;
     try { read(cancelled); throw new AssertionError("cancellation swallowed"); }
     catch (IOException error) { check(error.getMessage().equals("cancelled"), error.toString()); }
+    Source tagged = new Source().add(box("moov", track("mp4a", false, 97, 97),
+        box("udta", box("meta", ints(0), box("ilst",
+          box("\u00a9nam", box("data", ints(1, 0), "Song (OP ver.1.2)".getBytes(StandardCharsets.UTF_8))),
+          box("\u00a9ART", box("data", ints(2, 0), "Artist".getBytes(StandardCharsets.UTF_16BE))),
+          box("\u00a9alb", box("data", ints(1, 0), "Album".getBytes(StandardCharsets.UTF_8))),
+          box("covr", box("data", ints(13, 0), new byte[262144])))))))
+        .add(ints((int) MEDIA_SIZE, type("mdat"))).gap(MEDIA_SIZE - 8);
+    Mp4AudioMetadata.Info tags = read(tagged);
+    check(tags.durationMs == 97000 && "Song (OP ver.1.2)".equals(tags.title) &&
+        "Artist".equals(tags.artist) && "Album".equals(tags.album), "text metadata");
+    check(tagged.transferred <= 3 * BLOCK, "embedded artwork scanned while reading text tags");
+    Mp4AudioMetadata.Info unavailableTags = Mp4AudioMetadata.read(tagged, tagged.length, (position, buffer, offset, size) -> {
+      throw new IOException("metadata_not_cached");
+    });
+    check(unavailableTags.durationMs == 97000 && unavailableTags.title == null,
+        "uncached diagnostic tags invalidated valid audio");
+    Source brokenTags = new Source().add(box("moov", track("mp4a", false, 97, 97), box("udta", new byte[4])))
+        .add(ints((int) MEDIA_SIZE, type("mdat"))).gap(MEDIA_SIZE - 8);
+    check(read(brokenTags).durationMs == 97000, "malformed diagnostic tags invalidated valid audio");
     System.out.println("MP4 directory fixtures passed");
   }
 }

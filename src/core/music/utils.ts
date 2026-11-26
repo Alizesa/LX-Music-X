@@ -10,9 +10,10 @@ import settingState from '@/store/setting/state'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import BackgroundTimer from 'react-native-background-timer'
 import { apis } from '@/utils/musicSdk/api-source'
-import { getQQMusicUrlByAccount, validateQQMusicUrl } from '@/core/qqMusicUrl'
+import { getQQMusicUrlByAccount } from '@/core/qqMusicUrl'
+import { validateMusicUrl } from '@/core/musicUrlValidation'
 import { QQ_LYRIC_CACHE_VERSION } from '@/config/constant'
-import { getEnabledMusicSourceIds, getMusicUrlByPriority, isMusicUrlFailed, markMusicUrlFailed, type MusicUrlRequestOptions, type ValidateMusicUrl } from './sourcePriority'
+import { assertMusicUrlAvailable, getEnabledMusicSourceIds, getMusicUrlByPriority, isMusicUrlFailed, markMusicUrlFailed, type MusicUrlRequestOptions, type ValidateMusicUrl } from './sourcePriority'
 import { getMusicUrlCacheContext } from '@/utils/musicUrlCache'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
 import { waitForPromise } from '@/utils/abortable'
@@ -172,6 +173,10 @@ export const getOnlineOtherSourceMusicUrlByLocal = async(musicInfo: LX.Music.Mus
   let cancelRequest: (() => void) | undefined
   options.onCancel?.(() => { cancelled = true; controller.abort(); cancelRequest?.() })
   const assertActive = () => { if (cancelled) throw new Error(requestMsg.cancelRequest) }
+  const registerCancel = (cancel: () => void) => {
+    cancelRequest = cancel
+    if (cancelled) cancel()
+  }
   assertActive()
   if (!await waitForPromise(global.lx.apiInitPromise[0], controller.signal)) throw new Error('source init failed')
   assertActive()
@@ -182,8 +187,14 @@ export const getOnlineOtherSourceMusicUrlByLocal = async(musicInfo: LX.Music.Mus
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !options.rejectedUrls?.has(cachedUrl)) {
     try {
-      if (/^https?:\/\//i.test(cachedUrl)) await options.validateUrl?.(cachedUrl)
-      assertActive()
+      if (/^https?:\/\//i.test(cachedUrl)) {
+        const media = await validateMusicUrl(musicInfo, cachedUrl, registerCancel, false, options.trace, options.expectedMusicInfo)
+        assertActive()
+        assertMusicUrlAvailable(cachedUrl, options.rejectedUrls)
+        await options.validateUrl?.(cachedUrl, media)
+        assertActive()
+        assertMusicUrlAvailable(cachedUrl, options.rejectedUrls)
+      }
       return { url: cachedUrl, quality, isFromCache: true }
     } catch (error) {
       assertActive()
@@ -196,7 +207,7 @@ export const getOnlineOtherSourceMusicUrlByLocal = async(musicInfo: LX.Music.Mus
   try {
     const request = apis('local').getMusicUrl(toOldMusicInfo(musicInfo), options.quality ?? null)
     const cancel = request.canceleFn ?? request.cancelHttp
-    if (typeof cancel == 'function') cancelRequest = cancel as () => void
+    if (typeof cancel == 'function') registerCancel(cancel as () => void)
     reqPromise = request.promise
   } catch (err: any) {
     reqPromise = Promise.reject(err)
@@ -205,7 +216,20 @@ export const getOnlineOtherSourceMusicUrlByLocal = async(musicInfo: LX.Music.Mus
   return waitForPromise(reqPromise as Promise<{ url: string }>, controller.signal).then(async({ url }) => {
     assertActive()
     if (isMusicUrlFailed(url) || options.rejectedUrls?.has(url)) throw new Error('Audio resource already failed')
-    if (/^https?:\/\//i.test(url)) await options.validateUrl?.(url)
+    try {
+      if (/^https?:\/\//i.test(url)) {
+        const media = await validateMusicUrl(musicInfo, url, registerCancel, isRefresh, options.trace, options.expectedMusicInfo)
+        assertActive()
+        assertMusicUrlAvailable(url, options.rejectedUrls)
+        await options.validateUrl?.(url, media)
+        assertActive()
+        assertMusicUrlAvailable(url, options.rejectedUrls)
+      }
+    } catch (error) {
+      assertActive()
+      if (!isRequestCancelled(error)) markMusicUrlFailed(url, error)
+      throw error
+    }
     assertActive()
     return { url, quality, isFromCache: false }
   })
@@ -272,7 +296,7 @@ export const getPlayQuality = (highQuality: LX.Quality, musicInfo: LX.Music.Musi
   return type
 }
 
-export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggleSource, isRefresh, retryedSource = [], onCancel, validateUrl, rejectedUrls, cacheContext = getMusicUrlCacheContext(settingState.setting), trace }: {
+export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggleSource, isRefresh, retryedSource = [], onCancel, validateUrl, rejectedUrls, cacheContext = getMusicUrlCacheContext(settingState.setting), trace, expectedMusicInfo }: {
   musicInfos: LX.Music.MusicInfoOnline[]
   quality?: LX.Quality
   onToggleSource: (musicInfo?: LX.Music.MusicInfoOnline) => void
@@ -283,6 +307,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
   rejectedUrls?: ReadonlySet<string>
   cacheContext?: string
   trace?: PlaybackLogContext
+  expectedMusicInfo?: LX.Music.MusicInfo
 }): Promise<{
   url: string
   musicInfo: LX.Music.MusicInfoOnline
@@ -317,10 +342,12 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
-      const media = await validateQQMusicUrl(musicInfo, cachedUrl, registerCancel, false, trace)
+      const media = await validateMusicUrl(musicInfo, cachedUrl, registerCancel, false, trace, expectedMusicInfo)
       assertActive()
+      assertMusicUrlAvailable(cachedUrl, rejectedUrls)
       await validateUrl?.(cachedUrl, media)
       assertActive()
+      assertMusicUrlAvailable(cachedUrl, rejectedUrls)
       return { url: cachedUrl, musicInfo, quality: itemQuality, isFromCache: true }
     } catch (error) {
       assertActive()
@@ -331,7 +358,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
 
   let reqPromise
   try {
-    reqPromise = getMusicUrlByPriority({ musicInfo, quality: itemQuality, onCancel: registerCancel, validateUrl, rejectedUrls, allowQualityFallback: quality == null, isRefresh, trace })
+    reqPromise = getMusicUrlByPriority({ musicInfo, quality: itemQuality, onCancel: registerCancel, validateUrl, rejectedUrls, allowQualityFallback: quality == null, isRefresh, trace, expectedMusicInfo })
   } catch (err: any) {
     reqPromise = Promise.reject(err)
   }
@@ -344,14 +371,14 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
     // 取消不是失败，不要继续换下一个源
     if (isRequestCancelled(err) || err.message == requestMsg.tooManyRequests) throw err
     console.log(err)
-    return getOnlineOtherSourceMusicUrl({ musicInfos, quality, onToggleSource, isRefresh, retryedSource, onCancel: registerCancel, validateUrl, rejectedUrls, cacheContext, trace })
+    return getOnlineOtherSourceMusicUrl({ musicInfos, quality, onToggleSource, isRefresh, retryedSource, onCancel: registerCancel, validateUrl, rejectedUrls, cacheContext, trace, expectedMusicInfo })
   })
 }
 
 /**
  * 获取在线音乐URL
  */
-export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel, validateUrl, rejectedUrls, cacheContext = getMusicUrlCacheContext(settingState.setting, urlSourceOrder), trace }: {
+export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel, validateUrl, rejectedUrls, cacheContext = getMusicUrlCacheContext(settingState.setting, urlSourceOrder), trace, expectedMusicInfo = musicInfo }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality?: LX.Quality
   isRefresh: boolean
@@ -362,6 +389,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   rejectedUrls?: ReadonlySet<string>
   cacheContext?: string
   trace?: PlaybackLogContext
+  expectedMusicInfo?: LX.Music.MusicInfo
   /**
    * 两条链的先后：
    * - 'accountFirst' 账号优先，拿不到再走音源（播放的默认）
@@ -413,6 +441,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
         allowQualityFallback: quality == null,
         isUrlRejected: url => isMusicUrlFailed(url) || rejectedUrls?.has(url) === true,
         trace,
+        expectedMusicInfo,
       })
       assertActive()
       playbackLog('url.account_result', () => ({ ...trace, available: !!byAccount, quality: byAccount?.quality, elapsedMs: Date.now() - startedAt }))
@@ -420,6 +449,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
       if (isMusicUrlFailed(byAccount.url) || rejectedUrls?.has(byAccount.url)) return null
       await validateUrl?.(byAccount.url, byAccount.media)
       assertActive()
+      if (isMusicUrlFailed(byAccount.url) || rejectedUrls?.has(byAccount.url)) return null
       return { musicInfo, url: byAccount.url, quality: byAccount.quality, isFromCache: false }
     } catch (error) {
       playbackLog('url.account_failed', () => ({ ...trace, error, elapsedMs: Date.now() - startedAt }))
@@ -443,6 +473,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
         validateUrl,
         rejectedUrls,
         trace,
+        expectedMusicInfo,
       })
       assertActive()
       return result
@@ -470,6 +501,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
             rejectedUrls,
             cacheContext,
             trace,
+            expectedMusicInfo,
           })
         }
         throw err

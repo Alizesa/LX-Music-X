@@ -1,5 +1,7 @@
 import { probeRemoteAudio, type RemoteAudioInfo } from '@/utils/nativeModules/remoteAudio'
 import { throwIfAborted } from '@/utils/abort'
+import { playbackLog } from '@/utils/playbackLog'
+import { getMusicDurationMs, musicAudioFailure } from './musicUrlValidation'
 
 // Keep the transfer identical to the response inspected by playback and RemoteAudioProbe.
 export const DOWNLOAD_AUDIO_HEADERS = {
@@ -69,16 +71,19 @@ export const validateDownloadMedia = (quality: LX.Quality, media: RemoteAudioInf
 export const inspectDownloadMedia = async(musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality,
   url: string, media: RemoteAudioInfo | undefined, signal: AbortSignal): Promise<LX.Download.MediaInfo | undefined> => {
   throwIfAborted(signal)
-  if (!media) {
-    // Non-QQ songs keep their existing path; QQ cross-platform matches still need verification.
-    if (musicInfo.source !== 'tx') return
-    media = await probeRemoteAudio(url, true, { signal })
-    throwIfAborted(signal)
-    if (media.reason != null || !media.readable) throw new DownloadAudioError(media.reason ?? 'unreadable')
-    const expected = (musicInfo.interval?.split(':').reduce((seconds, part) => seconds * 60 + Number(part), 0) ?? 0) * 1000
-    const actual = media.durationMs ?? 0
-    if (!(expected > 0 && actual > 0)) throw new DownloadAudioError('duration_unavailable')
-    if (Math.abs(expected - actual) > Math.max(2000, expected / 50)) throw new DownloadAudioError('duration_mismatch')
-  }
-  return validateDownloadMedia(quality, media)
+  const audio = media ?? await probeRemoteAudio(url, true, { signal })
+  throwIfAborted(signal)
+  // 换源层可能按替代歌曲完成过探测，仍须与最初点选的歌曲核对，不能沿用替代版本的时长。
+  const expected = getMusicDurationMs(musicInfo.interval)
+  const actual = audio.durationMs ?? 0
+  const reason = musicAudioFailure(audio, expected)
+  playbackLog('download.audio_check', () => ({
+    musicId: musicInfo.id,
+    expected: { name: musicInfo.name, singer: musicInfo.singer, album: musicInfo.meta.albumName, durationMs: expected },
+    actual: { name: audio.title, singer: audio.artist, album: audio.album, durationMs: actual, mime: audio.mime, bitRate: audio.bitRate },
+    quality,
+    reason: reason ?? 'complete',
+  }))
+  if (reason) throw new DownloadAudioError(reason)
+  return validateDownloadMedia(quality, audio)
 }

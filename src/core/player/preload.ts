@@ -59,8 +59,9 @@ registerPlaybackLogSnapshot('preloadTask', () => active ? {
 
 const keyOf = (music: Music) => {
   const setting = settingState.setting
-  const alternate = ('progress' in music ? music.metadata.musicInfo : music).meta.toggleMusicInfo?.id
-  return JSON.stringify([music.id, alternate, setting['player.playQuality'], setting['player.urlSource'], setting['player.noVipStandardQuality'],
+  const original = 'progress' in music ? music.metadata.musicInfo : music
+  const alternate = original.meta.toggleMusicInfo
+  return JSON.stringify([music.id, original.interval, alternate?.id, alternate?.interval, setting['player.playQuality'], setting['player.urlSource'], setting['player.noVipStandardQuality'],
     setting['common.apiSourceOrder'], setting['common.apiSource']])
 }
 const assertActive = (task: PreloadTask) => { if (task.cancelled) throw new Error(requestMsg.cancelRequest) }
@@ -241,6 +242,7 @@ const prepare = async(task: PreloadTask, isRefresh = false): Promise<string> => 
   const validated = new Set<string>()
   const resolve = async(musicInfo: Music) => getMusicUrl({
     musicInfo,
+    expectedMusicInfo: 'progress' in task.musicInfo ? task.musicInfo.metadata.musicInfo : task.musicInfo,
     isRefresh,
     rejectedUrls: task.rejectedUrls,
     trace: { ...trace(task), urlId: newPlaybackLogId('url') },

@@ -26,6 +26,7 @@ const load = (file, mocks = {}, globals = {}) => {
       if (name === '@/utils/abort' && !Object.hasOwn(mocks, name)) return shared('src/utils/abort.ts', { './message': messages(), '@/utils/abortable': shared('src/utils/abortable.ts', { './message': messages() }) })
       if (name === '@/utils/musicSdk/requestScope' && !Object.hasOwn(mocks, name)) return shared('src/utils/musicSdk/requestScope.ts', { '@/utils/abort': context.require('@/utils/abort') })
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs')
+      if (name === '@/core/musicUrlValidation' && !Object.hasOwn(mocks, name)) return shared('src/core/musicUrlValidation.ts', { '@/utils/nativeModules/remoteAudio': {} })
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import ${name} in ${file}`)
       return mocks[name]
     },
@@ -64,7 +65,7 @@ const priorityHarness = (request = async id => ({ url: `https://audio.test/${id}
   const calls = []
   let now = 1000
   const api = load('src/core/music/sourcePriority.ts', {
-    '@/core/qqMusicUrl': { validateQQMusicUrl: async() => {} },
+    '@/core/musicUrlValidation': { validateMusicUrl: async() => {} },
     '@/store/setting/state': { default: { setting } },
     '@/store/userApi': { state: { list: ['a', 'b', 'c'].map(id => ({ id: `user_api_${id}` })) } },
     '@/utils/apiSourceOrder': order,

@@ -15,12 +15,17 @@ const song = {
 }
 const preview = 'https://isure.stream.qqmusic.qq.com/M500media.mp3?vkey=preview'
 const full = 'https://isure.stream.qqmusic.qq.com/M500media.mp3?vkey=full'
+const kugouSong = { ...song, id: 'kg_song', source: 'kg' }
+const kugouAd = 'https://webfs.yun.kugou.com/song/vip-notice.mp3'
+const sources = ['tx', 'kg', 'kw', 'wy', 'mg']
 const audio = (durationMs = 240000, mime = 'audio/mpeg') => ({ readable: true, durationMs, mime })
 
 // Exercise the real source selector, URL cache and preloader together. Only HTTP/native IO is mocked.
 const harness = ({
   cachedUrl, inspect = url => audio(url === preview ? 60000 : 240000),
   request = id => ({ url: id === 'user_api_a' ? preview : full, type: '128k' }), account = async() => null,
+  otherSources = [], localPath = 'content://local/song',
+  localRequest = () => { throw new Error('Local source unavailable') },
 } = {}) => {
   const probes = []; const cancelled = []; const requests = []; const writes = []; const cacheReads = []
   const setting = {
@@ -47,7 +52,7 @@ const harness = ({
     'react-native-background-timer': { default: { setTimeout, clearTimeout } },
     '@/utils/abort': abort,
   })
-  const qq = load('src/core/qqMusicUrl.ts', {
+  const qq = load('src/core/musicUrlValidation.ts', {
     './qqMusic': {},
     '@/utils/nativeModules/remoteAudio': media,
     '@/utils/message': message,
@@ -59,7 +64,7 @@ const harness = ({
     '@/store/userApi': { state: { list: ['user_api_a', 'user_api_b', 'user_api_c'].map(id => ({ id })) } },
     '@/utils/apiSourceOrder': order,
     '@/utils/message': message,
-    '@/core/qqMusicUrl': qq,
+    '@/core/musicUrlValidation': qq,
     '@/core/userApiRuntime': { requestUserApiMusicUrl: async(...args) => { requests.push(args[0]); return request(...args) } },
   }, { global: { i18n: { t: key => key } } })
   const cache = new Map(cachedUrl ? [[`${song.id}:128k`, cachedUrl]] : [])
@@ -69,31 +74,48 @@ const harness = ({
   }
   const pipeline = load('src/core/music/utils.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
-    '@/utils/musicSdk': {},
+    '@/utils/musicSdk': { findMusic: async() => otherSources },
     '@/utils/data': data,
-    '@/utils': {},
+    '@/utils': { toNewMusicInfo: music => music, toOldMusicInfo: music => music },
     '@/store/setting/state': { default: { setting } },
     '@/utils/message': message,
     'react-native-background-timer': { default: { setTimeout, clearTimeout } },
-    '@/utils/musicSdk/api-source': {},
-    '@/core/qqMusicUrl': { ...qq, getQQMusicUrlByAccount: account },
+    '@/utils/musicSdk/api-source': { apis: () => ({ getMusicUrl: localRequest }) },
+    '@/core/qqMusicUrl': { getQQMusicUrlByAccount: account },
+    '@/core/musicUrlValidation': qq,
     '@/config/constant': {},
     './sourcePriority': priority,
-  })
+  }, { global: { i18n: { t: key => key }, lx: { apiInitPromise: [Promise.resolve(true)] } } })
   const online = load('src/core/music/online.ts', {
     '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
     '@/utils/data': data,
     '@/core/list': {},
     '@/store/setting/state': { default: { setting } },
     '@/utils/message': message,
-    '@/core/qqMusicUrl': qq,
+    '@/core/musicUrlValidation': qq,
     './utils': pipeline,
     './sourcePriority': priority,
   })
+  const local = load('src/core/music/local.ts', {
+    '@/utils/data': data,
+    '@/core/list': {},
+    './utils': pipeline,
+    '@/utils/music': { getLocalFilePath: async() => localPath },
+    '@/utils/localMediaMetadata': {},
+    '@/utils/fs': { stat: async() => ({ name: 'song.mp3' }) },
+    '@/utils/localMatchIndex': {},
+    '@/core/localList': {},
+    '@/config/constant': {},
+    '@/utils/message': message,
+    './sourcePriority': priority,
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': order }),
+    '@/store/setting/state': { default: { setting } },
+  })
+  const download = load('src/core/music/download.ts', { './online': online, './utils': pipeline })
   const music = load('src/core/music/index.ts', {
     './online': online,
-    './download': {},
-    './local': { findLocalMusicInfo: async() => null, getMusicUrl: async() => 'content://local/song' },
+    './download': download,
+    './local': { ...local, findLocalMusicInfo: async() => null },
     '@/utils/music': {},
     '@/config/constant': {},
   })
@@ -215,12 +237,307 @@ test('a QQ CDN preview remains invalid when cached under another platform song',
   assert.deepEqual(h.writes.map(item => item.url), [full])
 })
 
-test('unknown duration, unreadable data and wrong formats advance to the next selected source', async() => {
-  for (const invalid of [{ readable: true }, audio(0), audio(60000), audio(60000, 'audio/mp4a-latm'), audio(240000, 'text/html'), { readable: false }]) {
-    const h = harness({ inspect: url => url === preview ? invalid : audio() })
-    assert.equal(await h.preload.preloadMusic(song), full)
-    assert.deepEqual(h.cacheReads.map(item => item.url), [full])
-    assert.deepEqual(h.requests, ['user_api_a', 'user_api_b'])
+test('QQ failure followed by a Kugou VIP notice continues to the next platform before preloading', async() => {
+  const attempted = []
+  const alternate = { ...song, id: 'wy_song', source: 'wy' }
+  const h = harness({
+    otherSources: [kugouSong, alternate],
+    request: (apiId, music) => {
+      attempted.push([music.source, apiId])
+      if (music.source === 'tx') throw new Error('Old QQ API is unavailable')
+      return { url: music.source === 'kg' ? kugouAd : full, type: '128k' }
+    },
+    inspect: url => audio(url === kugouAd ? 12000 : 240000),
+  })
+  assert.equal(await h.resolve({ allowToggleSource: true, quality: undefined }), full)
+  assert.equal(await h.preload.preloadMusic(song), full)
+  assert.deepEqual(attempted, [
+    ['tx', 'user_api_a'], ['tx', 'user_api_b'], ['kg', 'user_api_a'], ['kg', 'user_api_b'], ['wy', 'user_api_a'],
+  ])
+  assert.deepEqual(h.probes.map(item => item.url), [kugouAd, full])
+  assert.deepEqual(h.cacheReads, [{ url: full, bytes: 256 * 1024 }])
+  assert.deepEqual(h.writes.map(item => item.url), [full, full])
+  assert.equal(h.priority.isMusicUrlFailed(kugouAd), true)
+  assert.equal(await h.preload.takePreloadedMusicUrl(song, () => {}), full)
+})
+
+test('fresh and cached Kugou VIP notices, including proxy URLs, advance to another selected script', async() => {
+  for (const url of [kugouAd, 'https://audio.example/proxy/kugou']) {
+    for (const cached of [false, true]) {
+      const h = harness({
+        request: apiId => ({ url: apiId === 'user_api_a' ? url : full, type: '128k' }),
+        inspect: candidate => audio(candidate === url ? 12000 : 240000),
+      })
+      if (cached) h.cache.set(`${kugouSong.id}:128k`, url)
+      assert.equal(await h.resolve({ musicInfo: kugouSong }), full)
+      assert.deepEqual(h.probes.map(item => item.url), [url, full])
+      assert.deepEqual(h.writes.map(item => item.url), [full])
+      assert.equal(h.priority.isMusicUrlFailed(url), true)
+      assert.equal(await h.resolve({ musicInfo: kugouSong }), full)
+      assert.equal(h.probes.length, 2)
+    }
+  }
+})
+
+test('cross-platform fallback rejects a cached Kugou VIP notice before accepting another script', async() => {
+  const h = harness({
+    request: apiId => ({ url: apiId === 'user_api_a' ? kugouAd : full, type: '128k' }),
+    inspect: url => audio(url === kugouAd ? 12000 : 240000),
+  })
+  h.cache.set(`${kugouSong.id}:128k`, kugouAd)
+  const result = await h.pipeline.getOnlineOtherSourceMusicUrl({
+    musicInfos: [kugouSong], quality: '128k', isRefresh: false, onToggleSource() {},
+  })
+  assert.equal(result.url, full)
+  assert.equal(result.isFromCache, false)
+  assert.deepEqual(h.probes.map(item => item.url), [kugouAd, full])
+})
+
+test('a Kugou CDN notice cached under another platform is still rejected', async() => {
+  const h = harness({
+    cachedUrl: kugouAd,
+    request: () => ({ url: full, type: '128k' }),
+    inspect: url => audio(url === kugouAd ? 12000 : 240000),
+  })
+  assert.equal(await h.resolve({ musicInfo: { ...song, source: 'wy' } }), full)
+  assert.equal(h.priority.isMusicUrlFailed(kugouAd), true)
+  assert.deepEqual(h.probes.map(item => item.url), [kugouAd, full])
+})
+
+test('Kugou notices alone fail without entering the URL cache or preloaded playback', async() => {
+  const h = harness({
+    otherSources: [kugouSong],
+    request: (_apiId, music) => {
+      if (music.source === 'tx') throw new Error('Old QQ API is unavailable')
+      return { url: kugouAd, type: '128k' }
+    },
+    inspect: () => audio(12000),
+  })
+  await assert.rejects(h.resolve({ allowToggleSource: true }), /toggle_source_failed/)
+  await assert.rejects(h.preload.preloadMusic(song), /toggle_source_failed/)
+  assert.equal(h.writes.length, 0)
+  assert.equal(h.cacheReads.length, 0)
+  assert.equal(h.preload.takePreloadedMusicUrl(song, () => {}), null)
+  assert.deepEqual(h.probes.map(item => item.url), [kugouAd])
+})
+
+test('a genuine 12 second Kugou song remains playable and shares its successful probe', async() => {
+  const shortSong = { ...kugouSong, interval: '00:12' }
+  const h = harness({ request: () => ({ url: kugouAd, type: '128k' }), inspect: () => audio(12000) })
+  assert.equal(await h.preload.preloadMusic(shortSong), kugouAd)
+  assert.equal(await h.resolve({ musicInfo: shortSong }), kugouAd)
+  assert.deepEqual(h.probes.map(item => item.url), [kugouAd])
+  assert.equal(h.requests.length, 1)
+})
+
+for (const source of sources) {
+  test(`${source} checks fresh and cached proxy audio before playback and preloading`, async() => {
+    const music = { ...song, id: `${source}_proxy`, source }
+    const proxy = `https://audio.example/proxy/${source}`
+    for (const cached of [false, true]) {
+      for (const duration of [12000, 60000]) {
+        const h = harness({
+          request: id => ({ url: id === 'user_api_a' ? proxy : full, type: '128k' }),
+          inspect: url => audio(url === proxy ? duration : 240000),
+        })
+        if (cached) h.cache.set(`${music.id}:128k`, proxy)
+        assert.equal(await h.preload.preloadMusic(music), full)
+        assert.equal(await h.resolve({ musicInfo: music }), full)
+        assert.deepEqual(h.probes.map(item => item.url), [proxy, full])
+        assert.deepEqual(h.cacheReads.map(item => item.url), [full])
+        assert.deepEqual(h.writes.map(item => item.url), [full])
+      }
+    }
+  })
+
+  test(`${source} rejects unknown duration, non-audio, video and unreadable responses before preloading`, async() => {
+    for (const invalid of [{ readable: true }, audio(0), audio(NaN), audio(Infinity), audio(60000), audio(60000, 'audio/mp4a-latm'),
+      audio(240000, 'text/html'), { ...audio(), hasVideo: true }, { readable: false }]) {
+      const h = harness({ inspect: url => url === preview ? invalid : audio() })
+      assert.equal(await h.preload.preloadMusic({ ...song, source }), full)
+      assert.deepEqual(h.cacheReads.map(item => item.url), [full])
+      assert.deepEqual(h.requests, ['user_api_a', 'user_api_b'])
+    }
+  })
+}
+
+test('all matched platforms are verified in order until complete audio is found', async() => {
+  const attempted = []
+  const h = harness({
+    otherSources: ['kg', 'kw', 'wy', 'mg'].map(source => ({ ...song, id: `${source}_match`, source })),
+    request: (id, music) => {
+      attempted.push([music.source, id])
+      if (music.source === 'tx') throw new Error('QQ API unavailable')
+      return { url: `https://audio.example/${music.source}`, type: '128k' }
+    },
+    inspect: url => audio(url.endsWith('/mg') ? 240000 : 12000),
+  })
+  assert.equal(await h.resolve({ allowToggleSource: true }), 'https://audio.example/mg')
+  assert.deepEqual(attempted.map(([source]) => source), ['tx', 'tx', 'kg', 'kg', 'kw', 'kw', 'wy', 'wy', 'mg'])
+  assert.deepEqual(h.probes.map(item => item.url), ['kg', 'kw', 'wy', 'mg'].map(source => `https://audio.example/${source}`))
+  assert.deepEqual(h.writes.map(item => item.url), ['https://audio.example/mg', 'https://audio.example/mg'])
+})
+
+test('fresh and cached replacements are checked against the original duration across recursive platform fallback', async() => {
+  const wrong = { ...kugouSong, interval: '00:12' }
+  const right = { ...song, id: 'wy_match', source: 'wy' }
+  for (const cached of [false, true]) {
+    const h = harness({
+      request: (_id, music) => ({ url: music.source === 'kg' ? kugouAd : full, type: '128k' }),
+      inspect: url => audio(url === kugouAd ? 12000 : 240000),
+    })
+    if (cached) h.cache.set(`${wrong.id}:128k`, kugouAd)
+    const accepted = []
+    const result = await h.pipeline.getOnlineOtherSourceMusicUrl({
+      musicInfos: [wrong, right],
+      expectedMusicInfo: song,
+      quality: '128k',
+      isRefresh: false,
+      onToggleSource() {},
+      validateUrl: async url => { accepted.push(url) },
+    })
+    assert.equal(result.url, full)
+    assert.equal(result.musicInfo.id, right.id)
+    assert.deepEqual(accepted, [full])
+    assert.deepEqual(h.probes.map(item => item.url), [kugouAd, full])
+  }
+})
+
+test('missing original duration uses the matched duration while wholly unknown durations remain unverified', async() => {
+  const h = harness({ request: () => ({ url: full, type: '128k' }) })
+  const result = await h.pipeline.getOnlineOtherSourceMusicUrl({
+    musicInfos: [kugouSong], expectedMusicInfo: { ...song, interval: null }, quality: '128k', isRefresh: false, onToggleSource() {},
+  })
+  assert.equal(result.url, full)
+  await assert.rejects(h.priority.getMusicUrlByPriority({ musicInfo: { ...song, interval: null }, quality: '128k' }), /toggle_source_failed/)
+  assert.equal(h.priority.isMusicUrlFailed(full), false)
+  assert.equal(h.probes.length, 1)
+})
+
+test('a remembered alternate version cannot replace the original duration during preloading', async() => {
+  const original = { ...song, interval: '01:37', meta: { ...song.meta, toggleMusicInfo: { ...kugouSong, interval: '04:40' } } }
+  const h = harness({
+    request: (_id, music) => ({ url: music.source === 'kg' ? kugouAd : full, type: '128k' }),
+    inspect: url => audio(url === kugouAd ? 280000 : 97000),
+  })
+  assert.equal(await h.preload.preloadMusic(original), full)
+  assert.deepEqual(h.probes.map(item => item.url), [kugouAd, full])
+  assert.deepEqual(h.cacheReads.map(item => item.url), [full])
+  assert.deepEqual(h.writes.map(item => item.url), [full])
+})
+
+test('a complete alternate version rejected for the original remains playable as its own song', async() => {
+  const alternate = { ...kugouSong, interval: '04:40' }
+  const h = harness({
+    request: () => ({ url: kugouAd, type: '128k' }),
+    inspect: () => audio(280000),
+  })
+  await assert.rejects(h.priority.getMusicUrlByPriority({
+    musicInfo: alternate, expectedMusicInfo: { ...song, interval: '01:37' }, quality: '128k',
+  }), /toggle_source_failed/)
+  assert.equal(h.priority.isMusicUrlFailed(kugouAd), false)
+  assert.equal(await h.resolve({ musicInfo: alternate }), kugouAd)
+  assert.equal(h.probes.length, 1)
+})
+
+test('legacy download entries use the same validated cross-platform playback fallback', async() => {
+  const h = harness({
+    otherSources: [kugouSong],
+    request: (id, music) => {
+      if (music.source === 'tx') throw new Error('QQ API unavailable')
+      return { url: id === 'user_api_a' ? kugouAd : full, type: '128k' }
+    },
+    inspect: url => audio(url === kugouAd ? 12000 : 240000),
+  })
+  const download = { id: 'download_song', progress: {}, metadata: { musicInfo: song } }
+  assert.equal(await h.resolve({ musicInfo: download, allowToggleSource: true }), full)
+  assert.deepEqual(h.probes.map(item => item.url), [kugouAd, full])
+  assert.deepEqual(h.writes.map(item => item.url), [full, full])
+})
+
+test('missing local files reject fresh and cached script notices before searching online replacements', async() => {
+  const local = { ...song, id: 'local_song', source: 'local', meta: { ...song.meta, filePath: '/missing/song.mp3' } }
+  for (const cached of [false, true]) {
+    const h = harness({
+      localPath: null,
+      otherSources: [kugouSong],
+      localRequest: () => ({ promise: Promise.resolve({ url: kugouAd }) }),
+      request: () => ({ url: full, type: '128k' }),
+      inspect: url => audio(url === kugouAd ? 12000 : 240000),
+    })
+    if (cached) h.cache.set(`${local.id}:128k`, kugouAd)
+    assert.equal(await h.resolve({ musicInfo: local, allowToggleSource: true }), full)
+    assert.deepEqual(h.probes.map(item => item.url), [kugouAd, full])
+    assert.deepEqual(h.writes.map(item => item.url), [full])
+  }
+})
+
+test('cancelling local-to-online media inspection aborts native work without fallback or cache writes', async() => {
+  const gate = deferred()
+  const h = harness({
+    localPath: null,
+    otherSources: [kugouSong],
+    localRequest: () => ({ promise: Promise.resolve({ url: kugouAd }) }),
+    inspect: () => gate.promise,
+  })
+  let cancel
+  const pending = h.resolve({ musicInfo: { ...song, source: 'local' }, allowToggleSource: true, onCancel: fn => { cancel = fn } })
+  const rejected = assert.rejects(pending, { message: message.requestMsg.cancelRequest })
+  await flush()
+  cancel()
+  await rejected
+  gate.resolve(audio())
+  await flush()
+  assert.deepEqual(h.cancelled, [h.probes[0].id])
+  assert.equal(h.writes.length, 0)
+  assert.equal(h.requests.length, 0)
+  assert.equal(h.priority.isMusicUrlFailed(kugouAd), false)
+})
+
+test('local script file URLs bypass HTTP probing and caller network validation', async() => {
+  const local = { ...song, source: 'local' }
+  const url = 'content://library/song'
+  for (const cached of [false, true]) {
+    const h = harness({ localRequest: () => ({ promise: Promise.resolve({ url }) }) })
+    if (cached) h.cache.set(`${local.id}:128k`, url)
+    let validations = 0
+    assert.equal((await h.pipeline.getOnlineOtherSourceMusicUrlByLocal(local, false, { validateUrl: async() => { validations++ } })).url, url)
+    assert.equal(validations, 0)
+    assert.equal(h.probes.length, 0)
+  }
+})
+
+for (const cached of [false, true]) {
+  test(`a ${cached ? 'cached' : 'fresh'} URL rejected while media inspection is pending cannot be accepted`, async() => {
+    const gate = deferred()
+    const h = harness({ cachedUrl: cached ? preview : undefined, inspect: url => url === preview ? gate.promise : audio() })
+    const rejectedUrls = new Set()
+    const accepted = []
+    const pending = h.resolve({ rejectedUrls, validateUrl: async url => { accepted.push(url) } })
+    await flush()
+    rejectedUrls.add(preview)
+    gate.resolve(audio())
+    assert.equal(await pending, full)
+    assert.deepEqual(accepted, [full])
+    assert.deepEqual(h.writes.map(item => item.url), [full])
+  })
+}
+
+test('a source URL rejected during the caller validation cannot be cached or returned', async() => {
+  const h = harness({ inspect: () => audio() })
+  const rejectedUrls = new Set()
+  assert.equal(await h.resolve({ rejectedUrls, validateUrl: async url => { if (url === preview) rejectedUrls.add(url) } }), full)
+  assert.deepEqual(h.writes.map(item => item.url), [full])
+})
+
+test('preloaded audio is invalidated when the original or remembered alternate duration changes', async() => {
+  for (const alternate of [false, true]) {
+    const music = { ...song, meta: { ...song.meta, toggleMusicInfo: alternate ? { ...kugouSong } : undefined } }
+    const h = harness({ request: () => ({ url: full, type: '128k' }) })
+    assert.equal(await h.preload.preloadMusic(music), full)
+    if (alternate) music.meta.toggleMusicInfo.interval = '00:12'
+    else music.interval = '00:12'
+    assert.equal(h.preload.takePreloadedMusicUrl(music, () => {}), null)
   }
 })
 

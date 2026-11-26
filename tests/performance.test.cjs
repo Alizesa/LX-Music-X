@@ -46,6 +46,7 @@ const load = (file, mocks = {}, globals = {}) => {
       if (name === './downloadCatalog' && !Object.hasOwn(mocks, name)) return load('src/core/downloadCatalog.ts', { '@/utils/musicSdk/tx/musicInfo': { default: async() => null } })
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs')
       if (name === './downloadAudio' && !Object.hasOwn(mocks, name)) return load('src/core/downloadAudio.ts', { '@/utils/nativeModules/remoteAudio': {} })
+      if (name === './musicUrlValidation' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/core/musicUrlValidation.ts', { '@/utils/nativeModules/remoteAudio': {} })
       if (name === '@/utils/message' && !Object.hasOwn(mocks, name)) return load('src/utils/message.ts')
       if (name === '@/utils/listPage') return load('src/utils/listPage.ts')
       if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return load('src/utils/abortable.ts', { './message': load('src/utils/message.ts') })

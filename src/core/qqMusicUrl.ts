@@ -4,6 +4,7 @@ import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { throwIfAborted, withAbort } from '@/utils/abort'
 import BackgroundTimer from 'react-native-background-timer'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
+import { getMusicDurationMs as getDurationMs, musicAudioFailure as audioFailure } from './musicUrlValidation'
 
 // QQ 的取票接口按文件名前缀区分音质，扩展名跟着前缀走
 const QUALITY_SPEC: Partial<Record<LX.Quality, { prefix: string, extension: string }>> = {
@@ -56,81 +57,6 @@ const buildUrlCandidates = (purls: string[], sips: string[]): string[] => {
   return [...urls]
 }
 
-const getDurationMs = (interval: string | null): number => {
-  if (!interval || !/^\d+(?::\d{1,2}){1,2}$/.test(interval)) return 0
-  const durationMs = interval.split(':').reduce((seconds, part) => seconds * 60 + Number(part), 0) * 1000
-  return Number.isFinite(durationMs) ? durationMs : 0
-}
-
-const audioFailure = (media: RemoteAudioInfo, expectedMs: number, expectedMime?: string): string | undefined => {
-  if (media.reason) return media.reason
-  if (!media.readable) return 'unreadable'
-  if (!media.mime) return 'metadata_unavailable'
-  if (!media.mime.startsWith('audio/')) return 'not_audio'
-  const actualMs = media.durationMs ?? 0
-  if (!(expectedMs > 0 && actualMs > 0)) return 'duration_unavailable'
-  // MusicOne 的容差：2 秒或歌曲时长的 2%，取较大值。短歌曲按自身时长核对。
-  if (!(Math.abs(actualMs - expectedMs) <= Math.max(2000, expectedMs / 50))) return 'duration_mismatch'
-  if (expectedMime && media.mime !== expectedMime) return 'format_mismatch'
-}
-
-class QQMusicAudioError extends Error {
-  code: string
-  isAudioProbeFailure: boolean
-  constructor(reason: string) {
-    super(reason === 'duration_mismatch' ? 'QQ Music audio is incomplete'
-      : reason === 'timeout' ? 'QQ Music audio probe timed out'
-        : reason === 'duration_unavailable' || reason === 'metadata_unavailable' ? 'QQ Music audio duration unavailable'
-          : `QQ Music audio probe failed (${reason})`)
-    this.code = reason
-    // 探测能力或预算不足不能证明音源坏了，更不能让后台预加载把前台音源全部冷却。
-    this.isAudioProbeFailure = ['timeout', 'byte_limit', 'metadata_limit', 'invalid_metadata', 'metadata_error', 'metadata_unavailable',
-      'duration_unavailable', 'native_error', 'native_unavailable', 'busy', 'range_unsupported', 'invalid_range'].includes(reason)
-  }
-}
-
-/** QQ 歌曲的脚本直链、代理地址与缓存共用校验，必须在预读音频或接受链接前完成。 */
-export const validateQQMusicUrl = async(
-  musicInfo: LX.Music.MusicInfoOnline,
-  url: string,
-  onCancel?: (cancel: () => void) => void,
-  isRefresh = false,
-  trace?: PlaybackLogContext & { apiId?: string },
-): Promise<RemoteAudioInfo | undefined> => {
-  if (!/^https?:\/\//i.test(url)) return
-  // 代理地址没有 QQ 域名；跨平台换源后的缓存也可能没有 tx 来源标记。
-  if (musicInfo.source !== 'tx' && !/^https?:\/\/(?:[\w-]+\.)*qq\.com(?::\d+)?\//i.test(url)) return
-  const controller = new AbortController()
-  try {
-    onCancel?.(() => { controller.abort() })
-    throwIfAborted(controller.signal)
-    const expectedMs = getDurationMs(musicInfo.interval)
-    if (!expectedMs) {
-      playbackLog('url.audio_check', () => ({ ...trace, musicId: musicInfo.id, expectedMs, reason: 'duration_unavailable', accepted: false }))
-      throw new QQMusicAudioError('duration_unavailable')
-    }
-    const startedAt = Date.now()
-    const media = await probeRemoteAudio(url, true, { signal: controller.signal, isRefresh })
-    throwIfAborted(controller.signal)
-    // 脚本的音质标签不代表容器格式，完整 AAC/M4A 等音频也可以正常播放。
-    const reason = audioFailure(media, expectedMs)
-    playbackLog('url.audio_check', () => ({
-      ...trace,
-      musicId: musicInfo.id,
-      url,
-      expectedMs,
-      probe: media,
-      reason: reason ?? 'complete',
-      accepted: !reason,
-      elapsedMs: Date.now() - startedAt,
-    }))
-    if (reason) throw new QQMusicAudioError(reason)
-    return media
-  } finally {
-    controller.abort()
-  }
-}
-
 interface AccountUrlOptions {
   isRefresh?: boolean
   onCancel?: (cancel: () => void) => void
@@ -139,6 +65,7 @@ interface AccountUrlOptions {
   /** 在候选选择前跳过已播放失败或仍在冷却的地址，不占用媒体探测预算。 */
   isUrlRejected?: (url: string) => boolean
   trace?: PlaybackLogContext
+  expectedMusicInfo?: LX.Music.MusicInfo
 }
 
 const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal: AbortSignal, isRefresh: boolean,
@@ -281,7 +208,7 @@ export const getQQMusicUrlByAccount = async(
 ): Promise<QQAccountUrl | null> => {
   const meta = musicInfo.meta
   const songMid = String(meta.songId ?? '').trim()
-  const expectedMs = getDurationMs(musicInfo.interval)
+  const expectedMs = getDurationMs(options.expectedMusicInfo?.interval) || getDurationMs(musicInfo.interval)
   // 无法比较完整时长时直接交给音源，避免取回试听后误当作完整音频。
   if (!songMid || !expectedMs) {
     playbackLog('url.account_skip', () => ({ ...options.trace, musicId: musicInfo.id, expectedMs, reason: !songMid ? 'missing_song_id' : 'duration_unavailable' }))

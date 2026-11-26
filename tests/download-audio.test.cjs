@@ -58,8 +58,42 @@ test('QQ cross-platform probes remain cancellable', async() => {
   assert.equal(signal.aborted, true)
 })
 
-test('non-QQ downloads keep their existing path without extra probes', async() => {
-  assert.equal(await inspectDownloadMedia({ ...song('other'), source: 'kw' }, '128k', 'https://fixture/audio', undefined, new AbortController().signal), undefined)
+test('non-QQ downloads check completeness and reuse existing media without extra probes', async() => {
+  for (const source of ['kw', 'kg', 'wy', 'mg']) {
+    const music = { ...song('other'), source }
+    assert.equal((await inspectDownloadMedia(music, '128k', 'https://fixture/audio', aac, new AbortController().signal)).extension, 'm4a')
+    await assert.rejects(inspectDownloadMedia(music, '128k', 'https://fixture/ad', { ...aac, durationMs: 12000 }, new AbortController().signal), error => error.code === 'duration_mismatch')
+  }
+})
+
+test('an already probed replacement is checked against the original OP version duration', async() => {
+  const original = { ...song('tx_0027W1wz3eeYtZ'), interval: '01:37' }
+  const replacement = { ...aac, durationMs: 280000, bitRate: 320000 }
+  await assert.rejects(inspectDownloadMedia(original, '320k', 'https://fixture/replacement', replacement, new AbortController().signal), error => error.code === 'duration_mismatch')
+})
+
+test('matching text tags cannot override a large duration difference and correct versions reuse the existing probe', async() => {
+  const original = { ...song('op-version'), name: 'Song (OP ver.1.2)', singer: 'Artist', interval: '01:37' }
+  const metadata = { title: original.name, artist: original.singer, album: 'Album' }
+  await assert.rejects(inspectDownloadMedia(original, '320k', 'https://fixture/wrong', { ...aac, ...metadata, durationMs: 306155, bitRate: 320000 }, new AbortController().signal), error => error.code === 'duration_mismatch')
+  const media = await inspectDownloadMedia(original, '320k', 'https://fixture/correct', { ...aac, ...metadata, durationMs: 97454, bitRate: 320000 }, new AbortController().signal)
+  assert.equal(media.extension, 'm4a')
+})
+
+test('download diagnostics compare the original song with file tags instead of displaying the original tags twice', async() => {
+  const entries = []
+  const helper = load('src/core/downloadAudio.ts', {
+    '@/utils/nativeModules/remoteAudio': {},
+    '@/utils/playbackLog': { playbackLog: (event, fields) => entries.push({ event, data: fields() }) },
+  })
+  const original = { ...song('op-version'), name: 'Song (OP ver.1.2)', interval: '01:37' }
+  const replacement = { ...aac, title: 'Song (Full version)', artist: 'Artist', album: 'Another album', durationMs: 306155, bitRate: 320000 }
+  await assert.rejects(helper.inspectDownloadMedia(original, '320k', 'https://fixture/replacement', replacement, new AbortController().signal), /duration_mismatch/)
+  assert.equal(entries[0].event, 'download.audio_check')
+  assert.equal(entries[0].data.expected.name, original.name)
+  assert.equal(entries[0].data.actual.name, replacement.title)
+  assert.equal(entries[0].data.actual.album, replacement.album)
+  assert.equal(entries[0].data.reason, 'duration_mismatch')
 })
 
 test('M4A downloads persist actual media, transfer headers and LOCAL extension', async() => {

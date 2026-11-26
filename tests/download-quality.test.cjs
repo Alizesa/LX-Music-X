@@ -58,7 +58,7 @@ test('all selected sources use the catalog-capped FLAC tier and history retains 
   const calls = []; const probes = []; const options = []
   const setting = { 'common.apiSource': 'user_api_A', 'common.apiSourceOrder': '["user_api_A","user_api_B"]' }
   const message = load('src/utils/message.ts')
-  const qq = load('src/core/qqMusicUrl.ts', {
+  const qq = load('src/core/musicUrlValidation.ts', {
     './qqMusic': {},
     '@/utils/nativeModules/remoteAudio': {
       probeRemoteAudio: async url => {
@@ -73,7 +73,7 @@ test('all selected sources use the catalog-capped FLAC tier and history retains 
     '@/store/userApi': { state: { list: [{ id: 'user_api_A' }, { id: 'user_api_B' }] } },
     '@/utils/apiSourceOrder': load('src/utils/apiSourceOrder.ts'),
     '@/utils/message': message,
-    '@/core/qqMusicUrl': qq,
+    '@/core/musicUrlValidation': qq,
     '@/core/userApiRuntime': {
       requestUserApiMusicUrl: async(id, _music, quality, _cancel, fallback) => {
         calls.push([id, quality, fallback])

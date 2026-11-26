@@ -1,6 +1,7 @@
 package cn.toside.music.mobile.utils;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 /** Reads only MP4 directory boxes; media payloads and artwork are never scanned. */
 final class Mp4AudioMetadata {
@@ -13,6 +14,9 @@ final class Mp4AudioMetadata {
     final double durationMs;
     final boolean hasVideo;
     final double bitRate;
+    String title;
+    String artist;
+    String album;
 
     Info(String mime, double durationMs, boolean hasVideo, double bitRate) {
       this.mime = mime;
@@ -50,10 +54,15 @@ final class Mp4AudioMetadata {
   private boolean hasVideo;
   private boolean fragmented;
   private Track audio;
+  private Box metadata;
 
   private Mp4AudioMetadata(Source source) { this.source = source; }
 
   static Info read(Source source, long length) throws IOException {
+    return read(source, length, source);
+  }
+
+  static Info read(Source source, long length, Source metadataSource) throws IOException {
     // Unknown-length and fragmented files remain the platform extractor's responsibility.
     if (length < 8) return null;
     Mp4AudioMetadata parser = new Mp4AudioMetadata(source);
@@ -78,7 +87,12 @@ final class Mp4AudioMetadata {
     if (track.sampleBytes > mediaBytes || track.sampleCount != track.sizeCount) throw invalid();
     // Use the samples' duration as well as mdhd: a full-length movie header alone is insufficient.
     double durationMs = Math.min(track.duration, track.sampleDuration) * 1000.0 / track.scale;
-    return new Info(track.mime, durationMs, parser.hasVideo, track.sampleBytes * 8000.0 / durationMs);
+    Info info = new Info(track.mime, durationMs, parser.hasVideo, track.sampleBytes * 8000.0 / durationMs);
+    // 标签只用于辅助比对；坏标签不能否定已验证的音频样本表。
+    if (parser.metadata != null) {
+      try { new Mp4AudioMetadata(metadataSource).tags(parser.metadata, info, 0); } catch (IOException ignored) {}
+    }
+    return info;
   }
 
   private void movie(Box parent) throws IOException {
@@ -91,8 +105,48 @@ final class Mp4AudioMetadata {
         // Match MediaExtractor's first audio track rather than choosing a longer alternate track.
         if (track.handler == type("soun") && audio == null) audio = track;
       } else if (box.type == type("mvex")) fragmented = true;
+      else if (box.type == type("udta") || box.type == type("meta")) metadata = box;
       position = box.end;
     }
+  }
+
+  private void tags(Box parent, Info info, int depth) throws IOException {
+    if (depth > 2) return;
+    long start = parent.data;
+    if (parent.type == type("meta")) {
+      byte[] header = bytes(start, 4, parent.end);
+      if (integer(header, 0) != 0) return;
+      start += 4;
+    }
+    for (long position = start; position < parent.end;) {
+      Box box = box(position, parent.end);
+      if (box.type == type("meta") || box.type == type("ilst")) tags(box, info, depth + 1);
+      else if (parent.type == type("ilst")) {
+        if (box.type == type("\u00a9nam")) info.title = textTag(box);
+        else if (box.type == type("\u00a9ART")) info.artist = textTag(box);
+        else if (box.type == type("aART") && info.artist == null) info.artist = textTag(box);
+        else if (box.type == type("\u00a9alb")) info.album = textTag(box);
+      }
+      position = box.end;
+    }
+  }
+
+  private String textTag(Box parent) throws IOException {
+    for (long position = parent.data; position < parent.end;) {
+      Box box = box(position, parent.end);
+      if (box.type == type("data") && box.end - box.data > 8) {
+        byte[] header = bytes(box.data, 8, box.end);
+        int encoding = integer(header, 0);
+        if (encoding != 1 && encoding != 2) return null;
+        int length = (int) Math.min(2048, box.end - box.data - 8);
+        if (encoding == 2) length -= length % 2;
+        String value = new String(bytes(box.data + 8, length, box.end),
+            encoding == 1 ? StandardCharsets.UTF_8 : StandardCharsets.UTF_16BE).trim();
+        return value.isEmpty() ? null : value;
+      }
+      position = box.end;
+    }
+    return null;
   }
 
   private void children(Box parent, Track track, int level) throws IOException {

@@ -243,12 +243,69 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
     nativeCall(NATIVE_EVENTS_NAMES.request, { requestKey, url, options, parentRequestKey: scope?.key ?? null })
     return requestInfo
   }
+  // 聚合脚本常用最快响应结束 Promise.any。先拒绝可由 QQ 文件规格明确判定的坏候选，
+  // 让脚本自己继续其余同档接口；代理/未知文件名仍由应用的实际媒体校验决定。
+  const audioCandidateFailure = (url, quality) => {
+    const match = /^(?:https?:)?\/\/((?:[\w-]+\.)*qq\.com)(?::\d+)?\/([^?#]*)/i.exec(url)
+    if (!match) return null
+    let filename = match[2].split('/').pop()
+    try { filename = decodeURIComponent(filename) } catch {}
+    if (/\.(?:mgg\d*|mflac\d*|qmc\w*)$/i.test(filename)) return 'encrypted_audio'
+    const spec = /^(M500|M800|C200|C400|F000|RS01)[a-z0-9]+\.(mp3|m4a|flac)$/i.exec(filename)
+    if (!spec) return null
+    const prefix = spec[1].toUpperCase()
+    const extension = spec[2].toLowerCase()
+    const expectedExtension = { M500: 'mp3', M800: 'mp3', C200: 'm4a', C400: 'm4a', F000: 'flac', RS01: 'flac' }[prefix]
+    if (extension !== expectedExtension) return null
+    const tiers = ['flac24bit', 'flac', '320k', '128k']
+    const actual = { M500: '128k', M800: '320k', C200: '128k', C400: '128k', F000: 'flac', RS01: 'flac24bit' }[prefix]
+    return tiers.indexOf(quality) >= 0 && tiers.indexOf(actual) > tiers.indexOf(quality) ? 'quality_mismatch' : null
+  }
+  const inspectAudioCandidates = (body, quality) => {
+    if (typeof body === 'string' && body.length <= 262144 && /^\s*[[{]/.test(body)) {
+      try { body = JSON.parse(body) } catch { return null }
+    }
+    let count = 0
+    let uncertain = false
+    let reason = null
+    let inspected = 0
+    const visit = (value, depth, isUrl) => {
+      if (++inspected > 256 || depth > 8) { uncertain = true; return }
+      if (typeof value === 'string') {
+        if (!/^(?:https?:)?\/\//i.test(value)) return
+        // 未认识的字段也可能存有备用音频；有这种候选时不能把整个响应判为坏链。
+        if (!isUrl) {
+          if (!/\.(?:jpe?g|png|gif|webp|html?)(?:[?#]|$)/i.test(value)) uncertain = true
+          return
+        }
+        count++
+        const failure = audioCandidateFailure(value, quality)
+        if (!failure) uncertain = true
+        else reason = failure
+      } else if (value && typeof value === 'object') {
+        if (Array.isArray(value)) {
+          for (const item of value) { if (inspected > 256) break; visit(item, depth + 1, isUrl) }
+        } else {
+          for (const key of Object.keys(value)) {
+            if (inspected > 256) break
+            visit(value[key], depth + 1, /^(?:url|urls|play_?url|music_?url|listen_?url|src|purl|wifiurl|data|result)$/i.test(key))
+          }
+        }
+      }
+    }
+    visit(body, 0, true)
+    return count && !uncertain ? reason : null
+  }
   const handleNativeResponse = ({ requestKey, error, response }) => {
     const targetRequest = requestQueue.get(requestKey)
     if (!targetRequest) return
     requestQueue.delete(requestKey)
     targetRequest.scope?.requests.delete(requestKey)
     targetRequest.requestInfo.aborted = true
+    if (error == null && targetRequest.scope?.audioQuality) {
+      const failure = inspectAudioCandidates(response?.body, targetRequest.scope.audioQuality)
+      if (failure) error = 'Audio candidate rejected (' + failure + ')'
+    }
     // if (targetRequest.timeout) clearTimeout(targetRequest.timeout)
     withScope(targetRequest.scope, () => {
       if (error == null) targetRequest.callback(null, response)
@@ -267,7 +324,7 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
     nativeCall(NATIVE_EVENTS_NAMES.requestSettled, scope.key)
   }
 
-  const handleRequest = ({ requestKey, data }) => {
+  const handleRequest = ({ requestKey, data, filterAudioCandidates }) => {
     // console.log(data)
     if (cancelledRequests.delete(requestKey)) return nativeCall(NATIVE_EVENTS_NAMES.requestSettled, requestKey)
     if (!events.request || activeRequestScope) {
@@ -276,7 +333,13 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
       return
     }
     // App 侧串行分派；在返回 Promise 的生命周期内保留 scope，涵盖正常 async/await。
-    const scope = { key: requestKey, cancelled: false, timers: new Set(), requests: new Set() }
+    const scope = {
+      key: requestKey,
+      cancelled: false,
+      timers: new Set(),
+      requests: new Set(),
+      audioQuality: filterAudioCandidates && data.source === 'tx' && data.action === 'musicUrl' ? data.info?.type : null,
+    }
     activeRequestScope = scope
     try {
       Promise.resolve(events.request.call(globalThis.lx, { source: data.source, action: data.action, info: data.info })).then(response => {
@@ -285,6 +348,10 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
         switch (data.action) {
           case 'musicUrl':
             if (typeof response != 'string' || response.length > 2048 || !/^https?:/.test(response)) throw new Error('failed')
+            if (scope.audioQuality) {
+              const failure = audioCandidateFailure(response, scope.audioQuality)
+              if (failure) throw new Error('Audio candidate rejected (' + failure + ')')
+            }
             result = {
               source: data.source,
               action: data.action,

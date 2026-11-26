@@ -3,7 +3,7 @@ import { state as userApiState } from '@/store/userApi'
 import { resolveApiSourceOrder } from '@/utils/apiSourceOrder'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { requestUserApiMusicUrl } from '@/core/userApiRuntime'
-import { validateQQMusicUrl } from '@/core/qqMusicUrl'
+import { validateMusicUrl } from '@/core/musicUrlValidation'
 import { type RemoteAudioInfo } from '@/utils/nativeModules/remoteAudio'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
 
@@ -19,6 +19,9 @@ const remember = <T>(map: Map<string, T>, key: string, value: T) => {
 }
 
 export const isMusicUrlFailed = (url: string) => (failedUrls.get(url) ?? 0) > Date.now()
+export const assertMusicUrlAvailable = (url: string, rejectedUrls?: ReadonlySet<string>) => {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url) || isMusicUrlFailed(url) || rejectedUrls?.has(url)) throw new Error('Invalid music URL')
+}
 const isAudioProbeFailure = (error: unknown) => (error as { isAudioProbeFailure?: boolean } | null)?.isAudioProbeFailure === true
 export const markMusicUrlFailed = (url: string, error?: unknown) => {
   if (isAudioProbeFailure(error)) return
@@ -38,6 +41,8 @@ export interface MusicUrlRequestOptions {
   /** 内部换源沿用同一次取址的缓存上下文。 */
   cacheContext?: string
   trace?: PlaybackLogContext
+  /** 换源后仍按原曲时长验证，不能把替代版本自身的时长当作完整性依据。 */
+  expectedMusicInfo?: LX.Music.MusicInfo
 }
 export const getEnabledMusicSourceIds = () => {
   const setting = settingState.setting
@@ -45,7 +50,7 @@ export const getEnabledMusicSourceIds = () => {
 }
 
 /** 一轮只依次请求已勾选的脚本；失败冷却按歌曲/音质隔离，不误伤这个源的其他歌曲。 */
-export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, validateUrl, rejectedUrls, allowQualityFallback = true, isRefresh = false, trace }: {
+export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, validateUrl, rejectedUrls, allowQualityFallback = true, isRefresh = false, trace, expectedMusicInfo }: {
   musicInfo: LX.Music.MusicInfoOnline
   quality: LX.Quality
   onCancel?: (cancel: () => void) => void
@@ -55,6 +60,7 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
   allowQualityFallback?: boolean
   isRefresh?: boolean
   trace?: PlaybackLogContext
+  expectedMusicInfo?: LX.Music.MusicInfo
 }): Promise<{ url: string, quality: LX.Quality, musicInfo: LX.Music.MusicInfoOnline, isFromCache: boolean }> => {
   const ids = getEnabledMusicSourceIds()
   playbackLog('url.sources', () => ({ ...trace, musicId: musicInfo.id, sources: ids, quality, isRefresh }))
@@ -77,15 +83,18 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
       playbackLog('url.source_start', () => ({ ...trace, apiId, musicId: musicInfo.id, quality }))
       const result = await requestUserApiMusicUrl(apiId, musicInfo, quality, registerCancel, allowQualityFallback, trace)
       assertActive()
-      if (typeof result.url != 'string' || !/^https?:\/\//i.test(result.url) || isMusicUrlFailed(result.url) || rejectedUrls?.has(result.url)) throw new Error('Invalid music URL')
+      assertMusicUrlAvailable(result.url, rejectedUrls)
       remember(sourceUrls, key, result.url)
       playbackLog('url.source_resolved', () => ({ ...trace, apiId, url: result.url, quality: result.type, elapsedMs: Date.now() - startedAt }))
       try {
         // 首次取链与缓存命中使用同一套完整性检查；预加载只能读取通过检查的音频。
         playbackLog('url.validate_start', () => ({ ...trace, apiId, musicSource: musicInfo.source }))
-        const media = await validateQQMusicUrl(musicInfo, result.url, registerCancel, isRefresh, { ...trace, apiId })
+        const media = await validateMusicUrl(musicInfo, result.url, registerCancel, isRefresh, { ...trace, apiId }, expectedMusicInfo)
         assertActive()
+        assertMusicUrlAvailable(result.url, rejectedUrls)
         await validateUrl?.(result.url, media)
+        assertActive()
+        assertMusicUrlAvailable(result.url, rejectedUrls)
         playbackLog('url.validate_done', { ...trace, apiId })
       } catch (error) {
         assertActive()

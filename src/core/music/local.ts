@@ -118,7 +118,7 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
     if (cancelled) cancel()
   }
   const cacheContext = options.cacheContext ?? getMusicUrlCacheContext(settingState.setting, options.urlSourceOrder)
-  const requestOptions = { ...options, cacheContext, onCancel: registerCancel }
+  const requestOptions = { ...options, expectedMusicInfo: options.expectedMusicInfo ?? musicInfo, cacheContext, onCancel: registerCancel }
   assertActive()
   if (!isRefresh) {
     const path = await getLocalFilePath(musicInfo)
