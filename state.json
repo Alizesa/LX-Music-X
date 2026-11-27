@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 16,
+  "sequence": 17,
   "lastStableVersion": "1.9.4",
   "nextTargetVersion": "1.9.5",
   "branches": {
-    "Next": "23c9eb73291c0379a98f283725a57a0dab0b7722",
+    "Next": "072c0b0933ab5fee7507b4ba3c83b4d4416cc30e",
     "master": "a13dd9c6e40f8397420594e611b5979e18c7abb8"
   },
   "events": {},
@@ -265,6 +265,17 @@
         "desc": "- fix: validate audio completeness across all music sources (23c9eb73)"
       },
       "publishedAt": "2026-11-26T02:37:23.132Z"
+    },
+    "Next/072c0b0933ab5fee7507b4ba3c83b4d4416cc30e": {
+      "branch": "Next",
+      "sourceSha": "072c0b0933ab5fee7507b4ba3c83b4d4416cc30e",
+      "before": "23c9eb73291c0379a98f283725a57a0dab0b7722",
+      "channel": "next",
+      "sequence": 17,
+      "version": "1.9.5-next.17",
+      "versionCode": 100017,
+      "tag": "v1.9.5-next.17",
+      "status": "allocated"
     }
   },
   "channels": {
