@@ -133,7 +133,9 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
         const media = await probeRemoteAudio(url, true, { signal: controller.signal, isRefresh, timeoutMs: 5000 })
         if (done) return
         // 探测期间其他播放/预加载请求也可能标记这个 URL 失败，迟到结果不能重新选中它。
-        const reason = isUrlRejected?.(url) ? 'rejected_url' : audioFailure(media, expectedMs, expectedMime)
+        const resolvedUrl = media.resolvedUrl ?? url
+        const reason = isUrlRejected?.(url) === true || (resolvedUrl !== url && isUrlRejected?.(resolvedUrl) === true)
+          ? 'rejected_url' : audioFailure(media, expectedMs, expectedMime)
         playbackLog('url.account_probe', () => ({
           ...trace,
           quality,

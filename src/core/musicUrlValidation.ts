@@ -1,6 +1,8 @@
-import { probeRemoteAudio, type RemoteAudioInfo } from '@/utils/nativeModules/remoteAudio'
+import { discardRedirectedAudioProbe, probeRemoteAudio, type RemoteAudioInfo } from '@/utils/nativeModules/remoteAudio'
 import { throwIfAborted } from '@/utils/abort'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
+
+export { discardRedirectedAudioProbe }
 
 export const getMusicDurationMs = (interval: string | null | undefined): number => {
   if (!interval || !/^\d+(?::[0-5]?\d){1,2}$/.test(interval)) return 0
@@ -76,6 +78,11 @@ export const validateMusicUrl = async(
     }))
     if (reason) {
       const error = new MusicAudioError(reason)
+      // 中转地址下次可能换一份音频，失败只说明当前目标不可用。
+      if (media.resolvedUrl && media.resolvedUrl !== url) {
+        discardRedirectedAudioProbe(url, media)
+        error.isAudioProbeFailure = true
+      }
       // 替代版本本身完整，只是与原曲不符时，不能全局禁用这个文件或冷却替代歌曲。
       if (reason === 'duration_mismatch' && !musicAudioFailure(media, getMusicDurationMs(musicInfo.interval))) error.isAudioProbeFailure = true
       throw error

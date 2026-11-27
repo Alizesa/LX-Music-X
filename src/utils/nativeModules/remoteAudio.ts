@@ -4,6 +4,8 @@ import { throwIfAborted, withAbort } from '@/utils/abort'
 
 export interface RemoteAudioInfo {
   readable: boolean
+  /** HTTP 重定向后的最终地址，供播放器和下载器复用已经核对过的媒体。 */
+  resolvedUrl?: string
   durationMs?: number
   mime?: string
   hasVideo?: boolean
@@ -44,11 +46,20 @@ export interface ProbeOptions {
   timeoutMs?: number
 }
 
+const cacheKey = (url: string, inspectDuration: boolean) => (inspectDuration ? 'duration:' : 'readable:') + url
+
 // 预加载和点播复用同一份媒体检查；不持久保存含签名的地址。
 const cache = new Map<string, CachedProbe>()
 const pending = new Map<string, ProbeTask>()
+const MAX_TIMEOUT_MS = 15_000
 const taskPrefix = Date.now().toString(36)
 let taskId = 0
+
+export const discardRedirectedAudioProbe = (url: string, info: RemoteAudioInfo) => {
+  if (!info.resolvedUrl || info.resolvedUrl === url) return
+  const key = cacheKey(url, true)
+  if (cache.get(key)?.info === info) cache.delete(key)
+}
 
 const startProbe = (key: string, url: string, inspectDuration: boolean, timeoutMs: number): ProbeTask => {
   const id = `${taskPrefix}-${++taskId}`
@@ -95,11 +106,12 @@ const startProbe = (key: string, url: string, inspectDuration: boolean, timeoutM
 
 export const probeRemoteAudio = async(url: string, inspectDuration: boolean, options: ProbeOptions = {}): Promise<RemoteAudioInfo> => {
   throwIfAborted(options.signal)
-  const key = `${inspectDuration ? 'duration' : 'readable'}:${url}`
+  const key = cacheKey(url, inspectDuration)
   if (options.isRefresh) cache.delete(key)
   const cached = cache.get(key)
   if (cached && cached.expires > Date.now()) return cached.info
-  const timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? 5000, 5000))
+  // 慢速中转和后续 CDN 共用一个时限，无须在超时后重新取链。
+  const timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? (inspectDuration ? MAX_TIMEOUT_MS : 5_000), MAX_TIMEOUT_MS))
   const task = (options.isRefresh ? undefined : pending.get(key)) ?? startProbe(key, url, inspectDuration, timeoutMs)
   task.users++
   try {

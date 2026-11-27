@@ -602,6 +602,75 @@ test('full AAC and Opus source audio remains playable through fresh URLs, cachin
   }
 })
 
+test('a validated proxy redirect is used by playback and preloading while the source URL is cached', async() => {
+  const proxy = 'https://audio.example/song.php'
+  const direct = 'https://cdn.example/song.mp3'
+  const musicInfo = { ...song, id: 'tx_0027W1wz3eeYtZ', interval: '01:37' }
+  const h = harness({
+    request: () => ({ url: proxy, type: '128k' }),
+    inspect: () => ({ ...audio(97437), resolvedUrl: direct }),
+  })
+  h.setting['common.apiSourceOrder'] = '["user_api_a"]'
+  assert.equal(await h.resolve({ musicInfo, quality: undefined }), direct)
+  assert.deepEqual(h.writes.map(item => item.url), [proxy])
+  assert.equal(await h.preload.preloadMusic(musicInfo), direct)
+  assert.equal(await h.preload.takePreloadedMusicUrl(musicInfo, () => {}), direct)
+  assert.deepEqual(h.cacheReads, [{ url: direct, bytes: 256 * 1024 }])
+  assert.deepEqual(h.probes.map(({ url, timeoutMs }) => [url, timeoutMs]), [[proxy, 15000]])
+  assert.equal(h.requests.length, 1)
+})
+
+test('a validated redirect rejected while the caller is preparing it cannot be cached', async() => {
+  const direct = 'https://cdn.example/expired.mp3'
+  const rejectedUrls = new Set()
+  const h = harness({ inspect: url => ({ ...audio(), resolvedUrl: url === preview ? direct : undefined }) })
+  assert.equal(await h.resolve({
+    rejectedUrls,
+    validateUrl: async url => { if (url === direct) rejectedUrls.add(url) },
+  }), full)
+  assert.deepEqual(h.writes.map(item => item.url), [full])
+})
+
+test('a single source can resolve the same proxy after it redirects to a short clip or a failed CDN', async() => {
+  const proxy = 'https://audio.example/song.php'
+  const clip = 'https://cdn.example/preview.aac'
+  const direct = 'https://cdn.example/full.mp3'
+  const refreshed = 'https://cdn.example/refresh.mp3'
+  const candidates = [
+    { ...audio(5000, 'audio/aac'), resolvedUrl: clip },
+    { ...audio(), resolvedUrl: direct },
+    { ...audio(), resolvedUrl: refreshed },
+  ]
+  const h = harness({ inspect: () => candidates.shift(), request: () => ({ url: proxy, type: '128k' }) })
+  h.setting['common.apiSourceOrder'] = '["user_api_a"]'
+  await assert.rejects(h.resolve(), /toggle_source_failed/)
+  assert.equal(h.priority.isMusicUrlFailed(proxy), false)
+  assert.equal(await h.resolve(), direct)
+  h.priority.markMusicUrlFailed(direct)
+  assert.equal(await h.resolve({ isRefresh: true, rejectedUrls: new Set([direct]) }), refreshed)
+  assert.deepEqual(h.probes.map(item => item.url), [proxy, proxy, proxy])
+  assert.deepEqual(h.writes.map(item => item.url), [proxy, proxy])
+})
+
+test('download validation receives the same redirected CDN that playback accepted', async() => {
+  const proxy = 'https://audio.example/song.php'
+  const direct = 'https://cdn.example/song.mp3'
+  const musicInfo = { ...song, id: 'tx_0027W1wz3eeYtZ', interval: '01:37' }
+  const h = harness({
+    request: (_id, _music, quality) => ({ url: proxy, type: quality }),
+    inspect: () => ({ ...audio(97437), resolvedUrl: direct, headerKind: 'mp3', contentLength: 1559721, audioOffset: 189 }),
+  })
+  h.setting['common.apiSourceOrder'] = '["user_api_a"]'
+  let media
+  let validatedUrl
+  assert.equal(await h.resolve({ musicInfo, validateUrl: async(url, info) => { validatedUrl = url; media = info } }), direct)
+  assert.equal(validatedUrl, direct)
+  assert.equal(media.contentLength, 1559721)
+  assert.equal(media.headerKind, 'mp3')
+  assert.equal(h.probes.length, 1)
+  assert.equal(h.requests.length, 1)
+})
+
 test('sources returning the same rejected preview do not re-probe it or cache a failed URL', async() => {
   const h = harness({ request: () => ({ url: preview, type: '128k' }) })
   await assert.rejects(h.resolve(), /toggle_source_failed/)

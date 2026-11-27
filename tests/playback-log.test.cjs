@@ -98,12 +98,12 @@ test('audio diagnostics distinguish a probe deadline from an observed short prev
   const timeout = audioDiagnosticsHarness({ inspect: () => new Promise(() => {}) })
   const failed = assert.rejects(timeout.validation.validateMusicUrl(diagnosticSong, diagnosticUrl, undefined, false,
     { playId: 'play-one', urlId: 'url-one', apiId: 'user_api_a' }), { code: 'timeout', message: 'Music audio probe timed out' })
-  await timeout.advance(5000)
+  await timeout.advance(15000)
   await failed
   const timedOut = (await timeout.entries()).find(entry => entry.event === 'url.audio_check').data
   assert.equal(timedOut.reason, 'timeout')
   assert.equal(timedOut.expectedMs, 180000)
-  assert.equal(timedOut.probe.elapsedMs, 5000)
+  assert.equal(timedOut.probe.elapsedMs, 15000)
   assert.equal(timedOut.probe.durationMs, undefined)
   assert.equal(timedOut.accepted, false)
   assert.equal(timedOut.apiId, 'user_api_a')

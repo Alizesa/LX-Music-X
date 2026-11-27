@@ -128,9 +128,9 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
   playbackLog('url.local_missing', { ...options.trace, musicId: musicInfo.id, isRefresh })
 
   try {
-    return await getOnlineOtherSourceMusicUrlByLocal(musicInfo, isRefresh, requestOptions).then(({ url, quality, isFromCache }) => {
+    return await getOnlineOtherSourceMusicUrlByLocal(musicInfo, isRefresh, requestOptions).then(({ url, sourceUrl = url, quality, isFromCache }) => {
       assertActive()
-      if (!isFromCache && cacheContext === getMusicUrlCacheContext(settingState.setting, options.urlSourceOrder)) void saveMusicUrl(musicInfo, quality, url, cacheContext)
+      if (!isFromCache && cacheContext === getMusicUrlCacheContext(settingState.setting, options.urlSourceOrder)) void saveMusicUrl(musicInfo, quality, sourceUrl, cacheContext)
       return url
     })
   } catch (error) {
@@ -145,9 +145,9 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
   registerCancel(() => { matching?.abort() })
   return getOtherSourceByLocal(musicInfo, async(otherSource) => {
     assertActive()
-    return getOnlineOtherSourceMusicUrl({ musicInfos: [...otherSource], onToggleSource, isRefresh, ...requestOptions }).then(({ url, quality: targetQuality, musicInfo: targetMusicInfo, isFromCache }) => {
+    return getOnlineOtherSourceMusicUrl({ musicInfos: [...otherSource], onToggleSource, isRefresh, ...requestOptions }).then(({ url, sourceUrl = url, quality: targetQuality, musicInfo: targetMusicInfo, isFromCache }) => {
       assertActive()
-      if (!isFromCache && cacheContext === getMusicUrlCacheContext(settingState.setting, options.urlSourceOrder)) void saveMusicUrl(targetMusicInfo, targetQuality, url, cacheContext)
+      if (!isFromCache && cacheContext === getMusicUrlCacheContext(settingState.setting, options.urlSourceOrder)) void saveMusicUrl(targetMusicInfo, targetQuality, sourceUrl, cacheContext)
 
       // TODO: save url ?
       return url

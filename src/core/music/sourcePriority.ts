@@ -3,7 +3,7 @@ import { state as userApiState } from '@/store/userApi'
 import { resolveApiSourceOrder } from '@/utils/apiSourceOrder'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { requestUserApiMusicUrl } from '@/core/userApiRuntime'
-import { validateMusicUrl } from '@/core/musicUrlValidation'
+import { discardRedirectedAudioProbe, validateMusicUrl } from '@/core/musicUrlValidation'
 import { type RemoteAudioInfo } from '@/utils/nativeModules/remoteAudio'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
 
@@ -44,6 +44,49 @@ export interface MusicUrlRequestOptions {
   /** 换源后仍按原曲时长验证，不能把替代版本自身的时长当作完整性依据。 */
   expectedMusicInfo?: LX.Music.MusicInfo
 }
+
+export interface OnlineMusicUrl {
+  url: string
+  /** 播放和下载使用探测得到的直链，持久缓存仍使用脚本的原地址。 */
+  sourceUrl?: string
+  quality: LX.Quality
+  musicInfo: LX.Music.MusicInfoOnline
+  isFromCache: boolean
+}
+
+export const prepareMusicUrl = async(musicInfo: LX.Music.MusicInfo, sourceUrl: string, assertActive: () => void, {
+  onCancel, isRefresh, trace, expectedMusicInfo, validateUrl, rejectedUrls,
+}: MusicUrlRequestOptions & { isRefresh?: boolean, trace?: PlaybackLogContext & { apiId?: string } }): Promise<string> => {
+  const media = await validateMusicUrl(musicInfo, sourceUrl, onCancel, isRefresh, trace, expectedMusicInfo).catch(error => {
+    assertActive()
+    if (!isRequestCancelled(error)) markMusicUrlFailed(sourceUrl, error)
+    throw error
+  })
+  const url = media?.resolvedUrl ?? sourceUrl
+  const assertAvailable = () => {
+    assertActive()
+    assertMusicUrlAvailable(sourceUrl, rejectedUrls)
+    if (url !== sourceUrl) {
+      if (media && (isMusicUrlFailed(url) || rejectedUrls?.has(url))) discardRedirectedAudioProbe(sourceUrl, media)
+      assertMusicUrlAvailable(url, rejectedUrls)
+    }
+  }
+  assertAvailable()
+  try {
+    await validateUrl?.(url, media)
+  } catch (error) {
+    assertActive()
+    if (!isRequestCancelled(error)) {
+      markMusicUrlFailed(sourceUrl, error)
+      markMusicUrlFailed(url, error)
+      if (media && !isAudioProbeFailure(error)) discardRedirectedAudioProbe(sourceUrl, media)
+    }
+    throw error
+  }
+  assertAvailable()
+  return url
+}
+
 export const getEnabledMusicSourceIds = () => {
   const setting = settingState.setting
   return resolveApiSourceOrder(setting['common.apiSourceOrder'], setting['common.apiSource'], userApiState.list)
@@ -61,7 +104,7 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
   isRefresh?: boolean
   trace?: PlaybackLogContext
   expectedMusicInfo?: LX.Music.MusicInfo
-}): Promise<{ url: string, quality: LX.Quality, musicInfo: LX.Music.MusicInfoOnline, isFromCache: boolean }> => {
+}): Promise<OnlineMusicUrl> => {
   const ids = getEnabledMusicSourceIds()
   playbackLog('url.sources', () => ({ ...trace, musicId: musicInfo.id, sources: ids, quality, isRefresh }))
   let cancelled = false
@@ -79,36 +122,30 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
     const previousUrl = sourceUrls.get(key)
     if (previousUrl && rejectedUrls?.has(previousUrl)) { playbackLog('url.source_skip', { ...trace, apiId, reason: 'rejected_url' }); continue }
     const startedAt = Date.now()
+    let sourceUrl: string | undefined
     try {
       playbackLog('url.source_start', () => ({ ...trace, apiId, musicId: musicInfo.id, quality }))
       const result = await requestUserApiMusicUrl(apiId, musicInfo, quality, registerCancel, allowQualityFallback, trace)
       assertActive()
       assertMusicUrlAvailable(result.url, rejectedUrls)
-      remember(sourceUrls, key, result.url)
+      sourceUrl = result.url
+      remember(sourceUrls, key, sourceUrl)
       playbackLog('url.source_resolved', () => ({ ...trace, apiId, url: result.url, quality: result.type, elapsedMs: Date.now() - startedAt }))
-      try {
-        // 首次取链与缓存命中使用同一套完整性检查；预加载只能读取通过检查的音频。
-        playbackLog('url.validate_start', () => ({ ...trace, apiId, musicSource: musicInfo.source }))
-        const media = await validateMusicUrl(musicInfo, result.url, registerCancel, isRefresh, { ...trace, apiId }, expectedMusicInfo)
-        assertActive()
-        assertMusicUrlAvailable(result.url, rejectedUrls)
-        await validateUrl?.(result.url, media)
-        assertActive()
-        assertMusicUrlAvailable(result.url, rejectedUrls)
-        playbackLog('url.validate_done', { ...trace, apiId })
-      } catch (error) {
-        assertActive()
-        if (!isRequestCancelled(error)) markMusicUrlFailed(result.url, error)
-        throw error
-      }
+      playbackLog('url.validate_start', () => ({ ...trace, apiId, musicSource: musicInfo.source }))
+      const url = await prepareMusicUrl(musicInfo, sourceUrl, assertActive, {
+        onCancel: registerCancel, isRefresh, trace: { ...trace, apiId }, expectedMusicInfo, validateUrl, rejectedUrls,
+      })
       assertActive()
+      remember(sourceUrls, key, url)
+      playbackLog('url.validate_done', { ...trace, apiId })
       failedSources.delete(key)
-      return { url: result.url, quality: result.type, musicInfo, isFromCache: false }
+      return { url, sourceUrl, quality: result.type, musicInfo, isFromCache: false }
     } catch (error) {
-      playbackLog('url.source_failed', () => ({ ...trace, apiId, error, elapsedMs: Date.now() - startedAt, cancelled: cancelled || isRequestCancelled(error), cooldown: !cancelled && !isRequestCancelled(error) && !isAudioProbeFailure(error) }))
+      const cooldown = !isAudioProbeFailure(error) && (!sourceUrl || isMusicUrlFailed(sourceUrl))
+      playbackLog('url.source_failed', () => ({ ...trace, apiId, error, elapsedMs: Date.now() - startedAt, cancelled: cancelled || isRequestCancelled(error), cooldown: !cancelled && !isRequestCancelled(error) && cooldown }))
       assertActive()
       if (isRequestCancelled(error)) throw error
-      if (!isAudioProbeFailure(error)) remember(failedSources, key, Date.now() + COOLDOWN)
+      if (cooldown) remember(failedSources, key, Date.now() + COOLDOWN)
     }
   }
   assertActive()

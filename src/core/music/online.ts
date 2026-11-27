@@ -5,9 +5,8 @@ import {
 } from '@/utils/data'
 import { updateListMusics } from '@/core/list'
 import settingState from '@/store/setting/state'
-import { assertMusicUrlAvailable, isMusicUrlFailed, markMusicUrlFailed, type ValidateMusicUrl } from './sourcePriority'
+import { isMusicUrlFailed, prepareMusicUrl, type ValidateMusicUrl } from './sourcePriority'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
-import { validateMusicUrl } from '@/core/musicUrlValidation'
 import { getMusicUrlCacheContext } from '@/utils/musicUrlCache'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
 import { throwIfAborted } from '@/utils/abort'
@@ -61,32 +60,27 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
       playbackLog('url.cache_validate', { ...trace, musicId: musicInfo.id })
-      const media = await validateMusicUrl(musicInfo, cachedUrl, registerCancel, false, trace, expectedMusicInfo)
+      const url = await prepareMusicUrl(musicInfo, cachedUrl, assertActive, { onCancel: registerCancel, trace, expectedMusicInfo, validateUrl, rejectedUrls })
       assertActive()
-      assertMusicUrlAvailable(cachedUrl, rejectedUrls)
-      await validateUrl?.(cachedUrl, media)
-      assertActive()
-      assertMusicUrlAvailable(cachedUrl, rejectedUrls)
-      playbackLog('url.cache_hit', () => ({ ...trace, musicId: musicInfo.id, url: cachedUrl }))
-      return cachedUrl
+      playbackLog('url.cache_hit', () => ({ ...trace, musicId: musicInfo.id, url }))
+      return url
     } catch (error) {
       playbackLog('url.cache_rejected', () => ({ ...trace, error }))
       assertActive()
       if (isRequestCancelled(error)) throw error
-      markMusicUrlFailed(cachedUrl, error)
     }
   }
 
   playbackLog('url.cache_miss', () => ({ ...trace, musicId: musicInfo.id, isRefresh }))
-  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel: registerCancel, validateUrl, rejectedUrls, cacheContext, trace, expectedMusicInfo }).then(({ url, quality: actualQuality, musicInfo: targetMusicInfo, isFromCache }) => {
+  return handleGetOnlineMusicUrl({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource, urlSourceOrder, onCancel: registerCancel, validateUrl, rejectedUrls, cacheContext, trace, expectedMusicInfo }).then(({ url, sourceUrl = url, quality: actualQuality, musicInfo: targetMusicInfo, isFromCache }) => {
     assertActive()
     playbackLog('url.resolved', () => ({ ...trace, musicId: musicInfo.id, actualMusicId: targetMusicInfo.id, quality: actualQuality, url, isFromCache }))
     if (cacheContext !== getMusicUrlCacheContext(settingState.setting, urlSourceOrder)) return url
-    if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, actualQuality, url, cacheContext).catch(() => {})
-    void saveMusicUrl(musicInfo, actualQuality, url, cacheContext).catch(() => {})
+    if (targetMusicInfo.id != musicInfo.id && !isFromCache) void saveMusicUrl(targetMusicInfo, actualQuality, sourceUrl, cacheContext).catch(() => {})
+    void saveMusicUrl(musicInfo, actualQuality, sourceUrl, cacheContext).catch(() => {})
     // 记住这一档播放请求实际选中的降档结果，复播不再重复账号取票/脚本请求。
     // 元数据保留实际音质，显式指定音质的下载仍须重新取到符合要求的链接。
-    if (actualQuality !== targetQuality) void saveMusicUrl(musicInfo, targetQuality, url, cacheContext, actualQuality).catch(() => {})
+    if (actualQuality !== targetQuality) void saveMusicUrl(musicInfo, targetQuality, sourceUrl, cacheContext, actualQuality).catch(() => {})
     return url
   })
 }

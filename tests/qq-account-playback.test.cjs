@@ -507,20 +507,30 @@ test('account-wide timeout aborts a stuck ticket and permits source fallback', a
 
 const onlineHarness = (h, apiReady = Promise.resolve(true), data = {}, failedUrls = new Set()) => {
   let sourceCalls = 0
-  const pipeline = load('src/core/music/utils.ts', {
-    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': load('src/utils/apiSourceOrder.ts') }),
-    './sourcePriority': {
-      isMusicUrlFailed: url => failedUrls.has(url),
-      markMusicUrlFailed() {},
-      getMusicUrlByPriority: async({ musicInfo, quality, onCancel }) => {
-        let cancelled = false
-        onCancel?.(() => { cancelled = true })
-        await apiReady
-        if (cancelled) throw new Error(message.requestMsg.cancelRequest)
-        sourceCalls++
-        return { musicInfo, quality, url: 'https://source.example/song.mp3', isFromCache: false }
-      },
+  const order = load('src/utils/apiSourceOrder.ts')
+  const priority = load('src/core/music/sourcePriority.ts', {
+    '@/utils/apiSourceOrder': order,
+    '@/core/musicUrlValidation': h.playback,
+    '@/utils/message': message,
+    '@/core/userApiRuntime': {},
+    '@/store/setting/state': {},
+    '@/store/userApi': {},
+  })
+  const sourcePriority = {
+    ...priority,
+    isMusicUrlFailed: url => failedUrls.has(url) || priority.isMusicUrlFailed(url),
+    getMusicUrlByPriority: async({ musicInfo, quality, onCancel }) => {
+      let cancelled = false
+      onCancel?.(() => { cancelled = true })
+      await apiReady
+      if (cancelled) throw new Error(message.requestMsg.cancelRequest)
+      sourceCalls++
+      return { musicInfo, quality, url: 'https://source.example/song.mp3', isFromCache: false }
     },
+  }
+  const pipeline = load('src/core/music/utils.ts', {
+    '@/utils/musicUrlCache': load('src/utils/musicUrlCache.ts', { './apiSourceOrder': order }),
+    './sourcePriority': sourcePriority,
     __global: { lx: { apiInitPromise: [apiReady] } },
     '@/config/constant': load('src/config/constant.ts'),
     '@/utils/musicSdk': {
@@ -544,6 +554,7 @@ const onlineHarness = (h, apiReady = Promise.resolve(true), data = {}, failedUrl
   })
   return {
     pipeline,
+    sourcePriority,
     resolve: options => pipeline.handleGetOnlineMusicUrl({ musicInfo: song, quality: '128k', allowToggleSource: false, onToggleSource() {}, ...options }),
     sourceCalls: () => sourceCalls,
   }
@@ -615,7 +626,6 @@ test('rejecting every account candidate still falls back to a selected script wi
 
 const cachedQQUrl = 'https://isure.stream.qqmusic.qq.com/M500media.mp3?vkey=cached'
 const cachedOnlineHarness = (h, cachedUrl = cachedQQUrl) => {
-  const failed = new Set()
   const writes = []
   const data = {
     getMusicUrl: async() => cachedUrl,
@@ -631,14 +641,10 @@ const cachedOnlineHarness = (h, cachedUrl = cachedQQUrl) => {
     '@/core/qqMusicUrl': h.playback,
     '@/core/musicUrlValidation': h.playback,
     './utils': online.pipeline,
-    './sourcePriority': {
-      isMusicUrlFailed: url => failed.has(url),
-      markMusicUrlFailed: url => { failed.add(url) },
-      assertMusicUrlAvailable: url => { if (failed.has(url)) throw new Error('Invalid music URL') },
-    },
+    './sourcePriority': online.sourcePriority,
   })
   return {
-    failed,
+    isMusicUrlFailed: online.sourcePriority.isMusicUrlFailed,
     writes,
     online,
     resolve: options => api.getMusicUrl({ musicInfo: song, quality: '128k', isRefresh: false, allowToggleSource: false, ...options }),
@@ -651,7 +657,7 @@ test('cached QQ previews are rejected before playback or preloading can reuse th
   const validated = []
   assert.equal(await cache.resolve({ validateUrl: async url => { validated.push(url) } }), standard)
   assert.deepEqual(h.probes[0], { url: cachedQQUrl, inspect: true })
-  assert.ok(cache.failed.has(cachedQQUrl))
+  assert.equal(cache.isMusicUrlFailed(cachedQQUrl), true)
   assert.deepEqual(validated, [standard])
   assert.equal(cache.writes[0].url, standard)
   assert.equal(h.requests.length, 1)
@@ -701,7 +707,7 @@ test('cancelling a cached QQ duration check stops native IO without fallback', a
   assert.equal(h.requests.length, 0)
   assert.equal(cache.online.sourceCalls(), 0)
   assert.equal(cache.writes.length, 0)
-  assert.equal(cache.failed.size, 0)
+  assert.equal(cache.isMusicUrlFailed(cachedQQUrl), false)
 })
 
 test('cross-platform fallback also rejects cached QQ previews', async() => {

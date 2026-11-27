@@ -37,6 +37,8 @@ final class RemoteAudioProbe {
       + "(KHTML, like Gecko) Chrome/79.0.3945.79 Mobile Safari/537.36";
   private static final int BLOCK_SIZE = 64 * 1024;
   private static final int BYTE_LIMIT = 1024 * 1024;
+  private static final int MAX_TIMEOUT_MS = 15000;
+  private static final int MAX_REDIRECTS = 5;
   private final ConcurrentHashMap<String, Task> tasks = new ConcurrentHashMap<>();
   private final ThreadPoolExecutor workers = new ThreadPoolExecutor(
       4, 4, 10, TimeUnit.SECONDS, new LinkedBlockingQueue<>(12));
@@ -45,7 +47,7 @@ final class RemoteAudioProbe {
   RemoteAudioProbe() { workers.allowCoreThreadTimeOut(true); }
 
   void start(String id, String url, boolean inspect, double timeoutMs, Promise promise) {
-    Task task = new Task(id, promise, Math.max(1, Math.min((long) timeoutMs, 5000)));
+    Task task = new Task(id, promise, Math.max(1, Math.min((long) timeoutMs, MAX_TIMEOUT_MS)));
     Task previous = tasks.put(id, task);
     if (previous != null) previous.cancel();
     try {
@@ -92,6 +94,7 @@ final class RemoteAudioProbe {
     volatile String headerKind;
     volatile String method;
     volatile String failureReason;
+    volatile String resolvedUrl;
 
     Task(String id, Promise promise, long timeoutMs) {
       this.id = id;
@@ -132,6 +135,7 @@ final class RemoteAudioProbe {
       result.putInt("largestRead", largestRead);
       if (headerKind != null) result.putString("headerKind", headerKind);
       if (method != null) result.putString("method", method);
+      if (resolvedUrl != null) result.putString("resolvedUrl", resolvedUrl);
       result.putDouble("elapsedMs", SystemClock.elapsedRealtime() - started);
       // Resolve first: disposal of an Android network object must not delay JS fallback.
       promise.resolve(result);
@@ -146,22 +150,39 @@ final class RemoteAudioProbe {
     }
   }
 
-  private static HttpURLConnection open(Task task, String url, long position, int size) throws IOException {
+  private static HttpURLConnection open(Task task, URL address, long position, int size) throws IOException {
     task.check();
-    URL address = new URL(url);
     if (!"https".equals(address.getProtocol()) && !"http".equals(address.getProtocol())) throw task.fail("invalid_protocol");
     HttpURLConnection connection = (HttpURLConnection) address.openConnection();
     task.connection = connection;
-    task.check();
     task.requests++;
-    int timeout = (int) Math.min(task.remaining(), 1500);
+    int timeout = (int) task.remaining();
     connection.setConnectTimeout(timeout);
     connection.setReadTimeout(timeout);
-    connection.setInstanceFollowRedirects(true);
+    connection.setInstanceFollowRedirects(false);
     connection.setRequestProperty("Range", "bytes=" + position + "-" + (position + size - 1));
     connection.setRequestProperty("Accept-Encoding", "identity");
     connection.setRequestProperty("User-Agent", USER_AGENT);
     return connection;
+  }
+
+  private static int responseCode(Task task, HttpURLConnection connection) throws IOException {
+    task.check();
+    int status = connection.getResponseCode();
+    task.httpStatus = status;
+    task.check();
+    return status;
+  }
+
+  private static boolean isRedirect(int status) {
+    return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+  }
+
+  private static long contentLength(HttpURLConnection connection, int status) {
+    String range = connection.getHeaderField("Content-Range");
+    String total = status == 206 && range != null ? range.substring(range.lastIndexOf('/') + 1) : connection.getHeaderField("Content-Length");
+    if (total == null) return -1;
+    try { return Long.parseLong(total.trim()); } catch (NumberFormatException ignored) { return -1; }
   }
 
   private static void checkRange(Task task, HttpURLConnection connection, long position) throws IOException {
@@ -214,24 +235,31 @@ final class RemoteAudioProbe {
   private static WritableMap read(Task task, String url, boolean inspectDuration) {
     WritableMap result = Arguments.createMap();
     HttpURLConnection connection = null;
-    String resolvedUrl;
+    URL address;
     byte[] head;
-    long length = -1;
+    long length;
     try {
       // Seed the extractor's range cache with this same read; do not request the head twice.
       int count = inspectDuration ? (Build.VERSION.SDK_INT >= 23 ? BLOCK_SIZE : 42) : 1;
-      connection = open(task, url, 0, count);
-      int status = connection.getResponseCode();
-      task.httpStatus = status;
+      address = new URL(url);
+      int status;
+      for (int redirects = 0;; redirects++) {
+        connection = open(task, address, 0, count);
+        status = responseCode(task, connection);
+        if (!isRedirect(status)) break;
+        String location = connection.getHeaderField("Location");
+        if (location == null || location.trim().isEmpty()) return unavailable("http_error");
+        if (redirects >= MAX_REDIRECTS) return unavailable("redirect_limit");
+        address = new URL(address, location.trim());
+        task.resolvedUrl = address.toString();
+        connection.disconnect();
+      }
       if (status < 200 || status >= 300) return unavailable("http_error");
       if (status == 206) checkRange(task, connection, 0);
       // Remains bounded even if the server ignores Range. Readability-only checks need one byte.
       head = readBlock(task, connection, count);
       if (head.length == 0) return unavailable("empty");
-      resolvedUrl = connection.getURL().toString();
-      String range = connection.getHeaderField("Content-Range");
-      String total = status == 206 && range != null ? range.substring(range.lastIndexOf('/') + 1) : connection.getHeaderField("Content-Length");
-      try { length = Long.parseLong(total); } catch (Exception ignored) {}
+      length = contentLength(connection, status);
       task.contentLength = length;
       result.putBoolean("readable", true);
       task.check();
@@ -253,11 +281,11 @@ final class RemoteAudioProbe {
       task.check();
       if (Build.VERSION.SDK_INT >= 23) {
         // Own the HTTP reads so cancellation/deadline also covers MediaExtractor.
-        if (Api23.configure(extractor, task, resolvedUrl, length, head, result)) return result;
+        if (Api23.configure(extractor, task, address, length, head, result)) return result;
       } else {
         // API 21/22 has no MediaDataSource; the task watchdog still bounds the wait.
         task.method = "media_extractor";
-        extractor.setDataSource(resolvedUrl, Collections.singletonMap("User-Agent", USER_AGENT));
+        extractor.setDataSource(address.toString(), Collections.singletonMap("User-Agent", USER_AGENT));
       }
       task.check();
       boolean foundDuration = false;
@@ -288,7 +316,7 @@ final class RemoteAudioProbe {
 
   @TargetApi(23)
   private static final class Api23 {
-    static boolean configure(MediaExtractor extractor, Task task, String url, long length, byte[] head, WritableMap result) throws IOException {
+    static boolean configure(MediaExtractor extractor, Task task, URL url, long length, byte[] head, WritableMap result) throws IOException {
       RangeSource source = new RangeSource(task, url, length, head);
       task.source = source;
       task.check();
@@ -402,14 +430,14 @@ final class RemoteAudioProbe {
 
     private static final class RangeSource extends MediaDataSource {
       final Task task;
-      final String url;
+      final URL url;
       final long length;
       // Sniffers repeatedly read small, overlapping headers. Keep up to four aligned windows.
       final LinkedHashMap<Long, byte[]> blocks = new LinkedHashMap<>(4, 0.75f, true);
       long audioStart;
       volatile boolean closed;
 
-      RangeSource(Task task, String url, long length, byte[] head) {
+      RangeSource(Task task, URL url, long length, byte[] head) {
         this.task = task;
         this.url = url;
         this.length = length;
@@ -502,11 +530,14 @@ final class RemoteAudioProbe {
         HttpURLConnection connection = null;
         try {
           connection = open(task, url, position, count);
-          int status = connection.getResponseCode();
-          task.httpStatus = status;
+          int status = responseCode(task, connection);
+          // 后续区块必须来自同一份音频，避免拼接代理切换后返回的另一份媒体。
+          if (isRedirect(status)) throw task.fail("invalid_range");
           if (status < 200 || status >= 300) throw task.fail("http_error");
           if (status != 206 && !(status == 200 && position == 0)) throw task.fail("range_unsupported");
           if (status == 206) checkRange(task, connection, position);
+          long responseLength = contentLength(connection, status);
+          if (length >= 0 && responseLength >= 0 && length != responseLength) throw task.fail("invalid_range");
           return readBlock(task, connection, count);
         } catch (IOException error) {
           task.failureReason = task.reason(error, "network_error");
