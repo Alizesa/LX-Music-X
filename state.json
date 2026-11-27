@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 17,
+  "sequence": 18,
   "lastStableVersion": "1.9.4",
   "nextTargetVersion": "1.9.5",
   "branches": {
-    "Next": "072c0b0933ab5fee7507b4ba3c83b4d4416cc30e",
+    "Next": "3c365e9976ae89ea971c9ae467f5275b94476d0e",
     "master": "a13dd9c6e40f8397420594e611b5979e18c7abb8"
   },
   "events": {},
@@ -275,6 +275,17 @@
       "version": "1.9.5-next.17",
       "versionCode": 100017,
       "tag": "v1.9.5-next.17",
+      "status": "allocated"
+    },
+    "Next/3c365e9976ae89ea971c9ae467f5275b94476d0e": {
+      "branch": "Next",
+      "sourceSha": "3c365e9976ae89ea971c9ae467f5275b94476d0e",
+      "before": "072c0b0933ab5fee7507b4ba3c83b4d4416cc30e",
+      "channel": "next",
+      "sequence": 18,
+      "version": "1.9.5-next.18",
+      "versionCode": 100018,
+      "tag": "v1.9.5-next.18",
       "status": "allocated"
     }
   },
