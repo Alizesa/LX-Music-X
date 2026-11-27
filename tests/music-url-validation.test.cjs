@@ -652,6 +652,23 @@ test('a single source can resolve the same proxy after it redirects to a short c
   assert.deepEqual(h.writes.map(item => item.url), [proxy, proxy])
 })
 
+test('a failed read from the redirected CDN leaves the proxy eligible for the next request', async() => {
+  const proxy = 'https://audio.example/song.php'
+  const first = 'https://cdn.example/first.mp3'
+  const next = 'https://cdn.example/next.mp3'
+  const targets = [first, next]
+  const h = harness({
+    request: () => ({ url: proxy, type: '128k' }),
+    inspect: () => ({ ...audio(), resolvedUrl: targets.shift() }),
+  })
+  h.setting['common.apiSourceOrder'] = '["user_api_a"]'
+  await assert.rejects(h.resolve({ validateUrl: async() => { throw new Error('CDN read failed') } }), /toggle_source_failed/)
+  assert.equal(h.priority.isMusicUrlFailed(first), true)
+  assert.equal(h.priority.isMusicUrlFailed(proxy), false)
+  assert.equal(await h.resolve(), next)
+  assert.deepEqual(h.probes.map(item => item.url), [proxy, proxy])
+})
+
 test('download validation receives the same redirected CDN that playback accepted', async() => {
   const proxy = 'https://audio.example/song.php'
   const direct = 'https://cdn.example/song.mp3'

@@ -77,7 +77,6 @@ export const prepareMusicUrl = async(musicInfo: LX.Music.MusicInfo, sourceUrl: s
   } catch (error) {
     assertActive()
     if (!isRequestCancelled(error)) {
-      markMusicUrlFailed(sourceUrl, error)
       markMusicUrlFailed(url, error)
       if (media && !isAudioProbeFailure(error)) discardRedirectedAudioProbe(sourceUrl, media)
     }
@@ -129,6 +128,7 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
       assertActive()
       assertMusicUrlAvailable(result.url, rejectedUrls)
       sourceUrl = result.url
+      // 中转地址可以返回新的 CDN。冷却关联使用脚本返回的地址。
       remember(sourceUrls, key, sourceUrl)
       playbackLog('url.source_resolved', () => ({ ...trace, apiId, url: result.url, quality: result.type, elapsedMs: Date.now() - startedAt }))
       playbackLog('url.validate_start', () => ({ ...trace, apiId, musicSource: musicInfo.source }))
@@ -136,7 +136,6 @@ export const getMusicUrlByPriority = async({ musicInfo, quality, onCancel, valid
         onCancel: registerCancel, isRefresh, trace: { ...trace, apiId }, expectedMusicInfo, validateUrl, rejectedUrls,
       })
       assertActive()
-      remember(sourceUrls, key, url)
       playbackLog('url.validate_done', { ...trace, apiId })
       failedSources.delete(key)
       return { url, sourceUrl, quality: result.type, musicInfo, isFromCache: false }
