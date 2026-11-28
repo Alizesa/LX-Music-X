@@ -60,7 +60,7 @@ export const getMusicUrl = async({ musicInfo, quality, isRefresh, allowToggleSou
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
       playbackLog('url.cache_validate', { ...trace, musicId: musicInfo.id })
-      const url = await prepareMusicUrl(musicInfo, cachedUrl, assertActive, { onCancel: registerCancel, trace, expectedMusicInfo, validateUrl, rejectedUrls })
+      const url = await prepareMusicUrl(musicInfo, cachedUrl, assertActive, { preferCompleteCache: true, onCancel: registerCancel, trace, expectedMusicInfo, validateUrl, rejectedUrls })
       assertActive()
       playbackLog('url.cache_hit', () => ({ ...trace, musicId: musicInfo.id, url }))
       return url

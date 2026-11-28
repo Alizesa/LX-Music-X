@@ -47,6 +47,7 @@ public final class AudioPreloader {
 
     public AudioPreloader(SimpleCache cache, long maxCacheSize) {
         this.cache = cache;
+        CompleteAudioCache.attach(cache);
         // 给当前播放保留空间；超大音频只预取可容纳的部分。
         this.limit = Math.min(64L * 1024 * 1024, maxCacheSize / 2);
         PlaybackDebugLogger.event("", "cache_initialized", "", 0, limit, 0);
@@ -176,7 +177,10 @@ public final class AudioPreloader {
         if (active != null) cancelTask(active);
         executor.execute(() -> {
             try {
-                for (String key : cache.getKeys()) cache.removeResource(key);
+                synchronized (cache) {
+                    CompleteAudioCache.reset(cache, false);
+                    for (String key : cache.getKeys()) cache.removeResource(key);
+                }
                 promise.resolve(null);
             } catch (Exception error) { promise.reject("cache_clear_failed", error); }
         });
@@ -185,6 +189,7 @@ public final class AudioPreloader {
     public synchronized void release() {
         if (closed) return;
         closed = true;
+        CompleteAudioCache.reset(cache, true);
         PlaybackDebugLogger.event("", "cache_released", "", 0, limit, 0);
         if (active != null) cancelTask(active);
         // 先关闭读写任务，再释放缓存目录的锁；快速重新初始化也要等待这一步。

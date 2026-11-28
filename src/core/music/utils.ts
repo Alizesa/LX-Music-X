@@ -178,15 +178,15 @@ export const getOnlineOtherSourceMusicUrlByLocal = async(musicInfo: LX.Music.Mus
 
   const quality = options.quality ?? '128k'
   const validationOptions = { ...options, isRefresh, onCancel: registerCancel }
-  const prepare = async(sourceUrl: string) => /^https?:\/\//i.test(sourceUrl)
-    ? prepareMusicUrl(musicInfo, sourceUrl, assertActive, validationOptions)
+  const prepare = async(sourceUrl: string, preferCompleteCache = false) => /^https?:\/\//i.test(sourceUrl)
+    ? prepareMusicUrl(musicInfo, sourceUrl, assertActive, { ...validationOptions, preferCompleteCache })
     : sourceUrl
 
   const cachedUrl = await waitForPromise(getStoreMusicUrl(musicInfo, quality, cacheContext), controller.signal)
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !options.rejectedUrls?.has(cachedUrl)) {
     try {
-      const url = await prepare(cachedUrl)
+      const url = await prepare(cachedUrl, true)
       assertActive()
       return { url, sourceUrl: cachedUrl, quality, isFromCache: true }
     } catch (error) {
@@ -316,7 +316,7 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
   assertActive()
   if (cachedUrl && !isRefresh && !isMusicUrlFailed(cachedUrl) && !rejectedUrls?.has(cachedUrl)) {
     try {
-      const url = await prepareMusicUrl(musicInfo, cachedUrl, assertActive, { onCancel: registerCancel, trace, expectedMusicInfo, validateUrl, rejectedUrls })
+      const url = await prepareMusicUrl(musicInfo, cachedUrl, assertActive, { preferCompleteCache: true, onCancel: registerCancel, trace, expectedMusicInfo, validateUrl, rejectedUrls })
       assertActive()
       return { url, sourceUrl: cachedUrl, musicInfo, quality: itemQuality, isFromCache: true }
     } catch (error) {

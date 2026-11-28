@@ -61,7 +61,12 @@ public class UtilsModule extends ReactContextBaseJavaModule implements Component
 
   @ReactMethod
   public void startRemoteAudioProbe(String id, String url, boolean inspectDuration, double timeoutMs, Promise promise) {
-    audioProbes.start(id, url, inspectDuration, timeoutMs, promise);
+    audioProbes.start(id, url, inspectDuration, false, timeoutMs, promise);
+  }
+
+  @ReactMethod
+  public void startCachedAudioProbe(String id, String url, double timeoutMs, Promise promise) {
+    audioProbes.start(id, url, true, true, timeoutMs, promise);
   }
 
   @ReactMethod

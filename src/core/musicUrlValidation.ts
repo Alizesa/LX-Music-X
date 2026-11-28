@@ -47,6 +47,7 @@ export const validateMusicUrl = async(
   isRefresh = false,
   trace?: PlaybackLogContext & { apiId?: string },
   expectedMusicInfo: LX.Music.MusicInfo = musicInfo,
+  preferCompleteCache = false,
 ): Promise<RemoteAudioInfo | undefined> => {
   if (!/^https?:\/\//i.test(url)) return
   const controller = new AbortController()
@@ -61,7 +62,7 @@ export const validateMusicUrl = async(
       throw new MusicAudioError('duration_unavailable')
     }
     const startedAt = Date.now()
-    const media = await probeRemoteAudio(url, true, { signal: controller.signal, isRefresh })
+    const media = await probeRemoteAudio(url, true, { signal: controller.signal, isRefresh, preferCompleteCache })
     throwIfAborted(controller.signal)
     // 脚本的音质标签不代表容器格式，完整 AAC/M4A 等音频也可以正常播放。
     const reason = musicAudioFailure(media, expectedMs)

@@ -203,6 +203,7 @@ public final class Mp4AudioMetadataTest {
         .add(ints((int) MEDIA_SIZE, type("mdat"))).gap(MEDIA_SIZE - 8);
     check(read(brokenTags).durationMs == 97000, "malformed diagnostic tags invalidated valid audio");
     FlacFrameBoundsTest.run();
+    com.guichaguri.trackplayer.service.player.CachedAudioFileTest.run();
     System.out.println("Audio fixtures passed");
   }
 }

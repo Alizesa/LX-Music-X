@@ -44,6 +44,7 @@ export interface ProbeOptions {
   isRefresh?: boolean
   signal?: AbortSignal
   timeoutMs?: number
+  preferCompleteCache?: boolean
 }
 
 const cacheKey = (url: string, inspectDuration: boolean) => (inspectDuration ? 'duration:' : 'readable:') + url
@@ -61,7 +62,7 @@ export const discardRedirectedAudioProbe = (url: string, info: RemoteAudioInfo) 
   if (cache.get(key)?.info === info) cache.delete(key)
 }
 
-const startProbe = (key: string, url: string, inspectDuration: boolean, timeoutMs: number): ProbeTask => {
+const startProbe = (key: string, url: string, inspectDuration: boolean, timeoutMs: number, disk = false): ProbeTask => {
   const id = `${taskPrefix}-${++taskId}`
   const startedAt = Date.now()
   let finished = false
@@ -84,7 +85,7 @@ const startProbe = (key: string, url: string, inspectDuration: boolean, timeoutM
     // 强制刷新可以替换旧任务；旧任务的迟到结果不能覆盖新缓存或删除新任务。
     if (pending.get(key) === task) {
       pending.delete(key)
-      if (!info.reason && info.readable && (!inspectDuration || (info.durationMs ?? 0) > 0)) {
+      if (!disk && !info.reason && info.readable && (!inspectDuration || (info.durationMs ?? 0) > 0)) {
         cache.delete(key)
         cache.set(key, { info, expires: Date.now() + 60_000 })
         if (cache.size > 32) cache.delete(cache.keys().next().value!)
@@ -93,19 +94,37 @@ const startProbe = (key: string, url: string, inspectDuration: boolean, timeoutM
     resolveResult(info)
   }
   pending.set(key, task)
-  if (typeof NativeModules.UtilsModule?.startRemoteAudioProbe !== 'function') {
+  if (!disk && typeof NativeModules.UtilsModule?.startRemoteAudioProbe !== 'function') {
     finish({ readable: false, reason: 'native_unavailable' })
     return task
   }
   try {
-    const request: Promise<RemoteAudioInfo> = NativeModules.UtilsModule.startRemoteAudioProbe(id, url, inspectDuration, timeoutMs)
+    const request: Promise<RemoteAudioInfo> = disk
+      ? NativeModules.UtilsModule.startCachedAudioProbe(id, url, timeoutMs)
+      : NativeModules.UtilsModule.startRemoteAudioProbe(id, url, inspectDuration, timeoutMs)
     void request.then(info => { finish(info) }, () => { finish({ readable: false, reason: 'native_error' }) })
   } catch { finish({ readable: false, reason: 'native_error' }) }
   return task
 }
 
+const waitForProbe = async(task: ProbeTask, signal?: AbortSignal) => {
+  task.users++
+  try {
+    return await withAbort(task.promise, signal)
+  } finally {
+    // 单个等待者取消不影响仍在使用同一个探测的播放/预加载。
+    if (--task.users === 0) task.cancel()
+  }
+}
+
 export const probeRemoteAudio = async(url: string, inspectDuration: boolean, options: ProbeOptions = {}): Promise<RemoteAudioInfo> => {
   throwIfAborted(options.signal)
+  if (inspectDuration && options.preferCompleteCache && !options.isRefresh && typeof NativeModules.UtilsModule?.startCachedAudioProbe === 'function') {
+    const diskKey = 'disk:' + url
+    const disk = await waitForProbe(pending.get(diskKey) ?? startProbe(diskKey, url, true, 5000, true), options.signal)
+    throwIfAborted(options.signal)
+    if (disk.readable) return disk // Reinspect the actual disk bytes; never memoize this as an online probe.
+  }
   const key = cacheKey(url, inspectDuration)
   if (options.isRefresh) cache.delete(key)
   const cached = cache.get(key)
@@ -113,11 +132,5 @@ export const probeRemoteAudio = async(url: string, inspectDuration: boolean, opt
   // 慢速中转和后续 CDN 共用一个时限，无须在超时后重新取链。
   const timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? (inspectDuration ? MAX_TIMEOUT_MS : 5_000), MAX_TIMEOUT_MS))
   const task = (options.isRefresh ? undefined : pending.get(key)) ?? startProbe(key, url, inspectDuration, timeoutMs)
-  task.users++
-  try {
-    return await withAbort(task.promise, options.signal)
-  } finally {
-    // 单个等待者取消不影响仍在使用同一个探测的播放/预加载。
-    if (--task.users === 0) task.cancel()
-  }
+  return waitForProbe(task, options.signal)
 }

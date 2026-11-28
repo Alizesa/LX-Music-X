@@ -22,7 +22,7 @@ const audio = (durationMs = 240000, mime = 'audio/mpeg') => ({ readable: true, d
 
 // Exercise the real source selector, URL cache and preloader together. Only HTTP/native IO is mocked.
 const harness = ({
-  cachedUrl, inspect = url => audio(url === preview ? 60000 : 240000),
+  cachedUrl, inspectDisk, inspect = url => audio(url === preview ? 60000 : 240000),
   request = id => ({ url: id === 'user_api_a' ? preview : full, type: '128k' }), account = async() => null,
   otherSources = [], localPath = 'content://local/song',
   localRequest = () => { throw new Error('Local source unavailable') },
@@ -41,6 +41,7 @@ const harness = ({
     'react-native': {
       NativeModules: {
         UtilsModule: {
+          startCachedAudioProbe: inspectDisk,
           startRemoteAudioProbe: async(id, url, duration, timeoutMs) => {
             probes.push({ id, url, duration, timeoutMs })
             return inspect(url)
@@ -830,4 +831,38 @@ test('the real download policy accepts an independently matched duration when th
   assert.equal(h.probes.length, 1)
   assert.equal(original.interval, null)
   await assert.rejects(downloadAudio.inspectDownloadMedia(original, '128k', full, audio(), new AbortController().signal), /duration_unavailable/)
+})
+
+test('a cold offline replay and preload verify complete player-cache bytes, not just the stored URL', async() => {
+  const musicInfo = { ...song, source: 'wy', id: 'wy_offline' }
+  const source = 'https://fixture/proxy'; const target = 'https://fixture/verified-cdn'
+  const h = harness({
+    inspectDisk: async(_id, url) => url === source ? { ...audio(), resolvedUrl: target } : { readable: false, reason: 'cache_miss' },
+    inspect: () => ({ readable: false, reason: 'network_error' }),
+  })
+  h.cache.set(`${musicInfo.id}:128k`, source)
+  assert.equal(await h.resolve({ musicInfo }), target)
+  assert.equal(await h.preload.preloadMusic(musicInfo), target)
+  assert.equal(h.probes.length, 0); assert.equal(h.requests.length, 0)
+  assert.deepEqual(h.cacheReads.map(item => item.url), [target])
+  await assert.rejects(h.resolve({ musicInfo, isRefresh: true }), /toggle_source_failed/)
+  assert.ok(h.probes.length > 0, 'refresh/download must check the network representation')
+})
+
+test('a partial cache or a complete cached preview cannot masquerade as verified full audio', async() => {
+  for (const cached of [audio(12000), { readable: false, reason: 'cache_miss' }]) {
+    const h = harness({ cachedUrl: preview, inspectDisk: async() => cached })
+    assert.equal(await h.resolve(), full)
+    assert.ok(h.probes.some(item => item.url === full))
+  }
+})
+
+test('cancellation while inspecting disk bytes does not fetch a URL or publish a late hit', async() => {
+  const disk = deferred(); let started = false; let cancel
+  const h = harness({ cachedUrl: full, inspectDisk: async() => { started = true; return disk.promise } })
+  const result = h.resolve({ onCancel: fn => { cancel = fn } })
+  await flush(); assert.equal(started, true); cancel()
+  await assert.rejects(result, /取消/)
+  disk.resolve(audio()); await flush()
+  assert.equal(h.probes.length + h.requests.length + h.writes.length, 0)
 })

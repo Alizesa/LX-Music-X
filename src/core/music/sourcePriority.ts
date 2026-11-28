@@ -55,9 +55,9 @@ export interface OnlineMusicUrl {
 }
 
 export const prepareMusicUrl = async(musicInfo: LX.Music.MusicInfo, sourceUrl: string, assertActive: () => void, {
-  onCancel, isRefresh, trace, expectedMusicInfo, validateUrl, rejectedUrls,
-}: MusicUrlRequestOptions & { isRefresh?: boolean, trace?: PlaybackLogContext & { apiId?: string } }): Promise<string> => {
-  const media = await validateMusicUrl(musicInfo, sourceUrl, onCancel, isRefresh, trace, expectedMusicInfo).catch(error => {
+  onCancel, isRefresh, trace, expectedMusicInfo, validateUrl, rejectedUrls, preferCompleteCache,
+}: MusicUrlRequestOptions & { isRefresh?: boolean, preferCompleteCache?: boolean, trace?: PlaybackLogContext & { apiId?: string } }): Promise<string> => {
+  const media = await validateMusicUrl(musicInfo, sourceUrl, onCancel, isRefresh, trace, expectedMusicInfo, preferCompleteCache).catch(error => {
     assertActive()
     if (!isRequestCancelled(error)) markMusicUrlFailed(sourceUrl, error)
     throw error
