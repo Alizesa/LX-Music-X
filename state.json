@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 18,
+  "sequence": 19,
   "lastStableVersion": "1.9.4",
   "nextTargetVersion": "1.9.5",
   "branches": {
-    "Next": "3c365e9976ae89ea971c9ae467f5275b94476d0e",
+    "Next": "f08099c5205fd658e753bf5ac100962fa3302273",
     "master": "a13dd9c6e40f8397420594e611b5979e18c7abb8"
   },
   "events": {},
@@ -292,6 +292,17 @@
         "desc": "- fix: keep audio proxies eligible after CDN failures (3c365e99)\n- fix: support redirected audio sources (072c0b09)"
       },
       "publishedAt": "2026-11-27T17:14:13.707Z"
+    },
+    "Next/f08099c5205fd658e753bf5ac100962fa3302273": {
+      "branch": "Next",
+      "sourceSha": "f08099c5205fd658e753bf5ac100962fa3302273",
+      "before": "3c365e9976ae89ea971c9ae467f5275b94476d0e",
+      "channel": "next",
+      "sequence": 19,
+      "version": "1.9.5-next.19",
+      "versionCode": 100019,
+      "tag": "v1.9.5-next.19",
+      "status": "allocated"
     }
   },
   "channels": {
