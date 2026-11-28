@@ -14,6 +14,7 @@ export const musicAudioFailure = (media: RemoteAudioInfo, expectedMs: number, ex
   if (media.reason) return media.reason
   if (!media.readable) return 'unreadable'
   if (media.hasVideo) return 'not_audio'
+  if (media.headerKind === 'flac' && media.contentLength != null && media.contentLength >= 0 && media.contentLength - (media.audioOffset ?? 0) <= 42) return 'incomplete_audio'
   if (!media.mime) return 'metadata_unavailable'
   if (!media.mime.startsWith('audio/')) return 'not_audio'
   const actualMs = media.durationMs ?? 0

@@ -168,3 +168,29 @@ test('unconfirmed bitrate or FLAC resolution cannot silently claim a download ti
   assert.throws(() => validateDownloadMedia('128k', { readable: true, mime: 'audio/mp4a-latm' }), /bitrate_unavailable/)
   assert.throws(() => validateDownloadMedia('flac', { readable: true, mime: 'audio/flac' }), /quality_mismatch/)
 })
+
+test('a header-only FLAC cannot be queued even when its STREAMINFO declares the full duration', async() => {
+  const media = { readable: true, mime: 'audio/flac', headerKind: 'flac', durationMs: 180000, sampleRate: 44100, bitDepth: 16 }
+  for (const offset of [0, 100000]) {
+    await assert.rejects(inspectDownloadMedia({ ...song('broken'), source: 'kw' }, 'flac', 'https://fixture/file',
+      { ...media, audioOffset: offset, contentLength: offset + 42 }, new AbortController().signal), /incomplete_audio/)
+  }
+})
+
+test('recovered raw FLAC downloads cannot use a truncated response length to override the catalog', async() => {
+  const active = {
+    ...task('short-flac'),
+    quality: 'flac',
+    status: 'finalizing',
+    filePath: 'content://fixture/short.flac',
+    media: { extension: 'flac', mimeType: 'audio/flac', contentLength: 65536 },
+    pendingCompletion: { downloaded: 65536, total: 65536 },
+  }
+  active.musicInfo.source = 'kw'
+  active.musicInfo.meta._qualitys.flac = { size: '18 MiB' }
+  const h = await createHarness({ active: [active] })
+  h.files.add(active.filePath)
+  await h.api.initDownloads(); await flush(); await h.run(250)
+  assert.equal(h.api.isDownloadCompleted(active.id), false)
+  assert.equal(h.files.has(active.filePath), false)
+})

@@ -662,10 +662,13 @@ const completeTask = async(task: LX.Download.DownloadTask, state: NativeDownload
   // 入本地列表之前先核对大小，坏的直接判失败，不留一条播不了的记录。
   // state.downloaded 正常就是落盘字节数（原生完成事件与 WorkManager 的 output data
   // 带的都是真实长度），没带上时退回下载过程中记录的字节数
-  const expectedSize = task.media?.contentLength ?? (task.media && task.media.extension !== extensionForQuality(task.quality)
-    ? 0 : parseQualitySize(task.musicInfo.meta._qualitys?.[task.quality]?.size))
+  const catalogSize = task.media && task.media.extension !== extensionForQuality(task.quality)
+    ? 0 : parseQualitySize(task.musicInfo.meta._qualitys?.[task.quality]?.size)
   const actualSize = state.downloaded > 0 ? state.downloaded : task.progress.downloaded
-  if (task.media?.contentLength ? actualSize !== expectedSize : isSizeAbnormal(actualSize, expectedSize)) {
+  // Legacy raw FLAC probes trusted STREAMINFO alone. A short transfer may agree with its own Content-Length.
+  const shortFlac = task.media?.extension === 'flac' && (actualSize <= 42 || (!task.media.flacFramesVerified && catalogSize > 0 && actualSize < catalogSize / 2))
+  const expectedSize = shortFlac ? catalogSize : task.media?.contentLength ?? catalogSize
+  if (shortFlac || (task.media?.contentLength ? actualSize !== expectedSize : isSizeAbnormal(actualSize, expectedSize))) {
     let identity = taskIdentities.get(task)
     if (!identity) { identity = Symbol('rejected-download'); taskIdentities.set(task, identity) }
     // 中转文件已经不可信，清掉，用户点重试时是干干净净重下一次

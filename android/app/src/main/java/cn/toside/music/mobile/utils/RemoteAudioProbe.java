@@ -217,7 +217,7 @@ final class RemoteAudioProbe {
   }
 
   // STREAMINFO contains the sample count. As in MusicOne, no picture/comment blocks are needed.
-  private static boolean readFlacHeader(byte[] header, int size, WritableMap result) {
+  private static boolean readFlacHeader(byte[] header, int size, FlacFrameBounds.Source source, long length, WritableMap result) throws IOException {
     if (size < 42 || !"flac".equals(headerKind(header, size)) || (header[4] & 127) != 0 ||
         header[5] != 0 || header[6] != 0 || header[7] != 34) return false;
     long packed = 0;
@@ -225,6 +225,7 @@ final class RemoteAudioProbe {
     long sampleRate = (packed >>> 44) & 0xfffffL;
     long samples = packed & 0xfffffffffL;
     if (sampleRate == 0 || samples == 0) return false;
+    FlacFrameBounds.verify(source, header, length, samples);
     result.putString("mime", "audio/flac");
     result.putDouble("durationMs", samples * 1000.0 / sampleRate);
     result.putInt("sampleRate", (int) sampleRate);
@@ -260,6 +261,7 @@ final class RemoteAudioProbe {
       head = readBlock(task, connection, count);
       if (head.length == 0) return unavailable("empty");
       length = contentLength(connection, status);
+      if (length < 0 && status == 200 && head.length < count) length = head.length;
       task.contentLength = length;
       result.putBoolean("readable", true);
       task.check();
@@ -271,10 +273,6 @@ final class RemoteAudioProbe {
     }
     if (!inspectDuration) return result;
     task.headerKind = headerKind(head, head.length);
-    if (readFlacHeader(head, head.length, result)) {
-      task.method = "flac_header";
-      return result;
-    }
 
     MediaExtractor extractor = new MediaExtractor();
     try {
@@ -326,9 +324,14 @@ final class RemoteAudioProbe {
       byte[] audioHeader = new byte[42];
       int size = source.readAt(0, audioHeader, 0, audioHeader.length);
       task.headerKind = headerKind(audioHeader, size);
-      if (readFlacHeader(audioHeader, size, result)) {
-        task.method = "flac_header";
-        return true;
+      if ("flac".equals(task.headerKind)) {
+        try {
+          if (readFlacHeader(audioHeader, size, source::readAt, source.getSize(), result)) {
+            task.method = "flac_frames";
+            return true;
+          }
+        } catch (IOException error) { throw task.fail(task.failureReason != null ? task.failureReason : error.getMessage()); }
+        throw task.fail("metadata_unavailable");
       }
       if ("mp3".equals(task.headerKind) && readMp3Duration(source, task, result)) return true;
       if ("mp4".equals(task.headerKind)) {

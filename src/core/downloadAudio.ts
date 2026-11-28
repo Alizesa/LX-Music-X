@@ -64,6 +64,7 @@ export const validateDownloadMedia = (quality: LX.Quality, media: RemoteAudioInf
   return {
     extension,
     mimeType,
+    ...(extension === 'flac' && media.method === 'flac_frames' ? { flacFramesVerified: true as const } : {}),
     ...(Number.isSafeInteger(contentLength) && contentLength! > 0 ? { contentLength } : {}),
   }
 }

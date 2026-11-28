@@ -66,6 +66,7 @@ declare namespace LX {
     }
 
     interface MediaInfo {
+      flacFramesVerified?: true
       extension: FileExt
       mimeType: string
       contentLength?: number

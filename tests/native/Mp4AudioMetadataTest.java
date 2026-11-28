@@ -202,6 +202,7 @@ public final class Mp4AudioMetadataTest {
     Source brokenTags = new Source().add(box("moov", track("mp4a", false, 97, 97), box("udta", new byte[4])))
         .add(ints((int) MEDIA_SIZE, type("mdat"))).gap(MEDIA_SIZE - 8);
     check(read(brokenTags).durationMs == 97000, "malformed diagnostic tags invalidated valid audio");
-    System.out.println("MP4 directory fixtures passed");
+    FlacFrameBoundsTest.run();
+    System.out.println("Audio fixtures passed");
   }
 }
