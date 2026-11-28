@@ -796,3 +796,30 @@ test('account web fallback rechecks a rotating ticket URI rejected by the App ch
     assert.equal(calls, 2, 'keep the accepted result cached')
   }
 })
+
+test('5s and 15s consumers share one native read but not a deadline, in either arrival order', async() => {
+  for (const shortFirst of [true, false]) {
+    const timers = new Map(); let id = 0; const reads = []; const cancelled = []
+    const clock = { setTimeout: (fn, ms) => { timers.set(++id, { fn, ms }); return id }, clearTimeout: id => timers.delete(id) }
+    const media = load('src/utils/nativeModules/remoteAudio.ts', {
+      'react-native-background-timer': { default: clock },
+      'react-native': {
+        NativeModules: {
+          UtilsModule: {
+            startRemoteAudioProbe: (_id, _url, _inspect, ms) => { const r = { ...deferred(), ms }; reads.push(r); return r.promise },
+            cancelRemoteAudioProbe: key => { cancelled.push(key) },
+          },
+        },
+      },
+    })
+    const request = ms => media.probeRemoteAudio(standard, true, { timeoutMs: ms })
+    const [a, b] = (shortFirst ? [5000, 15000] : [15000, 5000]).map(request)
+    const [short, long] = shortFirst ? [a, b] : [b, a]
+    assert.deepEqual(reads.map(read => read.ms), [15000])
+    const timer = [...timers.values()].find(t => t.ms === 5000)
+    assert.ok(timer); timer.fn()
+    assert.equal((await short).reason, 'timeout'); assert.deepEqual(cancelled, [])
+    reads[0].resolve(fullAudio(standard)); assert.equal((await long).durationMs, 180000)
+    assert.equal(timers.size, 0)
+  }
+})

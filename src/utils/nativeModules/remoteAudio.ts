@@ -107,11 +107,26 @@ const startProbe = (key: string, url: string, inspectDuration: boolean, timeoutM
   return task
 }
 
-const waitForProbe = async(task: ProbeTask, signal?: AbortSignal) => {
+const waitForProbe = async(task: ProbeTask, signal?: AbortSignal, budgetMs = MAX_TIMEOUT_MS) => {
   task.users++
+  const local = budgetMs < MAX_TIMEOUT_MS ? new AbortController() : null
+  const abort = () => { local?.abort() }
+  let timer: number | undefined
+  let timedOut = false
+  const started = Date.now()
   try {
-    return await withAbort(task.promise, signal)
+    if (!local) return await withAbort(task.promise, signal)
+    signal?.addEventListener('abort', abort)
+    throwIfAborted(signal)
+    timer = BackgroundTimer.setTimeout(() => { timedOut = true; local.abort() }, budgetMs)
+    return await withAbort(task.promise, local.signal)
+  } catch (error) {
+    throwIfAborted(signal)
+    if (timedOut) return { readable: false, reason: 'timeout', elapsedMs: Date.now() - started }
+    throw error
   } finally {
+    if (timer !== undefined) BackgroundTimer.clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
     // 单个等待者取消不影响仍在使用同一个探测的播放/预加载。
     if (--task.users === 0) task.cancel()
   }
@@ -131,6 +146,6 @@ export const probeRemoteAudio = async(url: string, inspectDuration: boolean, opt
   if (cached && cached.expires > Date.now()) return cached.info
   // 慢速中转和后续 CDN 共用一个时限，无须在超时后重新取链。
   const timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? (inspectDuration ? MAX_TIMEOUT_MS : 5_000), MAX_TIMEOUT_MS))
-  const task = (options.isRefresh ? undefined : pending.get(key)) ?? startProbe(key, url, inspectDuration, timeoutMs)
-  return waitForProbe(task, options.signal)
+  const task = (options.isRefresh ? undefined : pending.get(key)) ?? startProbe(key, url, inspectDuration, MAX_TIMEOUT_MS)
+  return waitForProbe(task, options.signal, timeoutMs)
 }
