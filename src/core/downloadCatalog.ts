@@ -1,3 +1,5 @@
+import { throwIfAborted } from '@/utils/abort'
+import { waitForPromise } from '@/utils/abortable'
 import getQQMusicInfo from '@/utils/musicSdk/tx/musicInfo'
 import { playbackLog } from '@/utils/playbackLog'
 
@@ -12,45 +14,88 @@ const CACHE_TTL = 5 * 60_000
 const FAILURE_TTL = 30_000
 const CONCURRENCY = 4
 const cache = new Map<string, { value: CatalogInfo | null, expires: number }>()
-const pending = new Map<string, Promise<CatalogInfo | null>>()
+interface CatalogTask {
+  mid: string
+  controller: AbortController
+  users: number
+  promise: Promise<CatalogInfo | null>
+  resolve: (value: CatalogInfo | null) => void
+}
+const pending = new Map<string, CatalogTask>()
+const queued = new Set<CatalogTask>()
 let activeRequests = 0
-const slots: Array<() => void> = []
 
-const withCatalogSlot = async<T>(read: () => Promise<T>): Promise<T> => {
-  if (activeRequests >= CONCURRENCY) await new Promise<void>(resolve => slots.push(resolve))
-  else activeRequests++
-  try { return await read() } finally {
-    const next = slots.shift()
-    if (next) next()
-    else activeRequests--
+// A slot owns only the lookup key, never the consumer's song/list. Keep it until the actual IO settles.
+const fetchTask = async(task: CatalogTask) => {
+  let value: CatalogInfo | null = null
+  try {
+    const info = await getQQMusicInfo(task.mid, { timeout: 5000, signal: task.controller.signal })
+    if (info && info.songmid === task.mid && info.types.length) {
+      value = { qualitys: info.types as LX.Music.MusicQualityType[], mediaMid: info.strMediaMid as string, interval: info.interval as string | null }
+    }
+  } catch {} finally {
+    if (pending.get(task.mid) === task) {
+      pending.delete(task.mid)
+      cache.delete(task.mid)
+      cache.set(task.mid, { value, expires: Date.now() + (value ? CACHE_TTL : FAILURE_TTL) })
+      if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!)
+    }
+    task.resolve(value)
+    activeRequests--
+    dispatch()
+  }
+}
+const dispatch = () => {
+  while (activeRequests < CONCURRENCY && queued.size) {
+    const task = queued.values().next().value!
+    queued.delete(task)
+    activeRequests++
+    void fetchTask(task)
   }
 }
 
-const readCatalog = async(songMid: string): Promise<CatalogInfo | null> => {
-  const cached = cache.get(songMid)
+const readCatalog = async(mid: string, signal?: AbortSignal): Promise<CatalogInfo | null> => {
+  throwIfAborted(signal)
+  const cached = cache.get(mid)
   if (cached && cached.expires > Date.now()) return cached.value
-  const current = pending.get(songMid)
-  if (current) return current
-  // 公开歌曲详情只查文件规格，不使用账号 Cookie，也不请求 VIP 播放票据。
-  const request = withCatalogSlot(async() => getQQMusicInfo(songMid, { timeout: 5000 })).then(info => {
-    if (!info || info.songmid !== songMid || !info.types.length) return null
-    return { qualitys: info.types as LX.Music.MusicQualityType[], mediaMid: info.strMediaMid as string, interval: info.interval as string | null }
-  }).catch(() => null).then(value => {
-    cache.delete(songMid)
-    cache.set(songMid, { value, expires: Date.now() + (value ? CACHE_TTL : FAILURE_TTL) })
-    if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!)
-    return value
-  }).finally(() => { pending.delete(songMid) })
-  pending.set(songMid, request)
-  return request
+  let task = pending.get(mid)
+  if (!task) {
+    let resolveTask!: CatalogTask['resolve']
+    const promise = new Promise<CatalogInfo | null>(resolve => { resolveTask = resolve })
+    task = { mid, users: 0, controller: new AbortController(), promise, resolve: resolveTask }
+    pending.set(mid, task)
+    queued.add(task)
+  }
+  task.users++
+  let released = false
+  const release = () => {
+    if (released) return
+    released = true
+    if (--task.users === 0 && pending.get(mid) === task) {
+      pending.delete(mid)
+      queued.delete(task)
+      task.controller.abort()
+      task.resolve(null)
+    }
+  }
+  signal?.addEventListener('abort', release, { once: true })
+  try {
+    throwIfAborted(signal)
+    dispatch()
+    return await waitForPromise(task.promise, signal)
+  } finally {
+    signal?.removeEventListener('abort', release)
+    release()
+  }
 }
 
-const prepareMusicInfo = async(musicInfo: LX.Music.MusicInfoOnline): Promise<LX.Music.MusicInfoOnline> => {
+const prepareMusicInfo = async(musicInfo: LX.Music.MusicInfoOnline, signal?: AbortSignal): Promise<LX.Music.MusicInfoOnline> => {
   if (musicInfo.source !== 'tx') return musicInfo
   const songMid = [musicInfo.meta.songId, musicInfo.id.replace(/^tx_/, '')]
     .find((value): value is string => typeof value === 'string' && /^[a-zA-Z0-9]{14}$/.test(value))
   if (!songMid) return musicInfo
-  const info = await readCatalog(songMid)
+  const info = await readCatalog(songMid, signal)
+  throwIfAborted(signal)
   playbackLog('download.catalog', () => ({ musicId: musicInfo.id, available: !!info, qualities: info?.qualitys.map(item => item.type) }))
   if (!info) return musicInfo
   const interval = info.interval ?? musicInfo.interval
@@ -72,14 +117,17 @@ const prepareMusicInfo = async(musicInfo: LX.Music.MusicInfoOnline): Promise<LX.
   }
 }
 
-export const prepareDownloadMusicInfos = async(musicInfos: LX.Music.MusicInfoOnline[]): Promise<LX.Music.MusicInfoOnline[]> => {
+export const prepareDownloadMusicInfos = async(musicInfos: LX.Music.MusicInfoOnline[], signal?: AbortSignal): Promise<LX.Music.MusicInfoOnline[]> => {
+  throwIfAborted(signal)
   const result = [...musicInfos]
   let next = 0
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, result.length) }, async() => {
     while (next < musicInfos.length) {
+      throwIfAborted(signal)
       const index = next++
-      result[index] = await prepareMusicInfo(musicInfos[index])
+      result[index] = await prepareMusicInfo(musicInfos[index], signal)
     }
   }))
+  throwIfAborted(signal)
   return result
 }

@@ -176,7 +176,7 @@ const resolveTaskUrl = async(task: LX.Download.DownloadTask) => {
   const controller = new AbortController()
   resolvingCatalogs.set(task, controller)
   try {
-    const [musicInfo] = await waitForPromise(prepareDownloadMusicInfos([task.musicInfo]), controller.signal)
+    const [musicInfo] = await prepareDownloadMusicInfos([task.musicInfo], controller.signal)
     if (!isCurrentTask(task) || getDownloadTaskItem(task.id)?.status !== 'resolving') return null
     if (musicInfo !== task.musicInfo && !await updateTask(task, { musicInfo }, true)) return null
   } catch (error) {

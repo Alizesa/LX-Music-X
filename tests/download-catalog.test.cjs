@@ -176,3 +176,51 @@ test('separate download batches share the same four public-request slots', async
   for (const { mid, gate } of reads.slice(4)) gate.resolve(detail(mid))
   await batches
 })
+
+test('removing restored tasks cancels active catalog IO and never dispatches abandoned slots', async() => {
+  const gate = deferred(); const reads = []
+  const active = Array.from({ length: 18 }, (_, i) => ({ ...task('gone-' + i), musicInfo: music(String(i).padStart(14, '0')) }))
+  const h = await createHarness({
+    active,
+    probeMusicInfo: async(mid, options) => { reads.push(options.signal); await gate.promise; return detail(mid) },
+  })
+  await h.api.initDownloads(); await flush()
+  for (const row of active) {
+    assert.equal(h.api.getDownloadTaskItem(row.id).status, 'resolving')
+    await h.api.removeTasks([row.id]); await flush()
+  }
+  assert.equal(reads.length, 4)
+  gate.resolve(); await flush()
+  assert.equal(reads.length, 4, 'cancelled queued lookups must never start')
+  assert.ok(reads.every(s => s?.aborted)); assert.equal(h.enqueued.length, 0)
+})
+
+test('shared catalog consumers cancel independently and a late abandoned result cannot poison a new lookup', async() => {
+  const reads = []
+  const api = catalog((mid, options) => { const gate = deferred(); reads.push({ gate, signal: options.signal }); return gate.promise })
+  const a = new AbortController(); const b = new AbortController()
+  const first = api.prepareDownloadMusicInfos([music()], a.signal); const second = api.prepareDownloadMusicInfos([music()], b.signal)
+  const done = Promise.allSettled([first, second]); await flush(); a.abort(); await flush()
+  assert.equal(reads.length, 1); assert.equal(reads[0].signal?.aborted, false)
+  b.abort(); await flush(); assert.equal(reads[0].signal.aborted, true)
+  assert.deepEqual((await done).map(r => r.status), ['rejected', 'rejected'])
+  const fresh = api.prepareDownloadMusicInfos([music()]); await flush(); assert.equal(reads.length, 2)
+  reads[1].gate.resolve(detail(songMid, ['320k'])); await fresh
+  reads[0].gate.resolve(detail(songMid, ['128k'])); await flush()
+  assert.ok((await api.prepareDownloadMusicInfos([music()]))[0].meta._qualitys['320k']); assert.equal(reads.length, 2)
+})
+
+test('cancelled catalog waiters release song objects before a stalled transport settles', () => {
+  const child = require('node:child_process').spawnSync(process.execPath, ['--expose-gc', '-e', `
+    const { load, deferred, flush } = require('./tests/helpers/load.cjs'); const gate = deferred(); const refs = []; let calls = 0
+    const api = load('src/core/downloadCatalog.ts', { '@/utils/musicSdk/tx/musicInfo': { default: async() => { calls++; return gate.promise } } })
+    async function submit(i) {
+      const mid = String(i).padStart(14, '0'), music = { id: 'tx_'+mid, source: 'tx', meta: { songId: mid } }; refs.push(new WeakRef(music))
+      const c = new AbortController(), p = api.prepareDownloadMusicInfos([music], c.signal).catch(() => {}); c.abort(); await p
+    }
+    ;(async()=>{ for(let i=0;i<100;i++) await submit(i); for(let i=0;i<5;i++){ await flush(); global.gc() }
+      if(refs.some(r=>r.deref()) || calls!==4) throw Error('cancelled song retained or more than four requests dispatched'); gate.resolve(null)
+    })().catch(e=>{console.error(e);process.exitCode=1})
+  `], { encoding: 'utf8', timeout: 30000 })
+  assert.equal(child.status, 0, child.stderr)
+})

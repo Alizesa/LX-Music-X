@@ -10,6 +10,7 @@ const getSinger = (singers) => {
   return arr.join('、')
 }
 
+/** @param {string} songmid @param {{ signal?: AbortSignal, timeout?: number }} [options] */
 export default (songmid, { signal, timeout = 15000 } = {}) => {
   const requestObj = httpFetch('https://u.y.qq.com/cgi-bin/musicu.fcg', {
     method: 'post',
