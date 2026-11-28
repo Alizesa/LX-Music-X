@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "versionCodeBase": 100000,
-  "sequence": 19,
-  "lastStableVersion": "1.9.4",
-  "nextTargetVersion": "1.9.5",
+  "sequence": 20,
+  "lastStableVersion": "1.9.5",
+  "nextTargetVersion": "1.9.6",
   "branches": {
     "Next": "f08099c5205fd658e753bf5ac100962fa3302273",
-    "master": "a13dd9c6e40f8397420594e611b5979e18c7abb8"
+    "master": "f08099c5205fd658e753bf5ac100962fa3302273"
   },
   "events": {},
   "builds": {
@@ -308,6 +308,17 @@
         "desc": "- fix: cancel Android background timer messages at their source (f08099c5)\n- perf: reuse bounded disk audio proofs only while the native spans match (56544668)\n- fix: retain queue deletion records only during playlist completion (19583b02)\n- fix: bound fragment journal recovery and back off failed cleanup (144bdfa0)\n- fix: withdraw cancelled download catalog lookups and release their consumers (53d81a66)\n- fix: release owned React Native response blobs on every exit (49a52e8a)\n- fix: cool down definitively rejected CDN targets without disabling proxies (37d57404)\n- fix: isolate waiter deadlines on shared audio probes (12be33a3)\n- fix: preserve relative QQ candidates and select only exact download tiers (68a97258)\n- fix: discard rejected QQ account redirect probes before fallback (5a29a4e4)\n- fix: keep sources eligible after probe transport errors (0f3afafb)\n- fix: revalidate complete player-cache bytes without contacting the CDN (70bd22a4)\n- fix: retain catalog duration through album and download fallback (11c1ac0d)\n- fix: verify FLAC frame bounds before accepting truncated downloads (1a4d7f3c)"
       },
       "publishedAt": "2026-11-28T05:19:06.730Z"
+    },
+    "master/f08099c5205fd658e753bf5ac100962fa3302273": {
+      "branch": "master",
+      "sourceSha": "f08099c5205fd658e753bf5ac100962fa3302273",
+      "before": "a13dd9c6e40f8397420594e611b5979e18c7abb8",
+      "channel": "stable",
+      "sequence": 20,
+      "version": "1.9.5",
+      "versionCode": 100020,
+      "tag": "v1.9.5",
+      "status": "allocated"
     }
   },
   "channels": {
