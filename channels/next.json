@@ -1,14 +1,18 @@
 {
   "schemaVersion": 1,
   "channel": "next",
-  "version": "1.9.5-next.18",
-  "versionCode": 100018,
-  "tag": "v1.9.5-next.18",
-  "sourceSha": "3c365e9976ae89ea971c9ae467f5275b94476d0e",
-  "publishedAt": "2026-11-27T17:14:13.707Z",
-  "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.5-next.18",
-  "desc": "- fix: keep audio proxies eligible after CDN failures (3c365e99)\n- fix: support redirected audio sources (072c0b09)",
+  "version": "1.9.5-next.19",
+  "versionCode": 100019,
+  "tag": "v1.9.5-next.19",
+  "sourceSha": "f08099c5205fd658e753bf5ac100962fa3302273",
+  "publishedAt": "2026-11-28T05:19:06.730Z",
+  "releaseUrl": "https://github.com/Alizesa/LX-Music-X/releases/tag/v1.9.5-next.19",
+  "desc": "- fix: cancel Android background timer messages at their source (f08099c5)\n- perf: reuse bounded disk audio proofs only while the native spans match (56544668)\n- fix: retain queue deletion records only during playlist completion (19583b02)\n- fix: bound fragment journal recovery and back off failed cleanup (144bdfa0)\n- fix: withdraw cancelled download catalog lookups and release their consumers (53d81a66)\n- fix: release owned React Native response blobs on every exit (49a52e8a)\n- fix: cool down definitively rejected CDN targets without disabling proxies (37d57404)\n- fix: isolate waiter deadlines on shared audio probes (12be33a3)\n- fix: preserve relative QQ candidates and select only exact download tiers (68a97258)\n- fix: discard rejected QQ account redirect probes before fallback (5a29a4e4)\n- fix: keep sources eligible after probe transport errors (0f3afafb)\n- fix: revalidate complete player-cache bytes without contacting the CDN (70bd22a4)\n- fix: retain catalog duration through album and download fallback (11c1ac0d)\n- fix: verify FLAC frame bounds before accepting truncated downloads (1a4d7f3c)",
   "history": [
+    {
+      "version": "1.9.5-next.18",
+      "desc": "- fix: keep audio proxies eligible after CDN failures (3c365e99)\n- fix: support redirected audio sources (072c0b09)"
+    },
     {
       "version": "1.9.5-next.16",
       "desc": "- fix: validate audio completeness across all music sources (23c9eb73)"
@@ -61,38 +65,38 @@
   "assets": [
     {
       "abi": "arm64-v8a",
-      "fileName": "lx-music-mobile-v1.9.5-next.18-arm64-v8a.apk",
-      "size": 25200207,
-      "sha256": "444acc679dc200ed0e273e4eda38faf66c88720288b25a6a5b8c6483b68eea29",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.5-next.18/lx-music-mobile-v1.9.5-next.18-arm64-v8a.apk"
+      "fileName": "lx-music-mobile-v1.9.5-next.19-arm64-v8a.apk",
+      "size": 25204498,
+      "sha256": "a152b8b81956f696fd5eaf407d3f85c8e5f8653079c0bb73cc6ce5f73771bdf7",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.5-next.19/lx-music-mobile-v1.9.5-next.19-arm64-v8a.apk"
     },
     {
       "abi": "armeabi-v7a",
-      "fileName": "lx-music-mobile-v1.9.5-next.18-armeabi-v7a.apk",
-      "size": 20304615,
-      "sha256": "b887995afa0e1ff76580a05c023147ff5dca6110ecb44045027c2badaec38415",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.5-next.18/lx-music-mobile-v1.9.5-next.18-armeabi-v7a.apk"
+      "fileName": "lx-music-mobile-v1.9.5-next.19-armeabi-v7a.apk",
+      "size": 20308896,
+      "sha256": "baba4cf77e038c77c4931acfd67faba9bac9b10263bbd608045758f983c9f3cd",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.5-next.19/lx-music-mobile-v1.9.5-next.19-armeabi-v7a.apk"
     },
     {
       "abi": "x86_64",
-      "fileName": "lx-music-mobile-v1.9.5-next.18-x86_64.apk",
-      "size": 25967163,
-      "sha256": "79d6346f51511d012d278aaa1b89131d243c2f08afe796db65e067272a8790da",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.5-next.18/lx-music-mobile-v1.9.5-next.18-x86_64.apk"
+      "fileName": "lx-music-mobile-v1.9.5-next.19-x86_64.apk",
+      "size": 25971446,
+      "sha256": "fe13b53e44a4606bb3433a053d5c9bc16d44722731b9c0833e7d1d7e94911f05",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.5-next.19/lx-music-mobile-v1.9.5-next.19-x86_64.apk"
     },
     {
       "abi": "x86",
-      "fileName": "lx-music-mobile-v1.9.5-next.18-x86.apk",
-      "size": 25509760,
-      "sha256": "8a26236faf617b54c054558e75177638953a7c63f209e55ebbfa29eff7dc81a1",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.5-next.18/lx-music-mobile-v1.9.5-next.18-x86.apk"
+      "fileName": "lx-music-mobile-v1.9.5-next.19-x86.apk",
+      "size": 25514042,
+      "sha256": "fede8a100b2b65006b951986dc5f78b732610a3213efce2e2457de04e7765b84",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.5-next.19/lx-music-mobile-v1.9.5-next.19-x86.apk"
     },
     {
       "abi": "universal",
-      "fileName": "lx-music-mobile-v1.9.5-next.18-universal.apk",
-      "size": 67858519,
-      "sha256": "cd019ae15ec69c41c43476da491352135088a10236377139281f033a1a82a165",
-      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.5-next.18/lx-music-mobile-v1.9.5-next.18-universal.apk"
+      "fileName": "lx-music-mobile-v1.9.5-next.19-universal.apk",
+      "size": 67862810,
+      "sha256": "9d94e6e8d9262c70dd8cf1a31f92892fb39a8757e050ec997484ebd1fd0e741e",
+      "url": "https://github.com/Alizesa/LX-Music-X/releases/download/v1.9.5-next.19/lx-music-mobile-v1.9.5-next.19-universal.apk"
     }
   ],
   "signingCertificateSha256": "37bf055966cdf9bb76a14f8298d9fe5898c264cd266997508f3bcac2e36c0814"
