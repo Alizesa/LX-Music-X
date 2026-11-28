@@ -33,8 +33,8 @@ const direct = ({ quality = '320k', filter = true, source = 'tx' } = {}) => {
 }
 
 for (const apiId of ['user_api_A', 'user_api_B']) {
-  test(`the ${apiId === 'user_api_A' ? 'primary' : 'isolated'} aggregate can skip fast 96kbps and encrypted URLs and finish with real 320k`, async() => {
-    for (const invalid of [standard, encrypted]) {
+  test(`the ${apiId === 'user_api_A' ? 'primary' : 'isolated'} aggregate can skip fast lower, higher and encrypted URLs and finish with real 320k`, async() => {
+    for (const invalid of [standard, encrypted, flac]) {
       const h = await scopeHarness(script)
       const music = { id: 'tx_0027W1wz3eeYtZ', source: 'tx', interval: '01:37', meta: { songId: '0027W1wz3eeYtZ', _qualitys: { '320k': {} } } }
       const result = h.runtime.requestUserApiMusicUrl(apiId, music, '320k', undefined, false)
@@ -77,8 +77,8 @@ test('nested JSON bodies, plain URLs and encoded filenames report a known incomp
   }
 })
 
-test('lossless requests reject proven lower tiers while keeping their own and higher tiers eligible', async() => {
-  for (const [quality, url, rejected] of [['flac', high, true], ['flac24bit', flac, true], ['flac', flac, false], ['flac24bit', hires, false], ['320k', flac, false]]) {
+test('exact requests reject all known wrong tiers and retain the requested tier', async() => {
+  for (const [quality, url, rejected] of [['flac', high, true], ['flac24bit', flac, true], ['flac', flac, false], ['flac24bit', hires, false], ['320k', flac, true], ['128k', high, true], ['flac', hires, true]]) {
     const h = direct({ quality })
     h.reply(url)
     await flush()
@@ -122,4 +122,18 @@ test('a cached or decoded low-quality or encrypted URL fails without starting an
     assert.match(response.data.errorMessage, /Audio candidate rejected/)
     assert.equal(h.calls.some(call => call.action === 'request'), false)
   }
+})
+
+test('mixed responses preserve relative QQ candidates for the script to resolve', async() => {
+  for (const path of ['/M800sample.mp3', 'M800sample.mp3?token=x', '../audio/M800sample.mp3', '?vkey=other']) {
+    for (const field of ['wifiurl', 'purl', 'play_url']) {
+      const h = direct()
+      h.reply({ data: { url: standard, [field]: path } }); await flush()
+      assert.equal(h.context.observed.error, null)
+      assert.equal(h.context.observed.body.data[field], path)
+    }
+  }
+  const h = direct()
+  h.reply({ data: { url: standard, wifiurl: '' } }); await flush()
+  assert.match(h.context.observed.error, /quality_mismatch/)
 })

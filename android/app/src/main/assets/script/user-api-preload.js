@@ -257,9 +257,8 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
     const extension = spec[2].toLowerCase()
     const expectedExtension = { M500: 'mp3', M800: 'mp3', C200: 'm4a', C400: 'm4a', F000: 'flac', RS01: 'flac' }[prefix]
     if (extension !== expectedExtension) return null
-    const tiers = ['flac24bit', 'flac', '320k', '128k']
     const actual = { M500: '128k', M800: '320k', C200: '128k', C400: '128k', F000: 'flac', RS01: 'flac24bit' }[prefix]
-    return tiers.indexOf(quality) >= 0 && tiers.indexOf(actual) > tiers.indexOf(quality) ? 'quality_mismatch' : null
+    return ['128k', '320k', 'flac', 'flac24bit'].includes(quality) && actual !== quality ? 'quality_mismatch' : null
   }
   const inspectAudioCandidates = (body, quality) => {
     if (typeof body === 'string' && body.length <= 262144 && /^\s*[[{]/.test(body)) {
@@ -272,7 +271,11 @@ globalThis.lx_setup = (key, id, name, description, version, author, homepage, ra
     const visit = (value, depth, isUrl) => {
       if (++inspected > 256 || depth > 8) { uncertain = true; return }
       if (typeof value === 'string') {
-        if (!/^(?:https?:)?\/\//i.test(value)) return
+        if (!/^(?:https?:)?\/\//i.test(value)) {
+          // A script may resolve wifiurl/purl against its own base. An absolute preview cannot disqualify it.
+          if (isUrl && value.trim()) uncertain = true
+          return
+        }
         // 未认识的字段也可能存有备用音频；有这种候选时不能把整个响应判为坏链。
         if (!isUrl) {
           if (!/\.(?:jpe?g|png|gif|webp|html?)(?:[?#]|$)/i.test(value)) uncertain = true
