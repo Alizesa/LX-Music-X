@@ -407,7 +407,8 @@
   },
   "promotionLock": {
     "owner": "46112521815/1/eda880ff-971d-4fab-a03b-d645dcebbf30",
-    "expiresAt": 1795844586349,
-    "protocol": 2
+    "expiresAt": 1795844591263,
+    "protocol": 2,
+    "writeExpiresAt": 1795844591263
   }
 }
