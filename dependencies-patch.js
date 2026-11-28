@@ -14,6 +14,7 @@ const MEDIA_METADATA_DIR = path.join(rootPath, 'node_modules/react-native-local-
 const TRACK_PLAYER_DIR = path.join(rootPath, 'node_modules/react-native-track-player/android/src/main/java/com/guichaguri/trackplayer')
 
 const patchs = [
+  ...require('./patches/background-timer').map(([file, ...patch]) => [path.join(rootPath, 'node_modules/react-native-background-timer', file), ...patch]),
   ...require('./patches/react-native-fs').map(([file, ...patch]) => [path.join(rootPath, 'node_modules/react-native-fs', file), ...patch]),
   ...require('./patches/media-metadata').map(([file, ...patch]) => [path.join(MEDIA_METADATA_DIR, file), ...patch]),
   ...require('./patches/file-system').map(([file, ...patch]) => [path.join(rootPath, 'node_modules/react-native-file-system', file), ...patch]),
