@@ -413,7 +413,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
       if (!byAccount || (quality != null && byAccount.quality !== quality)) return null
       const url = byAccount.media?.resolvedUrl ?? byAccount.url
       if (isUrlRejected(byAccount.url) || (url !== byAccount.url && isUrlRejected(url))) return null
-      await validateUrl?.(url, byAccount.media)
+      await validateUrl?.(url, byAccount.media, musicInfo)
       assertActive()
       if (isUrlRejected(byAccount.url) || (url !== byAccount.url && isUrlRejected(url))) return null
       return { musicInfo, url, sourceUrl: byAccount.url, quality: byAccount.quality, isFromCache: false }

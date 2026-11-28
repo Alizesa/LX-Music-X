@@ -70,16 +70,18 @@ export const validateDownloadMedia = (quality: LX.Quality, media: RemoteAudioInf
 }
 
 export const inspectDownloadMedia = async(musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quality,
-  url: string, media: RemoteAudioInfo | undefined, signal: AbortSignal): Promise<LX.Download.MediaInfo | undefined> => {
+  url: string, media: RemoteAudioInfo | undefined, signal: AbortSignal, candidate?: LX.Music.MusicInfo): Promise<LX.Download.MediaInfo | undefined> => {
   throwIfAborted(signal)
   const audio = media ?? await probeRemoteAudio(url, true, { signal })
   throwIfAborted(signal)
   // 换源层可能按替代歌曲完成过探测，仍须与最初点选的歌曲核对，不能沿用替代版本的时长。
-  const expected = getMusicDurationMs(musicInfo.interval)
+  const reference = getMusicDurationMs(musicInfo.interval) ? musicInfo : candidate ?? musicInfo
+  const expected = getMusicDurationMs(reference.interval)
   const actual = audio.durationMs ?? 0
   const reason = musicAudioFailure(audio, expected)
   playbackLog('download.audio_check', () => ({
     musicId: musicInfo.id,
+    durationReferenceId: reference.id,
     expected: { name: musicInfo.name, singer: musicInfo.singer, album: musicInfo.meta.albumName, durationMs: expected },
     actual: { name: audio.title, singer: audio.artist, album: audio.album, durationMs: actual, mime: audio.mime, bitRate: audio.bitRate },
     quality,

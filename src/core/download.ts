@@ -122,8 +122,8 @@ const createUrlRequest = (musicInfo: LX.Music.MusicInfoOnline, quality: LX.Quali
       quality,
       isRefresh: true,
       urlSourceOrder: settingState.setting['download.urlSource'] === 'account' ? 'accountFirst' : 'sourceOnly',
-      validateUrl: async(url, media) => {
-        const info = await inspectDownloadMedia(musicInfo, quality, url, media, controller.signal)
+      validateUrl: async(url, media, candidate) => {
+        const info = await inspectDownloadMedia(musicInfo, quality, url, media, controller.signal, candidate)
         if (!waiter.cancelled && waiter.resolve) waiter.media = info
       },
       onCancel: abort => {

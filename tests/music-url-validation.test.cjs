@@ -806,3 +806,28 @@ test('account download passes its already validated media to the download policy
   assert.equal(h.probes.length, 0)
   assert.equal(h.requests.length, 0)
 })
+
+test('Kuwo album entries retain catalog durations rather than inventing an expected length', () => {
+  const sdk = load('src/utils/musicSdk/kw/album.js', {
+    '../../request': {},
+    './util': { formatSinger: s => s },
+    '../../index': {
+      decodeName: s => s, formatPlayTime: n => `${String(Math.floor(n / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`,
+    },
+  }).default
+  const input = ['240', '04:00', undefined, 0, 'bad'].map(duration => ({ duration, formats: 'MP3128' }))
+  assert.deepEqual(Array.from(sdk.filterListDetail(input), m => m.interval), ['04:00', '04:00', null, null, null])
+})
+
+test('the real download policy accepts an independently matched duration when the original has none', async() => {
+  const { createHarness, song: makeTrack } = require('./helpers/download-cleanup-runtime.cjs')
+  const original = { ...makeTrack('kw_album'), source: 'kw', interval: null }
+  const matched = { ...song, id: 'wy_matched', source: 'wy' }
+  const h = harness({ otherSources: [matched], request: () => ({ url: full, type: '128k' }), inspect: () => ({ ...audio(), bitRate: 128000 }) })
+  const downloads = await createHarness({ url: args => h.resolve({ ...args, allowToggleSource: true }) })
+  await downloads.api.addTasks([original], '128k'); await flush()
+  assert.equal(downloads.enqueued.length, 1)
+  assert.equal(h.probes.length, 1)
+  assert.equal(original.interval, null)
+  await assert.rejects(downloadAudio.inspectDownloadMedia(original, '128k', full, audio(), new AbortController().signal), /duration_unavailable/)
+})

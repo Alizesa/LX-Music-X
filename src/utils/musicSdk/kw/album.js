@@ -1,5 +1,5 @@
 import { httpFetch } from '../../request'
-import { decodeName } from '../../index'
+import { decodeName, formatPlayTime } from '../../index'
 import { formatSinger, objStr2JSON } from './util'
 
 // let requestObj_list
@@ -52,6 +52,10 @@ export default {
           size: null,
         }
       }
+      const rawDuration = item.duration ?? item.DURATION
+      const seconds = Number(rawDuration)
+      const interval = typeof rawDuration === 'string' && /^\d+:[0-5]\d$/.test(rawDuration) ? rawDuration
+        : Number.isFinite(seconds) && seconds >= 1 ? formatPlayTime(Math.floor(seconds)) : null
       // types.reverse()
       return {
         singer: formatSinger(decodeName(item.artist)),
@@ -60,7 +64,7 @@ export default {
         albumId,
         songmid: item.id,
         source: 'kw',
-        interval: null,
+        interval,
         img: item.pic,
         lrc: null,
         otherSource: null,

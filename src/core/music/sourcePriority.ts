@@ -31,7 +31,7 @@ export const markMusicUrlFailed = (url: string, error?: unknown) => {
   for (const [key, candidate] of sourceUrls) if (candidate == url) remember(failedSources, key, until)
 }
 
-export type ValidateMusicUrl = (url: string, media?: RemoteAudioInfo) => Promise<void>
+export type ValidateMusicUrl = (url: string, media?: RemoteAudioInfo, candidate?: LX.Music.MusicInfo) => Promise<void>
 export interface MusicUrlRequestOptions {
   quality?: LX.Quality
   urlSourceOrder?: LX.Music.UrlSourceOrder
@@ -73,7 +73,7 @@ export const prepareMusicUrl = async(musicInfo: LX.Music.MusicInfo, sourceUrl: s
   }
   assertAvailable()
   try {
-    await validateUrl?.(url, media)
+    await validateUrl?.(url, media, musicInfo)
   } catch (error) {
     assertActive()
     if (!isRequestCancelled(error)) {
