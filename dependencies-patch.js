@@ -322,6 +322,7 @@ const toLF = str => str.replace(/\r\n/g, '\n')
     await fs.promises.copyFile(path.join(rootPath, 'patches/AudioPreloader.java'), path.join(TRACK_PLAYER_DIR, 'service/player/AudioPreloader.java'))
     await fs.promises.copyFile(path.join(rootPath, 'patches/CompleteAudioCache.java'), path.join(TRACK_PLAYER_DIR, 'service/player/CompleteAudioCache.java'))
     await fs.promises.copyFile(path.join(rootPath, 'patches/CachedAudioFile.java'), path.join(TRACK_PLAYER_DIR, 'service/player/CachedAudioFile.java'))
+    await fs.promises.copyFile(path.join(rootPath, 'patches/AudioCacheProofs.java'), path.join(TRACK_PLAYER_DIR, 'service/player/AudioCacheProofs.java'))
     await fs.promises.copyFile(path.join(rootPath, 'patches/PlaybackDebugLogger.java'), path.join(TRACK_PLAYER_DIR, 'service/player/PlaybackDebugLogger.java'))
   } catch (error) {
     process.exitCode = 1

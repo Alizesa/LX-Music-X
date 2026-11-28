@@ -48,13 +48,13 @@ final class RemoteAudioProbe {
 
   RemoteAudioProbe() { workers.allowCoreThreadTimeOut(true); }
 
-  void start(String id, String url, boolean inspect, boolean cacheOnly, double timeoutMs, Promise promise) {
+  void start(String id, String url, boolean inspect, boolean cacheOnly, String diskHint, double timeoutMs, Promise promise) {
     Task task = new Task(id, promise, Math.max(1, Math.min((long) timeoutMs, MAX_TIMEOUT_MS)));
     Task previous = tasks.put(id, task);
     if (previous != null) previous.cancel();
     try {
       task.timer = deadlines.schedule(() -> task.cancel("timeout"), task.remaining(), TimeUnit.MILLISECONDS);
-      task.work = workers.submit(() -> task.finish(read(task, url, inspect, cacheOnly), false));
+      task.work = workers.submit(() -> task.finish(read(task, url, inspect, cacheOnly, diskHint), false));
       if (task.done.get()) task.work.cancel(true);
     } catch (RuntimeException ignored) { task.cancel("busy"); }
   }
@@ -235,7 +235,7 @@ final class RemoteAudioProbe {
     return true;
   }
 
-  private static WritableMap read(Task task, String url, boolean inspectDuration, boolean cacheOnly) {
+  private static WritableMap read(Task task, String url, boolean inspectDuration, boolean cacheOnly, String diskHint) {
     WritableMap result = Arguments.createMap();
     HttpURLConnection connection = null;
     URL address;
@@ -246,15 +246,33 @@ final class RemoteAudioProbe {
       int count = inspectDuration ? (Build.VERSION.SDK_INT >= 23 ? BLOCK_SIZE : 42) : 1;
       address = new URL(url);
       if (cacheOnly) {
-        CachedAudioFile disk = CompleteAudioCache.open(url);
-        if (disk == null || Build.VERSION.SDK_INT < 23) return unavailable("cache_miss");
+        task.check();
+        if (CompleteAudioCache.confirmed(url, diskHint)) {
+          result.putString("unchangedProof", diskHint);
+          return result;
+        }
+        CompleteAudioCache.Lookup lookup = CompleteAudioCache.open(url);
+        if (lookup == null || Build.VERSION.SDK_INT < 23) return unavailable("cache_miss");
+        CachedAudioFile disk = lookup.file;
+        if (disk == null) {
+          WritableMap miss = unavailable("cache_miss");
+          String token = lookup.confirm();
+          if (token != null && !token.isEmpty()) miss.putString("diskProof", token);
+          return miss;
+        }
         task.contentLength = disk.length;
         if (!url.equals(disk.url)) task.resolvedUrl = disk.url;
         head = new byte[(int) Math.min(disk.length, BLOCK_SIZE)];
         task.bytesRead = disk.readAt(0, head, head.length);
         result.putBoolean("readable", true);
         WritableMap inspected = inspect(task, address, disk.length, head, result, disk);
-        return "cache_miss".equals(task.failureReason) ? unavailable("cache_miss") : inspected;
+        if ("cache_miss".equals(task.failureReason)) return unavailable("cache_miss");
+        if (!inspected.hasKey("reason")) {
+          String token = lookup.confirm();
+          if (token == null) return unavailable("cache_miss");
+          if (!token.isEmpty()) inspected.putString("diskProof", token);
+        }
+        return inspected;
       }
       int status;
       for (int redirects = 0;; redirects++) {

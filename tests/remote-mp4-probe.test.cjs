@@ -14,6 +14,8 @@ test('native MP4 and FLAC parsers handle bounded binary fixtures', { skip: !proc
       path.join(root, 'android/app/src/main/java/cn/toside/music/mobile/utils/Mp4AudioMetadata.java'),
       path.join(root, 'android/app/src/main/java/cn/toside/music/mobile/utils/FlacFrameBounds.java'),
       path.join(root, 'patches/CachedAudioFile.java'),
+      path.join(root, 'patches/AudioCacheProofs.java'),
+      path.join(__dirname, 'native/AudioCacheProofsTest.java'),
       path.join(__dirname, 'native/CachedAudioFileTest.java'),
       path.join(__dirname, 'native/FlacFrameBoundsTest.java'),
       path.join(__dirname, 'native/Mp4AudioMetadataTest.java')], { encoding: 'utf8', timeout: 30000 })

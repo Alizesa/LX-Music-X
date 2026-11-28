@@ -7,6 +7,7 @@ import java.util.Arrays;
 
 public final class CachedAudioFileTest {
   public static void run() throws Exception {
+    AudioCacheProofsTest.run();
     File a = File.createTempFile("lx-cache-a", ".span");
     File b = File.createTempFile("lx-cache-b", ".span");
     try {
