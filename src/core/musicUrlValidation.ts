@@ -35,7 +35,7 @@ class MusicAudioError extends Error {
     this.code = reason
     // 探测能力或预算不足不能证明音源坏了，后台预加载不能因此冷却前台音源。
     this.isAudioProbeFailure = ['timeout', 'byte_limit', 'metadata_limit', 'invalid_metadata', 'metadata_error', 'metadata_unavailable',
-      'duration_unavailable', 'native_error', 'native_unavailable', 'busy', 'range_unsupported', 'invalid_range'].includes(reason)
+      'duration_unavailable', 'network_error', 'native_error', 'native_unavailable', 'busy', 'range_unsupported', 'invalid_range'].includes(reason)
   }
 }
 

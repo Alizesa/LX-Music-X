@@ -866,3 +866,14 @@ test('cancellation while inspecting disk bytes does not fetch a URL or publish a
   disk.resolve(audio()); await flush()
   assert.equal(h.probes.length + h.requests.length + h.writes.length, 0)
 })
+
+test('offline preloading does not cool down a non-QQ song when connectivity returns', async() => {
+  let online = false
+  const h = harness({ request: () => ({ url: full, type: '128k' }), inspect: () => online ? audio() : { readable: false, reason: 'network_error' } })
+  h.setting['common.apiSourceOrder'] = '["user_api_a"]'
+  await assert.rejects(h.preload.preloadMusic(kugouSong), /toggle_source_failed/)
+  online = true
+  assert.equal(h.priority.isMusicUrlFailed(full), false)
+  assert.equal(await h.resolve({ musicInfo: kugouSong, quality: undefined }), full)
+  assert.equal(h.requests.length, 2)
+})
