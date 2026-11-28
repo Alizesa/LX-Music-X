@@ -10,9 +10,10 @@ const harness = () => {
     append(key, value) { this.parts.push([key, value]) }
   }
   class FileReader {
+    readAsText() { this.result = response.textBody; this.onload() }
     readAsDataURL(blob) { this.result = 'data:application/octet-stream;base64,' + Buffer.from(blob).toString('base64'); this.onload() }
   }
-  const response = { headers: { map: { 'content-type': 'application/json' } }, text: async() => '{"ok":true}', blob: async() => 'audio', status: 200, statusText: 'OK', url: 'https://api.test/result', ok: true }
+  const response = { headers: { map: { 'content-type': 'application/json' } }, textBody: '{"ok":true}', blob: async() => 'audio', status: 200, statusText: 'OK', url: 'https://api.test/result', ok: true }
   const app = { AbortController, FormData, FileReader, fetch: async(url, options) => { calls.push({ url, options }); return response } }
   const shared = load('src/utils/httpRequest.js', {
     'react-native-background-timer': {
@@ -89,7 +90,7 @@ test('binary bodies and non-JSON text preserve the existing response contract', 
   assert.equal(binary.body.toString(), 'audio')
   assert.equal(binary.statusCode, 200)
   assert.equal(binary.headers['content-type'], 'application/json')
-  h.response.text = async() => 'plain response'
+  h.response.textBody = 'plain response'
   assert.equal((await h.sdk.httpFetch('https://api.test/text').promise).body, 'plain response')
 })
 
@@ -146,4 +147,38 @@ test('callback GET keeps its public response behavior', async() => {
     assert.equal(body.ok, true)
     resolve()
   }))
+})
+
+test('response blobs are closed once for text, binary, decoding errors and late cancellation', async() => {
+  for (const mode of ['text', 'binary', 'error', 'throw', 'post-fetch', 'reading', 'timeout']) {
+    const h = harness(); const ac = new AbortController(); let closed = 0; let aborted = 0; let encoding
+    const blob = { type: 'text/plain;charset=GB18030', close() { closed++ } }
+    h.response.blob = async() => blob
+    h.app.FileReader = class {
+      readAsDataURL() { this.result = 'data:audio/mpeg;base64,YWJj'; this.onload() }
+      readAsText(_blob, charset) {
+        encoding = charset
+        if (mode === 'throw') throw Error('reader failed')
+        if (mode === 'error') { this.error = Error('reader failed'); this.onerror(); return }
+        if (mode === 'reading' || mode === 'timeout') return
+        this.result = 'plain'; this.onload()
+      }
+
+      abort() { aborted++ }
+    }
+    if (mode === 'post-fetch') h.app.fetch = async() => { ac.abort(); return h.response }
+    const p = h.user.fetchData('https://fixture/item', { binary: mode === 'binary', signal: ac.signal }).request
+    // Observe settlement before cancelling a pending read; no dependence on FileReader dispatching onabort.
+    const result = p.then(v => v.body, e => e.message)
+    if (mode === 'reading' || mode === 'timeout') {
+      await flush()
+      if (mode === 'reading') ac.abort()
+      else for (const t of h.timers.values()) t.fn()
+    }
+    const body = await result
+    assert.equal(closed, 1, mode)
+    assert.equal(h.timers.size, 0, mode)
+    if (mode === 'binary') assert.equal(body.toString(), 'abc')
+    else if (mode === 'text') { assert.equal(body, 'plain'); assert.equal(encoding, 'GB18030') } else if (mode === 'reading' || mode === 'timeout') { assert.equal(aborted, 1); assert.match(body, /cancelled|Aborted/) } else assert.match(body, /reader failed|cancelled/)
+  }
 })

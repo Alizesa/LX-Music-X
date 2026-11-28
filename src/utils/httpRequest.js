@@ -29,15 +29,46 @@ const prepareOptions = ({ method = 'get', headers = {}, format, ...options }) =>
   return { ...options, method, headers }
 }
 
-const blobToBuffer = (blob) => new Promise((resolve, reject) => {
-  const reader = new global.FileReader()
-  reader.onerror = reject
-  reader.onload = () => {
-    const data = reader.result.slice(reader.result.indexOf('base64,') + 7)
-    resolve(Buffer.from(data, 'base64'))
+const parseText = text => { try { return JSON.parse(text) } catch { return text } }
+
+// RN fetch also stores text responses in a native Blob. Consume it exactly once and
+// close our reference even if fetch finished just after cancellation or the reader failed.
+const readResponseBody = async(response, binary, signal, checkAborted) => {
+  if (!binary && typeof response.blob !== 'function') {
+    checkAborted()
+    const text = await response.text()
+    checkAborted()
+    return parseText(text)
   }
-  reader.readAsDataURL(blob)
-})
+  const blob = await response.blob()
+  let reader; let abort
+  try {
+    checkAborted()
+    reader = new global.FileReader()
+    const result = await new Promise((resolve, reject) => {
+      abort = () => {
+        try { reader.abort() } catch {}
+        reject(new Error('Aborted'))
+      }
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = () => reject(reader.error ?? new Error('Failed to read response'))
+      signal.addEventListener('abort', abort)
+      if (signal.aborted) { abort(); return }
+      if (binary) reader.readAsDataURL(blob)
+      else reader.readAsText(blob, /charset=["']?([a-z0-9_-]+)/i.exec(blob.type)?.[1] ?? 'utf-8')
+    })
+    checkAborted()
+    if (binary) return Buffer.from(result.slice(result.indexOf('base64,') + 7), 'base64')
+    return parseText(result)
+  } catch (error) {
+    checkAborted()
+    throw error
+  } finally {
+    if (abort) signal.removeEventListener('abort', abort)
+    if (reader) reader.onload = reader.onerror = null
+    blob.close?.()
+  }
+}
 
 /** 共用请求、超时和响应解析；调用方只提供各自的默认项及音源签名处理。 */
 export const createFetchData = ({ timeout: defaultTimeout = 15000, defaults = {}, prepare = async(url, options) => options } = {}) =>
@@ -55,17 +86,7 @@ export const createFetchData = ({ timeout: defaultTimeout = 15000, defaults = {}
       const prepared = await prepare(url, prepareOptions({ ...defaults, ...options }))
       checkAborted()
       const response = await global.fetch(url, { ...prepared, signal: controller.signal })
-      checkAborted()
-      let body
-      if (prepared.binary) {
-        const blob = await response.blob()
-        checkAborted()
-        body = await blobToBuffer(blob)
-      } else {
-        body = await response.text()
-        checkAborted()
-        try { body = JSON.parse(body) } catch {}
-      }
+      const body = await readResponseBody(response, prepared.binary, controller.signal, checkAborted)
       checkAborted()
       return {
         headers: response.headers.map,
