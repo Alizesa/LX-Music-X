@@ -4,7 +4,7 @@ import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { throwIfAborted, withAbort } from '@/utils/abort'
 import BackgroundTimer from 'react-native-background-timer'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
-import { getMusicDurationMs as getDurationMs, musicAudioFailure as audioFailure } from './musicUrlValidation'
+import { failedRedirectTarget, getMusicDurationMs as getDurationMs, musicAudioFailure as audioFailure } from './musicUrlValidation'
 
 // QQ 的取票接口按文件名前缀区分音质，扩展名跟着前缀走
 const QUALITY_SPEC: Partial<Record<LX.Quality, { prefix: string, extension: string }>> = {
@@ -64,12 +64,14 @@ interface AccountUrlOptions {
   allowQualityFallback?: boolean
   /** 在候选选择前跳过已播放失败或仍在冷却的地址，不占用媒体探测预算。 */
   isUrlRejected?: (url: string) => boolean
+  onTargetFailed?: (url: string) => void
   trace?: PlaybackLogContext
   expectedMusicInfo?: LX.Music.MusicInfo
 }
 
 const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal: AbortSignal, isRefresh: boolean,
-  trace: PlaybackLogContext & { musicId: string, platform: string }, isUrlRejected?: (url: string) => boolean): Promise<{ url: string, media: RemoteAudioInfo } | null> => {
+  trace: PlaybackLogContext & { musicId: string, platform: string }, isUrlRejected?: (url: string) => boolean,
+  onTargetFailed?: (url: string) => void): Promise<{ url: string, media: RemoteAudioInfo } | null> => {
   throwIfAborted(signal)
   const list: any[] = Array.isArray(data?.midurlinfo) ? data.midurlinfo : []
   const sips: string[] = Array.isArray(data?.sip) ? data.sip.filter((item: unknown) => typeof item === 'string') : []
@@ -148,7 +150,11 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
           elapsedMs: Date.now() - probeStartedAt,
         }))
         if (!reason) finish({ url, media })
-        else if (resolvedUrl !== url) discardRedirectedAudioProbe(url, media)
+        else if (resolvedUrl !== url) {
+          const failed = failedRedirectTarget(url, media)
+          if (failed) onTargetFailed?.(failed)
+          discardRedirectedAudioProbe(url, media)
+        }
       }
     }
     void Promise.all(Array.from({ length: Math.min(3, selected.length) }, worker))
@@ -249,7 +255,7 @@ export const getQQMusicUrlByAccount = async(
           playbackLog('url.account_channel_start', () => ({ ...trace, quality }))
           const data = await requestVkey(cookie, songMid, filenames, spec.prefix, platform, signal)
           playbackLog('url.account_channel_response', () => ({ ...trace, quality, elapsedMs: Date.now() - startedAt }))
-          const result = await pickUrl(data, quality, expectedMs, signal, options.isRefresh ?? false, trace, options.isUrlRejected)
+          const result = await pickUrl(data, quality, expectedMs, signal, options.isRefresh ?? false, trace, options.isUrlRejected, options.onTargetFailed)
           throwIfAborted(signal)
           if (result) return { ...result, quality }
         } catch (error) {

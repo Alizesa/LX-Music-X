@@ -24,6 +24,11 @@ export const musicAudioFailure = (media: RemoteAudioInfo, expectedMs: number, ex
   if (expectedMime && media.mime !== expectedMime) return 'format_mismatch'
 }
 
+// These statuses reject this exact signed resource. Timeouts, rate limits, 5xx and wrong versions are not equivalent.
+export const failedRedirectTarget = (sourceUrl: string, media: RemoteAudioInfo) =>
+  media.resolvedUrl !== sourceUrl && media.reason === 'http_error' && [401, 403, 404, 410].includes(media.httpStatus ?? 0)
+    ? media.resolvedUrl : undefined
+
 class MusicAudioError extends Error {
   code: string
   isAudioProbeFailure: boolean
@@ -48,6 +53,7 @@ export const validateMusicUrl = async(
   trace?: PlaybackLogContext & { apiId?: string },
   expectedMusicInfo: LX.Music.MusicInfo = musicInfo,
   preferCompleteCache = false,
+  onTargetFailed?: (url: string) => void,
 ): Promise<RemoteAudioInfo | undefined> => {
   if (!/^https?:\/\//i.test(url)) return
   const controller = new AbortController()
@@ -82,6 +88,8 @@ export const validateMusicUrl = async(
       const error = new MusicAudioError(reason)
       // 中转地址下次可能换一份音频，失败只说明当前目标不可用。
       if (media.resolvedUrl && media.resolvedUrl !== url) {
+        const failed = failedRedirectTarget(url, media)
+        if (failed) onTargetFailed?.(failed)
         discardRedirectedAudioProbe(url, media)
         error.isAudioProbeFailure = true
       }

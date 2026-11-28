@@ -823,3 +823,14 @@ test('5s and 15s consumers share one native read but not a deadline, in either a
     assert.equal(timers.size, 0)
   }
 })
+
+test('an HTTP rejection of a redirected account CDN excludes its direct URL on the next ticket', async() => {
+  const failed = new Set(); const gone = 'https://gone.example/M500media.mp3'
+  const h = harness({
+    ticket: param => response('M500media.mp3', { sip: param.platform === '23' ? ['https://proxy.example/'] : ['https://gone.example/', 'https://good.example/'] }),
+    probe: u => u.includes('proxy.example') ? { readable: false, resolvedUrl: gone, reason: 'http_error', httpStatus: 404 } : fullAudio(u),
+  })
+  const result = await h.resolve(song, '128k', '128k', { isUrlRejected: u => failed.has(u), onTargetFailed: u => failed.add(u) })
+  assert.equal(result.url, 'https://good.example/M500media.mp3')
+  assert.deepEqual([...failed], [gone]); assert.ok(!h.probes.some(p => p.url === gone))
+})

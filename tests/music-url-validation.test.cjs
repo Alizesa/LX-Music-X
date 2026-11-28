@@ -877,3 +877,19 @@ test('offline preloading does not cool down a non-QQ song when connectivity retu
   assert.equal(await h.resolve({ musicInfo: kugouSong, quality: undefined }), full)
   assert.equal(h.requests.length, 2)
 })
+
+test('a definitive redirected CDN rejection is not probed again as a direct script URL', async() => {
+  const proxy = 'https://fixture/proxy'; const dead = 'https://fixture/gone'; const good = 'https://fixture/full'
+  for (const status of [403, 404, 410, 429, 503]) {
+    const definite = [403, 404, 410].includes(status)
+    const h = harness({
+      request: id => ({ url: { user_api_a: proxy, user_api_b: dead, user_api_c: good }[id], type: '128k' }),
+      inspect: u => u === proxy ? { readable: false, reason: 'http_error', httpStatus: status, resolvedUrl: dead } : audio(),
+    })
+    h.setting['common.apiSourceOrder'] = '["user_api_a","user_api_b","user_api_c"]'
+    assert.equal(await h.resolve(), definite ? good : dead)
+    assert.deepEqual(h.probes.map(p => p.url), [proxy, definite ? good : dead])
+    assert.equal(h.priority.isMusicUrlFailed(proxy), false)
+    assert.equal(h.priority.isMusicUrlFailed(dead), definite)
+  }
+})

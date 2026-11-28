@@ -13,7 +13,7 @@ import { apis } from '@/utils/musicSdk/api-source'
 import { discardRedirectedAudioProbe } from '@/core/musicUrlValidation'
 import { getQQMusicUrlByAccount } from '@/core/qqMusicUrl'
 import { QQ_LYRIC_CACHE_VERSION } from '@/config/constant'
-import { getEnabledMusicSourceIds, getMusicUrlByPriority, isMusicUrlFailed, prepareMusicUrl, type MusicUrlRequestOptions, type OnlineMusicUrl, type ValidateMusicUrl } from './sourcePriority'
+import { getEnabledMusicSourceIds, getMusicUrlByPriority, isMusicUrlFailed, markMusicUrlFailed, prepareMusicUrl, type MusicUrlRequestOptions, type OnlineMusicUrl, type ValidateMusicUrl } from './sourcePriority'
 import { getMusicUrlCacheContext } from '@/utils/musicUrlCache'
 import { playbackLog, type PlaybackLogContext } from '@/utils/playbackLog'
 import { waitForPromise } from '@/utils/abortable'
@@ -406,6 +406,7 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
         onCancel: registerCancel,
         allowQualityFallback: quality == null,
         isUrlRejected,
+        onTargetFailed: markMusicUrlFailed,
         trace,
         expectedMusicInfo,
       })
