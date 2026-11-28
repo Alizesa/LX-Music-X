@@ -1,5 +1,5 @@
 import { setTempList } from '@/core/list'
-import { completePlayQueue, createPlaySelection, getPlayQueueSessionId, getPlayQueueSignal, playList } from '@/core/player/player'
+import { createPlaySelection, playList, playListWithCompletion } from '@/core/player/player'
 import { getListDetail, getListDetailAll } from '@/core/songlist'
 import { LIST_IDS } from '@/config/constant'
 import { getQQMusicPlaylists, getQQMusicSession, isQQMusicSessionCurrent, QQMusicSessionExpiredError, updateQQMusicPlaylistsCache } from '@/core/qqMusic'
@@ -13,7 +13,6 @@ const getListId = (id: string, source: LX.OnlineSource) => `${source}__${id}`
 export const handlePlay = async(id: string, source: Source, list?: LX.Music.MusicInfoOnline[], index = 0) => {
   const selection = createPlaySelection()
   const listId = getListId(id, source)
-  let queueSession: string | undefined
   // console.log(list)
   if (!list?.length) {
     list = (await getListDetail(id, source, 1, false, selection.signal).catch(error => {
@@ -22,25 +21,19 @@ export const handlePlay = async(id: string, source: Source, list?: LX.Music.Musi
     })).list
   }
   if (!selection()) return
-  if (list?.length) {
-    await setTempList(listId, [...list])
-    if (!selection()) return
-    queueSession = await playList(LIST_IDS.TEMP, index, selection)
-    if (!queueSession) return
-  }
-  if (queueSession ? queueSession !== getPlayQueueSessionId() : !selection()) return
-  const fullList = await getListDetailAll(source, id, false, queueSession ? getPlayQueueSignal() : selection.signal).catch(error => {
+  const loadRest = async(signal: AbortSignal) => getListDetailAll(source, id, false, signal).catch(error => {
     if (isRequestCancelled(error)) return []
     throw error
   })
-  if (!fullList.length) return
-  if (queueSession) {
-    await completePlayQueue(queueSession, fullList)
-  } else {
-    if (!selection()) return
-    await setTempList(listId, [...fullList])
-    if (selection()) await playList(LIST_IDS.TEMP, index, selection)
+  if (list?.length) {
+    await setTempList(listId, [...list])
+    if (selection()) await playListWithCompletion(LIST_IDS.TEMP, index, selection, loadRest)
+    return
   }
+  const fullList = await loadRest(selection.signal)
+  if (!fullList.length || !selection()) return
+  await setTempList(listId, [...fullList])
+  if (selection()) await playList(LIST_IDS.TEMP, index, selection)
 }
 
 export const handleCollect = async(id: string, source: Source, name: string) => {

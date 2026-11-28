@@ -11,8 +11,20 @@ let sourceFirstMusicId: string | undefined
 let sourceBatchKey: string | undefined
 let metadataOwner: LX.Player.PlayQueueItem | undefined
 let queueSequence = 0
-// 只保留被手动移除的 ID，迟到的歌单补全不能恢复这些歌曲。
-const removedMusicIds = new Set<string>()
+// Only a pending paged-list completion can bring a manually removed row back.
+let completion: { users: number, removed: Set<string> } | undefined
+const discardCompletion = () => { completion?.removed.clear(); completion = undefined }
+export const retainPlayQueueCompletion = (expectedSession: string) => {
+  if (!expectedSession || expectedSession !== sessionId) throw new Error('Stale queue completion')
+  const owner = completion ??= { users: 0, removed: new Set<string>() }
+  owner.users++
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    if (--owner.users === 0 && owner === completion) discardCompletion()
+  }
+}
 // 推荐续播会无限追加，保留最近一段即可；普通列表建队列不受这个上限影响
 const MAX_PLAY_QUEUE = 500
 
@@ -41,7 +53,7 @@ const commit = async() => {
     sessionId = ''
     sourceFirstMusicId = undefined
     sourceBatchKey = undefined
-    removedMusicIds.clear()
+    discardCompletion()
   }
   const saved = savePlayQueue(queue)
   global.app_event.playQueueUpdate([...queue])
@@ -101,7 +113,7 @@ export const replacePlayQueue = async(sourceListId: string, list: LX.Player.Play
   sessionController = new AbortController()
   // 同一毫秒重新选择相同首曲也属于新队列，不能接收上一轮补全。
   const seed = `${Date.now().toString(36)}_${++queueSequence}`
-  removedMusicIds.clear()
+  discardCompletion()
   queue.splice(0, queue.length, ...list.map((musicInfo, index) => ({
     queueId: `${seed}_${index}_${musicInfo.id}`,
     sourceListId,
@@ -170,7 +182,7 @@ export const insertPlayQueue = async(index: number, list: LX.Player.PlayMusic[])
 export const removePlayQueueItem = async(index: number) => {
   if (index < 0 || index >= queue.length) return
   const currentIndex = playerState.playInfo.playerPlayIndex
-  removedMusicIds.add(queue[index].musicInfo.id)
+  completion?.removed.add(queue[index].musicInfo.id)
   queue.splice(index, 1)
   if (index <= currentIndex) updateQueueIndex(currentIndex > 0 ? Math.min(currentIndex - 1, queue.length - 1) : queue.length - 1)
   await commit()
@@ -194,10 +206,11 @@ export const clearPlayQueue = async() => {
 
 /** 补齐同一次点播的后续歌曲，保留期间的切歌、暂停和手动队列编辑。 */
 export const completePlayQueue = async(expectedSessionId: string, list: LX.Player.PlayMusic[]) => {
-  if (!expectedSessionId || sessionId !== expectedSessionId) return
+  if (!completion || !expectedSessionId || sessionId !== expectedSessionId) return
+  const { removed } = completion
   const ids = new Set(queue.map(item => item.musicInfo.id))
   const missing = list.filter(music => {
-    if (ids.has(music.id) || removedMusicIds.has(music.id)) return false
+    if (ids.has(music.id) || removed.has(music.id)) return false
     ids.add(music.id)
     return true
   })

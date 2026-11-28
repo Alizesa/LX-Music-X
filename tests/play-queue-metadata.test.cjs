@@ -41,17 +41,21 @@ test('late completion cannot enter an identical queue created in the same clock 
   const full = [...first, song('second'), song('second')]
   await h.queue.replacePlayQueue('songs', first)
   const previous = h.queue.getPlayQueueSessionId()
+  const releaseOld = h.queue.retainPlayQueueCompletion(previous)
   await h.queue.replacePlayQueue('songs', first)
   await h.queue.completePlayQueue(previous, full)
   assert.equal(h.queue.getPlayQueueMusic().length, 1)
   const current = h.queue.getPlayQueueSessionId()
+  const release = h.queue.retainPlayQueueCompletion(current); releaseOld()
   await h.queue.completePlayQueue(current, full)
   assert.deepEqual(Array.from(h.queue.getPlayQueueMusic(), item => item.id), ['first', 'second'])
   await h.queue.removePlayQueueItem(1)
   await h.queue.completePlayQueue(current, full)
   assert.equal(h.queue.getPlayQueueMusic().length, 1)
   await h.queue.replacePlayQueue('songs', first)
-  await h.queue.completePlayQueue(h.queue.getPlayQueueSessionId(), full)
+  release()
+  const releaseNew = h.queue.retainPlayQueueCompletion(h.queue.getPlayQueueSessionId())
+  await h.queue.completePlayQueue(h.queue.getPlayQueueSessionId(), full); releaseNew()
   assert.equal(h.queue.getPlayQueueMusic().length, 2)
 })
 
@@ -172,4 +176,27 @@ test('metadata ownership does not retain a removed queue row after clear or repl
     })().catch(error => { console.error(error); process.exitCode = 1 })
   `], { cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 15000 })
   assert.equal(result.status, 0, result.stderr || result.stdout)
+})
+
+test('ordinary queue edits accumulate no deleted IDs outside a pending completion', async() => {
+  const sets = []
+  class TrackedSet extends Set { constructor(...args) { super(...args); sets.push(this) } }
+  const { queue } = setup([], { Set: TrackedSet })
+  await queue.replacePlayQueue('mix', [song('anchor')])
+  for (let i = 0; i < 300; i++) {
+    await queue.insertPlayQueue(1, [song('deleted-' + i)]); await queue.removePlayQueueItem(1)
+  }
+  assert.equal(sets.some(s => s.has('deleted-0')), false)
+})
+
+test('the last completion releases deleted IDs, without reviving a removed row', async() => {
+  const sets = []; class TrackedSet extends Set { constructor(...args) { super(...args); sets.push(this) } }
+  const { queue } = setup([], { Set: TrackedSet }); const rows = [song('keep'), song('gone')]
+  await queue.replacePlayQueue('partial', rows)
+  const id = queue.getPlayQueueSessionId(); const first = queue.retainPlayQueueCompletion(id); const last = queue.retainPlayQueueCompletion(id)
+  await queue.removePlayQueueItem(1); first(); first()
+  assert.ok(sets.some(s => s.has('gone')))
+  await queue.completePlayQueue(id, rows); assert.equal(queue.getPlayQueue().length, 1)
+  last(); assert.equal(sets.some(s => s.has('gone')), false)
+  await queue.completePlayQueue(id, rows); assert.equal(queue.getPlayQueue().length, 1)
 })

@@ -28,7 +28,7 @@ import { checkIgnoringBatteryOptimization, checkNotificationPermission, debounce
 import { LIST_IDS } from '@/config/constant'
 import { setQQMusicTrackLiked } from '@/core/qqMusicFavorite'
 import { addDislikeInfo, hasDislike } from '@/core/dislikeList'
-import { clearPlayQueue, getPlayQueue, getPlayQueueSessionId, insertPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
+import { clearPlayQueue, completePlayQueue, getPlayQueue, getPlayQueueSessionId, getPlayQueueSignal, retainPlayQueueCompletion, insertPlayQueue, movePlayQueueItem, removePlayQueueItem, replacePlayQueue } from './playQueue'
 import { parkRecommendQueue } from '@/core/qqMusicRecommendSession'
 import { releaseLocalList, retainLocalList } from '@/core/localList'
 import { cancelPreload, takePreloadedMusicUrl } from './preload'
@@ -451,7 +451,7 @@ const handlePlay = async() => {
  * @param listId 列表id
  * @param index 播放的歌曲位置
  */
-export const playList = async(listId: string, index: number, isCurrentSelection: () => boolean = createPlaySelection()) => {
+export const playList = async(listId: string, index: number, isCurrentSelection: () => boolean = createPlaySelection(), onQueueCreated?: (id: string) => void) => {
   // LOCAL 是延迟加载的：从本地列表起播前必须先把整表读进来。
   // 队列持有自己的歌曲对象，完整 LOCAL 只需在建队列期间占用。
   const isLocal = listId === LIST_IDS.LOCAL
@@ -469,6 +469,7 @@ export const playList = async(listId: string, index: number, isCurrentSelection:
       await parkRecommendQueue()
       if (!isCurrentSelection()) return
       saved = replacePlayQueue(listId, list)
+      onQueueCreated?.(getPlayQueueSessionId())
     }
     if (!isCurrentSelection()) return
     const item = getPlayQueue()[index]
@@ -486,6 +487,18 @@ export const playList = async(listId: string, index: number, isCurrentSelection:
   } finally {
     if (isLocal) releaseLocalList('player:playList')
   }
+}
+
+/** Own the tombstones from synchronous queue creation (before player/storage awaits) until the last page settles. */
+export const playListWithCompletion = async(listId: string, index: number, selection: () => boolean,
+  loadRest: (signal: AbortSignal) => Promise<LX.Player.PlayMusic[]>) => {
+  let release: (() => void) | undefined
+  try {
+    const id = await playList(listId, index, selection, session => { release = retainPlayQueueCompletion(session) })
+    if (!id || !release || id !== getPlayQueueSessionId()) return
+    const full = await loadRest(getPlayQueueSignal())
+    await completePlayQueue(id, full)
+  } finally { release?.() }
 }
 
 export const removeQueueMusic = async(index: number) => {
