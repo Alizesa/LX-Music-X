@@ -12,40 +12,60 @@ const SQL_KEY_BATCH_SIZE = 500
 const partNamespace = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 let partSequence = 0
 const obsoletePartsPrefix = '@___OBSOLETE_PARTS___'
-const obsoleteParts = new Map<string, string[]>()
-let obsoleteLoaded = false
-const finishObsoleteLoading = () => { obsoleteLoaded = true }
+// The atomic journal on disk is the source of truth. Never keep a growing map of old manifests in JS.
+const JOURNALS_PER_SWEEP = 8
+const SWEEP_INTERVAL = 1000
+const MAX_RETRY_DELAY = 60_000
+let scanNeeded = true
+let nextScan = 0
+let blockedUntil = 0
+let retryDelay = SWEEP_INTERVAL
+let journalCursor: string | undefined
 let obsoleteRecovery: Promise<void> | null = null
-const removeObsoleteParts = async(key: string, parts: string[]) => {
-  try {
-    // Keep the recovery record until the last batch commits; partial cleanup is retryable.
-    await removeStorageValues([...parts, key])
-    obsoleteParts.delete(key)
-  } catch (error) {
-    log.error('storage error[cleanup parts]:', error instanceof Error ? error.message : String(error))
+
+const deferCleanup = (error: unknown) => {
+  scanNeeded = true
+  const now = Date.now()
+  if (now < blockedUntil) return
+  blockedUntil = now + retryDelay
+  retryDelay = Math.min(MAX_RETRY_DELAY, retryDelay * 2)
+  log.error('storage error[cleanup parts]:', error instanceof Error ? error.message : String(error))
+}
+
+const selectJournalBatch = async() => {
+  // AsyncStorage only exposes getAllKeys; discard its directory array before reading any manifests.
+  const all = await AsyncStorage.getAllKeys()
+  const start = journalCursor ? all.indexOf(journalCursor) + 1 : 0
+  const batch: string[] = []
+  for (let i = 0; i < all.length; i++) {
+    const key = all[(start + i) % all.length]
+    if (!key.startsWith(obsoletePartsPrefix)) continue
+    if (batch.length === JOURNALS_PER_SWEEP) return { batch, more: true }
+    batch.push(key)
   }
+  return { batch, more: false }
 }
 const recoverObsoleteParts = async() => {
-  if (obsoleteRecovery) return obsoleteRecovery
+  if (obsoleteRecovery !== null || !scanNeeded || Date.now() < Math.max(nextScan, blockedUntil)) return
+  scanNeeded = false
   obsoleteRecovery = (async() => {
     try {
-      if (!obsoleteLoaded) {
-        const keys = (await AsyncStorage.getAllKeys()).filter(key => key.startsWith(obsoletePartsPrefix))
-        for (let offset = 0; offset < keys.length; offset += 100) {
-          const records = await readStorageValues(keys.slice(offset, offset + 100))
-          for (const [key, value] of records) {
-            const parts = value && parseData<unknown>(value, key)
-            if (Array.isArray(parts) && parts.every((part): part is string => typeof part === 'string' && part !== key)) obsoleteParts.set(key, parts)
-          }
-        }
-        finishObsoleteLoading()
+      const { batch, more } = await selectJournalBatch()
+      if (more) { scanNeeded = true; nextScan = Date.now() + SWEEP_INTERVAL }
+      for (const key of batch) {
+        journalCursor = key
+        const [[, raw]] = await readStorageValues([key])
+        if (raw == null) continue
+        const parts = parseData<unknown>(raw, key)
+        if (!Array.isArray(parts) || !parts.every(p => typeof p === 'string' && p !== key)) throw new Error('Invalid fragment cleanup journal')
+        // Delete the journal last; a partial failure is safe to retry after restart.
+        await removeStorageValues([...parts, key])
       }
-      for (const [key, parts] of [...obsoleteParts]) await removeObsoleteParts(key, parts)
-    } catch (error) {
-      log.error('storage error[recover parts]:', error instanceof Error ? error.message : String(error))
-    }
+      if (Date.now() >= blockedUntil) retryDelay = SWEEP_INTERVAL
+      if (!scanNeeded) journalCursor = undefined
+    } catch (error) { deferCleanup(error) }
   })().finally(() => { obsoleteRecovery = null })
-  return obsoleteRecovery
+  await obsoleteRecovery
 }
 
 // 同一逻辑键的读取、覆盖和删除串行，读旧索引期间不能清理它引用的分片。
@@ -182,8 +202,8 @@ const replaceData = async(datas: Array<[string, any]>) => {
     // Android multiSet 在同一个 SQLite 事务中提交新分片与索引；失败保留旧值。
     await AsyncStorage.multiSet(values)
     if (cleanupKey) {
-      obsoleteParts.set(cleanupKey, oldParts)
-      await removeObsoleteParts(cleanupKey, oldParts)
+      if (Date.now() < blockedUntil) { scanNeeded = true; return }
+      try { await removeStorageValues([...oldParts, cleanupKey]) } catch (error) { deferCleanup(error) }
     }
   })
 }
@@ -336,7 +356,10 @@ export const removeDataMultiple = async(keys: string[]) => {
 export const clearAll = async() => withAllKeys(async() => {
   try {
     await AsyncStorage.clear()
-    obsoleteParts.clear()
+    scanNeeded = false
+    nextScan = blockedUntil = 0
+    retryDelay = SWEEP_INTERVAL
+    journalCursor = undefined
   } catch (e: any) {
     // clear error
     log.error('storage error[clearAll]:', e.message)

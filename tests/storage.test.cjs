@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const { test } = require('node:test')
 const { load, deferred, flush } = require('./helpers/load.cjs')
 
-const harness = () => {
+const harness = (globals = {}) => {
   const values = new Map()
   const native = {
     getItem: async key => values.get(key) ?? null,
@@ -17,7 +17,7 @@ const harness = () => {
   const api = load('src/plugins/storage.ts', {
     '@react-native-async-storage/async-storage': { default: native },
     '@/utils/log': { log: { error() {} } },
-  })
+  }, globals)
   return { api, native, values }
 }
 const large = value => value.repeat(600000)
@@ -135,4 +135,27 @@ test('cleanup failure does not report a committed new value as a failed write', 
   h.native.multiRemove = async() => { throw new Error('cleanup unavailable') }
   await h.api.saveData('songs', ['new'])
   assert.equal((await h.api.getData('songs'))[0], 'new')
+})
+
+test('fragment cleanup backs off without retaining every journal or rescanning on unrelated reads', async() => {
+  let now = 1000; let attempts = 0; let scans = 0
+  const h = harness({ Date: class extends Date { static now() { return now } } })
+  const keys = h.native.getAllKeys; h.native.getAllKeys = async() => { scans++; return keys() }
+  const remove = h.native.multiRemove; let fail = true
+  h.native.multiRemove = async ks => { attempts++; if (fail) throw Error('storage unavailable'); await remove(ks) }
+  await h.api.saveData('songs', large('a'))
+  for (let i = 0; i < 40; i++) await h.api.saveData('songs', large('a'))
+  const journals = () => [...h.values.keys()].filter(k => k.startsWith('@___OBSOLETE_PARTS___'))
+  assert.equal(journals().length, 40, 'every committed replacement retains its durable recovery record')
+  assert.equal(attempts, 1)
+  for (let i = 0; i < 20; i++) await h.api.getData('other')
+  assert.equal(attempts, 1); assert.equal(scans, 1)
+  fail = false; now += 60000
+  await h.api.getData('other')
+  assert.ok(journals().length > 0 && journals().length < 40, 'one sweep must do bounded work')
+  const after = attempts
+  await h.api.getData('other'); assert.equal(attempts, after)
+  for (let i = 0; i < 40 && journals().length; i++) { now += 60000; await h.api.getData('other') }
+  assert.equal(journals().length, 0)
+  assert.equal(await h.api.getData('songs'), large('a'))
 })
