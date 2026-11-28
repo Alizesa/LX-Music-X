@@ -10,6 +10,7 @@ import settingState from '@/store/setting/state'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import BackgroundTimer from 'react-native-background-timer'
 import { apis } from '@/utils/musicSdk/api-source'
+import { discardRedirectedAudioProbe } from '@/core/musicUrlValidation'
 import { getQQMusicUrlByAccount } from '@/core/qqMusicUrl'
 import { QQ_LYRIC_CACHE_VERSION } from '@/config/constant'
 import { getEnabledMusicSourceIds, getMusicUrlByPriority, isMusicUrlFailed, prepareMusicUrl, type MusicUrlRequestOptions, type OnlineMusicUrl, type ValidateMusicUrl } from './sourcePriority'
@@ -412,11 +413,18 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
       playbackLog('url.account_result', () => ({ ...trace, available: !!byAccount, quality: byAccount?.quality, elapsedMs: Date.now() - startedAt }))
       if (!byAccount || (quality != null && byAccount.quality !== quality)) return null
       const url = byAccount.media?.resolvedUrl ?? byAccount.url
-      if (isUrlRejected(byAccount.url) || (url !== byAccount.url && isUrlRejected(url))) return null
-      await validateUrl?.(url, byAccount.media, musicInfo)
-      assertActive()
-      if (isUrlRejected(byAccount.url) || (url !== byAccount.url && isUrlRejected(url))) return null
-      return { musicInfo, url, sourceUrl: byAccount.url, quality: byAccount.quality, isFromCache: false }
+      const rejected = () => isUrlRejected(byAccount.url) || (url !== byAccount.url && isUrlRejected(url))
+      let accepted = false
+      try {
+        if (rejected()) return null
+        await validateUrl?.(url, byAccount.media, musicInfo)
+        assertActive()
+        if (rejected()) return null
+        accepted = true
+        return { musicInfo, url, sourceUrl: byAccount.url, quality: byAccount.quality, isFromCache: false }
+      } finally {
+        if (!accepted && !cancelled && byAccount.media && url !== byAccount.url) discardRedirectedAudioProbe(byAccount.url, byAccount.media)
+      }
     } catch (error) {
       playbackLog('url.account_failed', () => ({ ...trace, error, elapsedMs: Date.now() - startedAt }))
       assertActive()

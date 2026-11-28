@@ -1,5 +1,5 @@
 import { getQQMusicSession, getQQMusicUin, postAuthedMusicu, QQMusicSessionExpiredError } from './qqMusic'
-import { probeRemoteAudio, type RemoteAudioInfo } from '@/utils/nativeModules/remoteAudio'
+import { discardRedirectedAudioProbe, probeRemoteAudio, type RemoteAudioInfo } from '@/utils/nativeModules/remoteAudio'
 import { isRequestCancelled, requestMsg } from '@/utils/message'
 import { throwIfAborted, withAbort } from '@/utils/abort'
 import BackgroundTimer from 'react-native-background-timer'
@@ -148,6 +148,7 @@ const pickUrl = async(data: any, quality: LX.Quality, expectedMs: number, signal
           elapsedMs: Date.now() - probeStartedAt,
         }))
         if (!reason) finish({ url, media })
+        else if (resolvedUrl !== url) discardRedirectedAudioProbe(url, media)
       }
     }
     void Promise.all(Array.from({ length: Math.min(3, selected.length) }, worker))

@@ -17,7 +17,7 @@ const load = (file, mocks = {}) => {
       if (name === '@/utils/abortable' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/utils/abortable.ts', { './message': mocks['@/utils/message'] ?? load('src/utils/message.ts') })
       if (name === '@/utils/playbackLog' && !Object.hasOwn(mocks, name)) return require('./helpers/playback-log.cjs')
       if (name === '@/utils/abort') return abort
-      if (name === './musicUrlValidation' && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/core/musicUrlValidation.ts', { '@/utils/nativeModules/remoteAudio': mocks['@/utils/nativeModules/remoteAudio'] ?? {} })
+      if ((name === './musicUrlValidation' || name === '@/core/musicUrlValidation') && !Object.hasOwn(mocks, name)) return require('./helpers/load.cjs').load('src/core/musicUrlValidation.ts', { '@/utils/nativeModules/remoteAudio': mocks['@/utils/nativeModules/remoteAudio'] ?? {} })
       if (name === 'react-native-background-timer' && !Object.hasOwn(mocks, name)) return { default: { setTimeout, clearTimeout } }
       assert.ok(Object.hasOwn(mocks, name), `Unexpected import: ${name}`)
       return mocks[name]
@@ -45,7 +45,7 @@ const standard = 'https://audio.example/M500media.mp3'
 const fullAudio = url => ({ readable: true, durationMs: 180000, mime: /\.flac(?:[?#]|$)/i.test(url) ? 'audio/flac' : 'audio/mpeg' })
 
 // Use the actual authenticated request builder as well as the account URL resolver.
-const harness = ({ ticket = () => response('M500media.mp3'), probe = fullAudio, cookie = 'uin=123; qm_keyst=Q_KEY', timers = { setTimeout, clearTimeout } } = {}) => {
+const harness = ({ ticket = () => response('M500media.mp3'), probe = fullAudio, discard = () => {}, cookie = 'uin=123; qm_keyst=Q_KEY', timers = { setTimeout, clearTimeout } } = {}) => {
   const requests = []
   const probes = []
   let cancelledTickets = 0
@@ -69,6 +69,7 @@ const harness = ({ ticket = () => response('M500media.mp3'), probe = fullAudio, 
     './qqMusicProfile': {},
   })
   const media = {
+    discardRedirectedAudioProbe: discard,
     probeRemoteAudio: async(url, inspect, options) => {
       probes.push({ url, inspect })
       return probe(url, inspect, options)
@@ -769,4 +770,29 @@ test('transport cleanup errors do not escape abort or hide the cancellation resu
   await assert.rejects(result, { message: message.requestMsg.cancelRequest })
   rejectTransport(new Error('late transport failure'))
   await flush()
+})
+
+test('account web fallback rechecks a rotating ticket URI rejected by the App channel', async() => {
+  for (const rejected of ['preview', 'failed-target']) {
+    let calls = 0
+    const first = 'https://cdn.example/old.mp3'; const next = 'https://cdn.example/full.mp3'
+    const media = load('src/utils/nativeModules/remoteAudio.ts', {
+      'react-native': {
+        NativeModules: {
+          UtilsModule: {
+            startRemoteAudioProbe: async() => (++calls === 1
+              ? { ...fullAudio(standard), durationMs: rejected === 'preview' ? 12000 : 180000, resolvedUrl: first }
+              : { ...fullAudio(standard), resolvedUrl: next }),
+            cancelRemoteAudioProbe() {},
+          },
+        },
+      },
+    })
+    const h = harness({ probe: media.probeRemoteAudio, discard: media.discardRedirectedAudioProbe })
+    const result = await h.resolve(song, '128k', '128k', { isUrlRejected: u => rejected === 'failed-target' && u === first })
+    assert.equal(result?.media.resolvedUrl, next)
+    assert.equal(h.requests.length, 2); assert.equal(calls, 2)
+    assert.equal((await h.resolve()).media.resolvedUrl, next)
+    assert.equal(calls, 2, 'keep the accepted result cached')
+  }
 })
